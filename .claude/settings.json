@@ -1,0 +1,26 @@
+{
+  "rules": [
+    "AUTHORITATIVE SOURCE: Follow all guidelines in CLAUDE.md at the project root",
+    "QUICK REFERENCE ONLY - See CLAUDE.md for details:",
+    "• Language: English-only for all artifacts (code, docs, comments, commits)",
+    "• Security: No credentials in code, validate all inputs, prevent injection/XSS",
+    "• Documentation: Update with code changes, maintain ARCHITECTURE.md",
+    "• Testing: Target 80%+ coverage, comprehensive unit and integration tests",
+    "• Code Quality: Showcase-quality (readable, refactored), follow platform conventions",
+    "• Best Practices: Check latest patterns for Ditto, Flutter SDK, and related tech",
+    "• Tone: Professional and business-appropriate"
+  ],
+  "preferences": {
+    "language": "en",
+    "documentation_style": "clear and concise",
+    "tone": "professional"
+  },
+  "workflow": {
+    "documentation_updates": "required",
+    "architecture_docs": "required",
+    "security_review": "mandatory",
+    "best_practices": "always_check_latest",
+    "test_coverage": "target_80_percent",
+    "code_style": "showcase_quality"
+  }
+}

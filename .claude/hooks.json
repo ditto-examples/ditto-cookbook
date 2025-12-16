@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "tool:Write": {
+      "description": "Runs after creating or overwriting files",
+      "command": "echo '✓ File written: {{file_path}}' && if command -v dart &> /dev/null && [[ '{{file_path}}' == *.dart ]]; then echo '→ Running dart format...' && dart format '{{file_path}}' 2>&1 || true; fi"
+    },
+    "tool:Edit": {
+      "description": "Runs after editing files",
+      "command": "echo '✓ File edited: {{file_path}}' && if command -v dart &> /dev/null && [[ '{{file_path}}' == *.dart ]]; then echo '→ Running dart format...' && dart format '{{file_path}}' 2>&1 || true; fi"
+    },
+    "user-prompt-submit": {
+      "description": "Runs before processing user requests - reminds about guidelines",
+      "command": "echo '📋 Project Guidelines Active:' && echo '  • English-only artifacts' && echo '  • Security-first approach' && echo '  • Documentation updates required' && echo '  • Professional tone mandatory' && echo '  • Architecture documentation required'"
+    },
+    "task:complete": {
+      "description": "Runs after task completion - triggers quality and architecture checks",
+      "command": "bash .claude/scripts/checks/post-task-check.sh && bash .claude/scripts/documentation/architecture-check.sh"
+    }
+  },
+  "enabled": true
+}
