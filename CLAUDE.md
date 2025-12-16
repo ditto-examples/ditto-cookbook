@@ -8,11 +8,12 @@
 2. [Documentation Updates](#documentation-updates)
 3. [Architecture Documentation](#architecture-documentation)
 4. [Best Practices and Technology Updates](#best-practices-and-technology-updates)
-5. [Security Guidelines](#security-guidelines)
-6. [Code Quality Standards](#code-quality-standards)
-7. [Testing Standards](#testing-standards)
-8. [Dependency Management](#dependency-management)
-9. [Showcase Code Standards](#showcase-code-standards)
+5. [Platform-Specific Best Practices](#platform-specific-best-practices)
+6. [Security Guidelines](#security-guidelines)
+7. [Code Quality Standards](#code-quality-standards)
+8. [Testing Standards](#testing-standards)
+9. [Dependency Management](#dependency-management)
+10. [Showcase Code Standards](#showcase-code-standards)
 
 ---
 
@@ -96,6 +97,26 @@ When working on this project:
 - **Consider current best practices** when implementing features or making changes
 - Stay updated with official documentation and recommended patterns
 - Apply the most recent and appropriate solutions for the current technology versions
+
+## Platform-Specific Best Practices
+
+When implementing features or fixing issues, consult the platform-specific best practices documentation:
+
+**Flutter Development**: [.claude/guides/best-practices/flutter.md](.claude/guides/best-practices/flutter.md)
+- Widget architecture patterns
+- State management approaches
+- Performance optimization techniques
+- Testing strategies
+
+**Ditto SDK Integration**: [.claude/guides/best-practices/ditto.md](.claude/guides/best-practices/ditto.md)
+- Initialization and configuration patterns
+- Collection design and schema best practices
+- Query optimization and sync strategies
+- Error handling and resilience patterns
+
+**Directory Overview**: See [.claude/guides/best-practices/README.md](.claude/guides/best-practices/README.md) for structure and contribution guidelines.
+
+**Note**: These documents are continuously evolving. Always check for the latest patterns before implementation.
 
 ## Security Guidelines
 

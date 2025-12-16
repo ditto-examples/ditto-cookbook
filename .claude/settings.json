@@ -8,6 +8,7 @@
     "• Testing: Target 80%+ coverage, comprehensive unit and integration tests",
     "• Code Quality: Showcase-quality (readable, refactored), follow platform conventions",
     "• Best Practices: Check latest patterns for Ditto, Flutter SDK, and related tech",
+    "• Platform Best Practices: Consult .claude/guides/best-practices/ for platform-specific patterns",
     "• Tone: Professional and business-appropriate"
   ],
   "preferences": {
@@ -20,6 +21,7 @@
     "architecture_docs": "required",
     "security_review": "mandatory",
     "best_practices": "always_check_latest",
+    "platform_best_practices": "reference_before_implementation",
     "test_coverage": "target_80_percent",
     "code_style": "showcase_quality"
   }
