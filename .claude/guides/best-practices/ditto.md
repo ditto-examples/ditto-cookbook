@@ -574,6 +574,22 @@ await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false');
 await ditto.startSync();
 ```
 
+**⚠️ CRITICAL: Always await ALTER SYSTEM SET**
+`store.execute()` is async, and proceeding without awaiting can cause unexpected behavior:
+- System settings may not be applied before subsequent operations
+- Starting sync before settings are applied can lead to inconsistent behavior
+- **Always use `await`** before calling `startSync()` or other store operations
+
+```dart
+// ✅ CORRECT: await ensures settings are applied before sync starts
+await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false');
+await ditto.startSync();
+
+// ❌ WRONG: Settings might not be applied when startSync runs
+ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false'); // Missing await!
+await ditto.startSync(); // May start with wrong settings
+```
+
 **⚠️ CRITICAL: Cross-Peer Consistency**
 **All peers must use the same DQL_STRICT_MODE setting.** When peers have different settings:
 - Data will sync between peers successfully
