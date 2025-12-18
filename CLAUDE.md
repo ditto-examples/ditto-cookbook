@@ -118,6 +118,44 @@ When implementing features or fixing issues, consult the platform-specific best 
 
 **Note**: These documents are continuously evolving. Always check for the latest patterns before implementation.
 
+### Ditto Best Practices Synchronization (CRITICAL)
+
+**⚠️ MANDATORY WORKFLOW**: After editing [.claude/guides/best-practices/ditto.md](.claude/guides/best-practices/ditto.md), you **MUST** propagate changes to the corresponding Agent Skills:
+
+**Workflow**:
+1. **After editing ditto.md** - Always review `.claude/skills/ditto/` to identify which skills need updates
+2. **Check relevance** - Review the edited sections and determine which skill files are affected:
+   - Query/subscription/observer changes → `query-sync/SKILL.md` and examples
+   - Data modeling/CRDT changes → `data-modeling/SKILL.md` and examples
+   - Deletion/EVICT/storage changes → `storage-lifecycle/SKILL.md` and examples
+   - Transaction/attachment changes → `transactions-attachments/SKILL.md` and examples
+   - Performance/logging/observer changes → `performance-observability/SKILL.md` and examples
+3. **Update skills** - Propagate the changes to relevant SKILL.md files and example files
+4. **Skip if unnecessary** - If the changes are not relevant to any skills (e.g., pure conceptual content, non-actionable guidance), you may skip the update
+
+**Purpose**: Agent Skills provide real-time guidance to developers. They must stay synchronized with the authoritative best practices guide to ensure accuracy and consistency.
+
+**Critical Files Relationship**:
+- **Source of Truth**: `.claude/guides/best-practices/ditto.md` (comprehensive reference)
+- **Derivative Content**: `.claude/skills/ditto/*` (actionable patterns extracted from main guide)
+
+**Update Workflow Example**:
+```
+# If you edit ditto.md lines 780-1008 (Data Deletion Strategies):
+1. Review storage-lifecycle/SKILL.md
+2. Update relevant patterns (e.g., tombstone TTL, logical deletion)
+3. Update storage-lifecycle/examples/*.dart if patterns changed
+4. Verify consistency across all affected files
+```
+
+**When to Update**:
+- ✅ New critical patterns added to ditto.md
+- ✅ Existing patterns significantly revised
+- ✅ Platform-specific changes (Flutter vs non-Flutter)
+- ✅ SDK version updates (4.12+, v5)
+- ❌ Minor wording improvements without semantic changes
+- ❌ Purely conceptual content without actionable patterns
+
 ## Security Guidelines
 
 Security is a top priority:

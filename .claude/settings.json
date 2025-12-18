@@ -22,6 +22,7 @@
     "security_review": "mandatory",
     "best_practices": "always_check_latest",
     "platform_best_practices": "reference_before_implementation",
+    "ditto_best_practices_sync": "mandatory_after_ditto_md_edit",
     "test_coverage": "target_80_percent",
     "code_style": "showcase_quality"
   }
