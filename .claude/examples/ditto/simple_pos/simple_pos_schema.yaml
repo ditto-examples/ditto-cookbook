@@ -1,0 +1,732 @@
+# ============================================================================
+# Ditto Database Schema: Minimal POS + KDS Application
+# ============================================================================
+#
+# This schema defines a minimal data model for a combined Point-of-Sale (POS)
+# and Kitchen Display System (KDS) application using Ditto's offline-first,
+# CRDT-based synchronization.
+#
+# DESIGN PRINCIPLES:
+# - CRDT-safe patterns (MAP for mutable nested data, NOT arrays)
+# - Denormalized design (no JOIN support in Ditto)
+# - Minimal collections (only 2 - avoids cross-collection complexity)
+# - Document size <250 KB target (hard limit: 5 MB)
+# - No counters for derived values (calculate in app instead)
+#
+# NAMING CONVENTIONS:
+# - _id: Required unique document identifier
+# - createdAt/updatedAt: ISO-8601 timestamps
+# - isAvailable/isDeleted: Boolean flags
+#
+# CRDT TYPE ANNOTATIONS:
+# - REGISTER: Last-write-wins (strings, numbers, booleans, timestamps)
+# - MAP: Concurrent-safe nested objects (field-level merging)
+#
+# ============================================================================
+
+collections:
+
+  # ==========================================================================
+  # menuItems - Product Catalog
+  # ==========================================================================
+  #
+  # PURPOSE: Central menu catalog for restaurant offerings
+  # ACCESS PATTERN: Read-heavy, infrequent updates from admin
+  # SIZE: ~1-2 KB per document (safe)
+  # DENORMALIZED INTO: orders collection (snapshot at purchase time)
+  #
+  menuItems:
+    description: "Menu item catalog with categories and prices"
+
+    fields:
+      _id:
+        type: REGISTER (string)
+        description: "Unique menu item identifier (UUID v4 recommended for distributed systems)"
+        required: true
+        example: "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+        note: "Use UUID v4 to avoid ID collisions in distributed P2P mesh. Sequential IDs (e.g., 'item_burger_001') cause collisions when multiple devices create items offline independently. See ID Generation Best Practices below for patterns."
+
+      name:
+        type: REGISTER (string)
+        description: "Display name (e.g., 'Classic Cheeseburger')"
+        required: true
+        example: "Classic Cheeseburger"
+
+      category:
+        type: REGISTER (string)
+        description: "Category (e.g., 'mains', 'sides', 'beverages', 'desserts')"
+        required: true
+        indexed: true  # For filtering by category
+        example: "mains"
+
+      price:
+        type: REGISTER (number)
+        description: "Current price in base currency unit (e.g., 12.99)"
+        required: true
+        example: 12.99
+
+      isAvailable:
+        type: REGISTER (boolean)
+        description: "Stock availability flag (true/false)"
+        required: true
+        default: true
+        example: true
+        note: "NO COUNTER for stock - calculate inventory from orders if needed"
+
+      createdAt:
+        type: REGISTER (string - ISO-8601)
+        description: "Creation timestamp (e.g., '2025-01-15T10:00:00Z')"
+        required: true
+        example: "2025-01-15T10:00:00Z"
+
+      updatedAt:
+        type: REGISTER (string - ISO-8601)
+        description: "Last update timestamp"
+        required: true
+        example: "2025-01-15T10:00:00Z"
+
+    example_document:
+      _id: "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+      name: "Classic Cheeseburger"
+      category: "mains"
+      price: 12.99
+      isAvailable: true
+      createdAt: "2025-01-15T10:00:00Z"
+      updatedAt: "2025-01-15T10:00:00Z"
+
+    crdt_patterns:
+      - "Price updates: Field-level UPDATE (last-write-wins)"
+      - "Availability toggles: UPDATE isAvailable field"
+      - "No counters: Stock calculated from orders if needed"
+
+    query_patterns:
+      - "SELECT * FROM menuItems WHERE category = :cat AND isAvailable = true"
+      - "SELECT * FROM menuItems WHERE isAvailable = true ORDER BY name ASC"
+      - "SELECT * FROM menuItems WHERE price <= :maxPrice"
+
+  # ==========================================================================
+  # orders - Order Documents with Embedded Menu Item Details
+  # ==========================================================================
+  #
+  # PURPOSE: Complete order state with denormalized menu item details
+  # ACCESS PATTERN: Read-write heavy, frequent status updates from POS/KDS
+  # SIZE: ~5-30 KB per document (safe for 10-30 items per order)
+  # DOCUMENT SIZE WARNING: Keep under 250 KB (hard limit: 5 MB)
+  #
+  orders:
+    description: "Order documents with embedded line items and status tracking"
+
+    fields:
+      _id:
+        type: REGISTER (string)
+        description: "Unique order identifier (UUID v4 recommended for distributed systems)"
+        required: true
+        example: "550e8400-e29b-41d4-a716-446655440000"
+        note: "Use UUID v4 to avoid ID collisions when multiple devices create orders offline. Sequential IDs (e.g., 'order_20250115_001') cause collisions in distributed systems where devices write independently. See ID Generation Best Practices below for patterns."
+
+      displayId:
+        type: REGISTER (string)
+        description: "Human-readable order reference for UI display (NOT guaranteed unique across devices)"
+        required: true
+        indexed: true
+        example: "ORD-2025-1219-A7F3"
+        note: "Generate using: date + random suffix (e.g., 'ORD-YYYYMMDD-XXXX'). Random component reduces likelihood of confusion when displaying multiple orders. NOT sequential to avoid confusion with primary _id. This is for display purposes only and does not need to be globally unique. See displayId generation pattern in ID Generation Best Practices below."
+
+      tableNumber:
+        type: REGISTER (string)
+        description: "Table/location identifier (e.g., 'T05', 'Counter')"
+        required: false
+        example: "T05"
+
+      status:
+        type: REGISTER (string)
+        description: "Order lifecycle status"
+        required: true
+        indexed: true
+        values:
+          - "pending"     # Order created, not yet confirmed
+          - "confirmed"   # Order confirmed, sent to kitchen
+          - "preparing"   # Kitchen is preparing items
+          - "ready"       # All items ready for pickup/serving
+          - "completed"   # Order delivered/picked up
+          - "cancelled"   # Order cancelled
+        example: "preparing"
+
+      items:
+        type: MAP
+        description: "Order line items (CRDT-safe concurrent additions)"
+        required: true
+        note: "USE MAP, NOT ARRAY - arrays lose data on concurrent updates"
+        structure:
+          key: "Line item ID (e.g., 'item_1', 'item_2')"
+          value:
+            menuItemId: REGISTER (string) - "Foreign key to menuItems"
+            name: REGISTER (string) - "DENORMALIZED item name (snapshot at order time)"
+            price: REGISTER (number) - "DENORMALIZED unit price (snapshot at order time)"
+            quantity: REGISTER (number) - "Quantity ordered"
+            lineTotal: REGISTER (number) - "Computed total (price × quantity)"
+        example:
+          item_1:
+            menuItemId: "item_burger_001"
+            name: "Classic Cheeseburger"
+            price: 12.99
+            quantity: 2
+            lineTotal: 25.98
+
+      totals:
+        type: MAP
+        description: "Computed order totals"
+        required: true
+        structure:
+          subtotal: REGISTER (number) - "Sum of line totals before tax"
+          tax: REGISTER (number) - "Tax amount"
+          total: REGISTER (number) - "Final total amount"
+        example:
+          subtotal: 25.98
+          tax: 2.60
+          total: 28.58
+
+      paymentStatus:
+        type: REGISTER (string)
+        description: "Payment state"
+        required: true
+        values: ["unpaid", "paid", "refunded"]
+        example: "unpaid"
+
+      createdAt:
+        type: REGISTER (string - ISO-8601)
+        description: "Order creation timestamp"
+        required: true
+        indexed: true
+        example: "2025-01-15T12:00:00Z"
+
+      updatedAt:
+        type: REGISTER (string - ISO-8601)
+        description: "Last modification timestamp"
+        required: true
+        example: "2025-01-15T12:05:00Z"
+
+    example_document:
+      _id: "550e8400-e29b-41d4-a716-446655440000"
+      displayId: "ORD-2025-1219-A7F3"
+      tableNumber: "T05"
+      status: "preparing"
+      items:
+        item_1:
+          menuItemId: "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+          name: "Classic Cheeseburger"
+          price: 12.99
+          quantity: 2
+          lineTotal: 25.98
+      totals:
+        subtotal: 25.98
+        tax: 2.60
+        total: 28.58
+      paymentStatus: "unpaid"
+      createdAt: "2025-01-15T12:00:00Z"
+      updatedAt: "2025-01-15T12:05:00Z"
+
+    crdt_patterns:
+      - "Status transitions: Field-level UPDATE (atomic state changes)"
+      - "Items: MAP structure allows concurrent item additions without conflicts"
+      - "Item quantities: UPDATE orders.items.item_1.quantity field"
+      - "Totals: Recompute on client, UPDATE entire totals MAP"
+      - "Timestamps: Update on every modification"
+
+    denormalization_rationale:
+      - "Menu item details embedded for snapshot semantics (price at order time)"
+      - "Single query retrieves complete order (no JOIN needed)"
+      - "Offline-first: All data available without network"
+      - "Historical accuracy: Order preserves menu state at purchase time"
+
+    query_patterns:
+      POS:
+        - "SELECT * FROM orders WHERE status IN (:statuses) ORDER BY createdAt DESC"
+        - "INSERT INTO orders DOCUMENTS (:order)"
+        - "UPDATE orders SET status = :status, updatedAt = :now WHERE _id = :id"
+      KDS:
+        - "SELECT * FROM orders WHERE status IN ('confirmed', 'preparing') ORDER BY createdAt ASC"
+        - "UPDATE orders SET status = 'ready', updatedAt = :now WHERE _id = :id"
+      History:
+        - "SELECT * FROM orders WHERE createdAt >= :startOfDay"
+
+# ============================================================================
+# RELATIONSHIPS
+# ============================================================================
+#
+# Collection relationships (no JOIN support - denormalization used):
+#
+# menuItems (catalog)
+#     ↓ denormalized into
+# orders (main entity with embedded items)
+#
+# No foreign key constraints - application-level validation required
+#
+# ============================================================================
+
+# ============================================================================
+# DOCUMENT SIZE CONSIDERATIONS
+# ============================================================================
+#
+# TARGET: Keep documents under 250 KB for optimal sync performance
+# HARD LIMIT: Documents over 5 MB will NOT sync
+#
+# Size Estimates:
+# - menuItems: ~1-2 KB (safe)
+# - orders: ~5-30 KB for 10-30 items (safe)
+#
+# Performance Impact (Bluetooth LE):
+# - 250 KB document = 10+ seconds initial sync
+# - Keep documents small for mobile/IoT devices
+#
+# WARNING: If order items grow unbounded, consider limiting items per order
+# or use pagination pattern
+#
+# ============================================================================
+
+# ============================================================================
+# SUBSCRIPTION STRATEGY
+# ============================================================================
+#
+# CRITICAL: Subscribe broadly, filter narrowly
+#
+# POS Subscription:
+#   ditto.sync.registerSubscription('SELECT * FROM orders')
+#   - No status filter (enables proper relay)
+#   - Filter in observer for UI display
+#
+# KDS Subscription:
+#   ditto.sync.registerSubscription('SELECT * FROM orders')
+#   - No status filter (enables proper relay)
+#   - Filter in observer for kitchen display
+#
+# Menu Subscription:
+#   ditto.sync.registerSubscription('SELECT * FROM menuItems')
+#
+# Observer Pattern (POS):
+#   ditto.store.registerObserver(
+#     'SELECT * FROM orders WHERE status IN (:statuses)',
+#     onChange: (result) => updateUI(result),
+#     arguments: {'statuses': ['pending', 'confirmed', 'preparing', 'ready']}
+#   )
+#
+# Observer Pattern (KDS):
+#   ditto.store.registerObserver(
+#     'SELECT * FROM orders WHERE status IN (:statuses)',
+#     onChange: (result) => updateKitchenDisplay(result),
+#     arguments: {'statuses': ['confirmed', 'preparing']}
+#   )
+#
+# ============================================================================
+
+# ============================================================================
+# WHY NO COUNTERS?
+# ============================================================================
+#
+# RATIONALE: Inventory calculated from orders instead of using counters
+#
+# ❌ DON'T: Use COUNTER for inventory tracking
+# {
+#   "_id": "item_burger_001",
+#   "currentStock": 50  // COUNTER - requires cross-collection updates
+# }
+#
+# ✅ DO: Calculate inventory from orders
+# {
+#   "_id": "item_burger_001",
+#   "initialStock": 100  // REGISTER - never changes
+# }
+#
+# // Calculate current stock in app:
+# final orders = await ditto.store.execute(
+#   'SELECT items FROM orders WHERE items.item_burger_001 != null'
+# );
+# final totalOrdered = orders.items.fold<int>(0, (sum, order) {
+#   return sum + (order.value['items']['item_burger_001']['quantity'] as int);
+# });
+# final currentStock = initialStock - totalOrdered;
+#
+# **Why Calculate Instead of Counter?**
+# - ✅ Single source of truth (no synchronization needed)
+# - ✅ Simpler logic (no cross-collection updates)
+# - ✅ Easier debugging (audit trail in order history)
+# - ✅ Avoids JOIN complexity (no foreign key updates)
+# - ✅ Self-correcting (recalculate from orders if mismatch)
+#
+# ============================================================================
+
+# ============================================================================
+# QUERY PATTERN EXAMPLES
+# ============================================================================
+#
+# POS Side:
+# ---------
+# 1. Display active orders:
+#    SELECT * FROM orders
+#    WHERE status IN ('pending', 'confirmed', 'preparing', 'ready')
+#    ORDER BY createdAt DESC
+#
+# 2. Create new order:
+#    INSERT INTO orders DOCUMENTS (:order)
+#
+# 3. Update order status:
+#    UPDATE orders
+#    SET status = :status, updatedAt = :timestamp
+#    WHERE _id = :orderId
+#
+# 4. Add item to order:
+#    UPDATE orders
+#    SET items.newItemId = :itemData
+#    WHERE _id = :orderId
+#
+# 5. Update item quantity:
+#    UPDATE orders
+#    SET items.itemId.quantity = :quantity
+#    WHERE _id = :orderId
+#
+# KDS Side:
+# ---------
+# 1. Display kitchen queue:
+#    SELECT * FROM orders
+#    WHERE status IN ('confirmed', 'preparing')
+#    ORDER BY createdAt ASC
+#
+# 2. Complete order:
+#    UPDATE orders
+#    SET status = 'ready', updatedAt = :timestamp
+#    WHERE _id = :orderId
+#
+# Menu Management:
+# ----------------
+# 1. List available menu items:
+#    SELECT * FROM menuItems
+#    WHERE isAvailable = true
+#    ORDER BY category, name
+#
+# 2. Update menu item price:
+#    UPDATE menuItems
+#    SET price = :newPrice, updatedAt = :timestamp
+#    WHERE _id = :itemId
+#
+# 3. Toggle availability:
+#    UPDATE menuItems
+#    SET isAvailable = :available, updatedAt = :timestamp
+#    WHERE _id = :itemId
+#
+# ============================================================================
+
+# ============================================================================
+# ADDITIONAL BEST PRACTICES
+# ============================================================================
+#
+# 1. Timestamps:
+#    - Store as ISO-8601 strings (e.g., "2025-01-15T10:30:00Z")
+#    - Lexicographic comparison works for ISO-8601
+#    - Use createdAt for ordering (not clock() due to drift)
+#
+# 2. Payment Security:
+#    - DO NOT store payment details in Ditto
+#    - Only store paymentStatus and paymentMethod
+#    - Integrate with external payment gateway
+#
+# 3. Field-Level Updates:
+#    - Check if values differ before UPDATE (avoid unnecessary deltas)
+#    - Use DO UPDATE_LOCAL_DIFF for upserts (SDK 4.12+)
+#    - Minimize sync traffic across all peers
+#
+# 4. Error Handling:
+#    - Validate required fields before INSERT
+#    - Handle null/missing fields in queries
+#    - Filter husked documents (concurrent DELETE/UPDATE conflicts)
+#
+# 5. Minimal Sample Omissions:
+#    - No customer records (simplicity)
+#    - No audit log (orderStatusEvents) (simplicity)
+#    - No attachments (menu images) (simplicity)
+#    - No logical deletion (isDeleted flag) (simplicity)
+#    - Focus on core POS+KDS workflow only
+#
+# ============================================================================
+
+# ============================================================================
+# ID GENERATION BEST PRACTICES
+# ============================================================================
+#
+# ⚠️ CRITICAL: Sequential IDs cause collisions in distributed databases
+#
+# PROBLEM SCENARIO:
+# - Device A offline: generates "order_20250115_001"
+# - Device B offline: generates "order_20250115_001"
+# - Both devices sync → COLLISION → data loss or undefined behavior
+#
+# ROOT CAUSE:
+# Sequential IDs assume centralized coordination (single writer). In offline-first,
+# P2P mesh architectures, multiple devices write independently without coordination.
+#
+# ============================================================================
+# RECOMMENDED PATTERNS
+# ============================================================================
+#
+# Pattern 1: UUID v4 (RECOMMENDED - General-Purpose)
+# -----------------------------------------------------------------------------
+# ✅ DO: Use UUID v4 for primary document identifiers
+# {
+#   "_id": "550e8400-e29b-41d4-a716-446655440000"
+# }
+#
+# Why UUID v4?
+# - ✅ Collision-free (~1 in 2^61 collision probability for 1 billion IDs)
+# - ✅ No device coordination required (devices generate IDs independently)
+# - ✅ Aligns with Ditto's native auto-generated IDs (128-bit UUIDs)
+# - ✅ Platform-agnostic (UUID libraries available on all platforms)
+# - ✅ Industry standard for distributed systems
+#
+# Implementation (Dart):
+# ```dart
+# import 'package:uuid/uuid.dart';
+#
+# final uuid = Uuid();
+# final menuItemId = uuid.v4(); // "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+# final orderId = uuid.v4();    // "550e8400-e29b-41d4-a716-446655440000"
+#
+# await ditto.store.execute(
+#   'INSERT INTO orders DOCUMENTS (:order)',
+#   arguments: {
+#     'order': {
+#       '_id': orderId,
+#       'status': 'pending',
+#       'createdAt': DateTime.now().toIso8601String(),
+#     }
+#   },
+# );
+# ```
+#
+# Pattern 2: Auto-Generated (SIMPLEST)
+# -----------------------------------------------------------------------------
+# ✅ DO: Omit _id field to let Ditto auto-generate UUID
+# {
+#   // No _id field - Ditto generates 128-bit UUID automatically
+#   "orderNumber": "#42",
+#   "status": "pending"
+# }
+#
+# When to use:
+# - Internal documents where ID format doesn't matter
+# - Simplest implementation (no external library needed)
+# - Prefer explicit UUID v4 when ID control is desired
+#
+# Implementation (Dart):
+# ```dart
+# await ditto.store.execute(
+#   'INSERT INTO orders DOCUMENTS (:order)',
+#   arguments: {
+#     'order': {
+#       // No _id field - Ditto auto-generates UUID
+#       'orderNumber': '#42',
+#       'status': 'pending',
+#     }
+#   },
+# );
+# ```
+#
+# Pattern 3: Composite Keys (ADVANCED)
+# -----------------------------------------------------------------------------
+# ✅ DO: Use composite keys for permission scoping or query optimization
+# {
+#   "_id": {
+#     "locationId": "LondonLiverpoolStreet",
+#     "orderId": "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+#   },
+#   // Duplicate for POJO/DTO pattern (query-friendly)
+#   "locationId": "LondonLiverpoolStreet",
+#   "orderId": "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+# }
+#
+# When to use:
+# - Multi-tenant systems with permission scoping
+# - Hierarchical data organization
+# - Query optimization with indexed fields
+#
+# Pattern 4: ULID (TIME-ORDERED)
+# -----------------------------------------------------------------------------
+# ✅ DO: Use ULID for time-ordered, lexicographically sortable IDs
+# {
+#   "_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV"  // 26 chars: timestamp + random
+# }
+#
+# When to use:
+# - Chronological sorting required
+# - Time-based queries without separate timestamp field
+# - Still collision-free with randomness component
+#
+# Requires: External library (ulid package)
+#
+# Implementation (Dart):
+# ```dart
+# import 'package:ulid/ulid.dart';
+#
+# final ulid = Ulid().toString(); // "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+# ```
+#
+# ============================================================================
+# HUMAN-READABLE DISPLAY IDs
+# ============================================================================
+#
+# Use separate display field alongside UUID _id for user-facing references
+#
+# Pattern: UUID (primary key) + displayId (human-readable)
+# -----------------------------------------------------------------------------
+# {
+#   "_id": "550e8400-e29b-41d4-a716-446655440000",  // UUID (collision-free)
+#   "displayId": "ORD-2025-1219-A7F3",              // Display (date + random)
+#   "status": "pending"
+# }
+#
+# ⚠️ NOTE: displayId does not need to be globally unique (it's not the document ID)
+#
+# Generation pattern (Dart):
+# ```dart
+# import 'dart:math';
+#
+# final now = DateTime.now();
+# final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+# final randomSuffix = Random().nextInt(0xFFFF).toRadixString(16).toUpperCase().padLeft(4, '0');
+# final displayId = 'ORD-$dateStr-$randomSuffix';  // "ORD-20251219-A7F3"
+# ```
+#
+# Why random suffix?
+# - Reduces likelihood of confusion when displaying multiple orders to users
+# - Maintains human-readable format with better user experience
+# - Random component helps avoid duplicate display IDs on same day
+# - Not required for system correctness (document uniqueness is ensured by _id)
+#
+# ============================================================================
+# ANTI-PATTERNS (AVOID)
+# ============================================================================
+#
+# ❌ DON'T: Sequential IDs
+# {
+#   "_id": "order_20250115_001"  // COLLISION RISK!
+# }
+# Problem: Multiple devices offline generate same ID
+#
+# ❌ DON'T: Counter-Based IDs
+# {
+#   "_id": "product_123"  // COLLISION RISK!
+# }
+# Problem: Requires centralized coordination (not available offline)
+#
+# ❌ DON'T: Timestamp-Only IDs (no randomness)
+# {
+#   "_id": "1705334400000"  // COLLISION RISK!
+# }
+# Problem: Multiple writes within same millisecond → collision
+#
+# ❌ DON'T: displayId without random component (poor UX)
+# {
+#   "displayId": "ORD-2025-0115-001"  // POOR USER EXPERIENCE
+# }
+# Problem: Sequential numbering causes duplicate display IDs across devices, confusing users
+#
+# ============================================================================
+# MIGRATION FROM SEQUENTIAL IDs
+# ============================================================================
+#
+# Use dual-write pattern during migration for backward compatibility
+#
+# Step 1: Dual-Write Pattern
+# -----------------------------------------------------------------------------
+# {
+#   "_id": "550e8400-e29b-41d4-a716-446655440000",  // New UUID (primary)
+#   "legacyOrderId": "order_20250115_001",          // Legacy ID (reference)
+#   "displayId": "ORD-2025-1219-A7F3",              // Display ID
+#   "status": "pending"
+# }
+#
+# Step 2: Gradual Transition
+# 1. Add UUID library to project
+# 2. Update ID generation to UUID v4
+# 3. Keep legacy ID during transition period
+# 4. Update queries to use new UUID (queries by legacy ID still work)
+# 5. Monitor for issues in production
+# 6. Eventually remove legacy ID field after full transition
+#
+# Query Examples (Dart):
+# ```dart
+# // Query by new UUID (primary)
+# final result = await ditto.store.execute(
+#   'SELECT * FROM orders WHERE _id = :orderId',
+#   arguments: {'orderId': newOrderId},
+# );
+#
+# // Query by legacy ID (backward compatibility)
+# final legacyResult = await ditto.store.execute(
+#   'SELECT * FROM orders WHERE legacyOrderId = :legacyId',
+#   arguments: {'legacyId': legacyOrderId},
+# );
+# ```
+#
+# ============================================================================
+# DECISION TREE
+# ============================================================================
+#
+# Need to generate document _id?
+#   ↓
+# Human-readable required for debugging?
+#   ↓ YES → Add display field alongside UUID
+#   |         (_id: UUID, displayId: "ORD-2025-042")
+#   ↓ NO
+#   ↓
+# Chronological sorting required?
+#   ↓ YES → Use ULID (time-ordered)
+#   ↓ NO
+#   ↓
+# Permission scoping needed?
+#   ↓ YES → Use Composite Keys
+#   ↓ NO
+#   ↓
+# Want simplest approach?
+#   ↓ YES → Omit _id (auto-generated)
+#   ↓ NO
+#   ↓
+# → Use UUID v4 (general-purpose, recommended)
+#
+# ============================================================================
+# PLATFORM-SPECIFIC IMPLEMENTATIONS
+# ============================================================================
+#
+# Dart/Flutter:
+# ```dart
+# import 'package:uuid/uuid.dart';
+# final uuid = Uuid();
+# final id = uuid.v4();
+# ```
+#
+# JavaScript/TypeScript:
+# ```javascript
+# import { v4 as uuidv4 } from 'uuid';
+# const id = uuidv4();
+# ```
+#
+# Swift:
+# ```swift
+# import Foundation
+# let id = UUID().uuidString.lowercased()
+# ```
+#
+# Kotlin:
+# ```kotlin
+# import java.util.UUID
+# val id = UUID.randomUUID().toString()
+# ```
+#
+# See Also:
+# - .claude/guides/best-practices/ditto.md (ID Generation Strategies section)
+# - .claude/skills/ditto/data-modeling/SKILL.md (Pattern 10)
+# - .claude/skills/ditto/data-modeling/examples/id-generation-patterns.dart
+#
+# ============================================================================
+
+# ============================================================================
+# END OF SCHEMA
+# ============================================================================

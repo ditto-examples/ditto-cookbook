@@ -328,13 +328,37 @@ await ditto.store.execute(
 
 ---
 
-### Pattern 4: Counter Patterns (PN_INCREMENT and COUNTER Type) (HIGH)
+### Pattern 4: Counter Patterns (COUNTER Type and PN_INCREMENT) (CRITICAL)
 
-**Platform**: All
+**⚠️ FIRST: Do You Even Need a Counter?**
 
-**SDK Version Awareness:**
-- **Ditto <4.14.0**: Use `PN_INCREMENT BY` operator (legacy PN_COUNTER CRDT)
-- **Ditto 4.14.0+**: Use `COUNTER` type (recommended for new implementations)
+Before using any counter pattern, determine if the value can be calculated from existing data:
+
+**Decision Tree**:
+```
+Need numeric value?
+  ↓
+Derivable from other documents? (sum orders, count items, etc.)
+  ↓ YES → Calculate in app (no counter needed) ← PREFERRED
+  ↓ NO
+  ↓
+Independent metric? (views, likes, votes)
+  ↓ YES → Use counter pattern below
+```
+
+**Example: Inventory Management**
+- ❌ DON'T use counter: `currentStock COUNTER` (requires cross-collection updates)
+- ✅ DO calculate: `initialStock - SUM(order quantities)` (app-side calculation)
+
+**Rationale**: Avoids cross-collection synchronization complexity, single source of truth, no JOIN needed
+
+---
+
+**Platform**: All (CRDT rules universal)
+
+**SDK Version Detection:**
+- **SDK 4.14.0+**: Use `COUNTER` type (RECOMMENDED)
+- **SDK <4.14.0**: Use `PN_INCREMENT BY` operator (legacy)
 
 **Problem**: Using SET operations for counters causes lost updates when devices update concurrently while offline. Last-write-wins semantics discard concurrent increments.
 
@@ -351,27 +375,9 @@ await ditto.store.execute(
 );
 ```
 
-✅ **DO**: Use counter operations (PN_INCREMENT or COUNTER type) for distributed counters
+✅ **DO**: Use counter operations (COUNTER type or PN_INCREMENT) for distributed counters
 
-**Option 1: PN_INCREMENT Operator (All Versions)**
-```dart
-// ✅ GOOD: PN_INCREMENT (CRDT-friendly, merge-safe)
-await ditto.store.execute(
-  '''
-  UPDATE products
-  APPLY viewCount PN_INCREMENT BY 1.0
-  WHERE _id = :productId
-  ''',
-  arguments: {'productId': productId},
-);
-
-// Concurrent increments merge correctly:
-// Device A: +1 → viewCount = 101
-// Device B: +1 → viewCount = 101
-// After sync: viewCount = 102 ✅
-```
-
-**Option 2: COUNTER Type (Ditto 4.14.0+)**
+**Option 1: COUNTER Type (SDK 4.14.0+) ← RECOMMENDED**
 ```dart
 // ✅ GOOD: COUNTER type with explicit declaration (4.14.0+)
 await ditto.store.execute(
@@ -403,21 +409,34 @@ await ditto.store.execute(
   ''',
   arguments: {'productId': productId},
 );
+
+// Concurrent increments merge correctly:
+// Device A: +1 → viewCount = 101
+// Device B: +1 → viewCount = 101
+// After sync: viewCount = 102 ✅
 ```
 
-**Decrement Pattern**:
+**Option 2: PN_INCREMENT Operator (Legacy/Backward Compatibility)**
 ```dart
-// ✅ GOOD: Decrement with PN_INCREMENT (negative value)
+// ✅ ACCEPTABLE: PN_INCREMENT (for SDK <4.14.0 or legacy compatibility)
 await ditto.store.execute(
   '''
   UPDATE products
-  APPLY inventory PN_INCREMENT BY -1.0
+  APPLY viewCount PN_INCREMENT BY 1.0
   WHERE _id = :productId
   ''',
   arguments: {'productId': productId},
 );
 
-// ✅ GOOD: Decrement with COUNTER type (4.14.0+)
+// Note: Use this only when:
+// - SDK version < 4.14.0
+// - Maintaining compatibility with older peers
+// - For new projects on SDK 4.14.0+, use COUNTER type instead
+```
+
+**Decrement Pattern**:
+```dart
+// ✅ GOOD: Decrement with COUNTER type (SDK 4.14.0+)
 await ditto.store.execute(
   '''
   UPDATE COLLECTION products (inventory COUNTER)
@@ -426,9 +445,19 @@ await ditto.store.execute(
   ''',
   arguments: {'productId': productId},
 );
+
+// ✅ ACCEPTABLE: Decrement with PN_INCREMENT (legacy)
+await ditto.store.execute(
+  '''
+  UPDATE products
+  APPLY inventory PN_INCREMENT BY -1.0
+  WHERE _id = :productId
+  ''',
+  arguments: {'productId': productId},
+);
 ```
 
-**Why**: `PN_INCREMENT` and `COUNTER` type use CRDT (Conflict-free Replicated Data Type) semantics that merge concurrent increments/decrements correctly. SET operations use last-write-wins, losing concurrent updates. COUNTER type (4.14.0+) adds `RESTART WITH` and `RESTART` operations for controlled value setting.
+**Why**: `COUNTER` type and `PN_INCREMENT` use CRDT (Conflict-free Replicated Data Type) semantics that merge concurrent increments/decrements correctly. SET operations use last-write-wins, losing concurrent updates. COUNTER type (4.14.0+) is recommended for new projects, providing `RESTART WITH` and `RESTART` operations for controlled value setting.
 
 ❌ **DON'T**: Use SET for counters that may be updated concurrently
 
@@ -927,8 +956,168 @@ await ditto.store.execute(
 
 ---
 
+### Pattern 10: ID Generation for Distributed Systems (CRITICAL)
+
+**Platform**: All (ID generation is universal concern in distributed systems)
+
+**Problem**: Sequential IDs cause collisions when multiple devices create documents offline independently
+
+**Detection Triggers**:
+```dart
+// ❌ CRITICAL: Sequential ID patterns (collision risk!)
+final orderId = 'order_${DateTime.now()}_001';
+final itemId = 'item_${category}_${count}';
+final userId = 'user_${timestamp}_${incrementalCounter}';
+
+// Common sequential patterns to avoid:
+// - Date-based: 'order_20250115_001', 'item_2025_001'
+// - Counter-based: 'product_001', 'user_123'
+// - Timestamp-based: 'event_1705334400_001'
+// - displayId without random: 'ORD-2025-0115-001'
+```
+
+**Root Cause**: Distributed P2P systems allow multiple devices to write independently. Sequential ID generation assumes single writer, causing collisions when offline devices sync.
+
+**Collision Scenario**:
+```
+Device A (offline) → generates 'order_20250115_001'
+Device B (offline) → generates 'order_20250115_001'
+Both devices sync → COLLISION → data loss or undefined behavior
+```
+
+**✅ DO: UUID v4 (Recommended)**
+
+```dart
+import 'package:uuid/uuid.dart';
+
+final uuid = Uuid();
+final orderId = uuid.v4(); // "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      '_id': orderId,
+      'orderNumber': '#42',
+      'status': 'pending',
+      'createdAt': DateTime.now().toIso8601String(),
+    }
+  },
+);
+```
+
+**Why UUID v4?**
+- **Collision-free**: ~1 in 2^61 for 1 billion IDs
+- **No coordination required**: Devices generate IDs independently
+- **Aligns with Ditto**: Native auto-generated IDs are 128-bit UUIDs
+- **Platform-agnostic**: UUID libraries available on all platforms
+
+**Alternative Patterns**:
+
+**Option 2: Auto-Generated (Simplest)**
+```dart
+// Omit _id, Ditto auto-generates UUID
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      // No _id - Ditto generates automatically
+      'orderNumber': '#42',
+      'status': 'pending',
+    }
+  },
+);
+```
+
+**Option 3: Composite Keys (Advanced)**
+```dart
+{
+  "_id": {
+    "locationId": "store_001",
+    "orderId": "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+  },
+  // Duplicate for queries (POJO/DTO pattern)
+  "locationId": "store_001",
+  "orderId": "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+}
+```
+
+**Option 4: ULID (Time-Ordered)**
+```dart
+import 'package:ulid/ulid.dart';
+
+final ulid = Ulid().toString(); // "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+```
+
+**Decision Tree**:
+```
+Need document _id?
+  ↓
+Simplest approach?
+  ↓ YES → Omit _id (auto-generated)
+  ↓ NO
+  ↓
+Time-ordered sorting required?
+  ↓ YES → Use ULID
+  ↓ NO
+  ↓
+Permission scoping needed?
+  ↓ YES → Use Composite Keys
+  ↓ NO
+  ↓
+→ Use UUID v4 (general-purpose, recommended)
+```
+
+**Human-Readable Display**:
+```dart
+// Add display fields alongside UUID with random suffix
+import 'dart:math';
+
+final now = DateTime.now();
+final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+final randomSuffix = Random().nextInt(0xFFFF).toRadixString(16).toUpperCase().padLeft(4, '0');
+final displayId = 'ORD-$dateStr-$randomSuffix';  // "ORD-20251219-A7F3"
+
+{
+  "_id": "550e8400-e29b-41d4-a716-446655440000",  // UUID (collision-free)
+  "displayId": "ORD-2025-1219-A7F3"               // Display (date + random)
+}
+
+// ⚠️ NOTE: displayId does not need to be globally unique (it's not the document ID)
+// Random suffix reduces user confusion, but not required for system correctness
+```
+
+**Migration from Sequential IDs (Dual-Write Pattern)**:
+```dart
+final uuid = Uuid();
+final newOrderId = uuid.v4();
+final legacyOrderId = 'order_20250115_001';
+
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      '_id': newOrderId,                // New UUID (primary)
+      'legacyOrderId': legacyOrderId,   // Keep for backward compatibility
+      'orderNumber': '#42',
+    }
+  },
+);
+```
+
+**Why This Pattern?**
+- Provides collision-free IDs in distributed systems
+- Supports migration from legacy sequential IDs
+- Balances simplicity (UUID v4) with flexibility (alternatives)
+
+**See Also**: `examples/id-generation-patterns.dart`
+
+---
+
 ## Quick Reference Checklist
 
+- [ ] **ID Generation**: Use UUID v4 (or auto-generated IDs) for distributed systems, NOT sequential IDs
+- [ ] **Display IDs**: Consider random suffix for displayId fields (e.g., "ORD-20251219-A7F3") to reduce user confusion
 - [ ] **Arrays**: Convert mutable arrays to MAP structures (use keys instead of indices)
 - [ ] **Denormalization**: Embed data that's always retrieved together (avoid sequential queries)
 - [ ] **Field Updates**: Use field-level UPDATE, not full document replacement

@@ -362,6 +362,82 @@ await ditto.store.execute(
 
 ---
 
+### Counter Anti-Patterns and Alternatives
+
+**⚠️ CRITICAL: Don't Use Counters for Derived Values**
+
+Before implementing a counter field, ask: "Can this be calculated from existing data?"
+
+❌ **DON'T**: Use counters for values derivable from existing data
+
+```dart
+// ❌ BAD: Inventory counter requiring synchronization
+{
+  "_id": "product_123",
+  "initialStock": 100,
+  "currentStock": 85  // COUNTER type - updated on every order
+}
+
+// Problem: Requires cross-collection updates (orders → products)
+// When order created → decrement product.currentStock
+// Complexity: Synchronization, error handling, rollback on cancellation
+```
+
+✅ **DO**: Calculate derived values in application code
+
+```dart
+// ✅ GOOD: Calculate inventory on-demand
+{
+  "_id": "product_123",
+  "initialStock": 100  // REGISTER - never changes
+}
+
+// orders collection (separate, independent)
+{
+  "_id": "order_456",
+  "items": {
+    "product_123": {"quantity": 5}
+  }
+}
+
+// Calculate current stock in app
+final ordersResult = await ditto.store.execute(
+  'SELECT items FROM orders WHERE items.product_123 != null'
+);
+final totalOrdered = ordersResult.items.fold<int>(
+  0,
+  (sum, order) => sum + (order.value['items']['product_123']['quantity'] as int)
+);
+final currentStock = initialStock - totalOrdered;
+```
+
+**Why Calculate Instead of Counter?**
+- ✅ Single source of truth (no synchronization needed)
+- ✅ Simpler logic (no cross-collection updates)
+- ✅ Easier debugging (audit trail in order history)
+- ✅ Avoids JOIN complexity (no foreign key updates)
+- ✅ Self-correcting (recalculate from orders if mismatch)
+
+**When Counters ARE Appropriate**:
+- View counts, like counts (independent of other data)
+- Session counters, usage metrics (not derived from documents)
+- Vote tallies, rating scores (aggregated from many sources)
+
+**Decision Tree**:
+```
+Need to track a numeric value?
+  ↓
+Can it be calculated from existing documents? (e.g., sum, count)
+  ↓ YES → Calculate in app (DON'T use counter)
+  ↓ NO
+  ↓
+Is it independent data? (not derived)
+  ↓ YES → Use COUNTER type (SDK 4.14.0+) or PN_INCREMENT
+  ↓ NO → Reconsider design
+```
+
+---
+
 ### DQL Subscription Forward-Compatibility (SDK 4.5+)
 
 **⚠️ CRITICAL**: DQL subscriptions require SDK v4.5+ on ALL peers. Different wire protocol format prevents older peers from processing DQL subscription requests.
@@ -1822,6 +1898,412 @@ await ditto.store.execute(
 1. Audit nested field updates
 2. Add explicit MAP collection definitions
 3. Enable on all peers simultaneously
+
+---
+
+## ID Generation Strategies for Distributed Systems
+
+### ⚠️ CRITICAL: Avoid Sequential IDs in Distributed Databases
+
+Sequential IDs cause collisions when multiple devices write independently in offline-first, P2P mesh architectures.
+
+**Problem Scenario:**
+```dart
+// ❌ BAD: Sequential ID generation
+final orderId = 'order_${DateTime.now().toString()}_001';
+
+// Collision scenario:
+// - Device A offline at 2025-01-15: generates "order_20250115_001"
+// - Device B offline at 2025-01-15: generates "order_20250115_001"
+// - Both devices sync → COLLISION → data loss or undefined behavior
+```
+
+**Why Sequential IDs Fail:**
+- Assumes single writer (centralized system assumption)
+- Multiple devices independently generate IDs offline
+- No coordination mechanism to prevent duplicates
+- Last-write-wins (LWW) may overwrite valid data
+
+---
+
+### Recommended Patterns
+
+#### Pattern 1: UUID v4 (Primary Recommendation)
+
+**✅ DO: Use UUID v4 for distributed-safe ID generation**
+
+```dart
+import 'package:uuid/uuid.dart';
+
+final uuid = Uuid();
+final orderId = uuid.v4(); // "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      '_id': orderId,
+      'orderNumber': '#42',
+      'status': 'pending',
+      'createdAt': DateTime.now().toIso8601String(),
+    }
+  },
+);
+```
+
+**Why UUID v4?**
+- **Collision-free**: ~1 in 2^61 collision probability for 1 billion IDs
+- **No coordination required**: Devices generate IDs independently
+- **Aligns with Ditto**: Native auto-generated IDs are 128-bit UUIDs
+- **Platform-agnostic**: UUID libraries available on all platforms
+- **Industry standard**: Widely adopted for distributed systems
+
+---
+
+#### Pattern 2: Auto-Generated (Simplest)
+
+**✅ DO: Omit `_id` to let Ditto auto-generate UUIDs**
+
+```dart
+// Simplest approach - omit _id, Ditto auto-generates 128-bit UUID
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      // No _id field - Ditto generates UUID automatically
+      'orderNumber': '#42',
+      'status': 'pending',
+      'createdAt': DateTime.now().toIso8601String(),
+    }
+  },
+);
+```
+
+**When to use:**
+- Internal documents where ID format doesn't matter
+- Simplest implementation (no external library needed)
+- Prefer explicit UUID v4 when ID control is desired
+
+---
+
+#### Pattern 3: Composite Keys (Advanced)
+
+**✅ DO: Use composite keys for permission scoping or query optimization**
+
+```dart
+final uuid = Uuid();
+final locationId = 'LondonLiverpoolStreet';
+final orderId = uuid.v4();
+
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      '_id': {
+        'locationId': locationId,
+        'orderId': orderId,
+      },
+      // Duplicate for POJO/DTO pattern (query-friendly)
+      'locationId': locationId,
+      'orderId': orderId,
+      'status': 'pending',
+    }
+  },
+);
+```
+
+**When to use:**
+- Multi-tenant systems with permission scoping
+- Query optimization (indexed composite fields)
+- Hierarchical data organization
+
+**Trade-offs:**
+- Higher complexity (object-based IDs)
+- Requires field duplication for efficient queries
+- Better for advanced use cases
+
+---
+
+#### Pattern 4: ULID (Time-Ordered)
+
+**✅ DO: Use ULID when chronological ordering is required**
+
+```dart
+import 'package:ulid/ulid.dart';
+
+final ulid = Ulid().toString(); // "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+
+await ditto.store.execute(
+  'INSERT INTO events DOCUMENTS (:event)',
+  arguments: {
+    'event': {
+      '_id': ulid,
+      'type': 'user_action',
+      'timestamp': DateTime.now().toIso8601String(),
+    }
+  },
+);
+```
+
+**When to use:**
+- Time-based queries requiring chronological ordering
+- Lexicographically sortable IDs (first 48 bits = millisecond timestamp)
+- Event logs, audit trails, time-series data
+
+**Trade-offs:**
+- Requires external library (ulid package)
+- Less familiar to developers than UUID
+- Still collision-free with randomness component
+
+---
+
+### Decision Tree
+
+Use this decision tree to choose the right ID generation pattern:
+
+```
+Need to generate document _id?
+  ↓
+Human-readable required for debugging?
+  ↓ YES → Add display field alongside UUID
+  |         (_id: UUID, displayId: "ORD-2025-042")
+  ↓ NO
+  ↓
+Chronological sorting required?
+  ↓ YES → Use ULID (time-ordered)
+  ↓ NO
+  ↓
+Permission scoping needed?
+  ↓ YES → Use Composite Keys
+  ↓ NO
+  ↓
+Want simplest approach?
+  ↓ YES → Omit _id (auto-generated)
+  ↓ NO
+  ↓
+→ Use UUID v4 (general-purpose, recommended)
+```
+
+---
+
+### Platform Implementations
+
+#### Dart/Flutter
+
+```dart
+import 'package:uuid/uuid.dart';
+
+final uuid = Uuid();
+final id = uuid.v4(); // "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+```
+
+**Add to `pubspec.yaml`:**
+```yaml
+dependencies:
+  uuid: ^4.2.0
+```
+
+#### JavaScript/TypeScript
+
+```javascript
+import { v4 as uuidv4 } from 'uuid';
+
+const id = uuidv4(); // "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+```
+
+**Install via npm:**
+```bash
+npm install uuid
+```
+
+#### Swift
+
+```swift
+import Foundation
+
+let id = UUID().uuidString.lowercased() // "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+```
+
+**Native Foundation framework** (no external dependency)
+
+#### Kotlin
+
+```kotlin
+import java.util.UUID
+
+val id = UUID.randomUUID().toString() // "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
+```
+
+**Native Java UUID** (no external dependency)
+
+---
+
+### Human-Readable Display IDs
+
+**✅ DO: Combine UUID (primary key) with human-readable display fields**
+
+```dart
+import 'dart:math';
+import 'package:uuid/uuid.dart';
+
+final uuid = Uuid();
+final orderId = uuid.v4();
+
+// Generate human-readable display ID with random suffix
+final date = DateTime.now();
+final dateStr = '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
+final randomSuffix = Random().nextInt(0xFFFF).toRadixString(16).toUpperCase().padLeft(4, '0');
+final displayId = 'ORD-$dateStr-$randomSuffix';  // e.g., "ORD-20251219-A7F3"
+
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      '_id': orderId,                    // UUID (primary key, collision-free)
+      'displayId': displayId,            // Human-readable display (date + random)
+      'status': 'pending',
+    }
+  },
+);
+```
+
+**⚠️ NOTE: displayId does not need to be globally unique (it's not the document ID)**
+
+**Why random suffix?**
+- Reduces likelihood of confusion when displaying multiple orders to users
+- Maintains human-readable format with better user experience
+- Random component helps avoid duplicate display IDs on same day
+- Not required for system correctness (document uniqueness is ensured by _id)
+
+**Benefits:**
+- UUID ensures collision-free primary key (document uniqueness)
+- Display fields improve debugging and UI user experience
+- Best of both worlds: safety + readability
+
+**❌ DON'T: Sequential displayId without random component (poor UX)**
+```dart
+// ❌ BAD: Sequential displayId (poor user experience)
+final displayId = 'ORD-${dateStr}-001';  // Multiple devices can generate same display ID
+```
+
+---
+
+### Migration from Sequential IDs
+
+**Dual-Write Pattern** (Recommended for existing apps):
+
+```dart
+import 'package:uuid/uuid.dart';
+
+final uuid = Uuid();
+
+// Step 1: Generate new UUID
+final newOrderId = uuid.v4();
+
+// Step 2: Keep legacy ID for backward compatibility
+final legacyOrderId = 'order_20250115_001';
+
+// Step 3: Write with both IDs
+await ditto.store.execute(
+  '''
+  INSERT INTO orders DOCUMENTS (:order)
+  ''',
+  arguments: {
+    'order': {
+      '_id': newOrderId,         // New UUID (primary)
+      'legacyOrderId': legacyOrderId, // Keep for reference
+      'orderNumber': '#42',
+      'status': 'pending',
+      'createdAt': DateTime.now().toIso8601String(),
+    }
+  },
+);
+
+// Step 4: Query by new UUID (primary)
+final result = await ditto.store.execute(
+  'SELECT * FROM orders WHERE _id = :orderId',
+  arguments: {'orderId': newOrderId},
+);
+
+// Step 5: Query by legacy ID (if needed during migration)
+final legacyResult = await ditto.store.execute(
+  'SELECT * FROM orders WHERE legacyOrderId = :legacyId',
+  arguments: {'legacyId': legacyOrderId},
+);
+```
+
+**Migration Steps:**
+
+1. **Add UUID library** to project dependencies
+2. **Update ID generation code** to use UUID v4
+3. **Keep legacy ID** in separate field during transition period
+4. **Update queries** to use new UUID field as primary
+5. **Monitor for issues** during transition (logs, analytics)
+6. **Eventually remove legacy ID field** after full migration
+
+**Timeline:**
+- **Week 1-2**: Deploy dual-write pattern (both IDs)
+- **Week 3-4**: Verify all clients using new UUID queries
+- **Week 5+**: Remove legacy ID field from schema
+
+---
+
+### Anti-Patterns
+
+#### ❌ DON'T: Sequential IDs
+
+```dart
+// ❌ BAD: Date-based sequential IDs
+final orderId = 'order_${DateTime.now().toString()}_001';
+
+// ❌ BAD: Counter-based IDs
+final productId = 'product_$counter';
+
+// ❌ BAD: Timestamp-based IDs
+final eventId = 'event_${DateTime.now().millisecondsSinceEpoch}_001';
+```
+
+**Why These Fail:**
+- Multiple devices offline can generate identical IDs
+- Assumes centralized ID generation (not P2P safe)
+- Collision probability increases with device count
+- Last-write-wins overwrites valid data
+
+#### ❌ DON'T: Timestamp-Only IDs
+
+```dart
+// ❌ BAD: Timestamp-only (no randomness)
+final id = DateTime.now().millisecondsSinceEpoch.toString();
+
+// Problem: Multiple writes within same millisecond → collision
+```
+
+**Why This Fails:**
+- No randomness component
+- Collisions within same millisecond window
+- Especially problematic in high-throughput scenarios
+
+---
+
+### Best Practices Summary
+
+**✅ DO:**
+- Use UUID v4 for general-purpose distributed-safe IDs
+- Omit `_id` for simplest approach (auto-generated UUIDs)
+- Use composite keys for permission scoping
+- Use ULID for time-ordered requirements
+- Add human-readable display fields alongside UUIDs
+- Migrate from sequential IDs using dual-write pattern
+
+**❌ DON'T:**
+- Use sequential IDs in distributed systems
+- Generate IDs based on timestamps alone
+- Assume centralized ID coordination
+- Ignore collision risks in offline-first scenarios
+
+**Key Insight**: In distributed, offline-first systems, collision-free ID generation is critical. UUID v4 provides the best balance of simplicity, safety, and platform support.
+
+---
 
 ### Document Size and Performance Guidelines
 

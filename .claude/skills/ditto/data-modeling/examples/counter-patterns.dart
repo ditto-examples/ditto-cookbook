@@ -1,48 +1,58 @@
 // ============================================================================
-// Counter Patterns (PN_INCREMENT and COUNTER Type)
+// Counter Patterns (COUNTER Type and PN_INCREMENT)
 // ============================================================================
 //
-// This example demonstrates distributed counter patterns in Ditto using
-// PN_INCREMENT operator and the new COUNTER type (Ditto 4.14.0+) to avoid
-// lost updates from concurrent increments.
+// SDK Version Detection:
+// - **Ditto 4.14.0+**: Use COUNTER type (RECOMMENDED for new projects)
+// - **Ditto <4.14.0**: Use PN_INCREMENT BY operator (legacy, backward compatibility)
 //
-// SDK VERSION AWARENESS:
-// - **Ditto <4.14.0**: Use PN_INCREMENT BY operator (legacy PN_COUNTER CRDT)
-// - **Ditto 4.14.0+**: Use COUNTER type (recommended for new implementations)
+// ⚠️ CRITICAL: Do You Even Need a Counter?
+// Before implementing counters, check if the value can be calculated from
+// existing data (e.g., inventory = initial stock - sum of orders).
+// Calculate in app when possible to avoid cross-collection synchronization.
 //
 // PATTERNS DEMONSTRATED:
-// 1. ❌ SET with read-increment-write (lost updates)
-// 2. ✅ PN_INCREMENT for distributed counters (all versions)
-// 3. ✅ COUNTER type with INCREMENT BY (Ditto 4.14.0+)
-// 4. ✅ COUNTER type with RESTART WITH (Ditto 4.14.0+)
-// 5. ✅ COUNTER type with RESTART (Ditto 4.14.0+)
-// 6. ✅ Like counters with PN_INCREMENT
-// 7. ✅ Inventory counters with PN_INCREMENT and COUNTER type
-// 8. ✅ Decrement using negative values
-// 9. ✅ Multiple counter fields in single document
-// 10. ✅ Counter initialization patterns
+// 1. ⚠️ Decision tree: When to use counters vs calculate
+// 2. ❌ Anti-pattern: Using counters for derived values (inventory example)
+// 3. ✅ Good pattern: Calculate from existing data (inventory from orders)
+// 4. ❌ SET with read-increment-write (lost updates)
+// 5. ✅ COUNTER type with INCREMENT BY (Ditto 4.14.0+) ← RECOMMENDED
+// 6. ✅ COUNTER type with RESTART WITH (Ditto 4.14.0+)
+// 7. ✅ COUNTER type with RESTART (Ditto 4.14.0+)
+// 8. ✅ PN_INCREMENT for backward compatibility (Ditto <4.14.0)
+// 9. ✅ Like counters with COUNTER type
+// 10. ✅ Vote tallies with COUNTER type
+// 11. ✅ Multiple counter fields in single document
+// 12. ✅ Counter initialization patterns
 //
 // WHY USE COUNTER OPERATIONS:
 // - Guarantees correct count even with concurrent increments
 // - No lost updates (all increments preserved during merge)
 // - Works offline (increments queued, applied during sync)
 // - Based on CRDT (Conflict-free Replicated Data Type)
-// - COUNTER type (4.14.0+) adds RESTART WITH and RESTART operations
+// - COUNTER type (4.14.0+) is recommended with RESTART WITH/RESTART operations
 //
-// WHEN TO USE COUNTER OPERATIONS:
-// - Like/unlike counts
-// - View counts
-// - Inventory adjustments (stock in/out)
-// - Vote tallies
-// - Session metrics
-// - Any counter that multiple devices modify concurrently
+// WHEN COUNTERS ARE APPROPRIATE:
+// - View counts, like counts (independent of other data)
+// - Session counters, usage metrics (not derived from documents)
+// - Vote tallies, rating scores (aggregated from many sources)
+//
+// WHEN TO AVOID COUNTERS:
+// - ❌ Inventory tracking (calculate: initialStock - sum(order quantities))
+// - ❌ Order counts per customer (calculate: COUNT from orders collection)
+// - ❌ Total revenue (calculate: SUM from orders collection)
+// - ❌ Any value derivable from existing documents
 //
 // WHEN TO USE COUNTER TYPE (4.14.0+) OVER PN_INCREMENT:
+// - New projects starting with SDK 4.14.0+ (RECOMMENDED)
 // - Need to set counter to specific value (RESTART WITH)
 // - Need to reset counter to zero (RESTART)
-// - Want explicit type declaration in schema
-// - Inventory recalibration after physical count
-// - Administrative resets (policy enforcement)
+// - Want explicit type declaration for clarity
+//
+// WHEN TO USE PN_INCREMENT:
+// - SDK version < 4.14.0 (no COUNTER type available)
+// - Maintaining compatibility with older peers
+// - Migration from legacy codebases
 //
 // WHEN NOT TO USE COUNTER OPERATIONS:
 // - Non-counter fields (use field-level UPDATE instead)
@@ -52,6 +62,104 @@
 // ============================================================================
 
 import 'package:ditto/ditto.dart';
+
+// ============================================================================
+// ANTI-PATTERN: Counters for Derived Values
+// ============================================================================
+
+/// ❌ BAD: Inventory counter (derived from orders, requires sync complexity)
+Future<void> inventoryCounterAntiPattern(Ditto ditto) async {
+  print('❌ ANTI-PATTERN: Inventory counter\n');
+
+  // BAD: Using counter for inventory
+  await ditto.store.execute(
+    '''
+    INSERT INTO products DOCUMENTS (:product)
+    ''',
+    arguments: {
+      'product': {
+        '_id': 'prod_123',
+        'name': 'Widget',
+        'currentStock': 100  // COUNTER type - will be decremented
+      }
+    }
+  );
+
+  // Problem: Every order must update product inventory
+  await ditto.store.execute(
+    '''
+    UPDATE COLLECTION products (currentStock COUNTER)
+    APPLY currentStock INCREMENT BY :change
+    WHERE _id = :productId
+    ''',
+    arguments: {'productId': 'prod_123', 'change': -5}
+  );
+
+  print('❌ Issues:');
+  print('   - Cross-collection synchronization required');
+  print('   - Complex rollback logic if order cancelled');
+  print('   - Potential for data inconsistency');
+  print('   - Harder to debug (inventory vs actual orders)');
+}
+
+/// ✅ GOOD: Calculate inventory from orders (app-side)
+Future<void> inventoryCalculationGoodPattern(Ditto ditto) async {
+  print('\n✅ GOOD PATTERN: Calculate inventory from orders\n');
+
+  // GOOD: Store initial stock only
+  await ditto.store.execute(
+    '''
+    INSERT INTO products DOCUMENTS (:product)
+    ''',
+    arguments: {
+      'product': {
+        '_id': 'prod_123',
+        'name': 'Widget',
+        'initialStock': 100  // REGISTER - never changes
+      }
+    }
+  );
+
+  // Orders stored independently (no cross-collection update needed)
+  await ditto.store.execute(
+    '''
+    INSERT INTO orders DOCUMENTS (:order)
+    ''',
+    arguments: {
+      'order': {
+        '_id': 'order_456',
+        'items': {
+          'prod_123': {'quantity': 5, 'price': 10.00}
+        }
+      }
+    }
+  );
+
+  // Calculate current stock on-demand in app
+  final productResult = await ditto.store.execute(
+    'SELECT initialStock FROM products WHERE _id = :id',
+    arguments: {'id': 'prod_123'}
+  );
+  final initialStock = productResult.items.first.value['initialStock'] as int;
+
+  final ordersResult = await ditto.store.execute(
+    'SELECT items FROM orders WHERE items.prod_123 != null'
+  );
+  final totalOrdered = ordersResult.items.fold<int>(
+    0,
+    (sum, order) {
+      final quantity = order.value['items']['prod_123']['quantity'] as int;
+      return sum + quantity;
+    }
+  );
+
+  final currentStock = initialStock - totalOrdered;
+  print('✅ Current stock: $currentStock (calculated from orders)');
+  print('   - No cross-collection updates');
+  print('   - Single source of truth (order history)');
+  print('   - Easy debugging (audit trail in orders)');
+  print('   - Self-correcting (recalculate if mismatch)');
+}
 
 // ============================================================================
 // ANTI-PATTERN: SET with Read-Increment-Write
