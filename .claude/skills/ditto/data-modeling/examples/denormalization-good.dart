@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // ============================================================================
 // Denormalization Patterns (Recommended for Ditto)
 // ============================================================================
@@ -13,10 +17,7 @@
 // 5. ✅ Selective denormalization (balance freshness vs convenience)
 // 6. ✅ Denormalized aggregates (engagement counters, NOT calculated totals)
 // 7. ✅ Reference + denormalized hybrid pattern
-//
-// ⚠️ WARNING: This file contains anti-patterns for demonstration purposes only.
-// The 'lineTotal' and 'totals' fields shown here should NOT be stored in production.
-// See Pattern 2.5 in SKILL.md for correct approach (calculate in app layer).
+// 8. ✅ Calculate derived values in app layer (NOT stored in documents)
 //
 // WHY DENORMALIZATION IN DITTO:
 // - No JOIN support in DQL
@@ -60,46 +61,39 @@ Future<void> createOrderWithEmbeddedItems(Ditto ditto, String orderId) async {
   final mouse = mouseResult.items.first.value;
 
   // Create order with denormalized product information
+  // ✅ IMPORTANT: Store only source data (unitPrice, quantity), NOT calculated fields
   await ditto.store.execute(
     '''
-    INSERT INTO orders (_id, customerId, status, lineItems, totals, createdAt)
-    VALUES (:orderId, :customerId, :status, :lineItems, :totals, :createdAt)
+    INSERT INTO orders (_id, customerId, status, lineItems, createdAt)
+    VALUES (:orderId, :customerId, :status, :lineItems, :createdAt)
     ''',
     arguments: {
       'orderId': orderId,
       'customerId': 'cust_123',
       'status': 'pending',
       'createdAt': DateTime.now().toIso8601String(),
-      // Embed complete line item data (snapshot)
+      // Embed complete line item data (snapshot at order time)
       'lineItems': {
         'item_1': {
           'productId': laptop['_id'],
-          // Denormalize product details (snapshot at order time)
+          // ✅ Denormalize product details (snapshot at order time)
           'productName': laptop['name'],
           'productSku': laptop['sku'],
-          'unitPrice': laptop['price'],
-          'quantity': 1,
-          // ⚠️ ANTI-PATTERN: lineTotal should NOT be stored (calculate in app)
-          'lineTotal': laptop['price'] * 1,
+          'unitPrice': laptop['price'], // ✅ Store source data
+          'quantity': 1, // ✅ Store source data
+          // ✅ lineTotal NOT stored - calculate in app: unitPrice * quantity
         },
         'item_2': {
           'productId': mouse['_id'],
           'productName': mouse['name'],
           'productSku': mouse['sku'],
-          'unitPrice': mouse['price'],
-          'quantity': 2,
-          // ⚠️ ANTI-PATTERN: lineTotal should NOT be stored (calculate in app)
-          'lineTotal': mouse['price'] * 2,
+          'unitPrice': mouse['price'], // ✅ Store source data
+          'quantity': 2, // ✅ Store source data
+          // ✅ lineTotal NOT stored - calculate in app: unitPrice * quantity
         },
       },
-      // ⚠️ ANTI-PATTERN: Totals should NOT be stored (calculate in app)
-      // Calculate: subtotal = sum(unitPrice * quantity), tax = subtotal * rate, total = subtotal + tax
-      'totals': {
-        'subtotal': (laptop['price'] as double) * 1 + (mouse['price'] as double) * 2,
-        'tax': 0.0,
-        'shipping': 0.0,
-        'total': (laptop['price'] as double) * 1 + (mouse['price'] as double) * 2,
-      },
+      // ✅ totals NOT stored - calculate in app layer from lineItems
+      // Benefits: Smaller documents, less sync traffic, always accurate
     },
   );
 
@@ -111,17 +105,35 @@ Future<void> createOrderWithEmbeddedItems(Ditto ditto, String orderId) async {
 
   if (orderResult.items.isNotEmpty) {
     final order = orderResult.items.first.value;
-    // All data available without additional queries!
+    final lineItems = order['lineItems'] as Map<String, dynamic>;
+
+    // ✅ Calculate totals in app layer (NOT stored in document)
+    double subtotal = 0.0;
     print('Order ${order['_id']}:');
     print('  Customer: ${order['customerId']}');
     print('  Status: ${order['status']}');
-    print('  Total: \$${order['totals']['total']}');
-
-    final lineItems = order['lineItems'] as Map<String, dynamic>;
     print('  Line items: ${lineItems.length}');
+
     for (final item in lineItems.values) {
-      print('    - ${item['productName']} x${item['quantity']} = \$${item['lineTotal']}');
+      // Calculate line total from source data
+      final lineTotal = (item['unitPrice'] as num) * (item['quantity'] as int);
+      print('    - ${item['productName']} x${item['quantity']} = \$${lineTotal.toStringAsFixed(2)}');
+      subtotal += lineTotal;
     }
+
+    // Calculate order totals from line items
+    final taxRate = 0.10; // Example: 10% tax
+    final tax = subtotal * taxRate;
+    final total = subtotal + tax;
+
+    print('  Subtotal: \$${subtotal.toStringAsFixed(2)}');
+    print('  Tax (10%): \$${tax.toStringAsFixed(2)}');
+    print('  Total: \$${total.toStringAsFixed(2)}');
+
+    // ✅ Benefits of calculating vs storing:
+    // - Smaller document size (no calculated fields)
+    // - Less sync traffic (no deltas for calculated values)
+    // - Always accurate (calculated from source data)
   }
 
   // ✅ SNAPSHOT SEMANTICS: Order preserves product info at purchase time
@@ -267,22 +279,23 @@ Future<void> createInvoiceWithCustomerInfo(Ditto ditto, String invoiceId) async 
   final customer = customerResult.items.first.value;
 
   // Create invoice with selective denormalization
+  // ✅ IMPORTANT: Store only source data (quantity, rate), NOT calculated amounts
   await ditto.store.execute(
     '''
     INSERT INTO invoices (
       _id, invoiceNumber, customerId,
-      billingInfo, items, totals, status, createdAt
+      billingInfo, items, status, createdAt
     )
     VALUES (
       :invoiceId, :invoiceNumber, :customerId,
-      :billingInfo, :items, :totals, :status, :createdAt
+      :billingInfo, :items, :status, :createdAt
     )
     ''',
     arguments: {
       'invoiceId': invoiceId,
       'invoiceNumber': 'INV-2024-001',
       'customerId': customer['_id'], // Keep reference
-      // Denormalize billing snapshot (point-in-time)
+      // ✅ Denormalize billing snapshot (point-in-time)
       'billingInfo': {
         'companyName': customer['companyName'],
         'billingAddress': customer['billingAddress'],
@@ -293,18 +306,12 @@ Future<void> createInvoiceWithCustomerInfo(Ditto ditto, String invoiceId) async 
       'items': {
         'item_1': {
           'description': 'Professional Services - January 2024',
-          'quantity': 40,
-          'rate': 150.00,
-          // ⚠️ ANTI-PATTERN: amount should NOT be stored (calculate as quantity * rate in app)
-          'amount': 6000.00,
+          'quantity': 40, // ✅ Store source data
+          'rate': 150.00, // ✅ Store source data
+          // ✅ amount NOT stored - calculate in app: quantity * rate
         },
       },
-      // ⚠️ ANTI-PATTERN: Totals should NOT be stored (calculate in app)
-      'totals': {
-        'subtotal': 6000.00,
-        'tax': 540.00,
-        'total': 6540.00,
-      },
+      // ✅ totals NOT stored - calculate in app layer from items
       'status': 'draft',
       'createdAt': DateTime.now().toIso8601String(),
     },
@@ -318,10 +325,25 @@ Future<void> createInvoiceWithCustomerInfo(Ditto ditto, String invoiceId) async 
 
   if (invoiceResult.items.isNotEmpty) {
     final invoice = invoiceResult.items.first.value;
+    final items = invoice['items'] as Map<String, dynamic>;
+
+    // ✅ Calculate totals in app layer (NOT stored in document)
+    double subtotal = 0.0;
+    for (final item in items.values) {
+      final amount = (item['quantity'] as num) * (item['rate'] as num);
+      subtotal += amount;
+    }
+
+    final taxRate = 0.09; // Example: 9% tax
+    final tax = subtotal * taxRate;
+    final total = subtotal + tax;
+
     print('✅ Invoice ${invoice['invoiceNumber']}:');
     print('  Bill to: ${invoice['billingInfo']['companyName']}');
     print('  Address: ${invoice['billingInfo']['billingAddress']}');
-    print('  Total: \$${invoice['totals']['total']}');
+    print('  Subtotal: \$${subtotal.toStringAsFixed(2)}');
+    print('  Tax (9%): \$${tax.toStringAsFixed(2)}');
+    print('  Total: \$${total.toStringAsFixed(2)}');
   }
 
   // For payment processing, query fresh customer data using customerId

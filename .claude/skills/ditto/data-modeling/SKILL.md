@@ -390,7 +390,7 @@ final total = calculateTotal(subtotal, 0.1); // 10% tax
 | Aggregates (sum, count, average) | ✅ Calculate in app |
 | UI state (isExpanded, selected) | ❌ Never store (local state only) |
 
-**See Also**: `.claude/guides/best-practices/ditto.md#exclude-unnecessary-fields-from-documents`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 1812-1892: Exclude Unnecessary Fields from Documents)`
 
 ---
 
@@ -642,6 +642,31 @@ await ditto.store.execute(
 ```
 
 **Why**: `COUNTER` type and `PN_INCREMENT` use CRDT (Conflict-free Replicated Data Type) semantics that merge concurrent increments/decrements correctly. SET operations use last-write-wins, losing concurrent updates. COUNTER type (4.14.0+) is recommended for new projects, providing `RESTART WITH` and `RESTART` operations for controlled value setting.
+
+---
+
+### PN_INCREMENT vs COUNTER Type Comparison
+
+Quick reference for choosing between PN_INCREMENT (legacy) and COUNTER type (SDK 4.14.0+):
+
+| Feature | PN_INCREMENT | COUNTER Type (SDK 4.14.0+) |
+|---------|--------------|---------------------------|
+| **SDK Version** | All versions | SDK 4.14.0+ |
+| **Syntax** | `PN_INCREMENT BY 1.0` | `INCREMENT BY 1` |
+| **Set Value** | Not supported | `RESTART WITH 100` |
+| **Reset to Zero** | Not supported | `RESTART` |
+| **Explicit Type** | No (inferred) | Yes (declared in collection) |
+| **Use Case** | Backward compatibility | New projects on 4.14.0+ |
+| **CRDT Type** | Legacy PN_COUNTER | Native COUNTER |
+| **Recommended** | Existing projects | ✅ New implementations |
+| **Operations** | Increment/Decrement only | Increment/Decrement/Restart |
+| **Declaration** | None required | `UPDATE COLLECTION x (field COUNTER)` |
+
+**Migration Note**: Existing projects using `PN_INCREMENT` should continue using it for backward compatibility. New projects on SDK 4.14.0+ should use `COUNTER` type for explicit type declaration and additional operations. Contact Ditto support before migrating existing counters from PN_INCREMENT to COUNTER type.
+
+**See Also**: [counter-patterns.dart](examples/counter-patterns.dart) for comprehensive examples
+
+---
 
 ❌ **DON'T**: Use SET for counters that may be updated concurrently
 
@@ -1136,7 +1161,7 @@ await ditto.store.execute(
 
 **Why**: Type checking operators add query overhead. Validate at insert time to guarantee schema compliance without runtime checks. Use type checking only for defensive queries on untrusted data or polymorphic fields.
 
-**See Also**: `.claude/guides/best-practices/ditto.md#type-checking-operators`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 1156-1244: Type Checking Operators)`
 
 ---
 
@@ -1523,7 +1548,7 @@ If migrating from inconsistent naming:
 - Reduces query errors from typos
 - Aligns with platform conventions (Dart, SQL, etc.)
 
-**See Also**: `.claude/guides/best-practices/ditto.md#document-structure-best-practices`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 1703-1809: Document Structure Best Practices)`
 
 ---
 

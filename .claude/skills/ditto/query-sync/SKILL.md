@@ -692,7 +692,7 @@ final observer = ditto.store.registerObserverWithSignalNext(
 
 **Why**: On Bluetooth LE (~20 KB/s max), unnecessary fields cause significant performance degradation. Use projections to minimize synced data.
 
-**See Also**: `.claude/guides/best-practices/ditto.md#projections-field-selection`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 596-623: Projections - Field Selection)`
 
 ---
 
@@ -766,7 +766,7 @@ final result = await ditto.store.execute(
 // Returns unique location IDs
 ```
 
-**See Also**: `.claude/guides/best-practices/ditto.md#distinct-keyword`, `.claude/guides/best-practices/ditto.md#document-structure-best-practices`, `data-modeling/examples/complex-id-patterns.dart`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 626-652: DISTINCT Keyword)`, `.claude/guides/best-practices/ditto.md (lines 1703-1809: Document Structure Best Practices)`, `data-modeling/examples/complex-id-patterns.dart`
 
 ---
 
@@ -833,7 +833,7 @@ final avgPrice = (await ditto.store.execute(
 
 **Why**: Aggregates create a "dam" in the pipeline—all matching documents buffer in memory before returning results. Use `WHERE` filters to reduce buffer size. For existence checks, `LIMIT 1` avoids buffering entirely.
 
-**See Also**: `.claude/guides/best-practices/ditto.md#aggregate-functions`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 655-691: Aggregate Functions)`
 
 ---
 
@@ -894,7 +894,7 @@ final result = await ditto.store.execute(
 
 **Why**: Ditto has no `JOIN` support. `GROUP BY` operates on single collections only. For cross-collection aggregation, query separately and join in application code. Consider denormalizing related data instead.
 
-**See Also**: `.claude/guides/best-practices/ditto.md#group-by`, `.claude/guides/best-practices/ditto.md#denormalization-for-performance`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 695-724: GROUP BY)`, `.claude/guides/best-practices/ditto.md (lines 525-556: Denormalization for Performance)`
 
 ---
 
@@ -946,7 +946,7 @@ final result = await ditto.store.execute(
 
 **Why**: `OFFSET` requires sequential skipping. For deep pagination, use cursor-based approaches (WHERE with timestamp/ID). Always combine `LIMIT` with `ORDER BY` for predictable results.
 
-**See Also**: `.claude/guides/best-practices/ditto.md#limit-and-offset`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 778-807: LIMIT and OFFSET)`
 
 ---
 
@@ -1031,7 +1031,7 @@ field SIMILAR TO 'prefix%' // Use LIKE 'prefix%' instead
 7. Object introspection (object_keys, object_values)
 8. Advanced patterns (SIMILAR TO, regexp_like)
 
-**See Also**: `.claude/guides/best-practices/ditto.md#dql-operator-expressions`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 820-1625: DQL Operator Expressions)`
 
 ---
 
@@ -1083,12 +1083,12 @@ field SIMILAR TO 'prefix%' // Use LIKE 'prefix%' instead
 ### Main Guide
 - **API Version Awareness**: `.claude/guides/best-practices/ditto.md` lines 64-108
 - **SELECT Statements**: `.claude/guides/best-practices/ditto.md#select-statements`
-- **Projections**: `.claude/guides/best-practices/ditto.md#projections-field-selection`
-- **DISTINCT**: `.claude/guides/best-practices/ditto.md#distinct-keyword`
-- **Aggregate Functions**: `.claude/guides/best-practices/ditto.md#aggregate-functions`
-- **GROUP BY**: `.claude/guides/best-practices/ditto.md#group-by`
+- **Projections**: `.claude/guides/best-practices/ditto.md (lines 596-623: Projections - Field Selection)`
+- **DISTINCT**: `.claude/guides/best-practices/ditto.md (lines 626-652: DISTINCT Keyword)`
+- **Aggregate Functions**: `.claude/guides/best-practices/ditto.md (lines 655-691: Aggregate Functions)`
+- **GROUP BY**: `.claude/guides/best-practices/ditto.md (lines 695-724: GROUP BY)`
 - **ORDER BY**: `.claude/guides/best-practices/ditto.md#order-by`
-- **LIMIT/OFFSET**: `.claude/guides/best-practices/ditto.md#limit-and-offset`
+- **LIMIT/OFFSET**: `.claude/guides/best-practices/ditto.md (lines 778-807: LIMIT and OFFSET)`
 - **Subscription Patterns**: `.claude/guides/best-practices/ditto.md` lines 1782+
 - **Query Result Handling**: `.claude/guides/best-practices/ditto.md#query-result-handling`
 

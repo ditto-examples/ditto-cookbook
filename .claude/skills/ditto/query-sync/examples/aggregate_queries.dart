@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // ✅ GOOD: Aggregate function patterns (COUNT, SUM, AVG, MIN, MAX, GROUP BY, HAVING)
 // Demonstrates proper aggregate usage with WHERE filters and memory management
 

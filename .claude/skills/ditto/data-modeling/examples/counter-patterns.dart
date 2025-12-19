@@ -1,10 +1,18 @@
+// SDK Version: All (COUNTER type requires 4.14.0+, PN_INCREMENT available in all versions)
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // ============================================================================
 // Counter Patterns (COUNTER Type and PN_INCREMENT)
 // ============================================================================
 //
 // SDK Version Detection:
-// - **Ditto 4.14.0+**: Use COUNTER type (RECOMMENDED for new projects)
-// - **Ditto <4.14.0**: Use PN_INCREMENT BY operator (legacy, backward compatibility)
+// - **Ditto 4.14.0+**: Use COUNTER type ✅ PRIMARY RECOMMENDATION
+// - **Ditto <4.14.0**: Use PN_INCREMENT BY operator (backward compatibility only)
+//
+// ⚠️ IMPORTANT: This file demonstrates both approaches, with COUNTER type (lines 670+)
+// being the RECOMMENDED pattern for all new projects on SDK 4.14.0+. PN_INCREMENT
+// patterns (lines 208-667) are shown for backward compatibility with older SDKs.
 //
 // ⚠️ CRITICAL: Do You Even Need a Counter?
 // Before implementing counters, check if the value can be calculated from
@@ -206,8 +214,11 @@ Future<void> antiPattern_ReadIncrementWrite(Ditto ditto, String postId) async {
 }
 
 // ============================================================================
-// RECOMMENDED PATTERN: PN_INCREMENT for Concurrent Safety
+// PN_INCREMENT Pattern (Backward Compatibility - SDK <4.14.0)
 // ============================================================================
+//
+// ⚠️ NOTE: For SDK 4.14.0+, use COUNTER type instead (see line 670+).
+// PN_INCREMENT patterns below are for backward compatibility only.
 
 /// ✅ GOOD: Use PN_INCREMENT for distributed counter
 Future<void> incrementLikeCount(Ditto ditto, String postId) async {
@@ -667,8 +678,11 @@ Future<void> queryByCounters(Ditto ditto) async {
 }
 
 // ============================================================================
-// NEW PATTERN: COUNTER Type (Ditto 4.14.0+)
+// ✅ PRIMARY RECOMMENDATION: COUNTER Type (SDK 4.14.0+)
 // ============================================================================
+//
+// For new projects on SDK 4.14.0+, use COUNTER type with explicit declaration.
+// Provides INCREMENT BY, RESTART WITH, and RESTART operations.
 
 /// ✅ GOOD: Use COUNTER type for counters with settable capabilities
 Future<void> counterType_IncrementPattern(

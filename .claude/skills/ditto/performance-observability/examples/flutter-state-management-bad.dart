@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: Flutter
+// Last Updated: 2025-12-19
+//
 // ============================================================================
 // Flutter State Management Anti-Patterns with Ditto Observers
 // ============================================================================

@@ -1,19 +1,25 @@
+// SDK Version: All (registerObserverWithSignalNext requires non-Flutter SDKs or Flutter v5.0+)
+// Platform: Non-Flutter (Flutter SDK v4.x NOT supported)
+// Last Updated: 2025-12-19
+//
 // ============================================================================
 // Observer Backpressure Management
 // ============================================================================
 //
-// This example demonstrates proper observer backpressure handling in Ditto,
-// preventing update queue buildup and ensuring smooth UI performance.
+// ⚠️⚠️⚠️ NON-FLUTTER SDKs ONLY (or Flutter SDK v5.0+) ⚠️⚠️⚠️
 //
-// ⚠️ IMPORTANT: This example uses registerObserverWithSignalNext which is NOT available
-// in Flutter SDK v4.14.0 and earlier. Backpressure control via signalNext is only
-// available in non-Flutter SDKs (Swift, JS, Kotlin).
+// This example uses registerObserverWithSignalNext which is NOT available in
+// Flutter SDK v4.14.0 and earlier.
 //
-// For Flutter SDK v4.x patterns (no backpressure control), see:
-// - flutter-observer-v4-patterns.dart
-// - flutter-observer-performance-v4.dart
+// - ❌ **Flutter SDK v4.x**: This pattern does NOT work. Use registerObserver instead.
+// - ✅ **Non-Flutter SDKs**: This pattern works for backpressure control.
+// - 📅 **Flutter SDK v5.0+**: Support planned for future release.
 //
-// Flutter SDK v5.0 will add support for registerObserverWithSignalNext.
+// **Flutter developers (v4.x)**: See flutter-observer-v4-patterns.dart or
+// flutter-observer-performance-v4.dart for Flutter-compatible patterns.
+//
+// This example demonstrates proper observer backpressure handling in non-Flutter
+// SDKs, preventing update queue buildup and ensuring smooth performance.
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Lightweight onChange callback

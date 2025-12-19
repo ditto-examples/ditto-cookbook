@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // ============================================================================
 // Over-Normalization Anti-Patterns (Requires Multiple Queries)
 // ============================================================================

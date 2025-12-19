@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: Flutter
+// Last Updated: 2025-12-19
+//
 // Example: Observer Pattern Best Practices
 // This file demonstrates proper observer usage and backpressure control
 //

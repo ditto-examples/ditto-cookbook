@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // Foreign-Key Relationships in Ditto
 //
 // This example demonstrates when and how to use foreign-key relationships

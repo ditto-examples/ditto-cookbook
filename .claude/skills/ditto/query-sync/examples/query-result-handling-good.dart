@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // Example: Query Result Handling Best Practices
 // This file demonstrates proper QueryResultItem extraction to prevent memory leaks
 

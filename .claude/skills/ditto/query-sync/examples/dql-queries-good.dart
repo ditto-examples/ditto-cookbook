@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // Example: DQL Query Best Practices
 // This file demonstrates the CURRENT, recommended DQL API patterns
 

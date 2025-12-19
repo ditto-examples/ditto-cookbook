@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // ✅ GOOD: ORDER BY, LIMIT, and OFFSET patterns
 // Demonstrates proper sorting, pagination, and top-N queries
 

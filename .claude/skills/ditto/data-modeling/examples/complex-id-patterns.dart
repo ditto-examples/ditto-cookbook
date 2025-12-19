@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // Complex Object _id Patterns for Ditto
 //
 // This example demonstrates using complex object _id (composite keys) for

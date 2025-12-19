@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // Example: Subscription and Observer Lifecycle Anti-Patterns
 // This file demonstrates common mistakes that lead to memory leaks and bugs
 

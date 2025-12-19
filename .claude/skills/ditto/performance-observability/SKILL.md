@@ -1012,7 +1012,7 @@ final result = await ditto.store.execute(
 
 **Why**: When `_id` is in projections, results are already unique—`DISTINCT` adds no value but buffers all rows in memory. On mobile devices with limited memory, this can cause crashes.
 
-**See**: `.claude/guides/best-practices/ditto.md#distinct-keyword`, `.claude/skills/ditto/query-sync/SKILL.md#10-distinct-with-_id-priority-high`
+**See**: `.claude/guides/best-practices/ditto.md (lines 626-652: DISTINCT Keyword)`, `.claude/skills/ditto/query-sync/SKILL.md#10-distinct-with-_id-priority-high`
 
 ---
 
@@ -1079,7 +1079,7 @@ final hasActive = (await ditto.store.execute(
 - `LIMIT 1` existence check: Minimal memory, returns after first match
 - `GROUP BY`: Result bounded by unique group values (typically small)
 
-**See**: `.claude/guides/best-practices/ditto.md#aggregate-functions`, `.claude/skills/ditto/query-sync/SKILL.md#11-unbounded-aggregates-priority-critical`
+**See**: `.claude/guides/best-practices/ditto.md (lines 655-691: Aggregate Functions)`, `.claude/skills/ditto/query-sync/SKILL.md#11-unbounded-aggregates-priority-critical`
 
 ---
 
@@ -1124,7 +1124,7 @@ final result = await ditto.store.execute(
 - OFFSET 10000: significant degradation
 - Cursor-based: consistent regardless of depth
 
-**See**: `.claude/guides/best-practices/ditto.md#limit-and-offset`, `.claude/skills/ditto/query-sync/SKILL.md#13-large-offset-values-priority-medium`
+**See**: `.claude/guides/best-practices/ditto.md (lines 778-807: LIMIT and OFFSET)`, `.claude/skills/ditto/query-sync/SKILL.md#13-large-offset-values-priority-medium`
 
 ---
 
@@ -1240,7 +1240,7 @@ final observer = ditto.store.registerObserver(
 - Date operators acceptable (negligible overhead in SDK 4.11+)
 - Avoid object_keys, object_values, SIMILAR TO, type() in observers
 
-**See Also**: `.claude/guides/best-practices/ditto.md#operator-performance-considerations`, `.claude/skills/ditto/query-sync/SKILL.md#14-expensive-operator-usage-priority-medium`
+**See Also**: `.claude/guides/best-practices/ditto.md (lines 1569-1625: Operator Performance Considerations)`, `.claude/skills/ditto/query-sync/SKILL.md#14-expensive-operator-usage-priority-medium`
 
 ---
 

@@ -1,3 +1,7 @@
+// SDK Version: 4.12+
+// Platform: Flutter
+// Last Updated: 2025-12-19
+//
 // Example: DQL Query Anti-Patterns
 // This file demonstrates DEPRECATED and problematic query patterns to AVOID
 

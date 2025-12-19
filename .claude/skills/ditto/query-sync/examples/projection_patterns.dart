@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // ✅ GOOD: Projection patterns for SELECT queries
 // Demonstrates proper field selection, aliases, and calculated fields
 

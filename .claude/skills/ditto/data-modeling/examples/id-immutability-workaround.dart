@@ -1,3 +1,7 @@
+// SDK Version: All
+// Platform: All
+// Last Updated: 2025-12-19
+//
 // _id Immutability Workaround for Ditto
 //
 // This example demonstrates the proper way to "change" a document's _id
