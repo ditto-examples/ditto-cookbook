@@ -1,9 +1,52 @@
 ---
 name: query-sync
-description: Validates Ditto DQL queries, subscriptions, and observer patterns. Prevents memory leaks from uncanceled subscriptions and retained QueryResultItems. Enforces current DQL API usage (SDK 4.12+ deprecates legacy builder methods in non-Flutter SDKs). Optimizes subscription scope and observer performance. Use when writing DQL queries, creating subscriptions, setting up observers, or managing query result handling.
+description: |
+  Validates Ditto DQL queries, subscriptions, and observer patterns.
+
+  CRITICAL ISSUES PREVENTED:
+  - Memory leaks from uncanceled subscriptions and QueryResultItems
+  - Legacy API usage (non-Flutter: deprecated SDK 4.12+, removed v5)
+  - Broad subscriptions causing bandwidth waste
+  - Incorrect observer selection and backpressure management
+
+  TRIGGERS:
+  - Writing DQL queries (execute())
+  - Creating subscriptions (registerSubscription())
+  - Setting up observers (registerObserver*)
+  - Managing QueryResult/QueryResultItem handling
+  - Using legacy builder methods (.collection(), .find(), .upsert())
+
+  PLATFORMS: Flutter (Dart), JavaScript, Swift, Kotlin
 ---
 
 # Ditto Query and Sync Patterns
+
+## Table of Contents
+
+- [Purpose](#purpose)
+- [When This Skill Applies](#when-this-skill-applies)
+- [Platform Detection](#platform-detection)
+- [SDK Version Compatibility](#sdk-version-compatibility)
+- [Common Workflows](#common-workflows)
+- [Critical Patterns](#critical-patterns)
+  - [1. Legacy API Usage](#1-legacy-api-usage-priority-critical)
+  - [2. QueryResultItems Retention](#2-queryresultitems-retention-priority-critical)
+  - [3. Subscription Lifecycle Management](#3-subscription-lifecycle-management-priority-critical)
+  - [4. Observer Selection](#4-observer-selection-priority-critical---non-flutter-sdks-only)
+  - [5. Heavy Processing in Observer Callbacks](#5-heavy-processing-in-observer-callbacks-priority-high)
+  - [6. Broad Subscriptions](#6-broad-subscriptions-priority-high)
+  - [7. Query Without Active Subscription](#7-query-without-active-subscription-priority-high)
+  - [8. Missing signalNext() Call](#8-missing-signalnext-call-priority-high---non-flutter-sdks-only)
+  - [9. SELECT * Overuse](#9-select--overuse-priority-high)
+  - [10. DISTINCT with _id](#10-distinct-with-_id-priority-high)
+  - [11. Unbounded Aggregates](#11-unbounded-aggregates-priority-critical)
+  - [12. GROUP BY Without JOIN Awareness](#12-group-by-without-join-awareness-priority-high)
+  - [13. Large OFFSET Values](#13-large-offset-values-priority-medium)
+  - [14. Expensive Operator Usage](#14-expensive-operator-usage-priority-medium)
+- [Quick Reference Checklist](#quick-reference-checklist)
+- [See Also](#see-also)
+
+---
 
 ## Purpose
 
@@ -42,6 +85,162 @@ Use this Skill when:
 - **Flutter SDK v5.0+**: Will support `registerObserverWithSignalNext`
 - **Non-Flutter** (Swift, JS, Kotlin): `registerObserverWithSignalNext` recommended (SDK 4.12+)
 - **All platforms**: DQL query patterns, subscription management
+
+---
+
+## SDK Version Compatibility
+
+This section consolidates all version-specific information referenced throughout this Skill.
+
+### Flutter SDK
+
+- **v4.x** (current stable)
+  - `registerObserver` only (no `signalNext` support)
+  - Stream-based API via `observer.changes` (recommended for Flutter UI)
+  - `onChange` callback API available for simple cases
+  - DQL query API fully supported
+  - No legacy builder API (never existed in Flutter SDK)
+
+- **v5.0+** (upcoming)
+  - `registerObserverWithSignalNext` support added
+  - All v4.x APIs remain supported
+  - Stream-based and callback APIs continue to work
+
+### Non-Flutter SDKs (JavaScript, Swift, Kotlin)
+
+- **SDK 4.8 - 4.11**
+  - DQL API introduced but legacy builder API still recommended
+  - `registerObserver` and `registerObserverWithSignalNext` available
+
+- **SDK 4.12+** (current)
+  - Legacy builder methods (.collection(), .find(), .upsert()) **fully deprecated**
+  - DQL API is the recommended and supported method
+  - `registerObserverWithSignalNext` recommended for most use cases
+  - `registerObserver` available for simple cases
+
+- **SDK v5.0+** (upcoming)
+  - Legacy builder methods **completely removed**
+  - DQL API is the only supported method
+  - All observer patterns continue to work
+
+**Throughout this Skill**: When patterns reference "deprecated SDK 4.12+" or "Flutter v4.x limitation", refer back to this section for full context.
+
+---
+
+## Common Workflows
+
+### Workflow 1: Setting Up a New Query with Observer
+
+Copy this checklist and check off items as you complete them:
+
+```
+Query Setup Progress:
+- [ ] Step 1: Write DQL query with specific WHERE clause
+- [ ] Step 2: Create subscription with registerSubscription()
+- [ ] Step 3: Set up observer (platform-appropriate pattern)
+- [ ] Step 4: Store subscription/observer references
+- [ ] Step 5: Implement cancellation in dispose()/cleanup
+```
+
+**Step 1: Write DQL query with specific WHERE clause**
+
+Avoid broad subscriptions. Use WHERE to filter data at the source.
+
+```dart
+// ✅ GOOD: Specific WHERE clause
+'SELECT * FROM orders WHERE status = :status'
+
+// ❌ BAD: No WHERE clause (syncs all data)
+'SELECT * FROM orders'
+```
+
+**Step 2: Create subscription**
+
+```dart
+final subscription = ditto.sync.registerSubscription(
+  'SELECT * FROM orders WHERE status = :status',
+  arguments: {'status': 'pending'},
+);
+```
+
+**Step 3: Set up observer (platform-appropriate)**
+
+**Flutter SDK v4.x** - Use `registerObserver` with Stream or callback:
+
+```dart
+// Option A: Stream-based (recommended for Flutter UI)
+final observer = ditto.store.registerObserver(
+  'SELECT * FROM orders WHERE status = :status',
+  arguments: {'status': 'pending'},
+);
+
+observer.changes.listen((result) {
+  setState(() {
+    _orders = result.items.map((item) => item.value).toList();
+  });
+});
+```
+
+```dart
+// Option B: Callback-based (simple cases)
+final observer = ditto.store.registerObserver(
+  'SELECT * FROM orders WHERE status = :status',
+  arguments: {'status': 'pending'},
+  onChange: (result) {
+    setState(() {
+      _orders = result.items.map((item) => item.value).toList();
+    });
+  },
+);
+```
+
+**Non-Flutter SDKs** - Use `registerObserverWithSignalNext`:
+
+```javascript
+const observer = ditto.store.registerObserverWithSignalNext(
+  'SELECT * FROM orders WHERE status = $args.status',
+  { args: { status: 'pending' } },
+  (result, signalNext) => {
+    updateUI(result);
+    setTimeout(signalNext, 0);  // Call after processing
+  }
+);
+```
+
+**Step 4: Store references**
+
+```dart
+class OrdersState {
+  DittoSyncSubscription? _subscription;
+  DittoStoreObserver? _observer;
+}
+```
+
+**Step 5: Implement cancellation**
+
+```dart
+@override
+void dispose() {
+  _subscription?.cancel();
+  _observer?.cancel();
+  super.dispose();
+}
+```
+
+---
+
+### Workflow 2: Migrating from Legacy API to DQL
+
+**Non-Flutter platforms only** - See [reference/legacy-api-migration.md](reference/legacy-api-migration.md) for complete migration guide.
+
+```
+Migration Progress:
+- [ ] Step 1: Identify all legacy API usage
+- [ ] Step 2: Replace with DQL equivalents
+- [ ] Step 3: Update observer patterns if needed
+- [ ] Step 4: Test thoroughly
+- [ ] Step 5: Remove legacy imports/references
+```
 
 ---
 

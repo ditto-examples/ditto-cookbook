@@ -2,6 +2,13 @@
 
 This directory contains Agent Skills for Ditto SDK best practices across multiple platforms: Flutter (Dart), JavaScript, Swift, and Kotlin.
 
+> **Recent Improvements** (2025-12-20):
+> - ✅ Added Table of Contents to all SKILL.md and reference files for better navigation
+> - ✅ Improved frontmatter descriptions with structured multi-line YAML format
+> - ✅ Consolidated SDK version information in dedicated sections
+> - ✅ Added Common Workflows sections with step-by-step checklists to all Skills
+> - 🔄 Pattern restructuring (Phase 4) deferred - Skills currently 906-1584 lines vs 500-line recommendation
+
 ## Overview
 
 These Skills help Claude Code provide real-time guidance while you write offline-first applications with Ditto. They cover critical patterns for:

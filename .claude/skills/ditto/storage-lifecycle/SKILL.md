@@ -1,9 +1,50 @@
 ---
 name: storage-lifecycle
-description: Validates Ditto data deletion strategies, EVICT operations, and storage optimization. Prevents zombie data from tombstone TTL expiration, resync loops from uncanceled subscriptions, and husked documents from concurrent DELETE/UPDATE. Enforces logical deletion patterns and EVICT best practices. Use when performing DELETE operations, implementing EVICT, managing storage lifecycle, or handling data retention.
+description: |
+  Validates Ditto data deletion strategies, EVICT operations, and storage optimization.
+
+  CRITICAL ISSUES PREVENTED:
+  - Zombie data resurrection from expired tombstone TTL
+  - Resync loops from EVICT without subscription cancellation
+  - Husked documents (concurrent DELETE/UPDATE)
+  - Performance degradation from improper EVICT frequency
+  - Data loss from tombstone sharing limitations
+
+  TRIGGERS:
+  - Performing DELETE operations
+  - Implementing EVICT for local storage cleanup
+  - Designing data retention or TTL policies
+  - Managing subscription lifecycle around EVICT
+  - Filtering logically deleted data in queries
+  - Handling husked document edge cases
+
+  PLATFORMS: Flutter (Dart), JavaScript, Swift, Kotlin (cross-platform storage rules)
 ---
 
 # Ditto Storage Lifecycle Management
+
+## Table of Contents
+
+- [Purpose](#purpose)
+- [When This Skill Applies](#when-this-skill-applies)
+- [Platform Detection](#platform-detection)
+- [SDK Version Compatibility](#sdk-version-compatibility)
+- [Common Workflows](#common-workflows)
+- [Critical Patterns](#critical-patterns)
+  - [1. DELETE Without Tombstone TTL Strategy](#1-delete-without-tombstone-ttl-strategy-priority-critical)
+  - [2. EVICT Without Subscription Cancellation](#2-evict-without-subscription-cancellation-priority-critical)
+  - [3. Logical Deletion Pattern](#3-logical-deletion-pattern-priority-critical)
+  - [4. Husked Document Filtering](#4-husked-document-filtering-priority-high)
+  - [5. EVICT Frequency Limits](#5-evict-frequency-limits-priority-high)
+  - [6. Opposite Query Pattern for EVICT](#6-opposite-query-pattern-for-evict-priority-high)
+  - [7. Top-Level Subscription Declaration](#7-top-level-subscription-declaration-priority-high)
+  - [8. Batch Deletion with LIMIT](#8-batch-deletion-with-limit-priority-medium)
+  - [9. Big Peer TTL Management](#9-big-peer-ttl-management-priority-medium)
+  - [10. Time-Based Eviction Patterns](#10-time-based-eviction-patterns-priority-medium)
+- [Quick Reference Checklist](#quick-reference-checklist)
+- [See Also](#see-also)
+
+---
 
 ## Purpose
 
@@ -37,6 +78,93 @@ Use this Skill when:
 4. **Kotlin**: `*.kt` files with `import live.ditto.*`
 
 **Platform-Specific**: Cross-platform (same storage rules apply to all SDKs)
+
+---
+
+## SDK Version Compatibility
+
+This section consolidates all version-specific information referenced throughout this Skill.
+
+### All Platforms
+
+- **Storage Lifecycle Rules**: Universal across all platforms and SDK versions
+  - DELETE creates tombstones with TTL (default: Cloud 30 days, Edge/Big Peer 1 hour)
+  - EVICT removes local documents without creating tombstones
+  - Husked documents occur from concurrent DELETE/UPDATE operations
+  - Logical deletion (isDeleted flag) available in all versions
+
+- **All SDK Versions**
+  - DELETE, EVICT operations available
+  - Tombstone TTL configuration (Cloud only, via Ditto Portal)
+  - EVICT frequency recommendation: Max once per day
+  - Subscription cancellation required before EVICT to prevent resync loops
+
+**Throughout this Skill**: Storage lifecycle patterns are consistent across all SDK versions and platforms. No breaking changes or version-specific behaviors.
+
+---
+
+## Common Workflows
+
+### Workflow 1: Implementing Safe Data Deletion
+
+Copy this checklist and check off items as you complete them:
+
+```
+Safe Deletion Progress:
+- [ ] Step 1: Decide deletion strategy (physical DELETE vs logical deletion)
+- [ ] Step 2: If DELETE: Configure tombstone TTL (Cloud only)
+- [ ] Step 3: If DELETE: Plan for devices offline > TTL duration
+- [ ] Step 4: Implement deletion logic
+- [ ] Step 5: Test with offline/online scenarios
+```
+
+**Step 1: Choose deletion strategy**
+
+```dart
+// Option A: Logical deletion (recommended for most cases)
+await ditto.store.execute(
+  'UPDATE tasks SET isDeleted = true, deletedAt = :now WHERE _id = :id',
+  arguments: {'id': taskId, 'now': DateTime.now().toIso8601String()},
+);
+
+// Option B: Physical DELETE (requires tombstone TTL strategy)
+await ditto.store.execute(
+  'DELETE FROM tasks WHERE _id = :id',
+  arguments: {'id': taskId},
+);
+```
+
+**Step 2: Tombstone TTL configuration** (Cloud deployments only)
+
+- Default: 30 days (Cloud), 1 hour (Edge/Big Peer)
+- Configure via Ditto Portal for Cloud deployments
+- Consider device offline duration in your use case
+
+**Step 3: Handle zombie data prevention**
+
+```dart
+// Query excludes logically deleted items
+final result = await ditto.store.execute(
+  'SELECT * FROM tasks WHERE isDeleted != true OR isDeleted IS NULL',
+);
+```
+
+---
+
+### Workflow 2: Implementing EVICT Safely
+
+```
+EVICT Implementation Progress:
+- [ ] Step 1: Cancel relevant subscriptions
+- [ ] Step 2: Query documents to EVICT (use opposite WHERE clause)
+- [ ] Step 3: Execute EVICT operation
+- [ ] Step 4: Reinstate subscriptions if needed
+- [ ] Step 5: Monitor EVICT frequency (max once/day)
+```
+
+**Critical**: EVICT without canceling subscriptions causes immediate resync loops.
+
+See Pattern 2 below for complete implementation details.
 
 ---
 

@@ -1,9 +1,52 @@
 ---
 name: ditto-data-modeling
-description: CRDT-safe data structure design and merge safety for Ditto SDK. Triggers on: designing document schemas, using arrays in documents, modeling relationships (embed vs flat), implementing counters, event history patterns. Critical patterns: mutable arrays → MAP structures, denormalization for query performance (no JOIN support), field-level updates vs document replacement, counter patterns (PN_INCREMENT and COUNTER type in 4.14.0+), event history design. Applies to: Flutter (Dart), JavaScript, Swift, Kotlin - cross-platform CRDT rules.
+description: |
+  CRDT-safe data structure design and merge safety for Ditto SDK.
+
+  CRITICAL ISSUES PREVENTED:
+  - Data loss from mutable arrays (last-write-wins conflicts)
+  - Counter race conditions (incorrect increment/decrement)
+  - Over-normalization causing query performance issues
+  - Calculated field storage (violates single source of truth)
+  - Document size limit violations (250 KB)
+
+  TRIGGERS:
+  - Designing document schemas
+  - Using arrays with mutable objects
+  - Modeling relationships (embed vs flat)
+  - Implementing counters (likes, views, inventory)
+  - Creating event history or audit logs
+  - Generating IDs for distributed systems
+
+  PLATFORMS: Flutter (Dart), JavaScript, Swift, Kotlin (cross-platform CRDT rules)
 ---
 
 # Ditto Data Modeling Skill
+
+## Table of Contents
+
+- [Purpose](#purpose)
+- [When This Skill Applies](#when-this-skill-applies)
+- [Platform Detection](#platform-detection)
+- [SDK Version Compatibility](#sdk-version-compatibility)
+- [Common Workflows](#common-workflows)
+- [Critical Patterns](#critical-patterns)
+  - [Pattern 1: Mutable Arrays → MAP Structures](#pattern-1-mutable-arrays--map-structures-critical)
+  - [Pattern 2: Denormalization for Query Performance](#pattern-2-denormalization-for-query-performance-critical)
+  - [Pattern 2.5: DO NOT Store Calculated Fields](#pattern-25-do-not-store-calculated-fields-critical)
+  - [Pattern 3: Field-Level Updates vs Document Replacement](#pattern-3-field-level-updates-vs-document-replacement-high)
+  - [Pattern 4: Counter Patterns](#pattern-4-counter-patterns-counter-type-and-pn_increment-critical)
+  - [Pattern 5: Event History with Separate Documents](#pattern-5-event-history-with-separate-documents-high)
+  - [Pattern 6: Document Size and Relationship Modeling](#pattern-6-document-size-and-relationship-modeling-high)
+  - [Pattern 7: Two-Collection Pattern](#pattern-7-two-collection-pattern-for-real-time--historical-data-medium)
+  - [Pattern 8: INITIAL Documents](#pattern-8-initial-documents-for-device-local-templates-medium)
+  - [Pattern 9: Type Validation](#pattern-9-type-validation-in-schema-less-documents-medium)
+  - [Pattern 10: ID Generation](#pattern-10-id-generation-for-distributed-systems-critical)
+  - [Pattern 11: Field Naming Conventions](#pattern-11-field-naming-conventions-medium)
+- [Quick Reference Checklist](#quick-reference-checklist)
+- [See Also](#see-also)
+
+---
 
 ## Purpose
 
@@ -36,6 +79,145 @@ This Skill helps you design CRDT-safe data structures for Ditto SDK that prevent
 **Platform-Specific Patterns**:
 - **All platforms**: CRDT rules are universal (same patterns apply everywhere)
 - **No platform-specific differences** for data modeling (unlike query-sync Skill)
+
+---
+
+## SDK Version Compatibility
+
+This section consolidates all version-specific information referenced throughout this Skill.
+
+### All Platforms
+
+- **CRDT Rules**: Universal across all platforms and SDK versions
+  - Arrays are REGISTER types (last-write-wins)
+  - MAPs provide field-level CRDT merging
+  - Document size limit: 250 KB (all versions)
+  - PN_INCREMENT operator available in all SDK versions
+
+- **SDK 4.14.0+**
+  - COUNTER type introduced for high-frequency counter operations
+  - PN_INCREMENT remains available and recommended for most counters
+  - COUNTER type benefits: automatic conflict resolution, no manual delta tracking
+
+- **SDK 4.11+**
+  - DATE operators available for timestamp comparisons
+  - ULID recommended for distributed ID generation
+
+**Throughout this Skill**: Data modeling patterns and CRDT rules are consistent across all SDK versions and platforms. Version references primarily relate to newer features (COUNTER type, DATE operators) rather than breaking changes.
+
+---
+
+## Common Workflows
+
+### Workflow 1: Designing a New Document Schema
+
+Copy this checklist and check off items as you complete them:
+
+```
+Schema Design Progress:
+- [ ] Step 1: Identify mutable vs immutable collections
+- [ ] Step 2: Check for arrays with mutable objects → convert to MAPs
+- [ ] Step 3: Design counter fields (use PN_INCREMENT or COUNTER type)
+- [ ] Step 4: Decide relationship modeling (embed vs flat/denormalize)
+- [ ] Step 5: Validate document size (<250 KB)
+- [ ] Step 6: Plan ID generation strategy (ULID recommended)
+```
+
+**Step 1: Identify mutable vs immutable collections**
+
+Determine which fields will be modified after creation.
+
+```dart
+// Immutable: Arrays are OK
+{
+  "_id": "user_123",
+  "tags": ["premium", "verified"]  // ✅ OK: Never modified after creation
+}
+
+// Mutable: Use MAP instead
+{
+  "_id": "order_123",
+  "items": {...}  // Use MAP for items that can be updated
+}
+```
+
+**Step 2: Convert mutable arrays to MAP structures**
+
+```dart
+// ❌ BAD: Mutable array
+{
+  "items": [
+    {"productId": "prod_1", "quantity": 2},
+    {"productId": "prod_2", "quantity": 1}
+  ]
+}
+
+// ✅ GOOD: MAP structure
+{
+  "items": {
+    "prod_1": {"quantity": 2, "price": 10.00},
+    "prod_2": {"quantity": 1, "price": 25.00}
+  }
+}
+```
+
+**Step 3: Design counter fields**
+
+```dart
+// ✅ GOOD: PN_INCREMENT for simple counters
+await ditto.store.execute(
+  'UPDATE posts SET viewCount = viewCount PN_INCREMENT :delta WHERE _id = :id',
+  arguments: {'id': postId, 'delta': 1},
+);
+
+// ✅ GOOD: COUNTER type for high-frequency updates (SDK 4.14.0+)
+{
+  "_id": "product_123",
+  "inventory": {"type": "COUNTER", "value": 100}
+}
+```
+
+**Step 4: Relationship modeling**
+
+Denormalize data (no JOIN support):
+
+```dart
+// ✅ GOOD: Embed frequently accessed data
+{
+  "_id": "order_123",
+  "customerId": "user_456",
+  "customerName": "John Doe",  // Denormalized for query performance
+  "customerEmail": "john@example.com",
+  "items": {...}
+}
+```
+
+**Step 5: Validate document size**
+
+Ensure documents stay under 250 KB limit. For large data, use separate collections or attachments.
+
+**Step 6: ID generation strategy**
+
+```dart
+import 'package:ulid/ulid.dart';
+
+final id = Ulid().toUuid();  // ULID recommended for distributed systems
+```
+
+---
+
+### Workflow 2: Converting Arrays to MAP Structures
+
+```
+Conversion Progress:
+- [ ] Step 1: Identify array fields with mutable items
+- [ ] Step 2: Choose appropriate MAP key (unique identifier)
+- [ ] Step 3: Transform existing data structure
+- [ ] Step 4: Update queries to use MAP syntax
+- [ ] Step 5: Test concurrent updates
+```
+
+See [examples/array-to-map-migration.dart](examples/array-to-map-migration.dart) for complete implementation.
 
 ---
 

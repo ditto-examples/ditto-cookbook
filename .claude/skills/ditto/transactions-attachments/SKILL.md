@@ -1,9 +1,53 @@
 ---
 name: transactions-attachments
-description: Validates Ditto transaction usage and attachment operations. Prevents platform-specific bugs like Flutter transaction close() management (must await all transactions before closing Ditto instance), nested transaction deadlocks, and attachment auto-sync assumptions. Enforces lazy-loading patterns, metadata storage, and immutability constraints. Use when implementing transactions, handling attachments, storing large files, or performing atomic multi-step operations.
+description: |
+  Validates Ditto transaction usage and attachment operations.
+
+  CRITICAL ISSUES PREVENTED:
+  - Flutter transaction close() management (must await before closing Ditto)
+  - Nested transaction deadlocks (all platforms)
+  - Attachment auto-sync assumptions (attachments don't sync automatically)
+  - Attachment immutability violations (cannot modify existing attachments)
+  - Large binary data stored inline (should use ATTACHMENT type)
+  - Missing attachment metadata (filename, size, type)
+
+  TRIGGERS:
+  - Using ditto.store.transaction()
+  - Closing Ditto instance in Flutter (must track pending transactions)
+  - Implementing atomic multi-step operations
+  - Storing or fetching attachments (newAttachment(), fetchAttachment())
+  - Handling large binary files (photos, documents, videos)
+  - Creating or replacing attachment metadata
+
+  PLATFORMS: Flutter (Dart - limited transaction support), JavaScript, Swift, Kotlin
 ---
 
 # Ditto Transactions and Attachments
+
+## Table of Contents
+
+- [Purpose](#purpose)
+- [When This Skill Applies](#when-this-skill-applies)
+- [Platform Detection](#platform-detection)
+- [SDK Version Compatibility](#sdk-version-compatibility)
+- [Common Workflows](#common-workflows)
+- [Critical Patterns](#critical-patterns)
+  - [1. Flutter Transaction Close Management](#1-flutter-transaction-close-management-priority-critical---flutter-only)
+  - [2. Nested Read-Write Transaction Deadlock](#2-nested-read-write-transaction-deadlock-priority-critical---all-platforms)
+  - [3. Attachment Auto-Sync Assumption](#3-attachment-auto-sync-assumption-priority-critical)
+  - [4. Attachment Immutability Violation](#4-attachment-immutability-violation-priority-high)
+  - [5. Missing Attachment Metadata](#5-missing-attachment-metadata-priority-high)
+  - [6. Inline Binary Data Storage](#6-inline-binary-data-storage-priority-high)
+  - [7. Attachment Fetcher Cancellation](#7-attachment-fetcher-cancellation-priority-high)
+  - [8. Thumbnail-First Pattern](#8-thumbnail-first-pattern-for-large-files-priority-medium)
+  - [9. Transaction Duration Violations](#9-transaction-duration-violations-priority-medium---non-flutter)
+  - [10. Attachment Fetch Timeout Handling](#10-attachment-fetch-timeout-handling-priority-medium)
+  - [11. Attachment Availability Constraints](#11-attachment-availability-constraints-priority-medium)
+  - [12. Garbage Collection Awareness](#12-garbage-collection-awareness-priority-low)
+- [Quick Reference Checklist](#quick-reference-checklist)
+- [See Also](#see-also)
+
+---
 
 ## Purpose
 
@@ -41,6 +85,123 @@ Use this Skill when:
 - **Flutter**: Transaction API available, but must manually await all transactions before calling `ditto.close()`
 - **All platforms**: Transaction rules, deadlock prevention, read-only mode
 - **All platforms**: Attachment patterns (lazy-loading, metadata, immutability)
+
+---
+
+## SDK Version Compatibility
+
+This section consolidates all version-specific information referenced throughout this Skill.
+
+### Transactions
+
+**Flutter SDK**:
+- Transaction API available in all versions
+- **Critical limitation**: Must manually track and await all pending transactions before calling `ditto.close()`
+- No automatic transaction tracking or cleanup
+- Transaction timeouts not enforced (unlike non-Flutter SDKs)
+
+**Non-Flutter SDKs**:
+- Full transaction support with automatic timeout enforcement
+- Transaction duration limit: Keep transactions short (avoid long-running operations)
+- Nested read-write transactions cause deadlocks (all versions)
+
+### Attachments
+
+**All Platforms and SDK Versions**:
+- Attachment operations available: `newAttachment()`, `fetchAttachment()`
+- Attachments do NOT sync automatically (must be explicitly fetched)
+- Attachments are immutable (cannot modify existing attachments)
+- Lazy-loading pattern required for large files
+- Metadata storage (filename, size, mimeType) recommended
+- Thumbnail-first pattern for large files (all versions)
+- Garbage collection after 24 hours of no references (all versions)
+
+**Throughout this Skill**: Attachment patterns are universal. Transaction behavior differs between Flutter (manual tracking) and non-Flutter (automatic timeout).
+
+---
+
+## Common Workflows
+
+### Workflow 1: Using Transactions Safely (Flutter)
+
+**Flutter-specific** - Manual transaction tracking required:
+
+```
+Transaction Progress (Flutter):
+- [ ] Step 1: Create list to track pending transactions
+- [ ] Step 2: Store Future<void> for each transaction
+- [ ] Step 3: Perform atomic operations inside transaction
+- [ ] Step 4: Await all pending transactions before ditto.close()
+```
+
+```dart
+class MyDittoService {
+  final List<Future<void>> _pendingTransactions = [];
+
+  Future<void> updateOrderAtomically(String orderId) async {
+    final txFuture = ditto.store.transaction((tx) async {
+      // Atomic operations
+      await tx.execute('UPDATE orders SET status = :status WHERE _id = :id',
+        arguments: {'status': 'shipped', 'id': orderId});
+      await tx.execute('UPDATE inventory SET stock = stock - 1 WHERE productId = :pid',
+        arguments: {'pid': 'prod_123'});
+    });
+
+    _pendingTransactions.add(txFuture);
+    await txFuture;
+    _pendingTransactions.remove(txFuture);
+  }
+
+  Future<void> cleanup() async {
+    await Future.wait(_pendingTransactions);  // CRITICAL
+    await ditto.close();
+  }
+}
+```
+
+---
+
+### Workflow 2: Storing and Fetching Attachments
+
+```
+Attachment Workflow:
+- [ ] Step 1: Create attachment from file/data
+- [ ] Step 2: Store attachment metadata in document
+- [ ] Step 3: Create document with attachment token
+- [ ] Step 4: Fetch attachment when needed (lazy-loading)
+- [ ] Step 5: Handle fetch completion/errors
+```
+
+```dart
+// Step 1-3: Store attachment
+final file = File('/path/to/photo.jpg');
+final attachment = await ditto.store.newAttachment(
+  file.path,
+  metadata: {'filename': 'photo.jpg', 'mimeType': 'image/jpeg'},
+);
+
+await ditto.store.execute(
+  'INSERT INTO photos DOCUMENTS (:doc)',
+  arguments: {
+    'doc': {
+      '_id': 'photo_123',
+      'image': attachment.token,  // Attachment token
+      'filename': 'photo.jpg',
+      'size': file.lengthSync(),
+    }
+  },
+);
+
+// Step 4-5: Fetch attachment (lazy-loading)
+final fetcher = ditto.store.fetchAttachment(
+  attachmentToken,
+  onFetchEvent: (event) {
+    if (event is DittoAttachmentFetchEventCompleted) {
+      // Attachment ready at event.attachment.path
+    }
+  },
+);
+```
 
 ---
 

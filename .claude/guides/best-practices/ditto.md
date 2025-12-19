@@ -1,5 +1,8 @@
 # Ditto SDK Best Practices
 
+> **Version**: 1.0
+> **Last Updated**: 2025-12-20
+
 This document provides comprehensive best practices and anti-patterns for Ditto SDK integration, focused on offline-first architecture and distributed data synchronization.
 
 ## Understanding Ditto
@@ -6502,7 +6505,3 @@ We encourage you to:
 - Adapt these patterns to fit your specific requirements
 
 This guide is provided "as is" for educational and reference purposes. We are not responsible for any issues that may arise from implementing these patterns in your projects. Your use of this information is at your own discretion and risk.
-
----
-
-**Last Updated**: 2025-12-19

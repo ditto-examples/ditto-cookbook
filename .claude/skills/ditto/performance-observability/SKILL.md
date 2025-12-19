@@ -1,9 +1,56 @@
 ---
 name: performance-observability
-description: Validates Ditto observer performance patterns, UI optimization, and logging configuration. Prevents full-screen rebuilds, unnecessary delta sync, and missing startup diagnostics. Enforces partial UI updates, signalNext() timing (non-Flutter SDKs), value-change checks, and DO UPDATE_LOCAL_DIFF usage. Flutter SDK v4.x - signalNext not available until v5.0. Use when implementing observers, optimizing UI performance, configuring logging, or managing sync overhead.
+description: |
+  Validates Ditto observer performance patterns, UI optimization, and logging configuration.
+
+  CRITICAL ISSUES PREVENTED:
+  - Full-screen rebuilds in observer callbacks (Flutter)
+  - Missing signalNext() calls blocking further updates (non-Flutter)
+  - Heavy processing in observer callbacks blocking UI
+  - Unnecessary delta sync from unchanged value updates
+  - Missing startup diagnostics from late log level configuration
+  - Observer backpressure buildup causing memory issues
+  - Aggregate function memory impact (unbounded COUNT, SUM)
+
+  TRIGGERS:
+  - Implementing observer callbacks (registerObserver*)
+  - Optimizing UI performance and widget rebuilds (Flutter)
+  - Configuring logging with DittoLogger
+  - Managing subscription scope and query optimization
+  - Handling backpressure with signalNext() (non-Flutter)
+  - Preventing unnecessary sync traffic and delta generation
+
+  PLATFORMS: Flutter (Dart - UI patterns), JavaScript, Swift, Kotlin (observer + logging)
 ---
 
 # Ditto Performance and Observability
+
+## Table of Contents
+
+- [Purpose](#purpose)
+- [When This Skill Applies](#when-this-skill-applies)
+- [Platform Detection](#platform-detection)
+- [SDK Version Compatibility](#sdk-version-compatibility)
+- [Common Workflows](#common-workflows)
+- [Critical Patterns](#critical-patterns)
+  - [1. Full Screen setState() in Observer](#1-full-screen-setstate-in-observer-priority-critical---flutter)
+  - [2. Missing signalNext() Call](#2-missing-signalnext-call-priority-critical---non-flutter-sdks-only)
+  - [3. Heavy Processing in Observer Callbacks](#3-heavy-processing-in-observer-callbacks-priority-high)
+  - [4. Unnecessary Delta Creation](#4-unnecessary-delta-creation-priority-high)
+  - [5. DO UPDATE vs DO UPDATE_LOCAL_DIFF](#5-do-update-vs-do-update_local_diff-priority-high---sdk-412)
+  - [6. Log Level Not Set Before Init](#6-log-level-not-set-before-init-priority-high)
+  - [7. Broad Subscription Scope](#7-broad-subscription-scope-priority-medium)
+  - [8. Observer Backpressure Buildup](#8-observer-backpressure-buildup-priority-medium)
+  - [9. Partial UI Update Patterns](#9-partial-ui-update-patterns-priority-medium---flutter)
+  - [10. Rotating Log File Configuration](#10-rotating-log-file-configuration-priority-low)
+  - [11. DISTINCT Memory Impact](#9-distinct-memory-impact-priority-high)
+  - [12. Aggregate Function Memory Impact](#10-aggregate-function-memory-impact-priority-critical)
+  - [13. Large OFFSET Performance](#11-large-offset-performance-priority-medium)
+  - [14. Operator Performance in Observers](#12-operator-performance-in-observers-priority-medium)
+- [Quick Reference Checklist](#quick-reference-checklist)
+- [See Also](#see-also)
+
+---
 
 ## Purpose
 
@@ -41,6 +88,112 @@ Use this Skill when:
 **Platform-Specific**:
 - **Flutter**: Full UI optimization patterns (setState, Riverpod, WidgetsBinding)
 - **All platforms**: Observer patterns, logging, sync optimization
+
+---
+
+## SDK Version Compatibility
+
+This section consolidates all version-specific information referenced throughout this Skill.
+
+### Observer Patterns
+
+**Flutter SDK**:
+- **v4.x** (current stable)
+  - `registerObserver` only (no `signalNext` support)
+  - Stream-based API via `observer.changes` (recommended)
+  - `onChange` callback API available
+  - WidgetsBinding.addPostFrameCallback() for UI updates
+
+- **v5.0+** (upcoming)
+  - `registerObserverWithSignalNext` support added
+  - All v4.x patterns continue to work
+
+**Non-Flutter SDKs**:
+- **All versions**: `registerObserverWithSignalNext` recommended
+  - Backpressure control via `signalNext()` callback
+  - Call `signalNext()` after processing each update
+  - Missing `signalNext()` call blocks further updates
+
+### Performance Features
+
+**SDK 4.12+**:
+- `DO UPDATE_LOCAL_DIFF` available for efficient updates
+- Only changed fields create sync deltas (vs full document replacement)
+- Recommended for frequent field updates
+
+**All SDK Versions**:
+- Log level configuration: Must be set before Ditto init
+- Observer callback performance: Keep lightweight (all platforms)
+- Aggregate functions (COUNT, SUM, AVG): Memory impact considerations
+- DISTINCT operator: Memory overhead for large result sets
+
+**Throughout this Skill**: Observer patterns differ between Flutter (Stream-based, v4.x) and non-Flutter (signalNext-based). Performance optimizations are universal.
+
+---
+
+## Common Workflows
+
+### Workflow 1: Optimizing Observer Performance (Flutter)
+
+```
+Flutter Observer Optimization:
+- [ ] Step 1: Use partial UI updates (not full screen setState())
+- [ ] Step 2: Keep observer callbacks lightweight
+- [ ] Step 3: Use WidgetsBinding.addPostFrameCallback() for setState()
+- [ ] Step 4: Consider state management (Riverpod/Provider)
+- [ ] Step 5: Profile UI performance
+```
+
+```dart
+// ✅ GOOD: Partial UI update with Riverpod
+final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  final observer = ditto.store.registerObserver(
+    'SELECT * FROM orders WHERE status = :status',
+    arguments: {'status': 'pending'},
+  );
+
+  return observer.changes.map((result) =>
+    result.items.map((item) => item.value).toList()
+  );
+});
+
+// Widget automatically rebuilds only when data changes
+class OrdersList extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final orders = ref.watch(ordersProvider);
+    return orders.when(
+      data: (data) => ListView.builder(...),
+      loading: () => CircularProgressIndicator(),
+      error: (err, stack) => Text('Error: $err'),
+    );
+  }
+}
+```
+
+---
+
+### Workflow 2: Configuring Logging for Debugging
+
+```
+Logging Configuration:
+- [ ] Step 1: Set log level BEFORE Ditto.open()
+- [ ] Step 2: Choose appropriate level (debug, info, warning, error)
+- [ ] Step 3: Enable rotating log files (optional)
+- [ ] Step 4: Test with verbose logging
+- [ ] Step 5: Reduce to warning/error for production
+```
+
+```dart
+// CRITICAL: Set log level BEFORE Ditto.open()
+DittoLogger.minimumLogLevel = DittoLogLevel.debug;
+
+// Optional: Enable file logging
+DittoLogger.enabled = true;
+DittoLogger.setLogFileURL('/path/to/logs');
+
+final ditto = await Ditto.open(identity);
+```
 
 ---
 

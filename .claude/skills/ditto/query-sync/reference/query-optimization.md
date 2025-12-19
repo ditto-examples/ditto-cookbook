@@ -4,6 +4,22 @@ This guide covers performance optimization techniques for Ditto Query Language (
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Query Performance Principles](#query-performance-principles)
+- [Index Strategies](#index-strategies)
+- [Aggregation Optimization](#aggregation-optimization)
+- [Pagination Patterns](#pagination-patterns)
+- [Subscription Optimization](#subscription-optimization)
+- [Observer Optimization](#observer-optimization)
+- [Query Pattern Anti-Patterns](#query-pattern-anti-patterns)
+- [Performance Monitoring](#performance-monitoring)
+- [Optimization Checklist](#optimization-checklist)
+- [Additional Resources](#additional-resources)
+
+---
+
 ## Overview
 
 DQL queries can range from milliseconds to seconds depending on:

@@ -6,6 +6,20 @@
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Why the Migration?](#why-the-migration)
+- [Platform-Specific Migration Status](#platform-specific-migration-status)
+- [Common Migration Patterns](#common-migration-patterns)
+- [Migration Checklist](#migration-checklist)
+- [Query Syntax Comparison](#query-syntax-comparison)
+- [Common Migration Pitfalls](#common-migration-pitfalls)
+- [SDK Version Detection](#sdk-version-detection)
+- [Additional Resources](#additional-resources)
+
+---
+
 ## Overview
 
 The Ditto SDK underwent a major API evolution from builder-based methods to DQL (Ditto Query Language) string-based queries:
