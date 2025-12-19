@@ -1705,23 +1705,94 @@ MAP (object) CRDT types use "add-wins" strategy, automatically merging concurren
 **Document Identity:**
 - Every document must have a unique `_id` field (primary key)
 - Ditto auto-generates `_id` if omitted
-- `_id` cannot be changed after creation
+- **⚠️ CRITICAL: `_id` is immutable** - Cannot be changed after document creation
 - Supports composite keys (objects as `_id` values) for complex hierarchies
 
+**Why `_id` Immutability Matters:**
+
+The `_id` field uniquely identifies a document. Once set, it cannot be modified. This is critical for:
+- **Authorization rules**: `_id` structure determines access control
+- **Distributed sync**: Document identity must remain stable across all peers
+- **Reference integrity**: Foreign-key relationships rely on stable IDs
+
 ```dart
-// ✅ GOOD: Composite key for multi-dimensional organization
-{
-  "_id": {
-    "storeId": "store_001",
-    "orderId": "order_123"
-  },
-  "total": 45.50
-}
+// ❌ BAD: Attempting to change _id after creation
+await ditto.store.execute(
+  'UPDATE orders SET _id = :newId WHERE _id = :oldId',
+  arguments: {'newId': 'new_123', 'oldId': 'old_123'},
+);
+// ERROR: _id field is immutable - this operation will fail
+
+// ✅ GOOD: Create new document with desired _id instead
+final oldDoc = (await ditto.store.execute(
+  'SELECT * FROM orders WHERE _id = :oldId',
+  arguments: {'oldId': 'old_123'},
+)).items.first.value;
+
+// Copy data to new document with new _id
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:doc)',
+  arguments: {'doc': {...oldDoc, '_id': 'new_123'}},
+);
+
+// Delete old document
+await ditto.store.execute(
+  'DELETE FROM orders WHERE _id = :oldId',
+  arguments: {'oldId': 'old_123'},
+);
 ```
 
+**Complex Object `_id` (Composite Keys):**
+
+Use complex object `_id` for multi-dimensional organization and hierarchical access control.
+
+```dart
+// ✅ GOOD: Complex object _id for multi-dimensional organization
+{
+  "_id": {
+    "orderId": "0016d749-9a9b-4ece-8794-7f3eb40bc82e",
+    "locationId": "5da42ab5-d00b-4377-8524-43e43abf9e01"
+  },
+  "total": 45.50,
+  "items": {...}
+}
+// ⚠️ IMPORTANT: Once created, this _id structure cannot be modified
+
+// Query by component (access specific field)
+final result = await ditto.store.execute(
+  'SELECT * FROM orders WHERE _id.locationId = :locId',
+  arguments: {'locId': '5da42ab5-d00b-4377-8524-43e43abf9e01'},
+);
+
+// Query by full object (exact match)
+final result = await ditto.store.execute(
+  '''SELECT * FROM orders WHERE _id = :idObj''',
+  arguments: {
+    'idObj': {
+      'orderId': '0016d749-9a9b-4ece-8794-7f3eb40bc82e',
+      'locationId': '5da42ab5-d00b-4377-8524-43e43abf9e01'
+    }
+  },
+);
+```
+
+**When to Use Complex `_id`:**
+- Multi-dimensional organization (e.g., order + location, user + device)
+- Authorization rules requiring hierarchical access (e.g., filter by locationId for access control)
+- Natural composite primary keys in domain model
+
+**Trade-offs:**
+- ✅ Clear hierarchical structure
+- ✅ Component-level queries without string parsing
+- ✅ Better alignment with authorization rules
+- ❌ More verbose than simple string IDs
+- ❌ Requires careful design - **immutable after creation**
+- ❌ Cannot restructure `_id` if requirements change (must create new documents)
+
 **Field Naming:**
-- Only strings allowed for field names
-- Use consistent naming conventions
+- Only strings allowed for field names (not numbers or booleans)
+- Use consistent naming conventions (camelCase or snake_case)
+- Avoid reserved DQL keywords as field names
 
 **CRDT Type Behaviors:**
 - **REGISTER**: Last-write-wins for scalar values
@@ -2781,43 +2852,133 @@ final result = await ditto.store.execute(
 
 ## Collection Design Patterns
 
-### Denormalization for Performance
+### Relationship Patterns: Embedded vs Foreign-Key
 
-**Context: No JOIN Support Makes Denormalization Critical**
-Without JOIN operations, fetching related data from multiple collections requires sequential queries with manual joining in application code. This creates significant performance overhead. Denormalization (embedding and duplicating data) avoids this problem.
+**Context: No JOIN Support Makes Design Critical**
+Without JOIN operations, data modeling requires careful consideration of relationship patterns. Two primary approaches exist: **embedded relationships (denormalization)** and **foreign-key relationships (normalization)**.
+
+#### Embedded Relationships (Denormalized)
+
+**Best for**: Tightly coupled data that is always queried together.
+
+```dart
+// ✅ GOOD: Embedded relationship (single query)
+{
+  "_id": "JTMDF4EV0FD100869",
+  "make": "Toyota",
+  "model": "RAV4",
+  "customerName": "Alice Johnson", // Duplicated for quick access
+  "details": {
+    "engine": {
+      "type": "Gasoline",
+      "displacement": "1.8L"
+    },
+    "interior": {
+      "seats": 5,
+      "color": "Black"
+    }
+  }
+}
+// Single query returns complete data
+```
+
+**Why Use Embedded:**
+- **Single query access**: No sequential queries needed
+- **Atomic updates**: All related data updates together
+- **Better performance**: Especially on mobile/offline devices
+- **Simpler code**: No manual joining logic
+
+**Trade-offs:**
+- ✅ Fast query performance
+- ✅ Simple application code
+- ❌ Data duplication (customer name, product details)
+- ❌ Larger documents
+- ❌ Update complexity (must update all duplicates)
+
+#### Foreign-Key Relationships (Normalized)
+
+**Best for**: Independent entities with separate lifecycles.
+
+```dart
+// Cars collection
+{
+  "_id": "0016d749-9a9b-4ece-8794-7f3eb40bc82e",
+  "owner_id": "5da42ab5-d00b-4377-8524-43e43abf9e01", // Foreign key
+  "make": "Toyota",
+  "model": "RAV4"
+}
+
+// Owners collection (separate lifecycle)
+{
+  "_id": "5da42ab5-d00b-4377-8524-43e43abf9e01",
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+
+// Query requires 2 steps (no JOIN support)
+final car = (await ditto.store.execute(
+  'SELECT * FROM cars WHERE _id = :carId',
+  arguments: {'carId': carId},
+)).items.first.value;
+
+final owner = (await ditto.store.execute(
+  'SELECT * FROM owners WHERE _id = :ownerId',
+  arguments: {'ownerId': car['owner_id']},
+)).items.first.value;
+```
+
+**Why Use Foreign-Key:**
+- **Independent updates**: Update owner without affecting all cars
+- **No data duplication**: Single source of truth
+- **Separate sync control**: Sync cars and owners independently
+
+**Trade-offs:**
+- ✅ No data duplication
+- ✅ Independent updates
+- ✅ Separate lifecycle management
+- ❌ Multiple sequential queries (no JOIN)
+- ❌ Manual joining in application code
+- ❌ Performance overhead
+
+#### Decision Tree
+
+```
+Related data?
+  ↓
+Independent lifecycles? (e.g., users vs orders, products vs inventory)
+  ↓ YES → Use foreign-key (separate collections)
+  ↓ NO
+  ↓
+Always queried together?
+  ↓ YES → Embed (denormalize)
+  ↓ NO → Consider hybrid (embed frequently accessed, reference rest)
+```
+
+#### Comparison Table
+
+| Aspect | Embedded (Denormalized) | Foreign-Key (Normalized) |
+|--------|------------------------|--------------------------|
+| **Query Performance** | ✅ Single query | ❌ Multiple queries |
+| **Data Duplication** | ❌ High | ✅ None |
+| **Update Complexity** | ❌ Must update all copies | ✅ Single update |
+| **Code Simplicity** | ✅ Simple | ❌ Manual joining |
+| **Document Size** | ❌ Larger | ✅ Smaller |
+| **Sync Efficiency** | Varies | ✅ Parallel sync |
+| **Best Use Case** | Read-heavy, tightly coupled | Independent lifecycles |
+
+#### Recommendations
 
 **✅ DO:**
 - **Embed related data that needs to be queried together** (MOST IMPORTANT: avoids sequential queries)
-- Duplicate frequently accessed data when it simplifies queries and avoids cross-collection lookups
+- Use foreign-key for truly independent entities (users, products, configuration)
+- Duplicate frequently accessed data when it simplifies queries
 - Design for read-heavy workloads (optimize for query performance)
-- Separate truly independent data into different collections for parallel sync efficiency
+- Separate independent data into different collections for parallel sync efficiency
 
-```javascript
-// ✅ GOOD: Denormalized order with embedded items
-{
-  "_id": "order_123",
-  "customerId": "customer_456",
-  "customerName": "Alice Johnson", // Duplicated for quick access
-  "items": [
-    {
-      "productId": "prod_1",
-      "productName": "Widget", // Duplicated
-      "quantity": 2,
-      "price": 10.00
-    }
-  ],
-  "total": 20.00,
-  "status": "pending",
-  "createdAt": "2025-01-15T10:00:00Z"
-}
-// Single query returns complete order with customer name and item details
-```
-
-**Why Denormalization Is Critical:**
-- **Avoids sequential query overhead**: Without JOIN, fetching order + customer + products would require 3+ sequential queries
-- **Simpler application code**: No manual joining logic needed
-- **Better user experience**: Faster data access, especially on mobile/offline devices
-- **Trade-off**: Data duplication vs query performance (in distributed systems, denormalization is often the right choice)
+**Examples:**
+- **Embed**: Order items, customer name in order (always displayed together)
+- **Foreign-key**: Product catalog (updated independently), user profiles (rarely accessed with orders)
+- **Hybrid**: Embed customer name in order, but keep full customer profile separate
 
 **When to Separate Collections:**
 Independent data sets that sync separately benefit from separate collections (parallel sync efficiency). For example:

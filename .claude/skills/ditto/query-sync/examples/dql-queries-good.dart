@@ -228,3 +228,92 @@ Future<void> transferProductStock(
     rethrow;
   }
 }
+
+/// Example 11: Query with complex object _id (composite keys)
+///
+/// ✅ GOOD: Query by component of complex _id
+Future<void> queryOrdersByLocation(Ditto ditto, String locationId) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders WHERE _id.locationId = :locId',
+    arguments: {'locId': locationId},
+  );
+
+  final orders = result.items.map((item) => item.value).toList();
+  print('Found ${orders.length} orders at location $locationId');
+}
+
+/// Example 12: Query with full complex object _id (exact match)
+///
+/// ✅ GOOD: Query by complete _id object
+Future<void> queryOrderByComplexId(
+  Ditto ditto,
+  String orderId,
+  String locationId,
+) async {
+  final result = await ditto.store.execute(
+    '''SELECT * FROM orders WHERE _id = :idObj''',
+    arguments: {
+      'idObj': {
+        'orderId': orderId,
+        'locationId': locationId
+      }
+    },
+  );
+
+  if (result.items.isNotEmpty) {
+    final order = result.items.first.value;
+    print('Found order: ${order['_id']}, Total: ${order['total']}');
+  } else {
+    print('Order not found');
+  }
+}
+
+/// Example 13: Query multiple components of complex _id
+///
+/// ✅ GOOD: Filter by multiple _id components
+Future<void> queryOrdersByLocationAndTimePartition(
+  Ditto ditto,
+  String locationId,
+  String yearMonth,
+) async {
+  final result = await ditto.store.execute(
+    '''SELECT * FROM orders
+       WHERE _id.locationId = :locId
+         AND _id.yearMonth = :yearMonth
+       ORDER BY _id.orderId DESC''',
+    arguments: {
+      'locId': locationId,
+      'yearMonth': yearMonth,
+    },
+  );
+
+  final orders = result.items.map((item) => item.value).toList();
+  print('Found ${orders.length} orders for $locationId in $yearMonth');
+}
+
+/// Example 14: Aggregate with complex _id components
+///
+/// ✅ GOOD: GROUP BY using _id component
+Future<void> aggregateOrdersByLocation(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    '''SELECT _id.locationId AS locationId,
+              COUNT(*) AS orderCount,
+              SUM(total) AS totalRevenue
+       FROM orders
+       WHERE status = :status
+       GROUP BY _id.locationId
+       ORDER BY totalRevenue DESC''',
+    arguments: {'status': 'completed'},
+  );
+
+  print('Revenue by location:');
+  for (final item in result.items) {
+    final data = item.value;
+    print('Location ${data['locationId']}: ${data['orderCount']} orders, \$${data['totalRevenue']}');
+  }
+}
+
+// See also:
+// - data-modeling/examples/complex-id-patterns.dart (complex _id design patterns)
+// - data-modeling/examples/id-immutability-workaround.dart (_id immutability)
+// - .claude/guides/best-practices/ditto.md#document-structure-best-practices

@@ -206,7 +206,75 @@ final result = await ditto.store.execute(
 3. **Are they truly independent data sets?** → Use flat (parallel sync benefits)
 4. **High concurrent edits on same document?** → Use flat (reduces conflicts)
 
-**See Also**: `examples/denormalization-good.dart`, `examples/denormalization-bad.dart`, `reference/crdt-types-explained.md`
+**Foreign-Key Relationships (When to Use)**:
+
+While denormalization is often preferred, foreign-key relationships make sense for:
+- **Independent lifecycles**: Entities updated separately (e.g., users vs orders, products vs inventory)
+- **Large reference data**: Product catalogs, configuration tables
+- **Separate access patterns**: Data accessed independently most of the time
+
+```dart
+// ✅ ACCEPTABLE: Foreign-key for independent entities
+// Cars collection
+{
+  "_id": "0016d749-9a9b-4ece-8794-7f3eb40bc82e",
+  "owner_id": "5da42ab5-d00b-4377-8524-43e43abf9e01", // Foreign key
+  "make": "Toyota",
+  "model": "RAV4"
+}
+
+// Owners collection (separate lifecycle)
+{
+  "_id": "5da42ab5-d00b-4377-8524-43e43abf9e01",
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+
+// Query requires 2 steps (no JOIN support)
+final car = (await ditto.store.execute(
+  'SELECT * FROM cars WHERE _id = :carId',
+  arguments: {'carId': carId},
+)).items.first.value;
+
+final owner = (await ditto.store.execute(
+  'SELECT * FROM owners WHERE _id = :ownerId',
+  arguments: {'ownerId': car['owner_id']},
+)).items.first.value;
+```
+
+**Foreign-Key Trade-offs**:
+- ✅ No data duplication
+- ✅ Independent updates (owner changes don't affect cars)
+- ✅ Separate lifecycle management
+- ❌ Multiple sequential queries (performance overhead)
+- ❌ Manual joining in application code
+- ❌ More complex error handling
+
+**Hybrid Approach (Best of Both)**:
+
+Combine embedded and foreign-key patterns:
+
+```dart
+// ✅ BEST: Hybrid approach
+{
+  "_id": "order_123",
+  "customerId": "cust_456",          // Foreign key (for lookups)
+  "customerName": "Alice Johnson",    // Embedded (for display)
+  "items": {...}                      // Embedded (always displayed together)
+}
+```
+
+**When to Use Each Pattern**:
+
+| Use Case | Pattern | Rationale |
+|----------|---------|-----------|
+| Order with items | Embed | Always displayed together |
+| Order with customer name | Hybrid | Embed name for display, reference ID for updates |
+| Product catalog | Foreign-key | Updated independently, large dataset |
+| User profile in order | Hybrid | Embed name/email, reference full profile |
+| System configuration | Foreign-key | Separate lifecycle, rarely accessed |
+
+**See Also**: `examples/denormalization-good.dart`, `examples/denormalization-bad.dart`, `examples/foreign-key-relationship.dart`, `examples/embedded-relationship.dart`, `reference/crdt-types-explained.md`
 
 ---
 
@@ -1145,7 +1213,46 @@ await ditto.store.execute(
 );
 ```
 
+**⚠️ CRITICAL: `_id` Immutability**
+
+The `_id` field cannot be changed after document creation. This is a fundamental constraint:
+
+```dart
+// ❌ BAD: Attempting to change _id after creation
+await ditto.store.execute(
+  'UPDATE orders SET _id = :newId WHERE _id = :oldId',
+  arguments: {'newId': 'new_123', 'oldId': 'old_123'},
+);
+// ERROR: _id field is immutable - this operation will fail
+
+// ✅ GOOD: Create new document with desired _id instead
+final oldDoc = (await ditto.store.execute(
+  'SELECT * FROM orders WHERE _id = :oldId',
+  arguments: {'oldId': 'old_123'},
+)).items.first.value;
+
+// Copy data to new document with new _id
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:doc)',
+  arguments: {'doc': {...oldDoc, '_id': 'new_123'}},
+);
+
+// Delete old document
+await ditto.store.execute(
+  'DELETE FROM orders WHERE _id = :oldId',
+  arguments: {'oldId': 'old_123'},
+);
+```
+
+**Why Immutability Matters**:
+- **Authorization rules**: `_id` structure determines access control
+- **Distributed sync**: Document identity must remain stable across all peers
+- **Reference integrity**: Foreign-key relationships rely on stable IDs
+
 **Option 3: Composite Keys (Advanced)**
+
+Use complex object `_id` for multi-dimensional organization and hierarchical access control.
+
 ```dart
 {
   "_id": {
@@ -1156,7 +1263,38 @@ await ditto.store.execute(
   "locationId": "store_001",
   "orderId": "7c0c20ed-b285-48a6-80cd-6dcf06d52bcc"
 }
+// ⚠️ IMPORTANT: Once created, this _id structure cannot be modified
+
+// Query by component (access specific field)
+final result = await ditto.store.execute(
+  'SELECT * FROM orders WHERE _id.locationId = :locId',
+  arguments: {'locId': 'store_001'},
+);
+
+// Query by full object (exact match)
+final result = await ditto.store.execute(
+  '''SELECT * FROM orders WHERE _id = :idObj''',
+  arguments: {
+    'idObj': {
+      'locationId': 'store_001',
+      'orderId': '7c0c20ed-b285-48a6-80cd-6dcf06d52bcc'
+    }
+  },
+);
 ```
+
+**When to Use Composite Keys**:
+- Multi-dimensional organization (e.g., order + location, user + device)
+- Authorization rules requiring hierarchical access (e.g., filter by locationId)
+- Natural composite primary keys in domain model
+
+**Trade-offs**:
+- ✅ Clear hierarchical structure
+- ✅ Component-level queries without string parsing
+- ✅ Better alignment with authorization rules
+- ❌ More verbose than simple string IDs
+- ❌ Requires careful design - **immutable after creation**
+- ❌ Cannot restructure `_id` if requirements change (must create new documents)
 
 **Option 4: ULID (Time-Ordered)**
 ```dart
@@ -1226,7 +1364,166 @@ await ditto.store.execute(
 - Supports migration from legacy sequential IDs
 - Balances simplicity (UUID v4) with flexibility (alternatives)
 
-**See Also**: `examples/id-generation-patterns.dart`
+**See Also**: `examples/id-generation-patterns.dart`, `examples/complex-id-patterns.dart`, `examples/id-immutability-workaround.dart`
+
+---
+
+### Pattern 11: Field Naming Conventions (MEDIUM)
+
+**Platform**: All
+
+**Problem**: Invalid field names or inconsistent naming conventions cause query errors and maintenance issues
+
+**Detection Triggers**:
+```dart
+// ❌ CRITICAL: Invalid field names (non-string keys)
+{
+  123: "value",        // Number as key - invalid
+  true: "enabled",     // Boolean as key - invalid
+  "_id": "doc_123"     // Valid (string)
+}
+
+// ⚠️ WARNING: Inconsistent naming
+{
+  "customerId": "user_123",     // camelCase
+  "customer_name": "Alice",     // snake_case - inconsistent
+  "CustomerEmail": "alice@..."  // PascalCase - inconsistent
+}
+```
+
+**Root Cause**: Ditto documents are JSON-like structures with specific constraints. Field names MUST be strings (not numbers or booleans).
+
+**✅ DO: Use consistent string field names**
+
+```dart
+// ✅ GOOD: Consistent camelCase naming
+{
+  "_id": "order_123",
+  "customerId": "cust_456",
+  "customerName": "Alice Johnson",
+  "customerEmail": "alice@example.com",
+  "createdAt": "2025-01-15T10:00:00Z",
+  "items": {
+    "item_1": {
+      "productId": "prod_1",
+      "productName": "Widget",
+      "quantity": 2
+    }
+  }
+}
+
+// ✅ GOOD: Consistent snake_case naming
+{
+  "_id": "order_123",
+  "customer_id": "cust_456",
+  "customer_name": "Alice Johnson",
+  "customer_email": "alice@example.com",
+  "created_at": "2025-01-15T10:00:00Z"
+}
+```
+
+**Why Consistent Naming?**
+- **Code readability**: Clear patterns reduce cognitive load
+- **Query simplicity**: Predictable field names simplify DQL queries
+- **Team coordination**: Consistency enables collaboration
+- **Migration ease**: Uniform naming simplifies schema changes
+
+❌ **DON'T: Use non-string keys or inconsistent naming**
+
+```dart
+// ❌ BAD: Non-string field names (invalid)
+{
+  "_id": "doc_123",
+  123: "numeric_key",      // ERROR: Numbers as keys not allowed
+  true: "boolean_key"      // ERROR: Booleans as keys not allowed
+}
+
+// ❌ BAD: Inconsistent naming conventions
+{
+  "_id": "order_123",
+  "customerId": "cust_456",     // camelCase
+  "customer_name": "Alice",     // snake_case
+  "CustomerEmail": "alice@..."  // PascalCase
+}
+// Harder to remember, error-prone
+
+// ❌ BAD: Reserved DQL keywords without escaping
+{
+  "_id": "doc_123",
+  "select": "value",    // DQL keyword - may cause parsing issues
+  "from": "source",     // DQL keyword - may cause parsing issues
+  "where": "condition"  // DQL keyword - may cause parsing issues
+}
+```
+
+**Field Naming Best Practices**:
+
+1. **Choose a convention and stick to it**:
+   - **camelCase** (recommended for Dart/Flutter): `customerId`, `orderDate`, `totalAmount`
+   - **snake_case** (common in databases): `customer_id`, `order_date`, `total_amount`
+   - **Never mix conventions** within the same collection
+
+2. **Avoid DQL reserved keywords**:
+   - Keywords: `SELECT`, `FROM`, `WHERE`, `INSERT`, `UPDATE`, `DELETE`, etc.
+   - If unavoidable, escape with backticks in queries: `` `select` ``
+
+3. **Use descriptive names**:
+   - ✅ `orderTotal` or `order_total`
+   - ❌ `ot`, `t`, `x`
+
+4. **Keep names concise**:
+   - ✅ `createdAt` or `created_at`
+   - ❌ `timestampWhenThisOrderWasCreated`
+
+5. **Boolean prefixes**:
+   - ✅ `isActive`, `hasDiscount`, `canEdit`
+   - ❌ `active`, `discount`, `edit`
+
+**Decision Guide**:
+
+```
+New project?
+  ↓
+Working with Dart/Flutter?
+  ↓ YES → Use camelCase (aligns with Dart conventions)
+  ↓ NO
+  ↓
+Integrating with SQL databases?
+  ↓ YES → Use snake_case (aligns with SQL conventions)
+  ↓ NO
+  ↓
+→ Choose based on team preference (be consistent!)
+```
+
+**Migration Strategy**:
+
+If migrating from inconsistent naming:
+
+```dart
+// Dual-write pattern during migration
+{
+  "_id": "order_123",
+  "customerId": "cust_456",        // New convention (camelCase)
+  "customer_id": "cust_456",       // Legacy (snake_case) - keep temporarily
+  "customerName": "Alice Johnson", // New
+  "customer_name": "Alice Johnson" // Legacy - keep temporarily
+}
+
+// After all clients updated, remove legacy fields
+{
+  "_id": "order_123",
+  "customerId": "cust_456",        // Keep
+  "customerName": "Alice Johnson"  // Keep
+}
+```
+
+**Why This Pattern?**
+- Ensures valid JSON structure (strings-only keys)
+- Improves code maintainability through consistency
+- Reduces query errors from typos
+- Aligns with platform conventions (Dart, SQL, etc.)
+
+**See Also**: `.claude/guides/best-practices/ditto.md#document-structure-best-practices`
 
 ---
 

@@ -742,7 +742,31 @@ final result = await ditto.store.execute(
 
 **Why**: `DISTINCT` buffers all rows in memory. When `_id` is included, results are already unique—`DISTINCT` adds no value but causes high memory usage.
 
-**See Also**: `.claude/guides/best-practices/ditto.md#distinct-keyword`
+**Complex Object _id**:
+
+When using complex object `_id` (composite keys), the same uniqueness guarantee applies:
+
+```dart
+// ❌ BAD: DISTINCT with complex object _id (still redundant)
+final result = await ditto.store.execute(
+  'SELECT DISTINCT _id, status FROM orders',
+);
+// _id (even as object) is still unique per document
+
+// ✅ GOOD: Query by component without DISTINCT
+final result = await ditto.store.execute(
+  'SELECT _id, status FROM orders WHERE _id.locationId = :locId',
+  arguments: {'locId': 'store_001'},
+);
+
+// ✅ GOOD: DISTINCT on specific _id component (if needed)
+final result = await ditto.store.execute(
+  'SELECT DISTINCT _id.locationId FROM orders',
+);
+// Returns unique location IDs
+```
+
+**See Also**: `.claude/guides/best-practices/ditto.md#distinct-keyword`, `.claude/guides/best-practices/ditto.md#document-structure-best-practices`, `data-modeling/examples/complex-id-patterns.dart`
 
 ---
 
