@@ -122,6 +122,18 @@ When implementing features or fixing issues, consult the platform-specific best 
 
 **⚠️ MANDATORY WORKFLOW**: After editing [.claude/guides/best-practices/ditto.md](.claude/guides/best-practices/ditto.md), you **MUST** propagate changes to the corresponding Agent Skills:
 
+**Documentation Format**:
+- The ditto.md file must include version and timestamp information at the **beginning** of the document (immediately after the title)
+- Format:
+  ```markdown
+  > **Version**: X.Y
+  > **Last Updated**: YYYY-MM-DD
+  ```
+- **Version**: Use semantic versioning (Major.Minor). Increment when:
+  - **Major (X)**: Breaking changes, significant restructuring, or major paradigm shifts
+  - **Minor (Y)**: New sections, substantial additions, or non-breaking updates
+- **Last Updated**: Update this date whenever making any changes to the file
+
 **Workflow**:
 1. **After editing ditto.md** - Always review `.claude/skills/ditto/` to identify which skills need updates
 2. **Check relevance** - Review the edited sections and determine which skill files are affected:

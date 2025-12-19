@@ -19,11 +19,12 @@ Each document focuses on platform-specific or technology-specific patterns, with
   - Async programming and performance optimization
   - Testing strategies and platform integration
 
-- **[ditto.md](ditto.md)**: Ditto SDK integration best practices
+- **[ditto.md](ditto.md)**: Ditto SDK integration best practices (versioned document)
   - Initialization and configuration patterns
   - Collection design and schema best practices
   - Query optimization and sync strategies
   - Error handling and resilience patterns
+  - **Note**: This document uses semantic versioning (Major.Minor) to track significant changes
 
 ## How to Use
 
@@ -115,6 +116,14 @@ Patterns should come from:
 - Remove outdated patterns and add deprecation notices if needed
 - Keep examples current with the latest API versions
 - Review and refine patterns based on feedback
+
+### Versioning (ditto.md)
+
+The ditto.md file uses semantic versioning to track major changes:
+- **Major version (X.0)**: Breaking changes, significant restructuring, or major paradigm shifts
+- **Minor version (X.Y)**: New sections, substantial additions, or non-breaking updates
+- Always update both the version number and "Last Updated" date when making changes
+- Version and date should appear at the beginning of the document, immediately after the title
 
 ## References
 

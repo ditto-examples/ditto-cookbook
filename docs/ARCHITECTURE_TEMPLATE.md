@@ -1,6 +1,8 @@
 # [App/Tool Name] Architecture
 
 > **Last Updated**: [YYYY-MM-DD]
+>
+> _Note: Update this date whenever making changes to this document. The timestamp should always remain at the beginning of the document, immediately after the title._
 
 ## Overview
 

@@ -45,7 +45,7 @@ This ensures that developers can:
    - Update Testing Strategy as you write tests
 
 3. **Keep it updated**:
-   - Update the "Last Updated" date with each change
+   - Update the "Last Updated" date (at the beginning of the document) with each change
    - Modify sections as your architecture evolves
    - Add new sections if needed for your specific use case
 
@@ -64,7 +64,7 @@ This ensures that developers can:
 3. **If exists but outdated**:
    - Review recent changes
    - Update affected sections
-   - Update the "Last Updated" date
+   - Update the "Last Updated" date (at the beginning of the document)
 
 ## Documentation Structure
 
@@ -283,7 +283,7 @@ Update `ARCHITECTURE.md` when you:
    - Keep it concise but complete
    - Add code examples if helpful
 
-3. **Update timestamp**:
+3. **Update timestamp** (at the beginning of the document, right after the title):
    ```markdown
    > **Last Updated**: 2025-12-16
    ```
@@ -346,7 +346,7 @@ bash .claude/scripts/architecture-check.sh
 
 - **Update immediately**: Don't wait for "documentation day"
 - **Small changes count**: Even minor updates should be documented
-- **Timestamp everything**: Always update "Last Updated" date
+- **Timestamp everything**: Always update "Last Updated" date (at the beginning of the document)
 - **Review regularly**: Quarterly check for accuracy
 
 ### Make It Useful
