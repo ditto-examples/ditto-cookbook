@@ -1744,9 +1744,80 @@ MAP (object) CRDT types use "add-wins" strategy, automatically merging concurren
 
 #### Fields That Should NOT Be in Documents
 
-**Don't sync**: UI state (isExpanded, selected), computed values (totals, aggregates), temporary state (uploadProgress, isProcessing), device-specific data (local paths)
+**Don't sync**:
+- **UI state**: isExpanded, selected, isHovered
+- **Calculated values**: lineTotal (price × quantity), subtotal, total, tax, averages, sums
+- **Temporary state**: uploadProgress, isProcessing, isSaving
+- **Device-specific data**: local file paths, device IDs (unless needed for business logic)
 
 **Why**: Unnecessary fields multiply bandwidth × devices × sync frequency. Example: 470 bytes of bloat in 1000 docs across 10 devices = 4.7 MB wasted per sync.
+
+**⚠️ CRITICAL: DO NOT STORE CALCULATED FIELDS**
+
+Fields that can be calculated from existing data should **never** be stored in documents:
+
+❌ **DON'T**: Store calculated totals
+```dart
+// ❌ BAD: Storing calculated values
+{
+  "_id": "order_123",
+  "items": {
+    "item_1": {
+      "price": 12.99,
+      "quantity": 2,
+      "lineTotal": 25.98  // ❌ Calculated: price × quantity
+    }
+  },
+  "subtotal": 25.98,  // ❌ Calculated: sum of lineTotals
+  "tax": 2.60,        // ❌ Calculated: subtotal × taxRate
+  "total": 28.58      // ❌ Calculated: subtotal + tax
+}
+// Problems: Wastes bandwidth, increases sync traffic, adds document size
+```
+
+✅ **DO**: Calculate in application layer
+```dart
+// ✅ GOOD: Store only source data
+{
+  "_id": "order_123",
+  "items": {
+    "item_1": {
+      "price": 12.99,
+      "quantity": 2
+    }
+  }
+}
+
+// Calculate on-demand in app
+double calculateLineTotal(Map<String, dynamic> item) {
+  return item['price'] * item['quantity'];
+}
+
+double calculateSubtotal(Map<String, dynamic> items) {
+  return items.values.fold(0.0, (sum, item) =>
+    sum + (item['price'] * item['quantity']));
+}
+
+double calculateTotal(double subtotal, double taxRate) {
+  final tax = subtotal * taxRate;
+  return subtotal + tax;
+}
+```
+
+**Why Calculate Instead of Store?**
+- ✅ Reduces document size (faster sync, lower bandwidth)
+- ✅ Eliminates stale data risk (calculations always current)
+- ✅ Avoids synchronization overhead (no deltas for derived values)
+- ✅ Simplifies updates (update source data only, calculations automatically reflect changes)
+
+**Examples of Calculated Fields to Avoid**:
+- `lineTotal = price × quantity`
+- `subtotal = sum(lineTotals)`
+- `total = subtotal + tax`
+- `averageRating = sum(ratings) / count(ratings)`
+- `remainingStock = initialStock - sum(orderQuantities)` (see [Counter Anti-Patterns](#counter-anti-patterns-and-alternatives))
+- `age = currentDate - birthdate`
+- `daysUntilExpiry = expiryDate - currentDate`
 
 ---
 

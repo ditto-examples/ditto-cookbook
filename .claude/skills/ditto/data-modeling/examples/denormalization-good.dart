@@ -11,8 +11,12 @@
 // 3. ✅ Single-query data access
 // 4. ✅ Snapshot semantics for historical data
 // 5. ✅ Selective denormalization (balance freshness vs convenience)
-// 6. ✅ Denormalized aggregates (computed fields)
+// 6. ✅ Denormalized aggregates (engagement counters, NOT calculated totals)
 // 7. ✅ Reference + denormalized hybrid pattern
+//
+// ⚠️ WARNING: This file contains anti-patterns for demonstration purposes only.
+// The 'lineTotal' and 'totals' fields shown here should NOT be stored in production.
+// See Pattern 2.5 in SKILL.md for correct approach (calculate in app layer).
 //
 // WHY DENORMALIZATION IN DITTO:
 // - No JOIN support in DQL
@@ -75,6 +79,7 @@ Future<void> createOrderWithEmbeddedItems(Ditto ditto, String orderId) async {
           'productSku': laptop['sku'],
           'unitPrice': laptop['price'],
           'quantity': 1,
+          // ⚠️ ANTI-PATTERN: lineTotal should NOT be stored (calculate in app)
           'lineTotal': laptop['price'] * 1,
         },
         'item_2': {
@@ -83,10 +88,12 @@ Future<void> createOrderWithEmbeddedItems(Ditto ditto, String orderId) async {
           'productSku': mouse['sku'],
           'unitPrice': mouse['price'],
           'quantity': 2,
+          // ⚠️ ANTI-PATTERN: lineTotal should NOT be stored (calculate in app)
           'lineTotal': mouse['price'] * 2,
         },
       },
-      // Denormalized aggregates
+      // ⚠️ ANTI-PATTERN: Totals should NOT be stored (calculate in app)
+      // Calculate: subtotal = sum(unitPrice * quantity), tax = subtotal * rate, total = subtotal + tax
       'totals': {
         'subtotal': (laptop['price'] as double) * 1 + (mouse['price'] as double) * 2,
         'tax': 0.0,
@@ -288,9 +295,11 @@ Future<void> createInvoiceWithCustomerInfo(Ditto ditto, String invoiceId) async 
           'description': 'Professional Services - January 2024',
           'quantity': 40,
           'rate': 150.00,
+          // ⚠️ ANTI-PATTERN: amount should NOT be stored (calculate as quantity * rate in app)
           'amount': 6000.00,
         },
       },
+      // ⚠️ ANTI-PATTERN: Totals should NOT be stored (calculate in app)
       'totals': {
         'subtotal': 6000.00,
         'tax': 540.00,
@@ -320,10 +329,11 @@ Future<void> createInvoiceWithCustomerInfo(Ditto ditto, String invoiceId) async 
 }
 
 // ============================================================================
-// PATTERN 5: Denormalized Aggregates and Counters
+// PATTERN 5: Denormalized Engagement Counters (NOT Calculated Totals)
 // ============================================================================
 
-/// ✅ GOOD: Store denormalized aggregates for efficient queries
+/// ✅ GOOD: Store engagement counters (likes, comments) as they are independent metrics
+/// ⚠️ NOTE: This pattern is for COUNTERS (independent data), NOT calculated totals (derivable from source data)
 Future<void> updatePostWithEngagementMetrics(
   Ditto ditto,
   String postId,

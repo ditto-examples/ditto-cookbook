@@ -156,7 +156,7 @@ collections:
         type: MAP
         description: "Order line items (CRDT-safe concurrent additions)"
         required: true
-        note: "USE MAP, NOT ARRAY - arrays lose data on concurrent updates"
+        note: "USE MAP, NOT ARRAY - arrays lose data on concurrent updates. DO NOT store calculated fields like lineTotal (calculate in app as price * quantity)."
         structure:
           key: "Line item ID (e.g., 'item_1', 'item_2')"
           value:
@@ -164,27 +164,12 @@ collections:
             name: REGISTER (string) - "DENORMALIZED item name (snapshot at order time)"
             price: REGISTER (number) - "DENORMALIZED unit price (snapshot at order time)"
             quantity: REGISTER (number) - "Quantity ordered"
-            lineTotal: REGISTER (number) - "Computed total (price × quantity)"
         example:
           item_1:
             menuItemId: "item_burger_001"
             name: "Classic Cheeseburger"
             price: 12.99
             quantity: 2
-            lineTotal: 25.98
-
-      totals:
-        type: MAP
-        description: "Computed order totals"
-        required: true
-        structure:
-          subtotal: REGISTER (number) - "Sum of line totals before tax"
-          tax: REGISTER (number) - "Tax amount"
-          total: REGISTER (number) - "Final total amount"
-        example:
-          subtotal: 25.98
-          tax: 2.60
-          total: 28.58
 
       paymentStatus:
         type: REGISTER (string)
@@ -217,20 +202,16 @@ collections:
           name: "Classic Cheeseburger"
           price: 12.99
           quantity: 2
-          lineTotal: 25.98
-      totals:
-        subtotal: 25.98
-        tax: 2.60
-        total: 28.58
       paymentStatus: "unpaid"
       createdAt: "2025-01-15T12:00:00Z"
       updatedAt: "2025-01-15T12:05:00Z"
+      note: "Calculate totals in app: lineTotal = price * quantity, subtotal = sum of lineTotals, tax = subtotal * taxRate, total = subtotal + tax"
 
     crdt_patterns:
       - "Status transitions: Field-level UPDATE (atomic state changes)"
       - "Items: MAP structure allows concurrent item additions without conflicts"
       - "Item quantities: UPDATE orders.items.item_1.quantity field"
-      - "Totals: Recompute on client, UPDATE entire totals MAP"
+      - "Totals: Calculate in application (price * quantity), DO NOT STORE in document"
       - "Timestamps: Update on every modification"
 
     denormalization_rationale:
@@ -281,6 +262,11 @@ collections:
 #
 # WARNING: If order items grow unbounded, consider limiting items per order
 # or use pagination pattern
+#
+# ⚠️ CRITICAL: DO NOT STORE CALCULATED FIELDS
+# - Examples: lineTotal (price * quantity), subtotal, total, tax
+# - Why: Wastes bandwidth, increases sync traffic, adds unnecessary document size
+# - Solution: Calculate in application layer on-demand
 #
 # ============================================================================
 

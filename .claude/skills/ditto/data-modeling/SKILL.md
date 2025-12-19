@@ -210,6 +210,122 @@ final result = await ditto.store.execute(
 
 ---
 
+### Pattern 2.5: DO NOT Store Calculated Fields (CRITICAL)
+
+**Platform**: All
+
+**Problem**: Fields that can be calculated from existing data waste bandwidth, increase sync traffic, and add unnecessary document size.
+
+**Detection**:
+```dart
+// CRITICAL: Storing calculated values
+{
+  "_id": "order_123",
+  "items": {
+    "item_1": {
+      "price": 12.99,
+      "quantity": 2,
+      "lineTotal": 25.98  // ❌ Calculated: price × quantity
+    }
+  },
+  "subtotal": 25.98,  // ❌ Calculated: sum of lineTotals
+  "tax": 2.60,        // ❌ Calculated: subtotal × taxRate
+  "total": 28.58      // ❌ Calculated: subtotal + tax
+}
+```
+
+✅ **DO**: Calculate derived values in application layer
+
+```dart
+// ✅ GOOD: Store only source data
+{
+  "_id": "order_123",
+  "items": {
+    "item_1": {
+      "price": 12.99,
+      "quantity": 2
+    }
+  }
+}
+
+// Calculate on-demand in app
+double calculateLineTotal(Map<String, dynamic> item) {
+  return item['price'] * item['quantity'];
+}
+
+double calculateSubtotal(Map<String, dynamic> items) {
+  return items.values.fold(0.0, (sum, item) =>
+    sum + (item['price'] * item['quantity']));
+}
+
+double calculateTotal(double subtotal, double taxRate) {
+  final tax = subtotal * taxRate;
+  return subtotal + tax;
+}
+
+// Use in UI
+final order = result.items.first.value;
+final items = order['items'] as Map<String, dynamic>;
+final subtotal = calculateSubtotal(items);
+final total = calculateTotal(subtotal, 0.1); // 10% tax
+```
+
+**Why**: Calculated fields multiply bandwidth × devices × sync frequency. Every field update creates deltas that sync across all peers, even if the underlying source data hasn't changed.
+
+❌ **DON'T**: Store values derivable from existing data
+
+```dart
+// ❌ BAD: Storing calculated inventory
+{
+  "_id": "product_123",
+  "initialStock": 100,
+  "currentStock": 85  // ❌ Calculated from orders
+}
+
+// ❌ BAD: Storing calculated age
+{
+  "_id": "user_456",
+  "birthdate": "1990-01-15",
+  "age": 35  // ❌ Calculated: currentDate - birthdate
+}
+
+// ❌ BAD: Storing calculated average
+{
+  "_id": "product_789",
+  "ratings": [5, 4, 5, 3, 4],
+  "averageRating": 4.2  // ❌ Calculated: sum(ratings) / count(ratings)
+}
+```
+
+**Common Calculated Fields to Avoid**:
+- `lineTotal = price × quantity`
+- `subtotal = sum(lineTotals)`
+- `total = subtotal + tax`
+- `averageRating = sum(ratings) / count(ratings)`
+- `currentStock = initialStock - sum(orderQuantities)` (see Pattern 4 counter anti-patterns)
+- `age = currentDate - birthdate`
+- `daysUntilExpiry = expiryDate - currentDate`
+
+**Benefits of Calculating in App**:
+- ✅ Reduces document size (faster sync, lower bandwidth)
+- ✅ Eliminates stale data risk (calculations always current)
+- ✅ Avoids synchronization overhead (no deltas for derived values)
+- ✅ Simplifies updates (update source data only)
+
+**When to Store vs Calculate**:
+
+| Field Type | Store or Calculate? |
+|------------|---------------------|
+| Source data (price, quantity, birthdate) | ✅ Store |
+| Derived values (lineTotal, age, average) | ✅ Calculate in app |
+| Snapshot data (price at order time) | ✅ Store (denormalization for history) |
+| Aggregates (sum, count, average) | ✅ Calculate in app |
+| UI state (isExpanded, selected) | ❌ Never store (local state only) |
+
+**See Also**: `.claude/guides/best-practices/ditto.md#exclude-unnecessary-fields-from-documents`
+
+---
+
 ### Pattern 3: Field-Level Updates vs Document Replacement (HIGH)
 
 **Platform**: All
@@ -1118,6 +1234,7 @@ await ditto.store.execute(
 
 - [ ] **ID Generation**: Use UUID v4 (or auto-generated IDs) for distributed systems, NOT sequential IDs
 - [ ] **Display IDs**: Consider random suffix for displayId fields (e.g., "ORD-20251219-A7F3") to reduce user confusion
+- [ ] **NO Calculated Fields**: DO NOT store lineTotal, subtotal, total, or any value derivable from existing data
 - [ ] **Arrays**: Convert mutable arrays to MAP structures (use keys instead of indices)
 - [ ] **Denormalization**: Embed data that's always retrieved together (avoid sequential queries)
 - [ ] **Field Updates**: Use field-level UPDATE, not full document replacement
