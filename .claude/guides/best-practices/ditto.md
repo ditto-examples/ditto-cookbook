@@ -3097,6 +3097,106 @@ final observer = ditto.store.registerObserver(
 
 **⚠️ Flutter SDK v4.x**: No backpressure control. Callbacks fire for every change. Keep processing lightweight.
 
+**Flutter SDK Stream-Based Pattern** (Recommended for Flutter):
+
+The Flutter SDK provides a **Stream-based API** via `StoreObserver.changes`, which is more idiomatic for Dart/Flutter applications:
+
+```dart
+// ✅ GOOD: Stream-based observer (Flutter SDK convenience API)
+final observer = ditto.store.registerObserver(
+  'SELECT * FROM orders WHERE status = :status',
+  arguments: {'status': 'active'},
+);
+
+// Listen to changes using Stream API
+final subscription = observer.changes.listen((result) {
+  final orders = result.items.map((item) => item.value).toList();
+  updateUI(orders);
+});
+
+// Cleanup
+subscription.cancel();
+observer.cancel(); // Also closes the stream
+```
+
+**Why Use Stream-Based Pattern:**
+- ✅ Dart-idiomatic: Works seamlessly with async/await and StreamBuilder
+- ✅ Composable: Can use Stream operators (map, where, debounce, etc.)
+- ✅ Integrates with Flutter: Works directly with StreamBuilder widget
+- ✅ Cleaner lifecycle: Stream closes automatically when observer is cancelled
+
+**Example with StreamBuilder** (Flutter UI Integration):
+
+```dart
+class OrderListWidget extends StatefulWidget {
+  @override
+  State<OrderListWidget> createState() => _OrderListWidgetState();
+}
+
+class _OrderListWidgetState extends State<OrderListWidget> {
+  late final Ditto ditto;
+  late final StoreObserver observer;
+
+  @override
+  void initState() {
+    super.initState();
+    ditto = context.read<Ditto>(); // Or get from your DI solution
+    observer = ditto.store.registerObserver(
+      'SELECT * FROM orders ORDER BY createdAt DESC',
+      arguments: {},
+    );
+  }
+
+  @override
+  void dispose() {
+    observer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QueryResult>(
+      stream: observer.changes,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const CircularProgressIndicator();
+        }
+
+        final orders = snapshot.data!.items
+            .map((item) => item.value)
+            .toList();
+
+        return ListView.builder(
+          itemCount: orders.length,
+          itemBuilder: (context, index) {
+            final order = orders[index];
+            return ListTile(
+              title: Text(order['customerName'] as String),
+              subtitle: Text('Total: \$${order['total']}'),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+```
+
+**Callback-Based Pattern** (Alternative):
+
+For simple scenarios, the callback-based API remains valid:
+
+```dart
+final observer = ditto.store.registerObserver(
+  'SELECT * FROM orders WHERE status = :status',
+  onChange: (result) {
+    final orders = result.items.map((item) => item.value).toList();
+    updateUI(orders);
+  },
+  arguments: {'status': 'active'},
+);
+```
+
 **❌ DON'T: Heavy processing inside callback**
 ```dart
 onChange: (result, signalNext) {
@@ -3337,28 +3437,22 @@ Use Riverpod providers to separate data management from UI, allowing selective w
 // 1. Provider for Ditto store
 final dittoProvider = Provider<Ditto>((ref) => throw UnimplementedError());
 
-// 2. Provider for orders data with observer
-final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) async* {
+// 2. Provider for orders data with observer (Flutter SDK v4.x)
+final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final ditto = ref.watch(dittoProvider);
-  final controller = StreamController<List<Map<String, dynamic>>>();
 
-  final observer = ditto.store.registerObserverWithSignalNext(
+  final observer = ditto.store.registerObserver(
     'SELECT * FROM orders ORDER BY createdAt DESC',
-    onChange: (result, signalNext) {
-      final orders = result.items.map((item) => item.value).toList();
-      controller.add(orders);
-      WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-    },
+    arguments: {},
   );
 
   ref.onDispose(() {
     observer.cancel();
-    controller.close();
   });
 
-  await for (final orders in controller.stream) {
-    yield orders;
-  }
+  return observer.changes.map((result) {
+    return result.items.map((item) => item.value).toList();
+  });
 });
 
 // 3. Provider for single order (granular selection)

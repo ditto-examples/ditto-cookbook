@@ -37,6 +37,8 @@ Use this Skill when:
 
 **Platform-Specific Warnings**:
 - **Flutter SDK v4.x**: Only `registerObserver` available (no `signalNext` support until v5.0)
+  - **Recommended**: Use `observer.changes` Stream API (Dart-idiomatic, works with StreamBuilder)
+  - **Alternative**: Use `onChange` callback for simple cases
 - **Flutter SDK v5.0+**: Will support `registerObserverWithSignalNext`
 - **Non-Flutter** (Swift, JS, Kotlin): `registerObserverWithSignalNext` recommended (SDK 4.12+)
 - **All platforms**: DQL query patterns, subscription management
@@ -184,6 +186,24 @@ observer = ditto.store.registerObserver(
   },
   arguments: {'category': 'electronics'},
 );
+
+// ✅ Flutter SDK v4.x Stream-Based Pattern (Recommended for Flutter):
+observer = ditto.store.registerObserver(
+  'SELECT * FROM products WHERE category = :category',
+  arguments: {'category': 'electronics'},
+);
+
+// Listen using Stream API (Dart-idiomatic)
+final subscription = observer.changes.listen((result) {
+  final products = result.items
+    .map((item) => Product.fromJson(item.value))
+    .toList();
+  updateUI(products);
+});
+
+// Cleanup
+subscription.cancel();
+observer.cancel();
 ```
 
 **❌ DON'T**:
@@ -1015,7 +1035,9 @@ field SIMILAR TO 'prefix%' // Use LIKE 'prefix%' instead
 ### Observer Patterns
 - [ ] **Non-Flutter SDKs**: Prefer `registerObserverWithSignalNext` (better performance)
 - [ ] **Non-Flutter SDKs**: Calling `signalNext()` after render cycle completes (e.g., `addPostFrameCallback`)
-- [ ] **Flutter SDK v4.x**: Use `registerObserver` (only option until v5.0, no backpressure control)
+- [ ] **Flutter SDK v4.x**: Use `registerObserver` (only option until v5.0)
+  - [ ] **Recommended**: Use `observer.changes` Stream API for Dart-idiomatic pattern
+  - [ ] **Alternative**: Use `onChange` callback for simple synchronous processing
 - [ ] **Flutter SDK v5.0+**: Will support `registerObserverWithSignalNext`
 - [ ] Lightweight observer callbacks (extract data only, offload heavy processing)
 - [ ] **Legacy observeLocal Migration**: See [Replacing observeLocal](.claude/guides/best-practices/ditto.md#replacing-legacy-observelocal-with-store-observers-sdk-412) for Differ pattern (non-Flutter SDKs)

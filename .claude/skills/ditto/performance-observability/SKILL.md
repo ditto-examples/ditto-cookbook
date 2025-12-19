@@ -67,6 +67,8 @@ class _OrderListScreenState extends State<OrderListScreen> {
   @override
   void initState() {
     super.initState();
+    // ⚠️ Note: This uses registerObserverWithSignalNext (NOT available in Flutter SDK v4.x)
+    // Flutter SDK v4.x must use registerObserver or observer.changes Stream API
     observer = ditto.store.registerObserverWithSignalNext(
       'SELECT * FROM orders',
       onChange: (result, signalNext) {
@@ -76,6 +78,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
         // Entire screen rebuilds when ANY order changes!
         WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
       },
+      arguments: {},
     );
   }
 
@@ -101,28 +104,22 @@ class _OrderListScreenState extends State<OrderListScreen> {
 // Use Riverpod for granular widget rebuilds
 final dittoProvider = Provider<Ditto>((ref) => throw UnimplementedError());
 
-// Provider for orders data with observer
-final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) async* {
+// Provider for orders data with observer (Flutter SDK v4.x)
+final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final ditto = ref.watch(dittoProvider);
-  final controller = StreamController<List<Map<String, dynamic>>>();
 
-  final observer = ditto.store.registerObserverWithSignalNext(
+  final observer = ditto.store.registerObserver(
     'SELECT * FROM orders ORDER BY createdAt DESC',
-    onChange: (result, signalNext) {
-      final orders = result.items.map((item) => item.value).toList();
-      controller.add(orders);
-      WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-    },
+    arguments: {},
   );
 
   ref.onDispose(() {
     observer.cancel();
-    controller.close();
   });
 
-  await for (final orders in controller.stream) {
-    yield orders;
-  }
+  return observer.changes.map((result) {
+    return result.items.map((item) => item.value).toList();
+  });
 });
 
 // Provider for single order (granular selection)
