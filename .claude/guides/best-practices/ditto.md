@@ -3973,7 +3973,7 @@ final observer = ditto.store.registerObserver(
 - **Non-Flutter SDKs**: Call `signalNext()` to control backpressure explicitly
 
 **❌ DON'T:**
-- **Non-Flutter SDKs**: Use `registerObserver` for most use cases (worse performance, use only for very simple data processing)
+- **Non-Flutter SDKs**: Use `registerObserver` as the default choice (worse performance, missing backpressure control). Prefer `registerObserverWithSignalNext` instead, using `registerObserver` only for very simple data processing where backpressure control is explicitly not needed
 - Cancel and recreate observers frequently (avoid unnecessary churn)
 - Perform heavy processing (complex computations, network calls, file I/O) inside observer callbacks
 - Block the callback thread with synchronous heavy operations
@@ -5628,9 +5628,9 @@ class AccurateTimeService {
 **❌ DON'T:**
 - Assume device clocks are synchronized across the mesh
 - Reject documents solely based on timestamp validation
-- Use platform-specific timestamp formats (Unix epoch, platform Date objects)
+- Use platform-specific timestamp formats that aren't portable or well-documented
 - Rely on timestamp precision for conflict resolution (use Ditto's CRDT semantics instead)
-- Store timestamps as numbers (use ISO-8601 strings)
+- Store timestamps in unclear or inconsistent formats (use ISO-8601 strings or UNIX timestamps consistently)
 
 **Platform-Specific Implementations:**
 
