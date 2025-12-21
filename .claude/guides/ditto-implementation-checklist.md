@@ -22,6 +22,25 @@
 
 **Why this matters:** Ditto initialization and operations can fail due to licensing, network, platform issues, or invalid queries. Graceful error handling prevents app crashes and provides user feedback.
 
+**Code Example**:
+
+```dart
+// ✅ GOOD: Proper error handling for Ditto initialization
+try {
+  final ditto = await Ditto.open(
+    identity: OnlinePlaygroundIdentity(appId: appId, token: token),
+  );
+  await ditto.startSync();
+} on DittoError catch (e) {
+  // Handle Ditto-specific errors (licensing, permissions, etc.)
+  print('Ditto initialization failed: ${e.message}');
+  showErrorDialog('Failed to initialize sync');
+} catch (e) {
+  // Handle unexpected errors
+  print('Unexpected error: $e');
+}
+```
+
 ### ☐ Use DQL API (current), not legacy builder API
 
 **What this means:** Use `ditto.store.execute('SELECT * FROM collection ...')` and related DQL methods. Avoid deprecated builder APIs like `ditto.store.collection('name').find()`.
@@ -50,13 +69,35 @@ await ditto.startSync(); // Settings guaranteed to be applied
 
 ## Section 2: Data Modeling Fundamentals
 
-### ☐ Use UUID v4 or auto-generated IDs, not sequential IDs
+### ☐ Avoid ID patterns that can cause collisions across devices
 
-**What this means:** Generate globally unique IDs using UUID v4, ULID, or omit `_id` to let Ditto auto-generate (recommended). Never use sequential numbers, timestamps, or device-based counters.
+**What this means:** Never use sequential counters, timestamps, or device-based patterns for document IDs when multiple devices can create documents independently. Use globally unique identifiers (UUID v4, ULID) or let Ditto auto-generate IDs. Composite keys (e.g., `{"userId": "user123", "orderId": "<uuid>"}`) are acceptable when the combination is guaranteed unique.
 
-**Why this matters:** Sequential ID generation causes collisions when multiple offline devices create documents with the same ID pattern (e.g., "order_001"). Collisions trigger conflict resolution, potentially causing data loss or unexpected behavior. Ditto's auto-generated IDs are globally unique and collision-free.
+**Why this matters:** Sequential ID generation causes collisions when multiple offline devices create documents with the same ID pattern (e.g., "order_001"). Collisions trigger conflict resolution, potentially causing data loss or unexpected behavior. For authorization patterns using composite keys (e.g., `{"userId": "user123", "resourceId": "<uuid>"}`), ensure at least one component is globally unique.
 
-**Note**: `package:uuid/uuid.dart` is Flutter/Dart specific. Equivalent UUID libraries are available for all platforms.
+**Code Example**:
+
+```dart
+// ❌ BAD: Sequential IDs cause collisions across offline devices
+int orderCounter = 1;
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {'_id': 'order_${orderCounter++}', 'item': 'Coffee'}
+  },
+);
+// Device A creates "order_1", Device B also creates "order_1" → Collision!
+
+// ✅ GOOD: Let Ditto auto-generate globally unique IDs
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {'item': 'Coffee'}  // No _id → Ditto auto-generates
+  },
+);
+```
+
+**Note**: Composite keys are useful for authorization patterns (permissions based on `_id.userId`). See Section 10 for security patterns.
 
 ### ☐ Use MAP instead of arrays for mutable data
 
@@ -83,10 +124,22 @@ await ditto.startSync(); // Settings guaranteed to be applied
 ### ☐ Use embedded vs foreign-key relationships appropriately
 
 **What this means:** Decide whether to embed related data in a single document or use separate documents with foreign-key references:
-- **Embedded**: Single query, data duplication, better for small static data
-- **Foreign-key**: Multiple queries, normalized data, better for large or frequently updated data
 
-**Why this matters:** Ditto does not support SQL-style JOINs. Choice affects query complexity, data duplication, and sync efficiency. Embedded data syncs together; foreign-key data syncs independently.
+**Embedded (denormalized)**:
+- Store related data directly within the parent document
+- Requires single query to retrieve all data
+- Data duplication across documents (same customer info in multiple orders)
+- All related data syncs as a single unit
+- Best for: Small, static data retrieved together (order items, user profile with address)
+
+**Foreign-key (normalized)**:
+- Store related data in separate documents, reference by ID
+- Requires multiple sequential queries (no JOIN support in Ditto)
+- No data duplication, single source of truth
+- Related data syncs independently
+- Best for: Large data, frequently updated data, or data accessed independently (user profiles, product catalogs)
+
+**Why this matters:** Ditto does not support SQL-style JOINs. With embedded data, one query retrieves everything but duplicates data across documents. With foreign-keys, you need multiple sequential queries (N+1 pattern risk) but maintain a single source of truth. Choose based on: (1) how data is accessed together, (2) update frequency, (3) data size, and (4) acceptable duplication trade-offs. Embedded data optimizes read performance at the cost of write overhead and storage; foreign-keys optimize write performance and storage at the cost of multiple queries.
 
 ### ☐ Avoid storing large binary data directly in documents
 
@@ -134,6 +187,58 @@ double calculateTotal(Map<String, dynamic> items, double taxRate) {
 }
 ```
 
+### ☐ Exclude unnecessary data from documents
+
+**What this means:** Every field in a Ditto document syncs across all peers in the mesh network, consuming bandwidth and storage. Only include data that represents shared business state needed across devices. Don't sync:
+
+- **UI-specific state**: Expansion/selection/hover states, scroll positions, active tab indices
+- **Temporary/transient state**: Upload progress, processing flags, retry counters, loading indicators
+- **Device-specific data**: Local file paths, device IDs (unless required for authorization), device capabilities
+- **Cached/derived data**: Values that can be calculated from other fields or fetched from external sources
+- **High-frequency ephemeral data**: Mouse cursor positions, typing indicators, real-time sensor readings that don't need persistence
+- **Debug/development data**: Test flags, debug counters, development-only metadata
+
+**Why this matters:** Syncing unnecessary data wastes network bandwidth (critical for metered connections), drains battery (continuous sync), bloats storage on all devices, and slows sync performance for important business data. Every peer must store, process, and relay this data, even though much of it is only relevant to a single device or moment in time.
+
+**Key principle:** Only sync data that represents **business state** (the "single source of truth" needed across devices), not **presentation state** (how UI displays data), **transient state** (temporary processing status), or **device-local state** (specific to one device's environment).
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Syncing unnecessary data
+{
+  "_id": "task_123",
+  "title": "Review PR",
+  "status": "pending",
+  // ❌ UI state (device-specific, not business data)
+  "isExpanded": true,
+  "selectedTab": 2,
+  // ❌ Temporary state (transient, changes frequently)
+  "uploadProgress": 67,
+  "isProcessing": false,
+  // ❌ Device-specific (only relevant to one device)
+  "localFilePath": "/storage/cache/task_123.tmp",
+  // ❌ Cached data (can be fetched from external source)
+  "userAvatarUrl": "https://api.example.com/avatars/user_789.jpg"
+}
+
+// ✅ GOOD: Only business state synced, other data managed locally
+{
+  "_id": "task_123",
+  "title": "Review PR",
+  "status": "pending",
+  "assignee": "user_789"  // Business data: who's responsible
+}
+
+// Store non-business state locally (ViewModel, cache, device storage):
+class TaskViewModel {
+  final Task task;  // Ditto business data
+  bool isExpanded = false;  // UI state (local)
+  double uploadProgress = 0.0;  // Temporary state (local)
+  String? cachedAvatarUrl;  // Cached data (fetched as needed)
+}
+```
+
 ---
 
 ### ☐ Enable DQL Strict Mode for type safety across peers [SDK 4.11+]
@@ -146,11 +251,11 @@ double calculateTotal(Map<String, dynamic> items, double taxRate) {
 
 ## Section 3: Write Operations
 
-### ☐ Use ON ID CONFLICT DO NOTHING for idempotent INSERTs
+### ☐ Use ON ID CONFLICT DO NOTHING for safe repeated INSERTs
 
 **What this means:** When inserting documents that should only be created once (e.g., initial setup data), use `INSERT ... ON ID CONFLICT DO NOTHING` to silently skip if the document already exists.
 
-**Why this matters:** Prevents errors when re-running initialization code. Ensures idempotency without requiring explicit checks before INSERT.
+**Why this matters:** Prevents errors when re-running initialization code. Allows you to safely run the same INSERT statement multiple times without checking if the document already exists first.
 
 ### ☐ Use field-level UPDATE instead of full document replacement
 
@@ -178,9 +283,9 @@ await ditto.store.execute(
 
 ### ☐ Avoid updating fields with the same value unnecessarily
 
-**What this means:** Before executing an UPDATE, check if the new value differs from the current value. Skip the UPDATE if values are identical.
+**What this means:** Before executing an UPDATE statement, query the document to check if the new value differs from the current value. Skip the UPDATE if the values are identical.
 
-**Why this matters:** Updating a field with the same value still creates a sync delta and triggers observers, causing unnecessary network traffic and UI updates. Checking before updating optimizes performance.
+**Why this matters:** Even when updating a field with the same value (e.g., setting `status = "pending"` when it's already `"pending"`), Ditto treats this as a change and creates a sync delta. This delta is transmitted to all peers across the mesh network, consuming bandwidth and triggering observer callbacks unnecessarily. The underlying CRDT counter increments regardless of whether the value actually changed, causing every peer to process the update. By checking before updating, you avoid this unnecessary network traffic, reduce sync overhead, and prevent redundant UI updates across all connected devices. This is particularly important in high-frequency update scenarios where the same value might be set repeatedly (e.g., periodic status checks, polling loops, or user interactions).
 
 ### ☐ Use DO UPDATE_LOCAL_DIFF for efficient upserts [SDK 4.12+]
 
@@ -233,6 +338,75 @@ await ditto.store.execute(
 );
 ```
 
+### ☐ Don't use counters for derived values that can be calculated
+
+**What this means:** Avoid maintaining counter fields that represent aggregated or calculated values from other data sources. Instead, calculate these values from the source data when needed. Common anti-patterns include:
+
+- **Inventory counters**: Don't maintain `currentStock` as a counter field—calculate it from order/transaction history
+- **Relationship counts**: Don't maintain `followerCount` updated from `followers` collection—query and count when needed
+- **Status tallies**: Don't maintain `completedTaskCount` from `tasks` collection—query with filters
+
+**Why this matters:** Counters for derived values create several problems:
+
+1. **Cross-collection synchronization complexity**: Updating source data (e.g., orders) requires also updating counters in other collections (e.g., products), creating tight coupling
+2. **Data integrity risk**: Source data and counters can become inconsistent if updates fail partially or sync in wrong order
+3. **Not self-correcting**: If counters drift out of sync due to bugs or data issues, they don't auto-correct. Calculated values are always accurate based on current source data.
+4. **Single source of truth violation**: Maintains redundant state that must be kept synchronized
+
+**When counters ARE appropriate:** Use counters (COUNTER type with PN_INCREMENT) for **independent, additive data** where each increment is a standalone event:
+- ✅ View counts (each view is independent)
+- ✅ Like counts (each like is independent)
+- ✅ Usage metrics (each usage event is independent)
+- ✅ Vote tallies (each vote is independent)
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Using counter for derived inventory value
+// Product document maintains currentStock counter
+{
+  "_id": "product_123",
+  "name": "Coffee Beans",
+  "currentStock": 50  // ❌ Counter updated from orders collection
+}
+
+// When order is placed, must update TWO collections:
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {'order': {'_id': 'o1', 'productId': 'product_123', 'qty': 5}}
+);
+await ditto.store.execute(
+  'UPDATE products APPLY currentStock PN_INCREMENT BY -5.0 WHERE _id = :id',
+  arguments: {'id': 'product_123'}
+);
+// Problems: Cross-collection coupling, integrity risk, not self-correcting
+
+// ✅ GOOD: Calculate inventory from order history
+// Product document has no stock counter
+{
+  "_id": "product_123",
+  "name": "Coffee Beans",
+  "initialStock": 100  // Starting inventory (baseline)
+}
+
+// Order documents are source of truth
+{'_id': 'o1', 'productId': 'product_123', 'qty': 5}
+{'_id': 'o2', 'productId': 'product_123', 'qty': 10}
+
+// Calculate current stock from orders when needed:
+int calculateCurrentStock(String productId) {
+  final product = getProduct(productId);
+  final orders = getOrders(productId);
+  final totalOrdered = orders.fold(0, (sum, order) => sum + order['qty']);
+  return product['initialStock'] - totalOrdered;
+}
+// Benefits: Single source of truth, self-correcting, no cross-collection updates
+```
+
+**Decision guide:**
+- **Use calculation** if the value is derived from existing data (aggregations, sums, counts of related documents)
+- **Use COUNTER** if each increment represents an independent event that doesn't depend on other documents
+
 ### ☐ Use separate documents for event history, not arrays
 
 **What this means:** For append-only logs (status history, audit trails), INSERT a new document for each event instead of appending to an array field.
@@ -249,28 +423,48 @@ await ditto.store.execute(
 
 ## Section 4: Deletion & Storage Lifecycle
 
-### ☐ Understand the difference between Soft-Delete (Logical Deletion) and DELETE queries
+### ☐ Understand the difference between Soft-Delete and DELETE queries
 
-**What this means:**
-- **Soft-Delete (Logical Deletion)**: Mark documents as deleted using a flag (e.g., `UPDATE collection SET isDeleted = true WHERE _id = :id`). Documents remain in the database and sync across peers.
-- **DELETE query**: Permanently remove documents from the database using `DELETE FROM collection WHERE _id = :id`. Deletion propagates to all peers via tombstones.
+**What this means:** Both approaches achieve the same goal of removing documents from the system, but use different techniques with different risks and trade-offs:
 
-**Why this matters:** These two approaches have fundamentally different behaviors:
-- **Soft-Delete** allows documents to relay through intermediate peers (multi-hop sync works), enables "undo" functionality, preserves audit trails, and prevents husked documents. However, it requires periodic cleanup (EVICT) to free storage.
-- **DELETE query** permanently removes data across the mesh, frees storage automatically after tombstone TTL, but breaks multi-hop relay if peers are offline during the TTL window, and can cause husked documents when concurrent with UPDATEs.
+- **Soft-Delete**: Mark documents as deleted using a flag (e.g., `UPDATE orders SET isDeleted = true WHERE _id = :id`), filter them out in queries/observers, then periodically remove them locally with `EVICT FROM orders WHERE isDeleted = true AND deletedAt < :oldDate`.
+- **DELETE query**: Physically remove documents immediately using `DELETE FROM orders WHERE _id = :id`. Deletion propagates to all peers via tombstones (compressed deletion records with 30-day TTL on Cloud, configurable on Edge SDK).
 
-**When to use each:**
-- Use **Soft-Delete** for user-facing deletions (trash, archive), when multi-hop relay is critical, when you need audit trails, or when "undo" functionality is required.
-- Use **DELETE query** only for permanent data removal (GDPR compliance, sensitive data cleanup), internal/system data that doesn't need relay, or when storage constraints are critical.
+**Why this matters:** Soft-Delete is generally safer but more complex to implement correctly:
 
-### ☐ Use logical deletion pattern: subscribe broadly, filter in observers/queries
+**Soft-Delete advantages:**
+- ✅ No zombie data risk: Documents won't reappear from long-offline devices (>30 days)
+- ✅ No husked document risk: Concurrent DELETE + UPDATE cannot create broken documents
+- ✅ Reliable multi-hop relay: Deleted documents continue to sync through intermediate peers
+- ✅ Optional: Can enable undo/restore or preserve audit trails (though EVICT still removes them eventually)
 
-**What this means:**
+**Soft-Delete disadvantages:**
+- ❌ Higher implementation complexity: Must filter `isDeleted` consistently in all queries and observers
+- ❌ Implementation mistakes are common: Easy to forget filtering or incorrectly filter in subscriptions (breaks relay)
+- ❌ Slightly slower queries: Larger dataset until EVICT removes old deleted documents
+- ❌ Manual cleanup required: Must implement periodic EVICT to free storage
+
+**DELETE query advantages:**
+- ✅ Simpler implementation: Automatic deletion handling, no filtering required
+- ✅ Faster queries: Smaller dataset after tombstone TTL expires
+
+**DELETE query disadvantages:**
+- ❌ Zombie data risk: If device reconnects after tombstone TTL expires (>30 days Cloud), deleted data reappears as new inserts
+- ❌ Husked document risk: Concurrent DELETE + UPDATE from different peers can create documents with no fields except `_id`
+- ❌ Multi-hop relay breaks: If intermediate peer is offline during TTL window, deletion doesn't reach indirectly connected peers
+
+**Choose based on risk tolerance and implementation capacity:**
+- **Use Soft-Delete** when: You need the safest deletion approach and can manage the implementation complexity, devices may be offline >30 days, or you need reliable multi-hop relay of deletions
+- **Use DELETE** when: All devices sync regularly (within 30-day TTL), you can accept zombie data risk, implementation simplicity is critical, or data is temporary/ephemeral with short lifecycle
+
+### ☐ (If using Soft-Delete) Subscribe broadly, filter in observers/queries
+
+**What this means:** When implementing Soft-Delete with an `isDeleted` flag:
 - **Subscriptions**: `SELECT * FROM orders` (no `isDeleted` filter)
 - **Observers**: `SELECT * FROM orders WHERE isDeleted != true`
 - **Queries**: `SELECT * FROM orders WHERE isDeleted != true`
 
-**Why this matters:** Filtering deletion flags in subscriptions breaks multi-hop relay. Intermediate devices won't store deleted documents, preventing deletion notifications from reaching indirectly connected peers. Subscribe broadly for relay, filter locally for display.
+**Why this matters:** Filtering deletion flags in subscriptions breaks multi-hop relay. Intermediate devices won't store deleted documents, preventing deletion notifications from reaching indirectly connected peers. Subscribe broadly for relay, filter locally for display. This is a critical implementation pattern only for Soft-Delete—if using DELETE queries, this does not apply.
 
 **Code Example**:
 
@@ -293,48 +487,19 @@ final observer = ditto.store.registerObserverWithSignalNext(
 );
 ```
 
-### ☐ Understand husked documents and how to prevent them
-
-**What this means:** "Husked documents" occur when one peer DELETEs a document while another peer concurrently UPDATEs it. After merge, the document exists but has only `_id` and the updated field(s), with all other fields set to null.
-
-**Why this matters:** Husked documents can break application logic that assumes required fields always exist. Logical deletion prevents husking by using UPDATE instead of DELETE.
-
-**Code Example**:
-
-```dart
-// ❌ PROBLEM: DELETE + concurrent UPDATE = husked document
-// Device A:
-await ditto.store.execute('DELETE FROM cars WHERE _id = :id', arguments: {'id': 'car1'});
-// Device B (offline):
-await ditto.store.execute('UPDATE cars SET color = :color WHERE _id = :id', arguments: {'color': 'blue', 'id': 'car1'});
-// Result after sync: {_id: "car1", color: "blue", make: null, model: null}
-
-// ✅ SOLUTION: Logical deletion prevents husked documents
-await ditto.store.execute(
-  'UPDATE cars SET isDeleted = true, deletedAt = :time WHERE _id = :id',
-  arguments: {'time': DateTime.now().toIso8601String(), 'id': 'car1'},
-);
-```
-
-### ☐ Periodically EVICT old logically deleted documents
+### ☐ (If using Soft-Delete) Periodically EVICT old deleted documents
 
 **What this means:** After marking documents as deleted (e.g., `isDeleted: true, deletedAt: <timestamp>`), periodically run `EVICT FROM collection WHERE isDeleted = true AND deletedAt < :cutoff` to free local storage. Choose an appropriate retention period (e.g., 30-90 days).
 
-**Why this matters:** Logical deletion keeps documents in the database indefinitely, consuming storage. Eviction removes old deleted documents from local storage without affecting peers (EVICT is local-only, not DELETE). This prevents storage bloat while maintaining multi-hop relay during the retention period.
+**Why this matters:** Soft-Delete keeps documents in the database indefinitely, consuming storage. Eviction removes old deleted documents from local storage without affecting peers (EVICT is local-only, not DELETE). This prevents storage bloat while maintaining multi-hop relay during the retention period.
 
-### ☐ Avoid mixing DELETE and UPDATE on the same documents
-
-**What this means:** Don't use DELETE for some scenarios and logical deletion (UPDATE with `isDeleted: true`) for others within the same collection. Choose one deletion strategy and apply it consistently.
-
-**Why this matters:** Mixed strategies create confusion and make it difficult to query for all "deleted" documents. Consistent logical deletion simplifies code and prevents husked documents.
-
-### ☐ Use EVICT for local-only removal (doesn't affect peers)
+### ☐ (If using Soft-Delete) Use EVICT for local-only removal
 
 **What this means:** `EVICT FROM collection WHERE ...` removes documents from local storage only. Peers retain their copies and can re-share evicted documents later.
 
-**Why this matters:** EVICT frees local storage without affecting other devices. Useful for clearing caches, removing old data, or managing storage limits on resource-constrained devices.
+**Why this matters:** EVICT frees local storage without affecting other devices. Useful for clearing caches, removing old data, or managing storage limits on resource-constrained devices. This is critical for Soft-Delete cleanup—EVICT removes documents locally after the retention period without affecting multi-hop relay.
 
-### ☐ Cancel subscriptions before EVICT to prevent resync loops
+### ☐ (If using Soft-Delete) Cancel subscriptions before EVICT to prevent resync loops
 
 **What this means:** When evicting documents from local storage, cancel the corresponding subscription first, then EVICT, then recreate the subscription with an updated filter if needed.
 
@@ -360,7 +525,36 @@ orderSubscription = ditto.sync.registerSubscription(
 );
 ```
 
-### ☐ Use DELETE only for permanent removal (affects all peers)
+### ☐ (If using DELETE) Understand tombstones and TTL behavior
+
+**What this means:** When you DELETE a document, Ditto creates a tombstone that propagates to peers during the TTL window (default: 30 days). After TTL expires, the tombstone is removed, and peers who were offline during the entire TTL window may re-share the document ("zombie resurrection").
+
+**Why this matters:** Tombstones enable deletion to propagate across the mesh, but only during the TTL period. If a peer is offline longer than the TTL (e.g., 35 days), they may resurrect deleted data when they reconnect because the tombstone has expired. This is why Soft-Delete is preferred for user-facing data—it doesn't rely on TTL windows and works reliably in multi-hop scenarios even with long disconnection periods.
+
+### ☐ (If using DELETE) Understand husked documents and how to prevent them
+
+**What this means:** "Husked documents" occur when one peer DELETEs a document while another peer concurrently UPDATEs it. After merge, the document exists but has only `_id` and the updated field(s), with all other fields set to null.
+
+**Why this matters:** Husked documents can break application logic that assumes required fields always exist. Soft-Delete prevents husking by using UPDATE instead of DELETE.
+
+**Code Example**:
+
+```dart
+// ❌ PROBLEM: DELETE + concurrent UPDATE = husked document
+// Device A:
+await ditto.store.execute('DELETE FROM cars WHERE _id = :id', arguments: {'id': 'car1'});
+// Device B (offline):
+await ditto.store.execute('UPDATE cars SET color = :color WHERE _id = :id', arguments: {'color': 'blue', 'id': 'car1'});
+// Result after sync: {_id: "car1", color: "blue", make: null, model: null}
+
+// ✅ SOLUTION: Soft-Delete prevents husked documents
+await ditto.store.execute(
+  'UPDATE cars SET isDeleted = true, deletedAt = :time WHERE _id = :id',
+  arguments: {'time': DateTime.now().toIso8601String(), 'id': 'car1'},
+);
+```
+
+### ☐ (If using DELETE) Use DELETE only for permanent, irreversible removal
 
 **What this means:** `DELETE FROM collection WHERE ...` permanently removes documents from all peers in the mesh. Deletion propagates via tombstones during the TTL period (default: 30 days).
 
@@ -369,13 +563,7 @@ orderSubscription = ditto.sync.registerSubscription(
 - Permanent removal of sensitive data
 - Internal/system data that doesn't need relay
 
-For user-facing deletions (trash, archive), prefer logical deletion (Soft-Delete) to enable multi-hop relay and "undo" functionality.
-
-### ☐ Understand tombstones and TTL behavior
-
-**What this means:** When you DELETE a document, Ditto creates a tombstone that propagates to peers during the TTL window (default: 30 days). After TTL expires, the tombstone is removed, and peers who were offline during the entire TTL window may re-share the document ("zombie resurrection").
-
-**Why this matters:** Tombstones enable deletion to propagate across the mesh, but only during the TTL period. If a peer is offline longer than the TTL (e.g., 35 days), they may resurrect deleted data when they reconnect because the tombstone has expired. This is why logical deletion (soft-delete) is preferred for user-facing data—it doesn't rely on TTL windows and works reliably in multi-hop scenarios even with long disconnection periods.
+For user-facing deletions (trash, archive), prefer Soft-Delete to enable multi-hop relay and "undo" functionality.
 
 ---
 
@@ -383,9 +571,34 @@ For user-facing deletions (trash, archive), prefer logical deletion (Soft-Delete
 
 ### ☐ Filter data in queries, not in application code
 
-**What this means:** Use DQL `WHERE` clauses to filter data at the database level instead of fetching all documents and filtering in Dart/JavaScript/Swift code.
+**What this means:** Use DQL `WHERE` clauses to filter data at the database level instead of fetching all documents and filtering in application code.
 
-**Why this matters:** Database-level filtering reduces memory usage, improves query performance, and minimizes data transfer overhead.
+**Why this matters:** Database-level filtering reduces memory usage, improves query performance, and minimizes data transfer overhead. When you fetch all documents and filter in application code, Ditto must:
+1. Load all documents from storage into memory
+2. Deserialize all documents from internal format (CBOR) to application objects
+3. Allocate memory for QueryResultItems that hold references to underlying data structures
+
+This creates unnecessary memory pressure, especially on resource-constrained devices. Database-level filtering (WHERE clauses) happens inside Ditto's storage engine before deserialization, minimizing memory allocation and processing overhead. For large collections (thousands of documents), the performance difference is significant: application-level filtering can cause memory issues or slow performance, while database filtering keeps memory usage constant regardless of collection size.
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Fetch all documents, filter in application code
+final result = await ditto.store.execute('SELECT * FROM orders');
+final activeOrders = result.items
+  .map((item) => item.value)
+  .where((order) => order['status'] == 'active')
+  .toList();
+// Problems: High memory usage, slow deserialization, all documents loaded
+
+// ✅ GOOD: Filter at database level with WHERE clause
+final result = await ditto.store.execute(
+  'SELECT * FROM orders WHERE status = :status',
+  arguments: {'status': 'active'},
+);
+final activeOrders = result.items.map((item) => item.value).toList();
+// Benefits: Low memory usage, fast query, only filtered documents loaded
+```
 
 ### ☐ Use query result pagination for large datasets
 
@@ -397,7 +610,68 @@ For user-facing deletions (trash, archive), prefer logical deletion (Soft-Delete
 
 **What this means:** Extract `item.value` from QueryResultItems immediately and convert to application models. Don't store QueryResultItems in state, pass them between functions, or hold references beyond the immediate callback scope.
 
-**Why this matters:** QueryResultItems are database cursors that hold internal references to underlying data structures. Retaining them long-term prevents Ditto from releasing memory, causes memory leaks, and blocks database cleanup. Always extract data immediately and let QueryResultItems be garbage collected.
+**Why this matters:** QueryResultItems are lazy-loading database cursors, not plain data objects. They hold internal references to Ditto's storage engine and underlying CRDT data structures. Retaining QueryResultItems long-term causes:
+
+1. **Memory leaks**: Prevents Ditto from releasing memory for internal data structures
+2. **Blocked garbage collection**: Holds references that prevent cleanup of processed results
+3. **Unpredictable behavior**: Cursors may become stale if underlying data changes
+4. **Resource exhaustion**: Accumulating cursors consumes memory proportional to query result count
+
+**Best practice:** Extract data immediately in observer callbacks or query handlers, convert to plain Dart objects or application models, and let QueryResultItems fall out of scope for garbage collection.
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Retaining QueryResultItem references (memory leak)
+class OrdersViewModel {
+  List<QueryResultItem> _orderItems = [];  // ❌ Storing cursors!
+
+  void updateOrders(QueryResult result) {
+    _orderItems = result.items.toList();  // ❌ Long-lived references
+  }
+
+  void displayOrder(int index) {
+    final order = _orderItems[index].value;  // ❌ Using stale cursor
+    print('Order: ${order['title']}');
+  }
+}
+// Problem: Holds QueryResultItem cursors indefinitely, memory never released
+
+// ✅ GOOD: Extract data immediately, store plain objects
+class OrdersViewModel {
+  List<Order> _orders = [];  // ✅ Plain application models
+
+  void updateOrders(QueryResult result) {
+    // Extract data immediately and convert to models
+    _orders = result.items
+      .map((item) => Order.fromMap(item.value))
+      .toList();
+    // QueryResultItems fall out of scope here, GC can clean them up
+  }
+
+  void displayOrder(int index) {
+    final order = _orders[index];  // ✅ Using plain model
+    print('Order: ${order.title}');
+  }
+}
+
+// Application model (plain Dart class)
+class Order {
+  final String id;
+  final String title;
+  final String status;
+
+  Order({required this.id, required this.title, required this.status});
+
+  factory Order.fromMap(Map<String, dynamic> map) {
+    return Order(
+      id: map['_id'] as String,
+      title: map['title'] as String,
+      status: map['status'] as String,
+    );
+  }
+}
+```
 
 ---
 
@@ -409,23 +683,191 @@ For user-facing deletions (trash, archive), prefer logical deletion (Soft-Delete
 
 **Why this matters:** Subscriptions are not HTTP requests—they're long-lived replication contracts that tell Ditto what data to sync. Frequent create/cancel cycles cause unnecessary connection overhead, delays in data availability, and increased battery usage. Ditto is offline-first: data should be continuously synced, not fetched on-demand.
 
+**Common mistake:** Treating Ditto like a REST API by creating a subscription, waiting briefly, querying data, and immediately canceling. This defeats the purpose of mesh sync and prevents real-time updates from reaching your device.
+
+**When to cancel subscriptions:**
+- ✅ When a feature/screen is permanently closed (not just hidden temporarily)
+- ✅ Before EVICT operations to prevent resync loops
+- ✅ When subscription scope needs to change (cancel old, create new with updated query)
+- ✅ During app termination for proper cleanup
+
+**When NOT to cancel:**
+- ❌ Between individual queries to the same data
+- ❌ During temporary UI state changes (navigation, minimize/maximize)
+- ❌ After every data read operation
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Request/response pattern (treating Ditto like HTTP)
+Future<List<Order>> fetchOrders() async {
+  final sub = ditto.sync.registerSubscription('SELECT * FROM orders');
+  await Future.delayed(Duration(seconds: 2));  // Inefficient waiting!
+  final result = await ditto.store.execute('SELECT * FROM orders');
+  sub.cancel();  // Defeats mesh sync benefits
+  return result.items.map((item) => Order.fromMap(item.value)).toList();
+}
+
+// ✅ GOOD: Long-lived subscription with observer for real-time updates
+class OrdersService {
+  Subscription? _subscription;
+  StoreObserver? _observer;
+
+  void initialize() {
+    // Start subscription - keep alive for feature lifetime
+    _subscription = ditto.sync.registerSubscription('SELECT * FROM orders');
+
+    // Use observer for real-time updates
+    _observer = ditto.store.registerObserverWithSignalNext(
+      'SELECT * FROM orders',
+      onChange: (result, signalNext) {
+        updateUI(result.items.map((item) => Order.fromMap(item.value)));
+        signalNext();
+      },
+    );
+  }
+
+  void dispose() {
+    _observer?.cancel();
+    _subscription?.cancel();  // Cancel only when feature is done
+  }
+}
+```
+
 ### ☐ Subscribe broadly, filter in observers (for multi-hop relay)
 
 **What this means:** Subscriptions should have minimal WHERE filters (or none for small collections). Apply detailed filters in observers and queries instead.
 
 **Why this matters:** Narrow subscription filters prevent relay devices from storing documents needed by indirectly connected peers. Broad subscriptions enable multi-hop relay; local filters optimize UI display.
 
+**The multi-hop relay problem:** Consider a mesh network with Device A (source) → Device B (relay) → Device C (destination). If Device B subscribes with a narrow filter like `WHERE priority = 'high'`, it won't store low-priority documents from Device A. When Device C subscribes to all orders, it never receives the low-priority documents because Device B (the relay) doesn't have them to forward. This breaks multi-hop relay for filtered-out documents.
+
+**Solution:** Device B subscribes broadly without priority filters, stores all documents, and can relay everything to Device C. Each device filters locally in observers/queries for UI display only.
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Narrow subscription filter breaks multi-hop relay
+final subscription = ditto.sync.registerSubscription(
+  'SELECT * FROM orders WHERE priority = :priority',
+  arguments: {'priority': 'high'},
+);
+// Problem: This device won't store/relay low-priority orders to other peers
+
+// ✅ GOOD: Broad subscription + local filter in observer
+final subscription = ditto.sync.registerSubscription(
+  'SELECT * FROM orders',  // No priority filter - enables relay
+);
+
+final observer = ditto.store.registerObserverWithSignalNext(
+  'SELECT * FROM orders WHERE priority = :priority',  // Filter here for UI
+  onChange: (result, signalNext) {
+    updateUI(result.items);  // Only high-priority orders displayed
+    signalNext();
+  },
+  arguments: {'priority': 'high'},
+);
+```
+
 ### ☐ Avoid subscribing to data you don't need
 
-**What this means:** Don't create overly broad subscriptions like `SELECT * FROM *` unless absolutely necessary. Scope subscriptions to relevant collections and filters.
+**What this means:** Scope subscriptions to relevant collections and use appropriate WHERE filters to limit data to what your feature actually needs. Avoid subscribing to entire collections without any filtering when only a subset is required.
 
-**Why this matters:** Subscriptions consume storage, network bandwidth, and battery. Over-subscription causes unnecessary data sync and degrades performance.
+**Why this matters:** Every subscription tells Ditto to sync and store matching documents locally. Overly broad subscriptions cause:
+1. **Storage bloat**: Unnecessary documents consume device storage
+2. **Network waste**: Syncing documents you'll never use consumes bandwidth and battery
+3. **Memory pressure**: Larger local datasets increase memory usage during queries
+4. **Performance degradation**: More documents to scan during queries, even if filtered in observers
+
+**Balance with multi-hop relay:** While you should avoid unnecessary data, remember that subscriptions too narrow can break multi-hop relay (see "Subscribe broadly, filter in observers"). The goal is to subscribe to data that's relevant to your feature or needed for relay, not everything in the database.
+
+**Examples of appropriate scoping:**
+- ✅ Subscribe to orders for a specific customer: `WHERE customerId = :id`
+- ✅ Subscribe to recent data: `WHERE createdAt > :cutoff`
+- ✅ Subscribe to data in relevant states: `WHERE status IN ('pending', 'active', 'completed')`
+- ❌ Subscribe to all orders across all customers when you only display one customer's data
+- ❌ Subscribe to historical data (>1 year old) when your feature only shows recent activity
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Overly broad subscription when feature only displays current user's data
+final subscription = ditto.sync.registerSubscription(
+  'SELECT * FROM orders',  // Syncs ALL orders from ALL users!
+);
+
+// ✅ GOOD: Scoped to relevant customer
+final subscription = ditto.sync.registerSubscription(
+  'SELECT * FROM orders WHERE customerId = :customerId',
+  arguments: {'customerId': currentUserId},
+);
+// Only syncs orders for this customer
+```
 
 ### ☐ Cancel observers and subscriptions when no longer needed
 
 **What this means:** Store references to observers and subscriptions, then call `.cancel()` when the feature is closed or the widget is disposed.
 
-**Why this matters:** Active observers and subscriptions consume resources (CPU, memory, network). Canceling them prevents memory leaks and reduces unnecessary processing.
+**Why this matters:** Observers and subscriptions continue running until explicitly canceled. Failing to cancel them causes:
+
+1. **Memory leaks**: Observers hold references to callbacks, preventing garbage collection
+2. **Wasted resources**: Continued processing of database changes and network updates for features no longer in use
+3. **Unnecessary network traffic**: Active subscriptions keep telling peers to send updates
+
+**When to cancel:**
+- When a screen/feature is permanently closed
+- When a widget is disposed (Flutter: in `dispose()` method)
+- Before EVICT operations (prevents resync loops)
+- During app termination
+
+**When NOT to cancel:**
+- During temporary navigation (if returning soon)
+- When app goes to background (if feature remains relevant)
+
+**Code Example**:
+
+```dart
+// ❌ BAD: No references saved, cannot cancel - memory leak
+class OrdersScreen extends StatefulWidget {
+  @override
+  State<OrdersScreen> createState() => _OrdersScreenState();
+}
+
+class _OrdersScreenState extends State<OrdersScreen> {
+  @override
+  void initState() {
+    super.initState();
+    ditto.sync.registerSubscription('SELECT * FROM orders');
+    ditto.store.registerObserverWithSignalNext(
+      'SELECT * FROM orders',
+      onChange: (result, signalNext) { /* ... */ signalNext(); },
+    );
+  }
+}
+
+// ✅ GOOD: Save references and cancel in dispose()
+class _OrdersScreenState extends State<OrdersScreen> {
+  Subscription? _subscription;
+  StoreObserver? _observer;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = ditto.sync.registerSubscription('SELECT * FROM orders');
+    _observer = ditto.store.registerObserverWithSignalNext(
+      'SELECT * FROM orders',
+      onChange: (result, signalNext) { /* ... */ signalNext(); },
+    );
+  }
+
+  @override
+  void dispose() {
+    _observer?.cancel();
+    _subscription?.cancel();
+    super.dispose();
+  }
+}
+```
 
 ### ☐ Use registerObserverWithSignalNext for backpressure control
 
@@ -454,15 +896,26 @@ final observer = ditto.store.registerObserverWithSignalNext(
 
 ### ☐ Handle observer errors gracefully
 
-**What this means:** Wrap observer callbacks in try-catch blocks to handle unexpected errors (e.g., null values, malformed data).
+**What this means:** Wrap observer callbacks in try-catch blocks to handle unexpected errors (e.g., JSON deserialization failures, type mismatches, malformed data).
 
-**Why this matters:** Unhandled observer errors can crash the app or leave UI in inconsistent state. Graceful error handling ensures app stability.
+**Why this matters:** Unhandled observer errors can crash the app or leave UI in inconsistent state. Graceful error handling ensures app stability and prevents one malformed document from breaking the entire observer.
 
 ### ☐ Avoid heavy computation in observer callbacks
 
 **What this means:** Keep observer callbacks lightweight. Offload heavy computation (data transformation, business logic) to background isolates or threads.
 
 **Why this matters:** Observer callbacks block the UI thread. Heavy computation causes frame drops and unresponsive UI. Offloading ensures smooth user experience.
+
+**Examples of heavy computation to avoid in observer callbacks:**
+- Large JSON serialization/deserialization operations (e.g., `jsonEncode()` on hundreds of documents)
+- Complex data transformations or aggregations across many documents
+- Image processing or compression
+- Network requests or file I/O operations
+- Cryptographic operations (hashing, encryption)
+- Sorting or filtering large datasets in memory
+- Nested iterations over large collections
+
+Instead, extract raw data from `item.value` immediately and offload processing to background isolates (Flutter: `compute()`) or worker threads.
 
 ---
 
@@ -473,6 +926,14 @@ final observer = ditto.store.registerObserverWithSignalNext(
 **What this means:** Create indexes on fields frequently used in WHERE clauses for queries that return a small subset of documents (high selectivity). Use `CREATE INDEX IF NOT EXISTS idx_name ON collection (field)`.
 
 **Why this matters:** Indexes can improve query performance by up to 90% for selective queries (those returning <10% of collection). Without indexes, Ditto performs full collection scans. However, indexes have overhead for writes and storage, so only index fields used in selective queries.
+
+**When to use indexes based on collection size:**
+- **Small collections (<100 documents)**: Indexes usually not necessary—full scans are fast enough
+- **Medium collections (100-1,000 documents)**: Consider indexes for frequently queried fields with high selectivity (<10% match rate)
+- **Large collections (>1,000 documents)**: Indexes strongly recommended for selective queries—performance gains become significant
+- **Very large collections (>10,000 documents)**: Indexes essential for acceptable query performance on selective queries
+
+**Key principle:** Index effectiveness depends on both collection size AND query selectivity. A query returning 5% of documents benefits greatly from indexes in a 10,000-document collection (~9,500 documents skipped), but gains little in a 100-document collection (~95 documents skipped, minimal overhead difference).
 
 ### ☐ Use EXPLAIN to verify index usage [SDK 4.12+]
 
@@ -486,43 +947,76 @@ final observer = ditto.store.registerObserverWithSignalNext(
 
 **Why this matters:** N+1 patterns multiply query overhead. For example, fetching 100 related documents individually requires 100 queries vs 1 batch query. Batch queries reduce execution time and improve performance significantly.
 
-### ☐ Batch multiple operations in transactions [SDK 4.11+]
-
-**What this means:** Use `ditto.store.transaction()` to batch multiple INSERT/UPDATE/DELETE operations into a single atomic transaction.
-
-**Why this matters:** Transactions reduce sync overhead by batching deltas and ensure atomicity. Multiple separate operations create individual deltas and lack transactional guarantees.
-
 ---
 
 ## Section 8: Transactions
 
-### ☐ Use transactions for multi-step atomic operations [SDK 4.11+]
+### ☐ Batch multiple operations in transactions
 
-**What this means:** Wrap related INSERT/UPDATE/DELETE operations in `ditto.store.transaction()` to ensure they execute atomically (all succeed or all fail).
+**What this means:** Use `ditto.store.transaction()` to batch multiple INSERT/UPDATE/DELETE operations into a single atomic transaction.
 
-**Why this matters:** Without transactions, partial failures leave data in inconsistent state. Transactions provide atomicity and rollback on errors, ensuring data integrity.
+**Why this matters:** Without transactions, partial failures leave data in inconsistent state. If one operation succeeds but another fails, your data can become corrupted. Transactions ensure all operations succeed together or all fail together (atomicity), maintaining data integrity.
 
 **Code Example**:
 
 ```dart
-// ✅ GOOD: Atomic transaction for order processing
-await ditto.store.transaction(hint: 'process-order', (tx) async {
-  final order = (await tx.execute(
-    'SELECT * FROM orders WHERE _id = :id', arguments: {'id': orderId},
-  )).items.first.value;
+// ❌ BAD: Multiple separate operations without atomicity
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {'order': {'_id': 'o1', 'customerId': 'c1', 'total': 100}},
+);
+await ditto.store.execute(
+  'UPDATE customers APPLY orderCount PN_INCREMENT BY 1.0 WHERE _id = :id',
+  arguments: {'id': 'c1'},
+);
+// Problem: If second operation fails, order exists but customer count is wrong
 
-  await tx.execute('UPDATE orders SET status = :s WHERE _id = :id',
-    arguments: {'id': orderId, 's': 'shipped'});
-  await tx.execute('UPDATE inventory APPLY qty COUNTER INCREMENT BY -1.0 WHERE _id = :itemId',
-    arguments: {'itemId': order['itemId']});
+// ✅ GOOD: Atomic transaction ensures all-or-nothing execution
+await ditto.store.transaction(hint: 'create-order', (tx) async {
+  await tx.execute(
+    'INSERT INTO orders DOCUMENTS (:order)',
+    arguments: {'order': {'_id': 'o1', 'customerId': 'c1', 'total': 100}},
+  );
+  await tx.execute(
+    'UPDATE customers APPLY orderCount PN_INCREMENT BY 1.0 WHERE _id = :id',
+    arguments: {'id': 'c1'},
+  );
 });
+// Benefit: Both operations succeed together or both fail, ensuring data consistency
 ```
 
 ### ☐ Use read-only transactions for consistent multi-query reads
 
-**What this means:** When reading related data across multiple queries, use `ditto.store.transaction()` (without writes) to ensure all queries see a consistent snapshot.
+**What this means:** When reading related data across multiple queries, use `ditto.store.transaction()` with `isReadOnly: true` to ensure all queries see a consistent snapshot.
 
-**Why this matters:** Without transactions, data can change between queries, causing inconsistent reads. Read-only transactions provide snapshot isolation.
+**Why this matters:** Without transactions, data can change between queries, causing inconsistent reads. For example, if you first query for document IDs that match certain criteria, and then query for the details of each document, another peer might update or delete those documents in between your queries. This causes race conditions where your second query might return different data than what the first query suggested, leading to null references or inconsistent UI states.
+
+Read-only transactions provide snapshot isolation: all queries within the transaction see the database state as it was at the moment the transaction started, ensuring consistency across multiple reads.
+
+**Code Example**:
+
+```dart
+final results = await ditto.store.transaction(
+  (tx) async {
+    // First, get all order IDs for a specific customer
+    final orderIds = (await tx.execute(
+      'SELECT _id FROM orders WHERE customerId = :customerId',
+      arguments: {'customerId': 'c1'},
+    )).items.map((item) => item.value['_id'] as String).toList();
+
+    // Then, fetch full details for each order
+    // Guaranteed to see the same data state as the first query
+    final orderDetails = await tx.execute(
+      'SELECT * FROM orders WHERE _id IN :ids',
+      arguments: {'ids': orderIds},
+    );
+
+    return orderDetails.items;
+  },
+  isReadOnly: true,
+  hint: 'fetch-orders',
+);
+```
 
 ### ☐ Never nest read-write transactions (causes deadlock)
 
@@ -531,6 +1025,27 @@ await ditto.store.transaction(hint: 'process-order', (tx) async {
 **Why this matters:** Nested read-write transactions create a deadlock where the inner transaction waits for the outer to complete, while the outer waits for the inner. The app freezes permanently and requires force-quit. This is a critical error that developers must avoid.
 
 **Platform note:** Flutter SDK v4.11+ supports transactions but does not have this nesting limitation check. Non-Flutter platforms have this limitation.
+
+**Code Example**:
+
+```dart
+// ❌ BAD: Nested read-write transaction causes permanent deadlock
+await ditto.store.transaction((tx) async {
+  await tx.execute(
+    'INSERT INTO orders DOCUMENTS (:order)',
+    arguments: {'order': {'_id': 'o1', 'total': 100}},
+  );
+
+  // DEADLOCK: Inner transaction waits for outer, outer waits for inner
+  await ditto.store.transaction((innerTx) async {
+    await innerTx.execute(
+      'UPDATE customers APPLY orderCount PN_INCREMENT BY 1.0 WHERE _id = :id',
+      arguments: {'id': 'c1'},
+    );
+  });
+});
+// Result: App freezes permanently, requires force-quit
+```
 
 ### ☐ Keep transactions short and focused
 
@@ -668,33 +1183,88 @@ await ditto.store.transaction(hint: 'process-order', (tx) async {
 
 ### ☐ Test offline-first behavior (create data while offline)
 
-**What this means:** Write tests that create, update, and delete data while `ditto.startSync()` is not called or network is disabled. Verify data syncs correctly after reconnection and no data loss occurs.
+**What this means:** Write tests that simulate realistic offline scenarios:
+1. Create, update, and delete data while `ditto.startSync()` is not called or network is disabled
+2. Simulate multiple devices making concurrent changes while disconnected from each other
+3. Verify data syncs correctly after reconnection with no data loss
+4. Test that business logic invariants hold after conflict resolution
 
-**Why this matters:** Offline-first is Ditto's core value proposition. Apps must work seamlessly while disconnected and sync correctly when connectivity returns. Testing offline scenarios catches issues like missing subscriptions, improper error handling, or data loss during reconnection.
+**Why this matters:** Offline-first is Ditto's core value proposition. Apps must work seamlessly while disconnected and sync correctly when connectivity returns. Multiple devices can modify the same data independently while offline, and changes must merge intelligently upon reconnection. Testing offline scenarios catches critical issues:
+- Missing subscriptions that prevent data from syncing after reconnection
+- Improper error handling during sync initialization
+- Data loss or corruption during merge operations
+- Business rule violations after conflict resolution (e.g., inventory going negative, duplicate order numbers)
+- UI inconsistencies when offline changes sync to other devices
+
+**Testing approach:**
+- Test **your application's business logic** with realistic concurrent scenarios using your actual domain models
+- Verify **business rules** hold after conflict resolution (e.g., "inventory never negative", "order numbers unique")
+- Focus on **your data model**, not just SDK API behavior—the SDK itself is already tested
+
+**Example test scenarios:**
+- **Concurrent sales**: Two offline POS terminals sell the same product. After sync, verify inventory doesn't go negative.
+- **Unique identifiers**: Two devices create orders while disconnected. After sync, verify all order numbers are unique.
+- **Deletion scenarios**: Device A deletes an order while Device B updates it offline. After sync, verify the final state matches your business rules (husked document handling, logical deletion filtering).
+- **Subscription lifecycle**: Create data offline, then start sync. Verify subscriptions properly request the data and observers trigger with new documents.
 
 ### ☐ Test multi-device conflict scenarios
 
-**What this means:** Simulate concurrent updates to the same document from multiple devices while offline (e.g., both devices update different fields). Verify CRDT merge behavior produces expected results after sync.
+**What this means:** Write tests that simulate concurrent modifications to the same document from multiple offline devices, then verify CRDT merge behavior after sync:
+1. Create two or more test Ditto instances representing different devices
+2. Disconnect them from each other (or don't call `startSync()`)
+3. Have each device make conflicting updates to the same document
+4. Sync the devices together and verify the merged result matches CRDT semantics
 
-**Why this matters:** Conflict resolution is CRDT-dependent (MAP uses add-wins, REGISTER uses last-write-wins). Tests ensure data integrity under concurrent modifications and validate that your data model merges correctly. For example, concurrent updates to MAP fields should both persist, while concurrent array updates use last-write-wins.
+**Why this matters:** Ditto uses CRDTs (Conflict-free Replicated Data Types) for automatic conflict resolution, and different CRDT types have different merge behaviors:
+- **MAP fields (objects)**: Use "add-wins" semantics—concurrent updates to different keys both persist
+- **REGISTER fields (scalars, arrays)**: Use "last-write-wins" (LWW) based on Hybrid Logical Clock—one update wins, the other is discarded
+- **COUNTER fields**: Use commutative addition—all increments from all devices are summed
 
-### ☐ Test logical deletion and filtering patterns
+Without testing, you won't know if your data model handles conflicts correctly. For example, if you use arrays for mutable data that multiple devices modify concurrently, the last-write-wins behavior will cause data loss. Tests validate that your data model design is conflict-safe.
 
-**What this means:** Verify that logically deleted documents (e.g., `isDeleted: true`) are filtered correctly in observers/queries and still sync to all peers via subscriptions.
+**What to test:**
+- **MAP field conflicts**: Device A updates `field1`, Device B updates `field2` → both updates should persist after merge
+- **REGISTER field conflicts**: Device A sets `status = "shipped"`, Device B sets `status = "delivered"` → only one value wins (verify which one using HLC/timestamp)
+- **Array conflicts**: Device A appends `[item3]`, Device B appends `[item4]` → last-write-wins, one array is lost (this demonstrates why arrays are problematic)
+- **COUNTER conflicts**: Device A increments by 5, Device B increments by 3 → final value should be +8 (commutative addition)
+- **Mixed conflicts**: Device A updates MAP field while Device B updates REGISTER field → both changes should persist (different CRDT types)
 
-**Why this matters:** Incorrect logical deletion patterns break multi-hop relay. Tests ensure subscriptions remain broad while observers filter locally. See [Section 4: Deletion & Storage Lifecycle](#section-4-deletion--storage-lifecycle) for implementation patterns.
+**Testing pattern:**
+- Use multiple Ditto instances in tests (each represents a device)
+- Simulate offline period by not syncing between instances
+- Make concurrent modifications to the same document
+- Manually trigger sync (or call sync methods) to merge changes
+- Assert final state matches expected CRDT behavior
 
-### ☐ Test EVICT and resync behavior
+**Example scenarios:**
+- **Inventory counter**: Two POS terminals concurrently decrement inventory. After sync, verify the total decrement is correct (not lost due to LWW).
+- **Order modifications**: Device A updates `shippingAddress`, Device B updates `paymentMethod`. After sync, verify both fields are updated (MAP add-wins).
+- **Status race condition**: Two devices concurrently update order status. After sync, verify the final status follows HLC ordering (last-write-wins for REGISTER).
+- **Array append collision**: Two devices append items to an array field. After sync, verify you understand which array won (demonstrates why MAP is safer for concurrent modifications).
 
-**What this means:** Test that evicted documents don't resync immediately if subscriptions are still active. Verify resync occurs after subscription recreation with updated filters.
+### ☐ Test deletion patterns (Soft-Delete and DELETE)
 
-**Why this matters:** Improper EVICT patterns cause resync loops. Tests prevent bandwidth waste and battery drain. See [Section 4: Deletion & Storage Lifecycle](#section-4-deletion--storage-lifecycle) for implementation patterns.
+**What to test:**
 
-### ☐ Write integration tests for Ditto SDK initialization
+1. **Soft-Delete pattern**:
+   - Documents with `isDeleted: true` filter correctly in observers/queries
+   - Broad subscriptions (no filter) ensure multi-hop relay
+   - EVICT removes local documents without resync loops
+   - Resync occurs correctly after subscription recreation
 
-**What this means:** Test that `Ditto.open()`, `startSync()`, and authentication flow complete successfully under various network conditions.
+2. **DELETE pattern**:
+   - DELETE queries create tombstones that propagate to all peers
+   - Tombstone TTL (30-day default) works correctly
+   - Zombie resurrection (re-INSERT after DELETE) behaves as expected
+   - Husked documents (concurrent DELETE + UPDATE) are handled
 
-**Why this matters:** Initialization failures cause app-wide issues. Integration tests catch configuration errors early.
+**Why this matters:** Deletion bugs cause ghost records in UI, data inconsistencies across devices, and sync failures. See [Section 4: Deletion & Storage Lifecycle](#section-4-deletion--storage-lifecycle) for implementation patterns.
+
+### ☐ Test application-specific business logic, not SDK behavior
+
+**What this means:** Write tests that verify **your application's business logic and data model** under concurrent scenarios using your actual domain models (e.g., inventory management, order creation, data validation rules). Don't test basic SDK behavior (e.g., "data I inserted can be queried")—the SDK itself is already tested.
+
+**Why this matters:** Tests that only verify SDK behavior (e.g., "INSERT then SELECT returns the document") provide no value—the SDK is already tested. What matters is testing how **your specific business logic** behaves under offline-first and concurrent scenarios. Focus on **your application's invariants** (e.g., "inventory never negative", "order numbers unique", "deleted items don't reappear").
 
 ### ☐ Test timestamp precision and clock drift tolerance
 
