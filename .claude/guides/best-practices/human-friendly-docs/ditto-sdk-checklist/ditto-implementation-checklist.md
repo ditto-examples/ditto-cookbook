@@ -251,12 +251,6 @@ class TaskViewModel {
 
 ## Section 3: Write Operations
 
-### ☐ Use ON ID CONFLICT DO NOTHING for safe repeated INSERTs
-
-**What this means:** When inserting documents that should only be created once (e.g., initial setup data), use `INSERT ... ON ID CONFLICT DO NOTHING` to silently skip if the document already exists.
-
-**Why this matters:** Prevents errors when re-running initialization code. Allows you to safely run the same INSERT statement multiple times without checking if the document already exists first.
-
 ### ☐ Use field-level UPDATE instead of full document replacement
 
 **What this means:** Update only specific fields using `UPDATE collection SET field = :value WHERE ...` instead of re-inserting entire documents with `INSERT ... ON ID CONFLICT DO UPDATE`.
