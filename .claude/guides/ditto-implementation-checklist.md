@@ -425,37 +425,37 @@ int calculateCurrentStock(String productId) {
 
 ### ☐ Understand the difference between Soft-Delete and DELETE queries
 
-**What this means:** Both approaches achieve the same goal of removing documents from the system, but use different techniques with different risks and trade-offs:
+**What this means:** In distributed databases like Ditto, deleting data on one device doesn't automatically remove it from others. Both approaches are **deletion propagation mechanisms** with different trade-offs:
 
-- **Soft-Delete**: Mark documents as deleted using a flag (e.g., `UPDATE orders SET isDeleted = true WHERE _id = :id`), filter them out in queries/observers, then periodically remove them locally with `EVICT FROM orders WHERE isDeleted = true AND deletedAt < :oldDate`.
-- **DELETE query**: Physically remove documents immediately using `DELETE FROM orders WHERE _id = :id`. Deletion propagates to all peers via tombstones (compressed deletion records with 30-day TTL on Cloud, configurable on Edge SDK).
+- **Soft-Delete Pattern**: Developer-implemented pattern using UPDATE operations to mark documents as deleted (e.g., `UPDATE orders SET isDeleted = true WHERE _id = :id`). Deletion flags propagate through the mesh network like any other field update. Filter deleted documents in queries/observers, then periodically remove them locally with EVICT.
+- **DELETE query**: Built-in operation that physically removes documents and automatically creates Tombstones (compressed deletion markers with 30-day TTL on Cloud, configurable on Edge SDK). Tombstones propagate through the mesh to notify peers about deletions.
 
-**Why this matters:** Soft-Delete is generally safer but more complex to implement correctly:
+**Why this matters:** Both approaches eventually result in permanent data removal. The choice is about **how deletion information propagates** through the mesh:
 
-**Soft-Delete advantages:**
-- ✅ No zombie data risk: Documents won't reappear from long-offline devices (>30 days)
-- ✅ No husked document risk: Concurrent DELETE + UPDATE cannot create broken documents
-- ✅ Reliable multi-hop relay: Deleted documents continue to sync through intermediate peers
-- ✅ Optional: Can enable undo/restore or preserve audit trails (though EVICT still removes them eventually)
+**Soft-Delete propagation advantages:**
+- ✅ No TTL dependency: Deletion flags persist until EVICT, so long-offline devices always receive deletion notifications
+- ✅ CRDT-safe: UPDATE operations merge cleanly, preventing husked documents from concurrent DELETE + UPDATE conflicts
+- ✅ Reliable multi-hop relay: Deletion flags propagate through intermediary peers like any other field update
 
-**Soft-Delete disadvantages:**
-- ❌ Higher implementation complexity: Must filter `isDeleted` consistently in all queries and observers
-- ❌ Implementation mistakes are common: Easy to forget filtering or incorrectly filter in subscriptions (breaks relay)
-- ❌ Slightly slower queries: Larger dataset until EVICT removes old deleted documents
-- ❌ Manual cleanup required: Must implement periodic EVICT to free storage
+**Soft-Delete propagation disadvantages:**
+- ❌ Higher code complexity: Must filter `isDeleted` consistently in all queries and observers
+- ❌ Implementation discipline required: Easy to forget filtering or incorrectly filter in subscriptions (breaks relay)
+- ❌ Larger dataset until EVICT: Slightly slower queries as deleted documents remain in database
+- ❌ Manual cleanup required: Must implement periodic EVICT to permanently remove old deleted documents
 
-**DELETE query advantages:**
-- ✅ Simpler implementation: Automatic deletion handling, no filtering required
-- ✅ Faster queries: Smaller dataset after tombstone TTL expires
+**DELETE propagation advantages:**
+- ✅ Simpler implementation: Automatic Tombstone creation and propagation, no filtering logic needed
+- ✅ Smaller active dataset: Documents removed immediately, faster queries after Tombstone TTL expires
+- ✅ Automatic cleanup: Tombstones expire automatically after TTL period
 
-**DELETE query disadvantages:**
-- ❌ Zombie data risk: If device reconnects after tombstone TTL expires (>30 days Cloud), deleted data reappears as new inserts
-- ❌ Husked document risk: Concurrent DELETE + UPDATE from different peers can create documents with no fields except `_id`
-- ❌ Multi-hop relay breaks: If intermediate peer is offline during TTL window, deletion doesn't reach indirectly connected peers
+**DELETE propagation disadvantages:**
+- ❌ TTL-based propagation: Devices offline longer than TTL miss deletion notification, may resurrect deleted data (zombie data)
+- ❌ CRDT conflicts possible: Concurrent DELETE + UPDATE from different peers can create husked documents (partial null fields)
+- ❌ Tombstone propagation timing: Brief window during multi-hop relay before all peers receive Tombstones
 
-**Choose based on risk tolerance and implementation capacity:**
-- **Use Soft-Delete** when: You need the safest deletion approach and can manage the implementation complexity, devices may be offline >30 days, or you need reliable multi-hop relay of deletions
-- **Use DELETE** when: All devices sync regularly (within 30-day TTL), you can accept zombie data risk, implementation simplicity is critical, or data is temporary/ephemeral with short lifecycle
+**Choose based on your application's requirements:**
+- **Use Soft-Delete** when: Devices may be offline longer than Tombstone TTL (>30 days Cloud, >configured Edge), concurrent DELETE + UPDATE scenarios are likely, or reliable multi-hop relay propagation is critical for your use case
+- **Use DELETE** when: All devices sync regularly within Tombstone TTL period, temporary/ephemeral data with short lifecycle, simpler implementation is preferred, or concurrent DELETE + UPDATE scenarios are unlikely
 
 ### ☐ (If using Soft-Delete) Subscribe broadly, filter in observers/queries
 
@@ -529,7 +529,7 @@ orderSubscription = ditto.sync.registerSubscription(
 
 **What this means:** When you DELETE a document, Ditto creates a tombstone that propagates to peers during the TTL window (default: 30 days). After TTL expires, the tombstone is removed, and peers who were offline during the entire TTL window may re-share the document ("zombie resurrection").
 
-**Why this matters:** Tombstones enable deletion to propagate across the mesh, but only during the TTL period. If a peer is offline longer than the TTL (e.g., 35 days), they may resurrect deleted data when they reconnect because the tombstone has expired. This is why Soft-Delete is preferred for user-facing data—it doesn't rely on TTL windows and works reliably in multi-hop scenarios even with long disconnection periods.
+**Why this matters:** Tombstones are Ditto's built-in deletion propagation mechanism that automatically notifies all peers about deletions. However, Tombstones only exist during the TTL period. If a peer is offline longer than the TTL (e.g., 35 days on Cloud), they miss the deletion notification and may resurrect deleted data when they reconnect. For applications where devices may be offline longer than the TTL period, Soft-Delete provides more reliable deletion propagation as flags persist indefinitely until EVICT.
 
 ### ☐ (If using DELETE) Understand husked documents and how to prevent them
 
@@ -558,12 +558,12 @@ await ditto.store.execute(
 
 **What this means:** `DELETE FROM collection WHERE ...` permanently removes documents from all peers in the mesh. Deletion propagates via tombstones during the TTL period (default: 30 days).
 
-**Why this matters:** DELETE is irreversible and affects all peers. Use it only for:
-- GDPR compliance (user requests data deletion)
-- Permanent removal of sensitive data
-- Internal/system data that doesn't need relay
+**Why this matters:** DELETE is irreversible and propagates via Tombstones to all peers. Both Soft-Delete and DELETE eventually result in permanent data removal—the difference is the propagation mechanism. DELETE works well for:
+- Temporary/ephemeral data with short lifecycle
+- Scenarios where all devices sync regularly within TTL period
+- Simpler implementation is preferred
 
-For user-facing deletions (trash, archive), prefer Soft-Delete to enable multi-hop relay and "undo" functionality.
+For applications where devices may be offline longer than Tombstone TTL, or where concurrent DELETE + UPDATE scenarios are likely, Soft-Delete provides more reliable deletion propagation through UPDATE-based flags that persist until EVICT.
 
 ---
 
