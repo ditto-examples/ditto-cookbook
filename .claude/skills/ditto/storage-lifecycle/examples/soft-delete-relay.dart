@@ -3,10 +3,10 @@
 // Last Updated: 2025-12-19
 //
 // ============================================================================
-// Logical Deletion with Multi-Hop Relay Support
+// Soft-Delete Pattern with Multi-Hop Relay Support
 // ============================================================================
 //
-// This example demonstrates the CORRECT soft-delete pattern that supports
+// This example demonstrates the CORRECT Soft-Delete pattern that supports
 // multi-hop relay in Ditto's mesh network.
 //
 // CRITICAL LEARNING: Subscriptions Must Include ALL Documents (Even Deleted)
@@ -28,7 +28,7 @@
 // KEY PRINCIPLE:
 // - Subscriptions declare data needs to the mesh network
 // - Observers control local UI display
-// - Keep them separate for logical deletion to work in multi-hop scenarios
+// - Keep them separate for Soft-Delete to work in multi-hop scenarios
 //
 // OFFICIAL QUOTE:
 // "we need to be careful to distinguish between the subscription and the store
@@ -45,8 +45,8 @@ import 'package:ditto/ditto.dart';
 // PATTERN 1: ✅ CORRECT - Broad Subscription with Filtered Observer
 // ============================================================================
 
-/// ✅ GOOD: Correct logical deletion pattern for multi-hop relay
-class CorrectLogicalDeletionPattern {
+/// ✅ GOOD: Correct Soft-Delete pattern for multi-hop relay
+class CorrectSoftDeletePattern {
   final Ditto ditto;
   DittoSyncSubscription? subscription;
   DittoStoreObserver? observer;
@@ -365,7 +365,7 @@ class MultiHopRelaySimulation {
 class PatternComparison {
   static void printComparison() {
     print('═══════════════════════════════════════════════════════════════════');
-    print('COMPARISON: Correct vs Incorrect Logical Deletion Patterns');
+    print('COMPARISON: Correct vs Incorrect Soft-Delete Patterns');
     print('═══════════════════════════════════════════════════════════════════\n');
 
     print('┌─────────────────────────────────────────────────────────────────┐');
@@ -404,7 +404,7 @@ class PatternComparison {
 
 void main() async {
   print('═══════════════════════════════════════════════════════════════════');
-  print('Logical Deletion with Multi-Hop Relay - Best Practices');
+  print('Soft-Delete Pattern with Multi-Hop Relay - Best Practices');
   print('═══════════════════════════════════════════════════════════════════\n');
 
   // Initialize Ditto (simplified)

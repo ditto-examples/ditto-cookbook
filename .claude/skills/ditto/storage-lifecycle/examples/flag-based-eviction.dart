@@ -46,7 +46,7 @@
 //   - This is different because EVICT is meant to remove local data permanently
 //
 // This example demonstrates EVICT pattern, not soft-delete pattern.
-// For soft-delete, see logical-deletion-relay.dart example.
+// For soft-delete, see soft-delete-relay.dart example.
 //
 // ============================================================================
 

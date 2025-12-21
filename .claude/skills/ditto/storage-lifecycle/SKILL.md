@@ -33,7 +33,7 @@ description: |
 - [Critical Patterns](#critical-patterns)
   - [1. DELETE Without Tombstone TTL Strategy](#1-delete-without-tombstone-ttl-strategy-priority-critical)
   - [2. EVICT Without Subscription Cancellation](#2-evict-without-subscription-cancellation-priority-critical)
-  - [3. Logical Deletion Pattern](#3-logical-deletion-pattern-priority-critical)
+  - [3. Soft-Delete Pattern](#3-soft-delete-pattern-priority-critical)
   - [4. Husked Document Filtering](#4-husked-document-filtering-priority-high)
   - [5. EVICT Frequency Limits](#5-evict-frequency-limits-priority-high)
   - [6. Opposite Query Pattern for EVICT](#6-opposite-query-pattern-for-evict-priority-high)
@@ -121,13 +121,13 @@ Safe Deletion Progress:
 **Step 1: Choose deletion strategy**
 
 ```dart
-// Option A: Logical deletion (recommended for most cases)
+// Option A: Soft-Delete Pattern (deletion propagation via UPDATE + flag)
 await ditto.store.execute(
   'UPDATE tasks SET isDeleted = true, deletedAt = :now WHERE _id = :id'
   arguments: {'id': taskId, 'now': DateTime.now().toIso8601String()}
 );
 
-// Option B: Physical DELETE (requires tombstone TTL strategy)
+// Option B: DELETE with Tombstones (deletion propagation via built-in operation)
 await ditto.store.execute(
   'DELETE FROM tasks WHERE _id = :id'
   arguments: {'id': taskId}
@@ -143,7 +143,7 @@ await ditto.store.execute(
 **Step 3: Handle zombie data prevention**
 
 ```dart
-// Query excludes logically deleted items
+// Query excludes soft-deleted items
 final result = await ditto.store.execute(
   'SELECT * FROM tasks WHERE isDeleted != true OR isDeleted IS NULL'
 );
@@ -331,29 +331,31 @@ void someFunction() {
 
 ---
 
-### 3. Logical Deletion Pattern (Priority: CRITICAL)
+### 3. Soft-Delete Pattern (Priority: CRITICAL)
 
 **Platform**: All platforms
 
-**Problem**: Physical DELETE with tombstones has TTL risks. Logical deletion (soft-delete with flag) is safer for critical data that must not reappear. **Multi-Hop Relay Constraint**: Subscriptions must NOT filter deletion flags, or deleted documents won't propagate through intermediate peers.
+**Problem**: In distributed databases, deleting on one device doesn't automatically remove data from others. **Soft-Delete** is a developer-implemented deletion propagation pattern using UPDATE operations with flags, while **DELETE** uses built-in Tombstones. **Multi-Hop Relay Constraint**: When using Soft-Delete, subscriptions must NOT filter deletion flags, or deleted documents won't propagate through intermediate peers.
 
-**When to Use Logical Deletion**:
-- Critical data that must never reappear unexpectedly
-- Documents that may be updated concurrently while deleted
-- Applications with long-offline devices (> tombstone TTL)
-- Data requiring undo/restore functionality
+**When Soft-Delete Pattern is Appropriate**:
+- Applications with long-offline devices (> Tombstone TTL) - flags persist indefinitely
+- Documents that may be updated concurrently while deleted (prevents CRDT conflicts/husked documents)
+- Multi-hop relay scenarios where reliable propagation is critical (no TTL dependency)
+- Need predictable deletion propagation without Tombstone TTL concerns
 
 **Detection**:
 ```dart
-// RED FLAGS for critical data
-await ditto.store.execute('DELETE FROM orders WHERE status = :status'
-  arguments: {'status': 'cancelled'});
-// Physical deletion of business-critical orders - risky!
-
+// RED FLAGS when using Soft-Delete
 // Missing deletion flag in queries
 final result = await ditto.store.execute('SELECT * FROM orders WHERE status = :status'
   arguments: {'status': 'active'});
-// Will include logically deleted documents if flag not checked
+// Will include soft-deleted documents if flag not checked
+
+// Filtering deletion flag in subscription (breaks multi-hop relay!)
+final subscription = ditto.sync.registerSubscription(
+  'SELECT * FROM orders WHERE isDeleted != true'
+);
+// Problem: Deleted documents won't propagate through relay peers
 ```
 
 **✅ DO**:
@@ -414,7 +416,7 @@ final result = await ditto.store.execute(
   'SELECT * FROM orders WHERE status = :status', // Missing isDeleted filter!
   arguments: {'status': 'active'}
 );
-// Includes logically deleted documents in app logic
+// Includes soft-deleted documents in app logic
 
 // Use inconsistent field names
 await ditto.store.execute('UPDATE orders SET isDeleted = true WHERE _id = :id1', ...);
@@ -422,19 +424,20 @@ await ditto.store.execute('UPDATE products SET deletedFlag = true WHERE _id = :i
 // Inconsistent naming makes queries error-prone
 
 // Skip EVICT for local cleanup
-// Logically deleted documents accumulate, wasting storage
+// Soft-deleted documents accumulate, wasting storage
 ```
 
-**Why**: Logical deletion prevents zombie data by keeping documents in the system with a flag. It's safer than physical DELETE (no tombstone TTL risk), supports undo/restore, and prevents husked documents. **Critical pattern**: Subscriptions must include ALL documents (even deleted) for multi-hop relay to work. Only filter in observers (for UI) and execute() queries (for app logic). If subscriptions filter deletion flags, intermediate peers won't relay deleted documents to other peers, causing inconsistent state across the mesh network.
+**Why**: Soft-Delete is a **deletion propagation mechanism** that uses UPDATE operations to propagate deletion flags through the mesh network. This prevents zombie data (no TTL dependency - flags persist until EVICT) and prevents husked documents (UPDATE operations merge cleanly without CRDT conflicts). **Critical pattern**: Subscriptions must include ALL documents (even deleted) for multi-hop relay to work. Only filter in observers (for UI) and execute() queries (for app logic). If subscriptions filter deletion flags, intermediate peers won't relay deleted documents to other peers, causing inconsistent state across the mesh network.
 
 **Comparison**:
 
-| Aspect | Logical Deletion | DELETE (Tombstones) |
-|--------|------------------|---------------------|
-| Safety | ✅ No zombie data | ⚠️ Tombstone TTL risk |
-| Code Complexity | ⚠️ Filter everywhere | ✅ Automatic |
-| Performance | ⚠️ Larger dataset | ✅ Smaller dataset |
-| Undo Support | ✅ Easy restore | ❌ Cannot undo |
+| Aspect | Soft-Delete Pattern | DELETE (Tombstones) |
+|--------|---------------------|---------------------|
+| Zombie Data Risk | ✅ None (no TTL dependency) | ⚠️ Yes (if device offline > TTL) |
+| Husked Documents | ✅ Prevented (UPDATE operations) | ⚠️ Possible (concurrent DELETE + UPDATE) |
+| Code Complexity | ⚠️ Higher (filter everywhere) | ✅ Lower (automatic) |
+| Query Performance | ⚠️ Slightly slower (until EVICT) | ✅ Faster (smaller dataset) |
+| Cleanup | ⚠️ Manual (periodic EVICT) | ✅ Automatic (tombstone TTL) |
 
 **See**: 
 
@@ -448,11 +451,11 @@ This section contains only the most critical (Tier 1) patterns that prevent data
 ---
 
 ### Deletion Strategy
-- [ ] Understand tombstone TTL implications (Cloud: 30 days, Edge: configurable)
-- [ ] Document TTL strategy in code comments
-- [ ] Ensure all devices connect within TTL window
+- [ ] Choose deletion propagation mechanism: Soft-Delete (UPDATE + flag) or DELETE (Tombstones)
+- [ ] If using DELETE: Understand Tombstone TTL implications (Cloud: 30 days fixed, Edge: configurable)
+- [ ] If using DELETE: Document TTL strategy and ensure devices sync within TTL window
+- [ ] If using Soft-Delete: Understand this is developer-implemented pattern, not Ditto API feature
 - [ ] Use LIMIT for batch deletions (50,000+ documents)
-- [ ] Consider logical deletion for critical data
 
 ### EVICT Management
 - [ ] Cancel affected subscriptions before EVICT
@@ -462,18 +465,18 @@ This section contains only the most critical (Tier 1) patterns that prevent data
 - [ ] Schedule EVICT during low-usage periods
 - [ ] Declare subscriptions at top-level scope (class-level)
 
-### Logical Deletion
+### Soft-Delete Pattern
 - [ ] Use consistent field name (`isDeleted`, `isArchived`, etc.)
 - [ ] **CRITICAL**: Subscriptions must include ALL documents (no deletion filter) for multi-hop relay
 - [ ] Filter deleted documents in observers (for UI display)
 - [ ] Filter deleted documents in execute() queries (for app logic)
-- [ ] Periodically EVICT old logically deleted documents
-- [ ] Cancel subscriptions before EVICT of logically deleted data
+- [ ] Periodically EVICT old soft-deleted documents
+- [ ] Cancel subscriptions before EVICT of soft-deleted data
 
 ### Husked Documents
 - [ ] Filter husked documents with `IS NOT NULL` checks for required fields
 - [ ] Validate documents have required fields before processing
-- [ ] Prefer logical deletion to avoid husking entirely
+- [ ] Prefer Soft-Delete to avoid husking entirely
 - [ ] Don't use DELETE for documents with concurrent UPDATE risk
 
 ### Storage Optimization

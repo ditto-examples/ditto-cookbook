@@ -60,9 +60,9 @@ final result = await ditto.store.execute(
 'SELECT * FROM tasks WHERE name IS NOT NULL AND status IS NOT NULL'
 ```
 
-**Option 2: Logical Deletion Filtering**:
+**Option 2: Soft-Delete Filtering**:
 ```dart
-// If using isDeleted pattern
+// If using isDeleted pattern (Soft-Delete)
 'SELECT * FROM tasks WHERE isDeleted != true'
 ```
 
@@ -79,10 +79,10 @@ final items = result.items.where((item) {
 | Approach | Performance | Safety | Complexity |
 |----------|------------|--------|------------|
 | Field-level WHERE | ✅ Fast (server-side) | ✅ Guaranteed | ✅ Simple |
-| Logical deletion | ✅ Fast (server-side) | ⚠️ Requires pattern | ⚠️ Additional field |
+| Soft-Delete | ✅ Fast (server-side) | ⚠️ Requires pattern | ⚠️ Additional field |
 | Client-side | ❌ Slower | ✅ Flexible | ⚠️ More code |
 
-- `../SKILL.md` Pattern 3: Logical Deletion Pattern
+- `../SKILL.md` Pattern 3: Soft-Delete Pattern
 - 
 
 ---
