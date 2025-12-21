@@ -756,7 +756,35 @@ Device B (offline) → generates 'order_20250115_001'
 Both devices sync → COLLISION → data loss or undefined behavior
 ```
 
-**✅ DO: UUID v4 (Recommended)**
+**⚠️ IMPORTANT: Auto-Generated IDs**
+
+If you **omit the `_id` field** when inserting a document, Ditto automatically assigns a UUID (128-bit universally unique identifier).
+
+```dart
+// ✅ GOOD: Omit _id - Ditto auto-generates UUID
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      // No _id field - Ditto generates UUID automatically
+      'orderNumber': '#42',
+      'status': 'pending',
+    }
+  },
+);
+```
+
+**When Auto-Generated IDs Are Appropriate:**
+- ✅ Internal documents where ID format doesn't matter
+- ✅ Simplest implementation (no external library needed)
+- ✅ No coordination required across devices
+
+**When Explicit IDs Are Required:**
+- ⚠️ Authorization rules depend on `_id` structure (composite keys for access control)
+- ⚠️ Intentional ID unification across devices (see "Intentional ID Unification" in main guide)
+- ⚠️ External system integration requiring specific ID format
+
+**✅ DO: UUID v4 (Explicit ID Generation)**
 
 ```dart
 import 'package:uuid/uuid.dart';
@@ -768,7 +796,7 @@ await ditto.store.execute(
   'INSERT INTO orders DOCUMENTS (:order)',
   arguments: {
     'order': {
-      '_id': orderId,
+      '_id': orderId,  // Explicit UUID
       'orderNumber': '#42',
       'status': 'pending',
       'createdAt': DateTime.now().toIso8601String(),
@@ -783,37 +811,62 @@ await ditto.store.execute(
 - **Aligns with Ditto**: Native auto-generated IDs are 128-bit UUIDs
 - **Platform-agnostic**: UUID libraries available on all platforms
 
-**Alternative: Auto-Generated (Simplest)**
+**⚠️ Intentional ID Unification (Advanced Pattern)**
+
+**When NOT to use random IDs**: In some distributed scenarios, multiple devices should **intentionally create the same document with the same `_id`** to ensure data merges instead of creating duplicates.
+
+**Use Case: Shared Reference Data (Product Catalog)**
+
 ```dart
-// Omit _id, Ditto auto-generates UUID
+// ✅ GOOD: Unified ID for shared product data
+// Device A and Device B both add same product → merge, not duplicate
+
 await ditto.store.execute(
-  'INSERT INTO orders DOCUMENTS (:order)',
+  'INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
   arguments: {
-    'order': {
-      // No _id - Ditto generates automatically
-      'orderNumber': '#42',
-      'status': 'pending',
+    'product': {
+      '_id': 'product_apple_iphone_15_pro',  // Deterministic ID from SKU
+      'name': 'iPhone 15 Pro',
+      'price': 999.99,
+      'category': 'Electronics',
     }
   },
 );
 ```
+
+**Decision Matrix: Random vs Unified IDs**
+
+| Scenario | ID Strategy | Example |
+|----------|-------------|---------|
+| **User transactions** (orders, invoices) | UUID v4 (unique per transaction) | `_id: uuid.v4()` |
+| **Shared reference data** (products, menus) | Deterministic ID (unified) | `_id: 'product_${sku}'` |
+| **Device-specific settings** | Device-based ID | `_id: 'device_${deviceId}'` |
+| **Event logs** (time-series) | ULID (time-ordered unique) | `_id: ulid.toString()` |
+
+**Conflict Resolution Strategies**:
+- `DO UPDATE`: Replace entire document, sync all fields as deltas (even unchanged)
+- `DO UPDATE_LOCAL_DIFF`: Sync only changed fields (recommended for unified IDs)
+- `DO NOTHING`: Keep existing document, ignore new data (first-write-wins)
+- `DO FAIL`: Error on conflict (debugging scenarios)
 
 **⚠️ CRITICAL: `_id` Immutability**
 
 The `_id` field **cannot be changed** after document creation. To change an ID, you must create a new document with the desired `_id` and delete the old one.
 
 **Why This Pattern?**
-- Provides collision-free IDs in distributed systems
+- Provides collision-free IDs in distributed systems (UUID v4)
+- Auto-generated IDs work for most scenarios (simplest approach)
+- Unified IDs enable intentional merging for reference data (advanced pattern)
 - No coordination required between devices
-- Aligns with Ditto's native UUID-based document identity
 
 **Advanced ID Patterns**: See [reference/advanced-patterns.md](reference/advanced-patterns.md) for:
 - Composite keys (multi-dimensional organization)
 - ULID (time-ordered IDs)
 - Human-readable display IDs
 - Migration from sequential IDs
+- Detailed intentional ID unification patterns
 
-**See Also**: `examples/id-generation-patterns.dart`, `examples/complex-id-patterns.dart`, `examples/id-immutability-workaround.dart`, `reference/advanced-patterns.md` (ID patterns, field naming)
+**See Also**: Main guide "ID Generation Strategies" section, `examples/id-generation-patterns.dart`, `examples/complex-id-patterns.dart`, `examples/id-immutability-workaround.dart`, `reference/advanced-patterns.md` (ID patterns, field naming)
 
 ---
 

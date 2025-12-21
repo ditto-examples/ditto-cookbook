@@ -176,7 +176,7 @@ Ditto is an **offline-first local database SDK** with built-in **P2P mesh networ
 
 When designing data models and app specifications, always consider:
 - Multiple devices will modify the same data while disconnected
-- Changes will merge when devices reconnect
+- Changes will sync when devices reconnect, then merge locally using CRDTs
 - Your data structure must support safe merging without data loss
 
 **✅ DO:**
@@ -2197,6 +2197,197 @@ final orderId = 'order_${DateTime.now().toString()}_001';
 - Multiple devices independently generate IDs offline
 - No coordination mechanism to prevent duplicates
 - Last-write-wins (LWW) may overwrite valid data
+
+---
+
+### Understanding `_id` in Ditto
+
+**⚠️ CRITICAL: Auto-Generated IDs**
+
+If you omit the `_id` field when inserting a document, **Ditto automatically assigns a UUID (128-bit universally unique identifier)**.
+
+```dart
+// ✅ GOOD: Omit _id - Ditto auto-generates UUID
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      // No _id field - Ditto generates UUID automatically
+      'orderNumber': '#42',
+      'status': 'pending',
+    }
+  },
+);
+```
+
+**When Auto-Generated IDs Are Appropriate:**
+- ✅ Internal documents where ID format doesn't matter
+- ✅ Simplest implementation (no external library needed)
+- ✅ No coordination required across devices
+
+**When Explicit IDs Are Required:**
+- ⚠️ Authorization rules depend on `_id` structure (composite keys for access control)
+- ⚠️ Intentional ID unification across devices (see "Intentional ID Unification" below)
+- ⚠️ External system integration requiring specific ID format
+
+---
+
+### Intentional ID Unification in Distributed Systems
+
+**⚠️ IMPORTANT: Not All Documents Should Have Random IDs**
+
+Ditto is an offline-first distributed database where disconnected devices can write independently. In some scenarios, **multiple devices should intentionally create the same document with the same `_id`** to ensure data merges correctly instead of creating duplicates.
+
+**When Intentional ID Unification Is Required:**
+
+**Use Case 1: Shared Reference Data (Product Catalog, Menu Items)**
+
+```dart
+// ✅ GOOD: Unified ID for shared product data
+// Multiple devices adding the same product should merge, not create duplicates
+
+// Device A (offline):
+await ditto.store.execute(
+  'INSERT INTO products DOCUMENTS (:product)',
+  arguments: {
+    'product': {
+      '_id': 'product_apple_iphone_15_pro',  // Deterministic ID from SKU
+      'name': 'iPhone 15 Pro',
+      'price': 999.99,
+      'category': 'Electronics',
+    }
+  },
+);
+
+// Device B (offline, same product):
+await ditto.store.execute(
+  'INSERT INTO products DOCUMENTS (:product)',
+  arguments: {
+    'product': {
+      '_id': 'product_apple_iphone_15_pro',  // Same deterministic ID
+      'name': 'iPhone 15 Pro',
+      'price': 999.99,
+      'category': 'Electronics',
+    }
+  },
+);
+
+// When devices sync:
+// → Documents merge (Ditto CRDT ensures field-level merge)
+// → No duplicate products created
+// → Conflict resolution strategy determines merge behavior
+```
+
+**⚠️ CRITICAL: Choose Appropriate Conflict Resolution Strategy**
+
+When using unified IDs, you must decide how to handle ID conflicts. Ditto provides multiple strategies:
+
+```dart
+// Strategy 1: DO UPDATE (replace entire document, sync all fields as deltas even if unchanged)
+INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE
+
+// Strategy 2: DO UPDATE_LOCAL_DIFF (merge only changed fields, SDK 4.12+)
+INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
+
+// Strategy 3: DO NOTHING (keep existing document, ignore new data)
+INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO NOTHING
+
+// Strategy 4: DO FAIL (throw error on conflict, requires manual handling)
+INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO FAIL
+```
+
+**Which strategy to use?**
+
+| Conflict Strategy | Local Behavior | Sync Behavior | When to Use |
+|-------------------|----------------|---------------|-------------|
+| **DO UPDATE** | Update all fields (even if values unchanged) | Syncs all fields as deltas even if values unchanged | API sync where server provides complete document state and all fields should propagate |
+| **DO UPDATE_LOCAL_DIFF** | Update only fields that actually changed | Syncs only fields that differ from existing document | Most unified ID scenarios: partial updates, minimizes replication traffic for unchanged data |
+| **DO NOTHING** | Keep existing, discard new data | No sync (operation does nothing) | First-write-wins scenarios: device registration where first claim wins |
+| **DO FAIL** | Error on conflict | No sync (operation fails) | Debugging scenarios where conflicts indicate programming errors |
+
+**Recommended**: Use `DO UPDATE_LOCAL_DIFF` (SDK 4.12+) for most unified ID scenarios. It updates only changed fields, preserves unmodified data, and minimizes sync traffic.
+
+**See Also**: [DO UPDATE_LOCAL_DIFF for Efficient Upserts](#do-update_local_diff-for-efficient-upserts-sdk-412) for detailed examples.
+
+**Why This Works:**
+- Both devices use the same deterministic `_id` (e.g., derived from product SKU or external system ID)
+- Ditto's CRDT merge ensures field-level updates are preserved
+- Avoids duplicate documents for the same logical entity
+- Conflict resolution strategy determines merge behavior and sync efficiency
+
+**Use Case 2: Device-Specific Singleton Documents**
+
+```dart
+// ✅ GOOD: Device settings (one document per device)
+final deviceId = getDeviceId();  // Platform-specific unique device ID
+
+await ditto.store.execute(
+  'INSERT INTO deviceSettings DOCUMENTS (:settings) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
+  arguments: {
+    'settings': {
+      '_id': 'device_$deviceId',  // Deterministic per device
+      'theme': 'dark',
+      'notificationsEnabled': true,
+      'lastSyncTime': DateTime.now().toIso8601String(),
+    }
+  },
+);
+```
+
+**When NOT to Use Unified IDs:**
+
+**❌ DON'T: User-Generated Transactions (Orders, Invoices, Tickets)**
+
+```dart
+// ❌ BAD: Sequential ID for user transactions
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      '_id': 'order_20250115_001',  // COLLISION RISK!
+      'customerId': 'cust_456',
+      'total': 45.00,
+    }
+  },
+);
+
+// Problem:
+// - Device A offline: creates "order_20250115_001"
+// - Device B offline: creates "order_20250115_001"
+// - When syncing → Merge logic may produce unexpected results
+```
+
+**✅ GOOD: Use UUID for transactions**
+
+```dart
+// ✅ GOOD: UUID ensures each transaction is unique
+import 'package:uuid/uuid.dart';
+
+final uuid = Uuid();
+await ditto.store.execute(
+  'INSERT INTO orders DOCUMENTS (:order)',
+  arguments: {
+    'order': {
+      '_id': uuid.v4(),  // Globally unique, collision-free
+      'customerId': 'cust_456',
+      'total': 45.00,
+    }
+  },
+);
+```
+
+**Decision Matrix:**
+
+| Scenario | ID Strategy | Conflict Resolution | Example |
+|----------|-------------|---------------------|---------|
+| **User transactions** (orders, invoices, tickets) | ✅ UUID v4 (unique per transaction) | N/A (no conflicts expected) | `_id: uuid.v4()` |
+| **Shared reference data** (products, menu items) | ✅ Deterministic ID (unified across devices) | `DO UPDATE_LOCAL_DIFF` (sync changed fields) | `_id: 'product_${sku}'` |
+| **Device-specific settings** (one per device) | ✅ Device-based ID | `DO UPDATE_LOCAL_DIFF` (sync updates) | `_id: 'device_${deviceId}'` |
+| **Event logs** (time-series, append-only) | ✅ ULID (time-ordered unique) | N/A (no conflicts expected) | `_id: ulid.toString()` |
+| **Permission-scoped data** (multi-tenant) | ✅ Composite key (authorization hierarchy) | Depends on use case | `_id: {locationId, orderId}` |
+| **API sync** (full document replacement) | ✅ External system ID | `DO UPDATE` (replace entire document, sync all fields) | `_id: externalApiId` |
+
+**Key Insight**: In distributed systems, ID strategy depends on whether documents should **merge (unified ID with conflict resolution)** or **remain separate (unique ID)**. Use `DO UPDATE_LOCAL_DIFF` for efficient field-level updates in most unified ID scenarios.
 
 ---
 
