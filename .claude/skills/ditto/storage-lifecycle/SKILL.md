@@ -93,13 +93,18 @@ This section consolidates all version-specific information referenced throughout
   - Husked documents occur from concurrent DELETE/UPDATE operations
   - Logical deletion (isDeleted flag) available in all versions
 
+- **SDK 4.11+**
+  - **DQL_STRICT_MODE default true** (affects CRDT type inference)
+  - Soft-delete fields in nested objects may require MAP definitions
+  - See data-modeling skill Pattern 1.5 for collection definition patterns
+
 - **All SDK Versions**
   - DELETE, EVICT operations available
   - Tombstone TTL configuration (Cloud only, via Ditto Portal)
   - EVICT frequency recommendation: Max once per day
   - Subscription cancellation required before EVICT to prevent resync loops
 
-**Throughout this Skill**: Storage lifecycle patterns are consistent across all SDK versions and platforms. No breaking changes or version-specific behaviors.
+**Throughout this Skill**: Storage lifecycle patterns are consistent across all SDK versions and platforms. No breaking changes or version-specific behaviors. SDK 4.11+ strict mode primarily affects data modeling, not deletion/EVICT operations.
 
 ---
 

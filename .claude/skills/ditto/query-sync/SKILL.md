@@ -40,9 +40,10 @@ description: |
   - [9. SELECT * Overuse](#9-select--overuse-priority-high)
   - [10. DISTINCT with _id](#10-distinct-with-_id-priority-high)
   - [11. Unbounded Aggregates](#11-unbounded-aggregates-priority-critical)
-  - [12. GROUP BY Without JOIN Awareness](#12-group-by-without-join-awareness-priority-high)
-  - [13. Large OFFSET Values](#13-large-offset-values-priority-medium)
-  - [14. Expensive Operator Usage](#14-expensive-operator-usage-priority-medium)
+  - [12. Nested Field Updates Failing](#12-nested-field-updates-failing-priority-high---sdk-411-strict-mode)
+  - [13. GROUP BY Without JOIN Awareness](#13-group-by-without-join-awareness-priority-high)
+  - [14. Large OFFSET Values](#14-large-offset-values-priority-medium)
+  - [15. Expensive Operator Usage](#15-expensive-operator-usage-priority-medium)
 - [Quick Reference Checklist](#quick-reference-checklist)
 - [See Also](#see-also)
 
@@ -111,6 +112,11 @@ This section consolidates all version-specific information referenced throughout
 - **SDK 4.8 - 4.11**
   - DQL API introduced but legacy builder API still recommended
   - `registerObserver` and `registerObserverWithSignalNext` available
+
+- **SDK 4.11+**
+  - **DQL_STRICT_MODE default true**
+  - Requires explicit MAP definitions for nested field updates
+  - See data-modeling skill Pattern 1.5 for collection definition patterns
 
 - **SDK 4.12+** (current)
   - Legacy builder methods (.collection(), .find(), .upsert()) **fully deprecated**
@@ -619,6 +625,96 @@ final avgPrice = (await ditto.store.execute(
 
 ---
 
+### 12. Nested Field Updates Failing (Priority: HIGH - SDK 4.11+ Strict Mode)
+
+**Platform**: All platforms (SDK 4.11+)
+
+**Problem**: Nested field updates fail with strict mode enabled (SDK 4.11+ default) when explicit MAP collection definitions are missing.
+
+**Context**:
+- **SDK 4.x default**: Strict Mode = `true` (requires explicit MAP definitions)
+- **SDK 5.0 default**: Strict Mode = `false` (automatic CRDT inference)
+- Neither setting is universally "recommended"—choose based on your requirements
+- **⚠️ CRITICAL**: All peers must use same setting
+
+**Detection**:
+```dart
+// RED FLAG: Nested field update without collection definition (strict mode = true)
+await ditto.store.execute(
+  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
+);
+// ERROR: Cannot update nested field - 'metadata' is REGISTER
+```
+
+**Solution Options:**
+
+**Option 1: Add Explicit MAP Definitions (Keep Strict Mode = true)**
+```dart
+// Define collection with MAP type
+await ditto.store.execute(
+  '''CREATE COLLECTION IF NOT EXISTS orders (
+       metadata MAP
+     )'''
+);
+
+// Now nested field updates work correctly
+await ditto.store.execute(
+  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
+);
+```
+- **Use when**: You want explicit type declarations and self-documenting schemas
+- **Trade-off**: Requires maintaining collection definitions
+
+**Option 2: Disable Strict Mode (Automatic Inference)**
+```dart
+// Disable strict mode (SDK v5.0 default behavior)
+await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false');
+await ditto.startSync();
+
+// Objects automatically treated as MAPs, no definitions needed
+await ditto.store.execute(
+  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
+);
+```
+- **Use when**: You prefer automatic CRDT inference or have dynamic schemas
+- **Trade-off**: Less explicit type declarations
+- **⚠️ WARNING**: Test thoroughly if switching from strict=true (different CRDT interpretation)
+
+**Decision Guide:**
+
+| Scenario | Recommended Approach |
+|----------|---------------------|
+| **Existing app with strict=true** | Keep strict=true, add MAP definitions (avoid switching) |
+| **New project on SDK 4.x** | Choose based on requirements (explicit types vs automatic inference) |
+| **Migrating from SDK <4.11** | Use strict=false to match legacy behavior |
+| **Mixed strict mode settings** | Standardize all peers to same setting |
+
+**❌ DON'T (Common mistakes)**:
+```dart
+// ❌ BAD: Mixing strict mode settings across peers
+// Device A: strict=true, Device B: strict=false
+// Result: Unpredictable CRDT merge behavior
+
+// ❌ BAD: Switching from strict=true to false without testing
+// Risk: Different CRDT type interpretation may cause unexpected behavior
+```
+
+**Why This Matters**:
+- **Strict mode = true**: Objects default to REGISTER, requires explicit MAP definitions
+- **Strict mode = false**: Objects automatically treated as MAP, no definitions needed
+- **Switching settings**: Has consequences—test all nested field operations thoroughly
+- **Cross-peer consistency**: All peers must use same strict mode setting
+
+**See Also**:
+- data-modeling/SKILL.md (Pattern 1.5: Explicit Collection Definitions)
+- `.claude/guides/best-practices/ditto.md (lines 2106-2126: When to Enable/Disable Strict Mode)`
+- `.claude/guides/best-practices/ditto.md (lines 2234-2331: Troubleshooting "Nested Fields Not Syncing")`
+
+---
+
 
 
 
@@ -630,6 +726,7 @@ This section contains only the most critical (Tier 1) patterns that prevent data
 
 ### API Usage
 - [ ] Using DQL string queries with `ditto.store.execute()` (all platforms)
+- [ ] **SDK 4.11+ Strict Mode**: Add CREATE COLLECTION definitions for nested objects
 - [ ] **Non-Flutter**: Not using legacy builder API (`.collection()`, `.find()` - fully deprecated SDK 4.12+, removed v5)
 - [ ] **Flutter**: Legacy API warnings don't apply (Flutter SDK never had builder API)
 - [ ] Parameterized arguments in queries (`:paramName` for Dart, `$args.paramName` for JS/Swift/Kotlin)

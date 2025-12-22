@@ -32,6 +32,7 @@ description: |
 - [Common Workflows](#common-workflows)
 - [Critical Patterns](#critical-patterns)
   - [Pattern 1: Mutable Arrays → MAP Structures](#pattern-1-mutable-arrays--map-structures-critical)
+  - [Pattern 1.5: Explicit Collection Definitions for MAP Types](#pattern-15-explicit-collection-definitions-for-map-types-critical---sdk-411-strict-mode)
   - [Pattern 2: Denormalization for Query Performance](#pattern-2-denormalization-for-query-performance-critical)
   - [Pattern 2.5: DO NOT Store Calculated Fields](#pattern-25-do-not-store-calculated-fields-critical)
   - [Pattern 4: Counter Patterns](#pattern-4-counter-patterns-counter-type-and-pn_increment-critical)
@@ -93,10 +94,13 @@ This section consolidates all version-specific information referenced throughout
   - COUNTER type benefits: automatic conflict resolution, no manual delta tracking
 
 - **SDK 4.11+**
+  - **DQL_STRICT_MODE default true** (affects CRDT type inference)
+  - Nested objects default to REGISTER unless explicitly defined as MAP
+  - Requires explicit collection definitions for MAP types (see Pattern 1.5)
   - DATE operators available for timestamp comparisons
   - ULID recommended for distributed ID generation
 
-**Throughout this Skill**: Data modeling patterns and CRDT rules are consistent across all SDK versions and platforms. Version references primarily relate to newer features (COUNTER type, DATE operators) rather than breaking changes.
+**Throughout this Skill**: Data modeling patterns and CRDT rules are consistent across all SDK versions and platforms. Version references primarily relate to newer features (COUNTER type, DATE operators, DQL_STRICT_MODE) rather than breaking changes.
 
 ---
 
@@ -305,6 +309,132 @@ Map<String, dynamic> convertArrayToMap(List<dynamic> items) {
 ```
 
 **See Also**: `examples/array-to-map-migration.dart`, `examples/array-to-map-bad.dart`
+
+---
+
+### Pattern 1.5: Explicit Collection Definitions for MAP Types (CRITICAL - SDK 4.11+ Strict Mode)
+
+**Platform**: All
+
+**SDK Version**: 4.11+ (Strict Mode Enabled by Default)
+
+**Problem**: With strict mode enabled (default SDK 4.11+), nested objects are treated as REGISTER types unless explicitly defined as MAP. Nested field updates fail without collection definitions.
+
+**Detection**:
+```dart
+// CRITICAL: Nested field update without collection definition (strict mode = true)
+await ditto.store.execute(
+  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
+);
+// ERROR: Cannot update nested field - 'metadata' is REGISTER
+```
+
+**✅ DO**: Define collections with explicit MAP types
+
+```dart
+// ✅ GOOD: Define collection with MAP type (strict mode = true)
+await ditto.store.execute(
+  '''CREATE COLLECTION IF NOT EXISTS orders (
+       metadata MAP,
+       items MAP
+     )'''
+);
+
+// Now nested field updates work
+await ditto.store.execute(
+  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
+);
+```
+
+**Alternative Solution (Choose based on requirements)**:
+
+Disabling strict mode is a valid alternative that removes the need for collection definitions:
+
+```dart
+// Alternative: Disable strict mode (SDK v5.0 default behavior)
+await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false');
+await ditto.startSync();
+// Objects automatically treated as MAPs, no definitions needed
+```
+
+**⚠️ WARNING**: Switching from strict=true to strict=false has consequences:
+- Different CRDT type interpretation for existing documents
+- Test all nested field operations thoroughly after switching
+- Ensure all peers use same setting
+
+**When This Applies:**
+- SDK 4.11+ with default strict mode
+- Documents with nested objects requiring field-level updates
+- Using MAP structures (see Pattern 1)
+
+**When to Skip:**
+- Strict mode disabled: `ALTER SYSTEM SET DQL_STRICT_MODE = false`
+- Flat document structures (no nested objects)
+- Documents using only scalar values
+
+**Why This Matters:**
+- **CRDT Safety**: Without MAP definition, nested objects default to REGISTER (whole-object replacement)
+- **Data Loss Risk**: Concurrent updates to different nested fields overwrite each other
+- **Sync Behavior**: Mismatched definitions across peers cause unpredictable merge behavior
+
+**Real-World Example**:
+```dart
+// Initialize app: Define collections at startup
+Future<void> initializeDitto(Ditto ditto) async {
+  // Configure strict mode (explicit, for clarity)
+  await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = true');
+
+  // Define collections with MAP types
+  await ditto.store.execute(
+    '''CREATE COLLECTION IF NOT EXISTS orders (
+         metadata MAP,
+         items MAP,
+         customer MAP
+       )'''
+  );
+
+  await ditto.store.execute(
+    '''CREATE COLLECTION IF NOT EXISTS products (
+         pricing MAP,
+         inventory MAP
+       )'''
+  );
+
+  // Start sync after collection definitions
+  await ditto.startSync();
+}
+
+// Now nested field updates work correctly
+await ditto.store.execute(
+  '''UPDATE orders
+     SET metadata.updatedAt = :date,
+         metadata.updatedBy = :userId
+     WHERE _id = :id''',
+  arguments: {
+    'date': DateTime.now().toIso8601String(),
+    'userId': currentUser.id,
+    'id': orderId,
+  },
+);
+```
+
+**Cross-Peer Consistency**:
+```dart
+// ⚠️ CRITICAL: All peers must use same strict mode setting
+// Device A (strict=false): metadata treated as MAP
+// Device B (strict=true, no definition): metadata treated as REGISTER
+// Result: Unpredictable merge behavior when syncing
+
+// Solution: Ensure all peers have same collection definitions
+// OR: Ensure all peers use same strict mode setting
+```
+
+**See Also**:
+- Main guide lines 2027-2176 (DQL Strict Mode section)
+- Main guide lines 2208-2310 (Troubleshooting "Nested Fields Not Syncing")
+- Pattern 1 (Mutable Arrays → MAP Structures)
 
 ---
 
@@ -873,6 +1003,7 @@ The `_id` field **cannot be changed** after document creation. To change an ID, 
 ## Quick Reference Checklist
 
 **Critical (Tier 1) - Keep in SKILL.md:**
+- [ ] **Strict Mode (SDK 4.11+)**: Add CREATE COLLECTION definitions for MAP types if strict mode enabled
 - [ ] **ID Generation**: Use UUID v4 (or auto-generated IDs) for distributed systems, NOT sequential IDs
 - [ ] **Display IDs**: Consider random suffix for displayId fields (e.g., "ORD-20251219-A7F3") to reduce user confusion
 - [ ] **NO Calculated Fields**: DO NOT store lineTotal, subtotal, total, or any value derivable from existing data

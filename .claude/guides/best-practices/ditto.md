@@ -1,7 +1,7 @@
 # Ditto SDK Best Practices
 
-> **Version**: 1.0
-> **Last Updated**: 2025-12-21
+> **Version**: 1.1
+> **Last Updated**: 2025-12-22
 
 This document provides comprehensive best practices and anti-patterns for Ditto SDK integration, focused on offline-first architecture and distributed data synchronization.
 
@@ -647,10 +647,10 @@ When upgrading Ditto SDK to a new major or minor version:
 
 | SDK Version | Key Changes |
 |-------------|-------------|
-| **v5.0** (Future) | Legacy builder API removed (non-Flutter SDKs) |
+| **v5.0** (Future) | Legacy builder API removed (non-Flutter SDKs), **DQL_STRICT_MODE default changes to false** |
 | **v4.14.0** | COUNTER type introduced, registerObserverWithSignalNext available |
 | **v4.12** | Legacy builder API fully deprecated, `DO UPDATE_LOCAL_DIFF` introduced |
-| **v4.11** | Transaction API introduced, DQL_STRICT_MODE default true |
+| **v4.11** | Transaction API introduced, **DQL_STRICT_MODE default true** |
 
 ---
 
@@ -2060,24 +2060,69 @@ await ditto.startSync(); // May start with wrong settings
 
 **⚠️ CRITICAL: Cross-Peer Consistency**
 **All peers must use the same DQL_STRICT_MODE setting.** When peers have different settings:
-- Data will sync between peers successfully
-- However, behavior changes unpredictably
-- Nested field updates may appear missing if strict mode peers lack explicit MAP definitions
+
+**What Happens:**
+- Data syncs between peers successfully (no sync errors)
+- However, CRDT type interpretation differs between peers
+- Documents merge using last-write-wins instead of proper CRDT semantics
+- Nested field updates may appear missing on strict mode peers
+
+**Scenario Example:**
+```dart
+// Device A (strict=false): Updates nested field
+await ditto.store.execute(
+  'UPDATE products SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': '2025-12-22', 'id': 'prod_123'},
+);
+// metadata treated as MAP → field-level update
+
+// Device B (strict=true, no collection definition): Receives sync
+// metadata treated as REGISTER → sees whole-object replacement
+// Result: updatedAt field update may not appear as expected
+```
+
+**Why This Happens:**
+- Strict mode peers treat objects as REGISTER (whole-object replacement)
+- Non-strict peers treat objects as MAP (field-level merging)
+- When syncing, CRDT type mismatch causes last-write-wins behavior
+- No error is thrown, but merge semantics break
+
+**Solution:** Ensure all peers use same strict mode setting from day 1.
 
 **Strict Mode Disabled (false):**
 - Automatic CRDT type inference based on document shape
 - Objects automatically treated as MAPs (field-level merging)
-- Useful for dynamic key-value data without predefined schemas
+- No collection definitions required for nested objects
+- **⚠️ CRITICAL: Requires HTTP API v5 endpoint when syncing with Big Peer**
+  - Portal configuration: Ensure your application uses API v5 endpoint (`/api/v5/store/execute`)
+  - SDK 4.x peers with strict mode disabled cannot sync properly with v4 API endpoints
+  - HTTP API v4 endpoint (`/api/v4/store/execute`) does NOT support strict mode disabled
+  - See [Ditto HTTP API documentation](https://docs.ditto.live/cloud/http-api/getting-started) for endpoint details
 
-**Recommendation**: Keep enabled (default) for production. All peers must use same setting.
+**CRITICAL**: All peers must use same setting to ensure consistent CRDT behavior across devices.
 
 ---
 
 #### When to Enable/Disable Strict Mode
 
-**✅ Keep ENABLED (true - default)**: Production apps, new projects (SDK 4.11+), teams, type safety needed
+**⚠️ SDK Version Defaults:**
+- **SDK 4.x**: Strict Mode = `true` (default)
+- **SDK 5.0+**: Strict Mode = `false` (default) - **Breaking change**
 
-**⚠️ Disable (false) only for**: Migrating from SDK <4.11 (legacy), fully dynamic schemas, rapid prototyping
+**Choose Based on Your Requirements:**
+
+| Setting | Use When | Trade-offs |
+|---------|----------|------------|
+| **Strict Mode = true** | Explicit type safety desired, team needs self-documenting schemas, migrating from legacy builder API | Requires explicit MAP collection definitions for nested objects |
+| **Strict Mode = false** | Dynamic schemas, no predefined structure, automatic CRDT inference preferred | Less explicit type declarations, relies on inferred types |
+
+**⚠️ CRITICAL: Switching Between Settings Has Consequences**
+
+If your project currently uses Strict Mode = `true`:
+- **Do NOT switch to `false` without thorough testing**
+- Switching causes different CRDT type interpretation
+- Nested field updates may behave differently
+- Test all nested object operations after switching
 
 ---
 
@@ -2164,14 +2209,201 @@ await ditto.store.execute(
 
 #### Migration Strategy
 
-**Migrating from SDK <4.11** (strict mode was false):
+**Migrating from SDK <4.11** (strict mode was not configurable):
 
-**Option 1**: Keep disabled - `ALTER SYSTEM SET DQL_STRICT_MODE = false`
+**Option 1**: Disable strict mode (maintains SDK <4.11 behavior)
+```dart
+await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false');
+```
+- Automatic CRDT type inference (same as SDK <4.11)
+- No collection definitions needed
 
-**Option 2** (Recommended): Enable strict mode
-1. Audit nested field updates
+**Option 2**: Enable strict mode (SDK 4.11+ default)
+```dart
+await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = true');
+```
+1. Audit all nested field updates
 2. Add explicit MAP collection definitions
-3. Enable on all peers simultaneously
+3. Deploy changes to all peers simultaneously
+4. Test thoroughly before production deployment
+
+**Choose based on your project requirements**—there is no universal "recommended" approach.
+
+---
+
+#### Troubleshooting: "Nested Fields Not Syncing"
+
+**Symptom:** Nested field updates work on one device but don't appear on other devices after sync.
+
+**Root Cause:** Mismatched `DQL_STRICT_MODE` settings across peers, or missing collection definitions.
+
+**Diagnostic Steps:**
+
+1. **Check strict mode settings across all devices:**
+```dart
+// Query system configuration (SDK 4.11+)
+final result = await ditto.store.execute(
+  'SHOW DQL_STRICT_MODE'
+);
+// Check DQL_STRICT_MODE value across all peers
+```
+
+2. **Verify collection definitions exist (if strict mode = true):**
+```dart
+// Explicit MAP definition required for nested field updates
+await ditto.store.execute(
+  '''CREATE COLLECTION IF NOT EXISTS products (
+       metadata MAP
+     )'''
+);
+```
+
+3. **Test with explicit MAP definition:**
+```dart
+// Before
+await ditto.store.execute(
+  'UPDATE products SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': DateTime.now().toIso8601String(), 'id': productId},
+);
+// ERROR: Cannot update nested field - 'metadata' is REGISTER
+
+// After (with collection definition)
+await ditto.store.execute(
+  '''CREATE COLLECTION IF NOT EXISTS products (
+       metadata MAP
+     )'''
+);
+
+await ditto.store.execute(
+  'UPDATE products SET metadata.updatedAt = :date WHERE _id = :id',
+  arguments: {'date': DateTime.now().toIso8601String(), 'id': productId},
+);
+// SUCCESS: metadata is MAP - field-level update works
+```
+
+**Solutions:**
+
+| Scenario | Solution |
+|----------|----------|
+| **Mixed strict mode settings** | Standardize all peers to same setting (choose based on requirements) |
+| **Missing MAP definitions (strict=true)** | Add `CREATE COLLECTION` with explicit MAP types |
+| **Legacy SDK <4.11** | Choose: Disable strict mode OR add explicit MAP definitions |
+| **Dynamic schemas** | Disable strict mode or add MAP definitions as schema evolves |
+
+**Prevention:**
+- Document strict mode setting in project README
+- Add collection definitions at app initialization
+- Include strict mode configuration in onboarding docs
+- Test nested field updates across multiple devices during development
+
+**Real-World Example:**
+
+```dart
+// Problem: Device A updates nested field
+// Device A (SDK 4.11+, strict=false)
+await ditto.store.execute(
+  '''UPDATE orders
+     SET metadata.updatedAt = :date,
+         metadata.updatedBy = :userId,
+         table = :tableNum
+     WHERE _id = :id''',
+  arguments: {
+    'date': '2025-12-22',
+    'userId': 'user123',
+    'tableNum': '12',
+    'id': 'order-1'
+  },
+);
+
+// Device B (SDK 4.10, strict=true, no collection definition)
+final result = await ditto.store.execute(
+  'SELECT * FROM orders WHERE _id = :id',
+  arguments: {'id': 'order-1'},
+);
+// Returns: table: '12'
+// Result: 'table' appears, but 'metadata.updatedAt' and 'metadata.updatedBy' do not
+
+// Root Cause: Device B treats 'metadata' as REGISTER without MAP definition
+// Solution: Add MAP definition on Device B
+await ditto.store.execute(
+  '''CREATE COLLECTION IF NOT EXISTS orders (
+       metadata MAP
+     )'''
+);
+// OR: Ensure both devices use same strict mode setting
+```
+
+**See Also**: [Cross-Peer Consistency](#critical-cross-peer-consistency) for detailed cross-peer sync behavior
+
+---
+
+#### SDK v5.0 Migration: Strict Mode Default Change
+
+**⚠️ BREAKING CHANGE (Future SDK v5.0):**
+
+In SDK v5.0, the default value of `DQL_STRICT_MODE` will change from `true` to `false`.
+
+**Impact:**
+- **SDK 4.x** (current): Objects default to REGISTER, require explicit MAP definitions
+- **SDK v5.0** (future): Objects default to MAP, automatically inferred
+
+**Migration Path for SDK 4.x → v5.0:**
+
+**Option 1: Maintain SDK 4.x Behavior (Strict Mode = true)**
+```dart
+// Explicitly enable strict mode to maintain SDK 4.x behavior
+await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = true');
+await ditto.startSync();
+```
+- **⚠️ CRITICAL**: Must explicitly set `true` in SDK v5.0 (default changes to `false`)
+- No code changes needed for existing nested field operations
+
+**Option 2: Adopt SDK v5.0 Default Behavior (Strict Mode = false)**
+```dart
+// Explicitly disable strict mode (future default)
+await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false');
+await ditto.startSync();
+
+// Remove all CREATE COLLECTION definitions (no longer needed)
+// Objects will automatically use MAP semantics
+```
+- **⚠️ WARNING**: Test all nested field operations thoroughly after switching
+- Different CRDT type interpretation may cause unexpected behavior
+
+**Decision Matrix:**
+
+| Project State | Consideration |
+|---------------|---------------|
+| **Existing production app (SDK 4.x with strict=true)** | Keep strict mode = `true` to avoid unexpected behavior changes |
+| **New project starting on SDK 4.x** | Choose based on requirements (explicit types vs automatic inference) |
+| **Migrating from SDK <4.11** | Strict mode = `false` matches legacy SDK <4.11 behavior |
+| **Dynamic schema requirements** | Strict mode = `false` provides automatic inference |
+
+**Trade-offs Comparison:**
+
+| Aspect | Strict Mode = true | Strict Mode = false |
+|--------|-------------------|---------------------|
+| Type declarations | Explicit (self-documenting) | Automatic (inferred) |
+| Collection definitions | Required for MAPs | Not required |
+| Predictability | Explicit, clear | Relies on inference |
+| Boilerplate | Higher (more definitions) | Lower (less code) |
+| SDK v5.0 alignment | Must explicitly set `true` | Matches v5.0 default |
+
+**Phased Migration Strategy:**
+
+1. **Pre-Migration (SDK 4.x):**
+   - Document all collection definitions currently in use
+   - Audit nested field update patterns
+   - Test cross-peer sync behavior
+
+2. **Upgrade to SDK v5.0:**
+   - **If keeping strict mode enabled:** Add explicit `ALTER SYSTEM SET DQL_STRICT_MODE = true`
+   - **If adopting v5.0 default:** Review and remove collection definitions, test thoroughly
+
+3. **Post-Migration:**
+   - Verify all nested field updates work correctly
+   - Monitor sync behavior across all peers
+   - Update documentation to reflect strict mode setting
 
 ---
 
