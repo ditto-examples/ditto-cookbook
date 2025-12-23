@@ -7,6 +7,11 @@ This directory contains configuration files for Claude Code, the AI-powered deve
 - **settings.json** - Core configuration (points to CLAUDE.md)
 - **hooks.json** - Automated quality check triggers
 - **settings.local.json** - Personal settings (gitignored, optional)
+- **rules/** - Enforcement rules and workflows (conditionally loaded)
+  - workflows/ - Multi-step coordination workflows
+    - ditto-best-practices-sync.md - Ditto guide/skills synchronization
+  - enforcement/ - Always-on enforcement rules (future)
+  - project-specific/ - Project-unique requirements (future)
 - **guides/** - Comprehensive documentation
   - git-hooks.md - Git Hooks setup and usage (universal quality enforcement)
   - quality-checks.md - Claude Code hooks and workflows
@@ -91,6 +96,7 @@ git commit --no-verify -m "Emergency hotfix"  # Document reason!
 ### Essential Reading
 
 - [../CLAUDE.md](../CLAUDE.md) - Development guidelines (start here)
+- [rules/README.md](rules/README.md) - Enforcement rules and workflows
 - [guides/git-hooks.md](guides/git-hooks.md) - Complete Git Hooks guide
 - [guides/quality-checks.md](guides/quality-checks.md) - Claude Code hooks
 - [guides/architecture.md](guides/architecture.md) - Architecture documentation
@@ -143,6 +149,8 @@ git commit --no-verify -m "Emergency hotfix"  # Document reason!
 **settings.json**: Minimal config, references CLAUDE.md (authoritative source)
 
 **hooks.json**: Automated hooks (user-prompt-submit, tool:Write/Edit, task:complete). See [guides/quality-checks.md](guides/quality-checks.md)
+
+**rules/**: Enforcement rules and workflows that load conditionally based on file paths. See [rules/README.md](rules/README.md)
 
 **../CLAUDE.md**: Authoritative development guidelines. Read this first.
 

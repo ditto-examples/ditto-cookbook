@@ -4,20 +4,36 @@
 
 ## Table of Contents
 
-1. [Language Policy](#language-policy)
-2. [Documentation Updates](#documentation-updates)
-3. [Architecture Documentation](#architecture-documentation)
-4. [Best Practices and Technology Updates](#best-practices-and-technology-updates)
-5. [Platform-Specific Best Practices](#platform-specific-best-practices)
-6. [Security Guidelines](#security-guidelines)
-7. [Code Quality Standards](#code-quality-standards)
-8. [Testing Standards](#testing-standards)
-9. [Dependency Management](#dependency-management)
-10. [Showcase Code Standards](#showcase-code-standards)
+1. [Claude Code Rules](#claude-code-rules)
+2. [Language Policy](#language-policy)
+3. [Documentation Updates](#documentation-updates)
+4. [Architecture Documentation](#architecture-documentation)
+5. [Best Practices and Technology Updates](#best-practices-and-technology-updates)
+6. [Platform-Specific Best Practices](#platform-specific-best-practices)
+7. [Security Guidelines](#security-guidelines)
+8. [Code Quality Standards](#code-quality-standards)
+9. [Testing Standards](#testing-standards)
+10. [Dependency Management](#dependency-management)
+11. [Showcase Code Standards](#showcase-code-standards)
 
 ---
 
 # Development Guidelines
+
+## Claude Code Rules
+
+This project uses `.claude/rules/` directory for specialized enforcement rules and workflows:
+
+**Purpose**: Rules optimize context usage by extracting complex workflows from CLAUDE.md and loading them conditionally based on file paths.
+
+**Key Rules**:
+- [Ditto Best Practices Synchronization](.claude/rules/workflows/ditto-best-practices-sync.md) - Mandatory workflow for ditto.md edits
+
+**Full documentation**: [.claude/rules/README.md](.claude/rules/README.md)
+
+**Note**: CLAUDE.md remains the authoritative source for foundational guidelines. Rules provide targeted enforcement when needed.
+
+---
 
 ## Language Policy
 
@@ -120,53 +136,17 @@ When implementing features or fixing issues, consult the platform-specific best 
 
 ### Ditto Best Practices Synchronization (CRITICAL)
 
-**⚠️ MANDATORY WORKFLOW**: After editing [.claude/guides/best-practices/ditto.md](.claude/guides/best-practices/ditto.md), you **MUST** propagate changes to the corresponding Agent Skills:
+**⚠️ MANDATORY WORKFLOW**: After editing [.claude/guides/best-practices/ditto.md](.claude/guides/best-practices/ditto.md), you **MUST** propagate changes to the corresponding Agent Skills.
 
-**Documentation Format**:
-- The ditto.md file must include version and timestamp information at the **beginning** of the document (immediately after the title)
-- Format:
-  ```markdown
-  > **Version**: X.Y
-  > **Last Updated**: YYYY-MM-DD
-  ```
-- **Version**: Use semantic versioning (Major.Minor). Increment when:
-  - **Major (X)**: Breaking changes, significant restructuring, or major paradigm shifts
-  - **Minor (Y)**: New sections, substantial additions, or non-breaking updates
-- **Last Updated**: Update this date whenever making any changes to the file
+**Full workflow documentation**: [.claude/rules/workflows/ditto-best-practices-sync.md](.claude/rules/workflows/ditto-best-practices-sync.md)
 
-**Workflow**:
-1. **After editing ditto.md** - Always review `.claude/skills/ditto/` to identify which skills need updates
-2. **Check relevance** - Review the edited sections and determine which skill files are affected:
-   - Query/subscription/observer changes → `query-sync/SKILL.md` and examples
-   - Data modeling/CRDT changes → `data-modeling/SKILL.md` and examples
-   - Deletion/EVICT/storage changes → `storage-lifecycle/SKILL.md` and examples
-   - Transaction/attachment changes → `transactions-attachments/SKILL.md` and examples
-   - Performance/logging/observer changes → `performance-observability/SKILL.md` and examples
-3. **Update skills** - Propagate the changes to relevant SKILL.md files and example files
-4. **Skip if unnecessary** - If the changes are not relevant to any skills (e.g., pure conceptual content, non-actionable guidance), you may skip the update
-
-**Purpose**: Agent Skills provide real-time guidance to developers. They must stay synchronized with the authoritative best practices guide to ensure accuracy and consistency.
-
-**Critical Files Relationship**:
+**Key points**:
 - **Source of Truth**: `.claude/guides/best-practices/ditto.md` (comprehensive reference)
 - **Derivative Content**: `.claude/skills/ditto/*` (actionable patterns extracted from main guide)
+- **Workflow**: Review → Check relevance → Update skills → Verify consistency
+- **Skip if unnecessary**: Pure conceptual content without actionable patterns
 
-**Update Workflow Example**:
-```
-# If you edit ditto.md lines 780-1008 (Data Deletion Strategies):
-1. Review storage-lifecycle/SKILL.md
-2. Update relevant patterns (e.g., tombstone TTL, logical deletion)
-3. Update storage-lifecycle/examples/*.dart if patterns changed
-4. Verify consistency across all affected files
-```
-
-**When to Update**:
-- ✅ New critical patterns added to ditto.md
-- ✅ Existing patterns significantly revised
-- ✅ Platform-specific changes (Flutter vs non-Flutter)
-- ✅ SDK version updates (4.12+, v5)
-- ❌ Minor wording improvements without semantic changes
-- ❌ Purely conceptual content without actionable patterns
+Agent Skills provide real-time guidance to developers. They must stay synchronized with the authoritative best practices guide to ensure accuracy and consistency.
 
 ## Security Guidelines
 
