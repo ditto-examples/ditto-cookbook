@@ -25,7 +25,17 @@ import 'dart:async';
 import 'package:ditto_live/ditto_live.dart';
 import 'package:flutter/material.dart';
 
-String nowUtc() => DateTime.now().toUtc().toIso8601String();
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
 
 // ============================================================================
 // Writes
@@ -40,7 +50,7 @@ Future<void> createOrder(Ditto ditto, String orderId, String status) async {
         '_id': orderId,
         'status': status,
         'isDeleted': false,
-        'createdAt': nowUtc(),
+        'createdAt': utcTimestamp(),
       },
     },
   );
@@ -50,7 +60,8 @@ Future<void> createOrder(Ditto ditto, String orderId, String status) async {
 Future<void> softDeleteOrder(Ditto ditto, String orderId) async {
   await ditto.store.execute(
     'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
-    arguments: {'id': orderId, 'deletedAt': nowUtc()},
+    // deletedAt is compared with cleanup cutoffs, so it needs fixed precision.
+    arguments: {'id': orderId, 'deletedAt': utcTimestamp()},
   );
 }
 
@@ -129,8 +140,8 @@ class OrderSoftDeleteRetention {
 
   SyncSubscription? _subscription;
 
-  String _cutoff() =>
-      DateTime.now().toUtc().subtract(retention).toIso8601String();
+  // Same fixed-precision format as deletedAt (utcTimestamp()).
+  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
 
   /// Call once at startup (before ditto.sync.start()).
   void start() {
@@ -145,17 +156,19 @@ class OrderSoftDeleteRetention {
     // 1. Stop asking peers for the documents that are about to be evicted.
     _subscription?.cancel();
 
-    // 2. Evict only documents outside the new subscription, so they do not
-    //    sync back.
-    final result = await ditto.store.execute(
-      'EVICT FROM orders '
-      'WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff',
-      arguments: {'storeId': storeId, 'cutoff': cutoff},
-    );
-
-    // 3. Subscribe again with the moved boundary.
-    _subscription = _subscribe(cutoff);
-    return result.mutatedDocumentIDs().length;
+    try {
+      // 2. Evict only documents outside the new subscription, so they do not
+      //    sync back.
+      final result = await ditto.store.execute(
+        'EVICT FROM orders '
+        'WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff',
+        arguments: {'storeId': storeId, 'cutoff': cutoff},
+      );
+      return result.mutatedDocumentIDs().length;
+    } finally {
+      // 3. Subscribe again with the moved boundary, even if the eviction failed.
+      _subscription = _subscribe(cutoff);
+    }
   }
 
   SyncSubscription _subscribe(String cutoff) =>

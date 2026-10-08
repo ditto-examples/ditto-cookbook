@@ -6,6 +6,11 @@
 // devices change it concurrently one version wins and the other change is
 // lost silently. A map keyed by a stable ID merges each entry independently.
 //
+// When you convert an existing array, write the map to a new field (for
+// example, lineItems next to the old items array). Writing a map under the
+// array's field name changes its CRDT type: the old array and the new map then
+// coexist under the same key.
+//
 // Guide: .claude/guides/best-practices/ditto.md#arrays-and-maps
 
 import 'dart:math';
@@ -13,6 +18,18 @@ import 'dart:math';
 import 'package:ditto_live/ditto_live.dart';
 
 final _random = Random.secure();
+
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
 
 /// Returns a random (version 4) UUID.
 String uuidV4() {
@@ -61,7 +78,7 @@ Future<String> createOrder(Ditto ditto, String storeId) async {
         '_id': orderId,
         'storeId': storeId,
         'status': 'open',
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(),
         'items': {
           uuidV4(): {'productId': 'p1', 'quantity': 2, 'position': 0},
           uuidV4(): {'productId': 'p2', 'quantity': 1, 'position': 1},

@@ -127,7 +127,7 @@ Future<int?> approximateOrderBytes(Ditto ditto, String orderId) async {
 /// data that made it grow: move the nested readings to their own collection
 /// and remove them from the device document with UNSET, in one transaction.
 Future<void> moveReadingsOut(Ditto ditto, String deviceId) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'moveReadingsOut', (tx) async {
     final result = await tx.execute(
       'SELECT readings FROM devices WHERE _id = :id',
       arguments: {'id': deviceId},
@@ -154,5 +154,5 @@ Future<void> moveReadingsOut(Ditto ditto, String deviceId) async {
       'UPDATE devices UNSET readings WHERE _id = :id',
       arguments: {'id': deviceId},
     );
-  }, hint: 'moveReadingsOut');
+  });
 }

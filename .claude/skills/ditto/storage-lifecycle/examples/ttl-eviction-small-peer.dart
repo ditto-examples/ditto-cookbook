@@ -20,6 +20,18 @@
 import 'package:ditto_live/ditto_live.dart';
 import 'package:flutter/foundation.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 /// Replace with your own token retrieval.
 Future<String> fetchAuthToken() async => 'YOUR_AUTH_TOKEN';
 
@@ -73,8 +85,8 @@ class OrderRetention {
   final Duration retention;
   SyncSubscription? _subscription;
 
-  String _cutoff() =>
-      DateTime.now().toUtc().subtract(retention).toIso8601String();
+  // Same fixed-precision format as the stored timestamps (utcTimestamp()).
+  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
 
   /// Call once at startup (before ditto.sync.start()).
   void start() {
@@ -89,12 +101,14 @@ class OrderRetention {
     // 1. Stop asking peers for documents older than the new cutoff.
     _subscription?.cancel();
 
-    // 2. Evict the complement in short batches.
-    final evicted = await _evictInBatches(cutoff);
-
-    // 3. Subscribe again with the moved boundary (same cutoff value).
-    _subscription = _subscribeFrom(cutoff);
-    return evicted;
+    try {
+      // 2. Evict the complement in short batches.
+      return await _evictInBatches(cutoff);
+    } finally {
+      // 3. Subscribe again with the moved boundary (same cutoff value), even if
+      //    the eviction failed.
+      _subscription = _subscribeFrom(cutoff);
+    }
   }
 
   SyncSubscription _subscribeFrom(String cutoff) =>
@@ -103,8 +117,9 @@ class OrderRetention {
         arguments: {'cutoff': cutoff},
       );
 
-  /// Batching keeps each write transaction short. One cleanup run is still
-  /// one eviction event for connected peers.
+  /// Batching keeps each write transaction short. It does not reduce the sync
+  /// cost of eviction: run the whole batched cleanup on the usual schedule,
+  /// not as many separate cleanups.
   Future<int> _evictInBatches(String cutoff) async {
     var total = 0;
     while (true) {

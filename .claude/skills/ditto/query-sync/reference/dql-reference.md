@@ -125,11 +125,12 @@ SELECT * FROM orders USE IDS LIST :ids
 | Aggregate | Result |
 |---|---|
 | `COUNT(*)` | Number of rows (`0` for no rows) |
-| `COUNT(expr)` / `COUNT(DISTINCT expr)` | Rows where `expr` is not `null`, missing, or `false` (`0` for no rows) |
+| `COUNT(expr)` | Rows where `expr` is not `null`, missing, or `false` (`0` for no rows) |
+| `COUNT(DISTINCT expr)` | Distinct values of `expr`, with the same exclusions (`0` for no rows) |
 | `SUM` / `AVG` | Numeric values only; MISSING for no rows |
 | `MIN` / `MAX` | By Ditto's type order; MISSING for no rows |
-| `MEDIAN(expr)` | Positional median |
-| `MID(expr)` | `(MIN + MAX) / 2`, not the median |
+| `MEDIAN(expr)` | Positional median; MISSING for no rows |
+| `MID(expr)` | `(MIN + MAX) / 2`, not the median; MISSING for no rows |
 
 - Default empty aggregates: `ifmissing(SUM(total), 0)`.
 - Count present values of a boolean field with `COUNT(field IS NOT MISSING)`.
@@ -187,7 +188,7 @@ ORDER BY CASE WHEN priority = 'urgent' THEN 0 ELSE 1 END, dueAt, _id
 **Index requirement**: joins run as nested loops; the inner collection's lookup must use an index or `_id`. Otherwise: `Joining to "c" disallowed without appropriate index support. Please run ADVISE for recommendations.`
 
 ```sql
-CREATE INDEX IF NOT EXISTS ix_orders_customerId ON orders (customerId)
+CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)
 ```
 
 ```sql
@@ -247,15 +248,15 @@ ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```text
 UPDATE collection [USE IDS ...]
 [APPLY counterField INCREMENT BY n, ...]
-SET field = value, nested.path = value, ...
-UNSET field, nested.path, ...
+[SET field = value, nested.path = value, ...]
+[UNSET field, nested.path, ...]
 [WHERE condition]
 [RETURNING projection]
 ```
 
-- At least one of `APPLY`, `SET`, `UNSET`; `APPLY` comes before `SET`. Without `WHERE`, every document in the collection is updated. Counters: see [Counters](../../../../guides/best-practices/ditto.md#counters).
+- At least one of `APPLY`, `SET`, `UNSET`, in this order: `APPLY` before `SET`, and `UNSET` after `SET`. Without `WHERE`, every document in the collection is updated. Counters: see [Counters](../../../../guides/best-practices/ditto.md#counters).
 - Missing intermediate objects in nested `SET` paths are created.
-- Errors: `SET _id = ...` (`The document id _id cannot be modified`); the same path twice (`More than one modification specified for the path ...`); `SET items[0] = ...` (syntax error; replace the array or use a map keyed by ID).
+- Errors: `SET _id = ...` (``The document id `_id` cannot be modified``); the same path twice (`More than one modification specified for the path ...`); `SET items[0] = ...` (syntax error; replace the array or use a map keyed by ID).
 - An `UPDATE` that writes the current value is still a mutation: it appears in `mutatedDocumentIDs()` and can wake observers. Skip unchanged documents in `WHERE` (`coalesce(status, :none) != :status`).
 
 With the default `DQL_STRICT_MODE = false`, objects are CRDT maps and assignments merge:

@@ -33,7 +33,7 @@ class _OrdersListState extends State<OrdersList> {
   void initState() {
     super.initState();
     _observer = widget.ditto.store.registerObserver(
-      "SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC",
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
       arguments: {'status': 'open'},
     );
     _changes = _observer.changes.listen((result) {
@@ -51,8 +51,12 @@ class _OrdersListState extends State<OrdersList> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-        children: [for (final o in _orders) ListTile(title: Text('${o['_id']}'))],
+  Widget build(BuildContext context) => ListView.builder(
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return ListTile(key: ValueKey(order['_id']), title: Text('${order['_id']}'));
+        },
       );
 }
 

@@ -24,6 +24,18 @@ import 'dart:async';
 import 'package:ditto_live/ditto_live.dart';
 import 'package:flutter/material.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 // Documents:
 //   orders:     {"_id": "order-1", "storeId": "store-12", "status": "open"}
 //   orderItems: {"_id": "item-1", "orderId": "order-1", "storeId": "store-12",
@@ -49,7 +61,7 @@ class StoreSync {
   Future<void> start() async {
     // Indexes persist; IF NOT EXISTS makes this idempotent at every startup.
     await ditto.store.execute(
-      'CREATE INDEX IF NOT EXISTS orderItems_orderId ON orderItems (orderId)',
+      'CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)',
     );
     _subscriptions.addAll([
       ditto.sync.registerSubscription(
@@ -80,7 +92,7 @@ Future<void> createOrderWithItems(
   required String orderId,
   required List<Map<String, dynamic>> items,
 }) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'createOrderWithItems', (tx) async {
     await tx.execute(
       'INSERT INTO orders DOCUMENTS (:order)',
       arguments: {
@@ -88,7 +100,7 @@ Future<void> createOrderWithItems(
           '_id': orderId,
           'storeId': storeId,
           'status': 'open',
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
+          'createdAt': utcTimestamp(),
         },
       },
     );
@@ -101,12 +113,13 @@ Future<void> createOrderWithItems(
         ],
       },
     );
-  }, hint: 'createOrderWithItems');
+  });
 }
 
-/// ✅ GOOD: One-off join. Drives from orderItems through the orderItems_orderId
-/// index and looks up each product by _id (no extra index needed). Qualify
-/// every field with its alias and alias colliding names such as _id.
+/// ✅ GOOD: One-off join. Drives from orderItems through the
+/// idx_orderItems_orderId index and looks up each product by _id (no extra
+/// index needed). Qualify every field with its alias and alias colliding names
+/// such as _id.
 Future<List<Map<String, dynamic>>> orderLines(
   Ditto ditto,
   String orderId,
@@ -126,7 +139,7 @@ Future<List<Map<String, dynamic>>> orderLines(
 
 /// ✅ GOOD: LEFT JOIN keeps a parent whose children have not synced yet (or do
 /// not exist). Right-side fields are MISSING for unmatched rows. orderItems is
-/// the inner collection, so it uses the orderItems_orderId index.
+/// the inner collection, so it uses the idx_orderItems_orderId index.
 Future<List<Map<String, dynamic>>> openOrdersWithItems(
   Ditto ditto,
   String storeId,
@@ -147,7 +160,9 @@ Future<List<Map<String, dynamic>>> openOrdersWithItems(
 /// ✅ GOOD: A screen that observes the joined result. The observer delivers a
 /// new result when a change in any of the joined collections changes the
 /// joined rows. Results are consumed through the
-/// `changes` stream; both are cancelled in dispose().
+/// `changes` stream; both are cancelled in dispose(). The observer is
+/// registered once for widget.orderId: if that ID can change while the widget
+/// is mounted, re-register it in didUpdateWidget.
 class OrderItemsView extends StatefulWidget {
   const OrderItemsView({super.key, required this.ditto, required this.orderId});
 
@@ -225,7 +240,7 @@ SyncSubscription subscribeWithJoin(Ditto ditto, String orderId) =>
 
 /// ❌ BAD: Joining to customers on a non-ID field without an index fails before
 /// it runs (`Joining to "c" disallowed without appropriate index support`).
-/// Fix: `CREATE INDEX IF NOT EXISTS customers_email ON customers (email)`, or
+/// Fix: `CREATE INDEX IF NOT EXISTS idx_customers_email ON customers (email)`, or
 /// join on c._id. Do not silence the error with `USE INDEX ''` on a large
 /// collection: every outer row would then scan the whole inner collection.
 const joinWithoutIndexQuery = 'SELECT o._id, c.name FROM orders AS o '

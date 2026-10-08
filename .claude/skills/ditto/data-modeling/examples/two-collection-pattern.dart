@@ -36,7 +36,7 @@ Future<void> recordPosition(
 }) async {
   // recordedAt is sorted and range-filtered, so it uses the fixed-precision helper.
   final recordedAt = utcTimestamp();
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'recordPosition', (tx) async {
     await tx.execute(
       'INSERT INTO vehiclePositions DOCUMENTS (:event)',
       arguments: {
@@ -62,7 +62,7 @@ Future<void> recordPosition(
         },
       },
     );
-  }, hint: 'recordPosition');
+  });
 }
 
 /// Reads the current state with the same REGISTER declaration.

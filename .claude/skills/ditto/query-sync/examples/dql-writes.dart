@@ -5,7 +5,7 @@
 // RETURNING (SDK 5.1+), and DELETE / EVICT by ID.
 //
 // Statements that fail outright are described in comments only:
-// - SET _id = ... : "The document id _id cannot be modified".
+// - SET _id = ... : "The document id `_id` cannot be modified".
 // - Setting the same path twice in one statement: "More than one modification
 //   specified for the path ...".
 // - SET items[0] = ... : array elements cannot be assigned (syntax error).

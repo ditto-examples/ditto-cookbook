@@ -105,7 +105,7 @@ Future<void> replaceShippingAddress(
   String orderId,
   Map<String, dynamic> newAddress,
 ) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'replaceShippingAddress', (tx) async {
     await tx.execute(
       'UPDATE orders UNSET shippingAddress WHERE _id = :id',
       arguments: {'id': orderId},
@@ -114,7 +114,7 @@ Future<void> replaceShippingAddress(
       'UPDATE orders SET shippingAddress = :address WHERE _id = :id',
       arguments: {'id': orderId, 'address': newAddress},
     );
-  }, hint: 'replaceShippingAddress');
+  });
 }
 
 // The alternative for an object that must always be replaced as one unit is

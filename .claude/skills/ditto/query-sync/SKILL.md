@@ -47,7 +47,7 @@ Every DQL statement runs against the **local store**. Only subscriptions cause d
 | `ditto.sync.registerSubscription(query, arguments: ...)` | Remote peers | ✅ Yes, while sync is running |
 | `ditto.store.execute(query, arguments: ...)` | Local store (snapshot) | ❌ No |
 | `ditto.store.registerObserver(query, arguments: ...)` | Local store (live) | ❌ No |
-| `ditto.store.transaction((tx) async { ... })` | Local store | ❌ No |
+| `ditto.store.transaction(...)` | Local store | ❌ No |
 
 Subscriptions are long-lived and scoped by stable partition keys (app or feature scope). Observers and `execute` calls are short-lived and as specific as the screen needs (screen scope). An empty local result does not mean "no data exists"; it may not have synced yet.
 
@@ -126,7 +126,7 @@ A comparison with a missing or null field is neither true nor false, so the row 
 | `isDeleted IS NOT NULL` | ✓ | | ✓ | <!-- lint-ignore -->
 | `isDeleted IS NOT MISSING` | ✓ | ✓ | |
 
-**✅ DO**: filter optional booleans with `coalesce(field, default)`; test existence with `IS MISSING` / `IS NOT MISSING`; remove a field with `UNSET`.
+**✅ DO**: filter optional booleans with `coalesce(field, default)`; test whether a field is absent with `IS MISSING` (present: `IS NOT MISSING`); remove a field with `UNSET`.
 **❌ DON'T**: use `field != true` or `NOT field` for "false or not set"; use `IS NOT NULL` to test existence. <!-- lint-ignore -->
 
 ```dart
@@ -264,7 +264,7 @@ class _OrdersListState extends State<OrdersList> {
   void initState() {
     super.initState();
     _observer = widget.ditto.store.registerObserver(
-      "SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC",
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
       arguments: {'status': 'open'},
     );
     _changes = _observer.changes.listen((result) {
@@ -282,8 +282,12 @@ class _OrdersListState extends State<OrdersList> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-        children: [for (final o in _orders) ListTile(title: Text('${o['_id']}'))],
+  Widget build(BuildContext context) => ListView.builder(
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return ListTile(key: ValueKey(order['_id']), title: Text('${order['_id']}'));
+        },
       );
 }
 ```
@@ -382,7 +386,7 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
 
 - `GROUP BY` and `HAVING` cannot reference projection aliases: repeat the expression. `ORDER BY` can use aliases.
 - Every non-aggregate projection must be a `GROUP BY` key. Give computed expressions an alias with `AS`.
-- With zero matching rows, `SUM`/`AVG`/`MIN`/`MAX` return MISSING: wrap them, `ifmissing(SUM(total), 0)`.
+- With zero matching rows, every aggregate other than `COUNT` (`SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `MID`) returns MISSING: wrap them, `ifmissing(SUM(total), 0)`.
 - `COUNT(field)` skips `false` values; use `COUNT(*)` or `COUNT(field IS NOT MISSING)`.
 - Do not use `DISTINCT` with `_id` or `*`.
 
@@ -405,11 +409,11 @@ GROUP BY customerId HAVING SUM(total) > 1000 ORDER BY revenue DESC
 Joins (`INNER`, `LEFT`, `RIGHT` as first join only) run on local data. The inner collection's join key needs an index, or the join must be on its `_id`; otherwise the query fails with `Joining to "c" disallowed without appropriate index support`.
 
 ```sql
-CREATE INDEX IF NOT EXISTS ix_orders_customerId ON orders (customerId)
+CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)
 ```
 
 ```sql
--- ✅ GOOD: Inner side (orders) is looked up through ix_orders_customerId
+-- ✅ GOOD: Inner side (orders) is looked up through idx_orders_customerId
 SELECT c.name, o._id AS orderId, o.total
 FROM customers c
 JOIN orders o ON o.customerId = c._id

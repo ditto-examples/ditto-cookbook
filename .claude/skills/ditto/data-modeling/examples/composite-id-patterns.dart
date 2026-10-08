@@ -13,6 +13,18 @@
 
 import 'package:ditto_live/ditto_live.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 // ---------------------------------------------------------------------------
 // ✅ GOOD: Scope fields plus a UUID
 // ---------------------------------------------------------------------------
@@ -29,7 +41,7 @@ Future<void> createStoreOrder(
       'order': {
         '_id': {'region': region, 'storeId': storeId, 'orderId': orderId},
         'status': 'open',
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(),
       },
     },
   );
@@ -38,7 +50,7 @@ Future<void> createStoreOrder(
 /// Index the subfield used for local queries (indexes persist; create once).
 Future<void> createStoreIdIndex(Ditto ditto) async {
   await ditto.store.execute(
-    'CREATE INDEX IF NOT EXISTS orders_id_storeId ON orders (_id.storeId)',
+    'CREATE INDEX IF NOT EXISTS idx_orders_id_storeId ON orders (_id.storeId)',
   );
 }
 

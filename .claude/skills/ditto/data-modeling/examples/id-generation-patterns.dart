@@ -88,7 +88,7 @@ Future<Object?> createNote(Ditto ditto, String text) async {
     arguments: {
       'note': {
         'text': text,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(),
       },
     },
   );

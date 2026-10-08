@@ -78,7 +78,7 @@ Future<void> _recordPaymentDate(Ditto ditto, String orderId) {
 
 /// ❌ BAD: While this transaction waits for the network, every other
 /// read-write transaction (and every plain store.execute write) waits.
-/// After 10 seconds Ditto logs long-running transaction warnings.
+/// After 10 seconds Ditto logs messages about the long-running transaction.
 Future<void> networkInsideTransaction(
   Ditto ditto,
   String orderId,

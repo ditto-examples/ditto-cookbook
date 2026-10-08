@@ -58,6 +58,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
   Uint8List? _bytes;
   double? _progress;
   bool _failed = false;
+  int _fetchGeneration = 0; // Identifies the current fetch.
 
   @override
   void initState() {
@@ -70,8 +71,15 @@ class _AttachmentImageState extends State<AttachmentImage> {
     _failed = false;
     _progress = null;
     _restartStallTimer();
-    _fetcher = widget.ditto.store.fetchAttachment(widget.token, _onFetchEvent);
+    final generation = ++_fetchGeneration;
+    _fetcher = widget.ditto.store.fetchAttachment(
+      widget.token,
+      (event) => _onFetchEvent(event, generation),
+    );
   }
+
+  // False for events of a replaced fetch (token change, retry) or a disposed widget.
+  bool _isCurrent(int generation) => mounted && generation == _fetchGeneration;
 
   @override
   void didUpdateWidget(AttachmentImage oldWidget) {
@@ -93,24 +101,26 @@ class _AttachmentImageState extends State<AttachmentImage> {
     });
   }
 
-  Future<void> _onFetchEvent(AttachmentFetchEvent event) async {
+  Future<void> _onFetchEvent(AttachmentFetchEvent event, int generation) async {
+    if (!_isCurrent(generation)) return;
     switch (event) {
       case AttachmentFetchEventProgress(:final downloadedBytes, :final totalBytes):
         _restartStallTimer(); // Progress resets the stall timer.
-        if (mounted && totalBytes > 0) {
+        if (totalBytes > 0) {
           setState(() => _progress = downloadedBytes / totalBytes);
         }
       case AttachmentFetchEventCompleted(:final attachment):
         _stallTimer?.cancel();
         try {
           final bytes = await attachment.data;
-          if (mounted) setState(() => _bytes = bytes);
+          // Check again: the token can change while the bytes are read.
+          if (_isCurrent(generation)) setState(() => _bytes = bytes);
         } catch (error) {
-          if (mounted) setState(() => _failed = true);
+          if (_isCurrent(generation)) setState(() => _failed = true);
         }
       case AttachmentFetchEventDeleted():
         _stallTimer?.cancel();
-        if (mounted) setState(() => _failed = true);
+        setState(() => _failed = true);
       default: // AttachmentFetchEvent is not sealed.
         break;
     }

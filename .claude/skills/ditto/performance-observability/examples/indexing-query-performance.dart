@@ -61,7 +61,8 @@ Future<void> ensureIndexes(Ditto ditto) async {
     );
     await ditto.store.execute('CREATE INDEX IF NOT EXISTS idx_products_name ON products (name)');
   } catch (error) {
-    // A missing index makes queries slower, not wrong: report and continue.
+    // Without the index, queries that use it fall back to a collection scan
+    // (and a JOIN on it fails): report and continue.
     debugPrint('Index creation failed: $error');
   }
 }

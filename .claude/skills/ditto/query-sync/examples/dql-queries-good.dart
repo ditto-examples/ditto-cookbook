@@ -245,12 +245,12 @@ Future<List<String>> knownStatuses(Ditto ditto) async {
 /// Indexes persist, and IF NOT EXISTS makes this idempotent.
 Future<void> ensureJoinIndexes(Ditto ditto) async {
   await ditto.store.execute(
-    'CREATE INDEX IF NOT EXISTS ix_orders_customerId ON orders (customerId)',
+    'CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)',
   );
 }
 
 /// ✅ GOOD: The inner collection (orders) is looked up through
-/// ix_orders_customerId. Fields are qualified and colliding names aliased.
+/// idx_orders_customerId. Fields are qualified and colliding names aliased.
 Future<List<Map<String, dynamic>>> goldCustomerOrders(Ditto ditto) async {
   final result = await ditto.store.execute(
     'SELECT c.name, o._id AS orderId, o.total '

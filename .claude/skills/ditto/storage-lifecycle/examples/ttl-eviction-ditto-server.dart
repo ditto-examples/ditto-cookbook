@@ -26,6 +26,18 @@
 
 import 'package:ditto_live/ditto_live.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 // ============================================================================
 // Statements executed on the Ditto Server (for example through the HTTP API)
 // ============================================================================
@@ -48,7 +60,8 @@ const purgeSoftDeletedOrdersStatement =
 /// a back-office tablet. Queries run against the local store, so the device
 /// can only mark documents it already has.
 Future<int> markExpiredOrders(Ditto ditto, Duration retention) async {
-  final cutoff = DateTime.now().toUtc().subtract(retention).toIso8601String();
+  // Same fixed-precision format as createdAt.
+  final cutoff = utcTimestamp(DateTime.now().subtract(retention));
   final result = await ditto.store.execute(
     'UPDATE orders SET evictionFlag = true WHERE createdAt < :cutoff',
     arguments: {'cutoff': cutoff},

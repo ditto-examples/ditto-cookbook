@@ -212,7 +212,7 @@ Future<void> createOrder(Ditto ditto, String orderId, String status) async {
         '_id': orderId,
         'status': status,
         'isDeleted': false,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(), // Fixed-precision helper (see the guide's Timestamps section).
       },
     },
   );
@@ -223,7 +223,8 @@ Future<void> softDeleteOrder(Ditto ditto, String orderId) async {
     'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
     arguments: {
       'id': orderId,
-      'deletedAt': DateTime.now().toUtc().toIso8601String(),
+      // deletedAt is compared with cleanup cutoffs, so it uses the same helper.
+      'deletedAt': utcTimestamp(),
     },
   );
 }
@@ -342,8 +343,8 @@ class OrderRetention {
   static const retention = Duration(days: 7);
   SyncSubscription? _subscription;
 
-  String _cutoff() =>
-      DateTime.now().toUtc().subtract(retention).toIso8601String();
+  // Same fixed-precision format as createdAt (utcTimestamp()).
+  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
 
   /// Call once at startup (before ditto.sync.start()).
   void start() {
@@ -357,15 +358,17 @@ class OrderRetention {
     // 1. Stop asking peers for the documents that are about to be evicted.
     _subscription?.cancel();
 
-    // 2. Evict exactly the complement of the new subscription.
-    final result = await ditto.store.execute(
-      'EVICT FROM orders WHERE createdAt < :cutoff',
-      arguments: {'cutoff': cutoff},
-    );
-
-    // 3. Subscribe again with the moved boundary.
-    _subscription = _subscribeFrom(cutoff);
-    return result.mutatedDocumentIDs().length;
+    try {
+      // 2. Evict exactly the complement of the new subscription.
+      final result = await ditto.store.execute(
+        'EVICT FROM orders WHERE createdAt < :cutoff',
+        arguments: {'cutoff': cutoff},
+      );
+      return result.mutatedDocumentIDs().length;
+    } finally {
+      // 3. Subscribe again with the moved boundary, even if the eviction failed.
+      _subscription = _subscribeFrom(cutoff);
+    }
   }
 
   SyncSubscription _subscribeFrom(String cutoff) =>
@@ -447,7 +450,7 @@ Future<int> evictInBatches(Ditto ditto, String cutoff) async {
 }
 ```
 
-Batching keeps write transactions short; one cleanup run is still one eviction event for connected peers.
+Batching keeps write transactions short. It does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule, not as many separate cleanups.
 
 Guide: [Batching evictions](../../../guides/best-practices/ditto.md#batching-evictions), [Eviction frequency](../../../guides/best-practices/ditto.md#eviction-frequency)
 

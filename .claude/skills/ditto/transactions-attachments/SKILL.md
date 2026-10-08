@@ -65,7 +65,7 @@ This Skill applies the [Transactions](../../../guides/best-practices/ditto.md#tr
 
 | Topic | Flutter 5.1.0 behavior |
 |---|---|
-| Transaction API | `ditto.store.transaction((tx) async {...}, isReadOnly: false, hint: 'name')` returns `Future<T>` |
+| Transaction API | `ditto.store.transaction(hint: 'name', isReadOnly: false, (tx) async {...})` returns `Future<T>` |
 | Inside the callback | Use only `tx.execute(...)`. `ditto.store.execute(...)` throws a `DittoException` |
 | Commit / rollback | Throwing rolls back and rethrows; returning `TransactionCompletionAction.rollback` rolls back; anything else commits |
 | Concurrency | One read-write transaction at a time; read-only transactions run concurrently |
@@ -104,7 +104,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
           '_id': invoiceId,
           'orderId': orderId,
           'total': order['total'],
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
+          'createdAt': utcTimestamp(), // Fixed-precision helper (see the guide's Timestamps section).
         },
       },
     );
@@ -155,7 +155,7 @@ Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() charg
 **✅ DO**:
 - Read, decide, write, return
 - Prepare network responses, files, user input, and attachments (`newAttachment`) **before** the transaction
-- Give every transaction a `hint`: after 10 seconds Ditto logs warnings that include it, every 5 seconds (thresholds: system parameters `TRANSACTION_DURATION_BEFORE_LOGGING_MS` and `TRANSACTION_TRACE_INTERVAL_MS`)
+- Give every transaction a `hint`: after 10 seconds Ditto logs a message that includes it every 5 seconds, starting at debug level and escalating to higher levels (thresholds: system parameters `TRANSACTION_DURATION_BEFORE_LOGGING_MS` and `TRANSACTION_TRACE_INTERVAL_MS`)
 - Use `isReadOnly: true` for transactions that only read; a mutating statement inside one throws
 
 **❌ DON'T**:
@@ -250,7 +250,7 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
       'photo': {
         '_id': photoId,
         'image': attachment,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(), // Fixed-precision helper (see the guide's Timestamps section).
       },
     },
   );
@@ -394,7 +394,7 @@ Future<void> savePhotoWithThumbnail(
         '_id': photoId,
         'thumbnail': thumbnail,
         'image': fullSize,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(), // Fixed-precision helper (see the guide's Timestamps section).
       },
     },
   );

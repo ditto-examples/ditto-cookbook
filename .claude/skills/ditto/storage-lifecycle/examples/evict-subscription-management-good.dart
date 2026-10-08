@@ -20,6 +20,18 @@
 
 import 'package:ditto_live/ditto_live.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 // ============================================================================
 // Pattern 1: Time-based retention with complementary queries
 // ============================================================================
@@ -32,8 +44,8 @@ class OrderRetention {
   static const retention = Duration(days: 7);
   SyncSubscription? _subscription;
 
-  String _cutoff() =>
-      DateTime.now().toUtc().subtract(retention).toIso8601String();
+  // Same fixed-precision format as the stored timestamps (utcTimestamp()).
+  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
 
   /// Call once at startup (before ditto.sync.start()).
   void start() {
@@ -47,15 +59,17 @@ class OrderRetention {
     // 1. Stop asking peers for the documents that are about to be evicted.
     _subscription?.cancel();
 
-    // 2. Evict exactly the complement of the new subscription.
-    final result = await ditto.store.execute(
-      'EVICT FROM orders WHERE createdAt < :cutoff',
-      arguments: {'cutoff': cutoff},
-    );
-
-    // 3. Subscribe again with the moved boundary.
-    _subscription = _subscribeFrom(cutoff);
-    return result.mutatedDocumentIDs().length;
+    try {
+      // 2. Evict exactly the complement of the new subscription.
+      final result = await ditto.store.execute(
+        'EVICT FROM orders WHERE createdAt < :cutoff',
+        arguments: {'cutoff': cutoff},
+      );
+      return result.mutatedDocumentIDs().length;
+    } finally {
+      // 3. Subscribe again with the moved boundary, even if the eviction failed.
+      _subscription = _subscribeFrom(cutoff);
+    }
   }
 
   SyncSubscription _subscribeFrom(String cutoff) =>

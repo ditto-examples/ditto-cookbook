@@ -125,7 +125,7 @@ Guide: [Document Structure](../../../../guides/best-practices/ditto.md#document-
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | Write succeeds; a warning is logged |
 | Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` / `UPDATE` fails; the stored document is unchanged |
 
-The limits apply to the size of each stored document. Size affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes about 10 seconds to replicate the first time.
+The limits apply to the size of each stored document. Size affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes more than 10 seconds to replicate the first time.
 
 | Cause of growth | Fix |
 |---|---|

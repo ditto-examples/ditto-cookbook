@@ -215,7 +215,7 @@ transactions-attachments (as needed for specific features)
        'UPDATE tasks SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
        arguments: {
          'id': taskId,
-         'deletedAt': DateTime.now().toUtc().toIso8601String(),
+         'deletedAt': utcTimestamp(), // fixed-precision helper (see the guide's Timestamps section)
        },
      );
    }

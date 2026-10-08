@@ -13,6 +13,18 @@
 import 'package:ditto_live/ditto_live.dart';
 import 'package:flutter/foundation.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 // ============================================================================
 // PATTERN 1: Atomic multi-document change
 // ============================================================================
@@ -45,7 +57,7 @@ Future<void> closeOrderWithInvoice(
             '_id': invoiceId,
             'orderId': orderId,
             'total': order['total'],
-            'createdAt': DateTime.now().toUtc().toIso8601String(),
+            'createdAt': utcTimestamp(),
           },
         },
       );
@@ -96,8 +108,8 @@ Future<bool> shipOrder(Ditto ditto, String orderId) async {
 /// active read-write transaction. A mutating statement inside one throws.
 Future<(int open, int closed)> orderCounts(Ditto ditto) {
   return ditto.store.transaction(
-    isReadOnly: true,
     hint: 'orderCounts',
+    isReadOnly: true,
     (tx) async {
       final open = await tx.execute(
         'SELECT COUNT(*) AS n FROM orders WHERE status = :status',

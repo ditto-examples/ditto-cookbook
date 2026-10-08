@@ -220,7 +220,7 @@ class _AnimatedOrdersState extends State<AnimatedOrders> {
   void initState() {
     super.initState();
     _observer = widget.ditto.store.registerObserver(
-      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC LIMIT 200',
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id LIMIT 200',
       arguments: {'status': 'open'},
     );
     _changes = _observer.changes.listen(_apply);

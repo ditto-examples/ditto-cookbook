@@ -16,7 +16,7 @@ The patterns in [SKILL.md](../SKILL.md) apply to every platform; the API shapes 
 
 | Platform | API | Explicit rollback | Inside the scope |
 |---|---|---|---|
-| Flutter | `ditto.store.transaction((tx) async {...}, isReadOnly:, hint:)` | Return `TransactionCompletionAction.rollback` | `store.execute` throws a `DittoException`; a nested read-write transaction deadlocks (the SDK does not detect it) |
+| Flutter | `ditto.store.transaction(hint:, isReadOnly:, (tx) async {...})` | Return `TransactionCompletionAction.rollback` | `store.execute` throws a `DittoException`; a nested read-write transaction deadlocks (the SDK does not detect it) |
 | JavaScript | `ditto.store.transaction(async (tx) => {...}, { isReadOnly, hint })` | Return `'rollback'` | `store.execute` writes or nested read-write transactions can deadlock (no error is thrown); never do it |
 | Swift | `try await ditto.store.transaction(hint:isReadOnly:) { tx in ... }` | Return `.rollback` | `store.execute` or nesting can deadlock; never do it |
 | Kotlin | `ditto.store.transaction(hint, isReadOnly) { tx -> ... }` | Return `DittoTransaction.Result.Rollback` | `store.execute` or nesting can deadlock; never do it |

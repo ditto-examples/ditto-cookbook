@@ -94,7 +94,7 @@ Future<void> addItemWithPriceSnapshot(
   required String productId,
   required int quantity,
 }) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'addItemWithPriceSnapshot', (tx) async {
     final product = await tx.execute(
       'SELECT priceCents FROM products WHERE _id = :id',
       arguments: {'id': productId},
@@ -117,7 +117,7 @@ Future<void> addItemWithPriceSnapshot(
         },
       },
     );
-  }, hint: 'addItemWithPriceSnapshot');
+  });
 }
 
 // Values that should always be current (a product's name on a catalog screen)

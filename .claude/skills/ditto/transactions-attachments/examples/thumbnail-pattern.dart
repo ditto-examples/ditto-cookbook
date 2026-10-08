@@ -28,6 +28,18 @@ import 'dart:typed_data';
 import 'package:ditto_live/ditto_live.dart';
 import 'package:flutter/material.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 // ============================================================================
 // PATTERN 1: Store both attachments
 // ============================================================================
@@ -56,7 +68,7 @@ Future<void> savePhotoWithThumbnail(
         '_id': photoId,
         'thumbnail': thumbnail,
         'image': fullSize,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(),
       },
     },
   );

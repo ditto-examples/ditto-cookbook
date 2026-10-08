@@ -97,7 +97,7 @@ class _OrdersListState extends State<OrdersList> {
   void initState() {
     super.initState();
     _observer = widget.ditto.store.registerObserver(
-      "SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC",
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
       arguments: {'status': 'open'},
     );
     _changes = _observer.changes.listen((result) {
@@ -116,8 +116,12 @@ class _OrdersListState extends State<OrdersList> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-        children: [for (final o in _orders) ListTile(title: Text('${o['_id']}'))],
+  Widget build(BuildContext context) => ListView.builder(
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return ListTile(key: ValueKey(order['_id']), title: Text('${order['_id']}'));
+        },
       );
 }
 ```
@@ -151,10 +155,10 @@ StoreObserver observeOrdersWithCallbackOnly(Ditto ditto, void Function(int) onCo
 | Behavior (`registerObserver`) | What to do |
 |---|---|
 | Without `onChange`, the query starts when `changes` is first listened to | Listen right after registering |
-| `changes` is single-subscription; a second `listen()` throws `StateError`, even after the first subscription was cancelled | Hand the stream to exactly one listener or `StreamBuilder`, and keep that `StreamBuilder` mounted |
+| `changes` is single-subscription; a second `listen()` throws a `StateError` (`Bad state: Stream has already been listened to.`), even after the first subscription was cancelled | Hand the stream to exactly one listener or `StreamBuilder`, and keep that `StreamBuilder` mounted |
 | Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` as well |
 | `observer.cancel()` closes `changes` | A pending `await for` loop ends |
-| `await ditto.close()` does not close the `changes` stream of a `StoreObserver` | Cancel stream subscriptions and observers before closing |
+| `await ditto.close()` does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2`, and `cancel()` does nothing once Ditto is closed | Cancel stream subscriptions and observers before closing |
 | Cancelling the stream subscription of a `StoreObserverV2` also cancels the observer | Still call `cancel()` in your cleanup path for clarity |
 
 **✅ DO:**

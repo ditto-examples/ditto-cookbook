@@ -145,7 +145,7 @@ Future<void> replaceAddress(
   String customerId,
   Map<String, dynamic> newAddress,
 ) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
     await tx.execute(
       'UPDATE customers UNSET address WHERE _id = :id',
       arguments: {'id': customerId},
@@ -154,7 +154,7 @@ Future<void> replaceAddress(
       'UPDATE customers SET address = :address WHERE _id = :id',
       arguments: {'id': customerId, 'address': newAddress},
     );
-  }, hint: 'replaceAddress');
+  });
 }
 
 // ============================================================================

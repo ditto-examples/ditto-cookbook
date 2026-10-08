@@ -116,7 +116,7 @@ class _OpenOrdersStreamState extends State<OpenOrdersStream> {
   void initState() {
     super.initState();
     _observer = widget.ditto.store.registerObserver(
-      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC',
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
       arguments: {'status': 'open'},
     );
   }

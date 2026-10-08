@@ -12,22 +12,38 @@
 // A query result contains plain values, not CRDT types. Declare the same types
 // in the SELECT and in the INSERT that every other statement on the collection
 // uses; otherwise the copy stores a counter as a plain number and an attachment
-// token as a map. (With DQL_STRICT_MODE = true, declare the MAP fields too.)
+// token as a map, and a field read with a different declaration (for example,
+// a MAP read as a REGISTER) is missing from the copy. (With
+// DQL_STRICT_MODE = true, declare the MAP fields too.)
 //
 // Guide: .claude/guides/best-practices/ditto.md#ids-are-immutable,
 //   #delete-and-tombstones, #soft-delete
 
 import 'package:ditto_live/ditto_live.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 /// ✅ GOOD: Copies an order to a new ID, repoints its events, and deletes the
 /// original, atomically. Both statements declare the order's COUNTER,
-/// ATTACHMENT, and REGISTER fields, so the copy keeps their CRDT types.
+/// ATTACHMENT, and REGISTER fields exactly as the other statements on orders
+/// do, so the copy keeps their CRDT types. Undeclared objects such as
+/// shippingAddress are MAPs.
 Future<bool> moveOrder(Ditto ditto, String oldId, String newId) async {
-  return ditto.store.transaction((tx) async {
+  return ditto.store.transaction(hint: 'moveOrder', (tx) async {
     final result = await tx.execute(
       '''
       SELECT * FROM COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
       WHERE _id = :id
       ''',
       arguments: {'id': oldId},
@@ -38,7 +54,7 @@ Future<bool> moveOrder(Ditto ditto, String oldId, String newId) async {
     await tx.execute(
       '''
       INSERT INTO COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
       DOCUMENTS (:doc)
       ''',
       arguments: {'doc': copy},
@@ -52,7 +68,7 @@ Future<bool> moveOrder(Ditto ditto, String oldId, String newId) async {
       arguments: {'id': oldId},
     );
     return true;
-  }, hint: 'moveOrder');
+  });
 }
 
 /// Variant for shared records that several devices edit: soft-delete the old
@@ -63,11 +79,11 @@ Future<void> moveOrderWithSoftDelete(
   String oldId,
   String newId,
 ) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'moveOrderWithSoftDelete', (tx) async {
     final result = await tx.execute(
       '''
       SELECT * FROM COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
       WHERE _id = :id
       ''',
       arguments: {'id': oldId},
@@ -79,7 +95,7 @@ Future<void> moveOrderWithSoftDelete(
     await tx.execute(
       '''
       INSERT INTO COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
       DOCUMENTS (:doc)
       ''',
       arguments: {'doc': copy},
@@ -88,10 +104,10 @@ Future<void> moveOrderWithSoftDelete(
       'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
       arguments: {
         'id': oldId,
-        'deletedAt': DateTime.now().toUtc().toIso8601String(),
+        'deletedAt': utcTimestamp(),
       },
     );
-  }, hint: 'moveOrderWithSoftDelete');
+  });
 }
 
 /// Readers then exclude soft-deleted documents; a missing flag counts as

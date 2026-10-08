@@ -124,21 +124,21 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 
 ```dart
 // ✅ GOOD: Replace a MAP value: clear it, then write it, atomically.
-Future<void> replaceShippingAddress(
+Future<void> replaceAddress(
   Ditto ditto,
-  String orderId,
-  Map<String, dynamic> address,
+  String customerId,
+  Map<String, dynamic> newAddress,
 ) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
     await tx.execute(
-      'UPDATE orders UNSET shippingAddress WHERE _id = :id',
-      arguments: {'id': orderId},
+      'UPDATE customers UNSET address WHERE _id = :id',
+      arguments: {'id': customerId},
     );
     await tx.execute(
-      'UPDATE orders SET shippingAddress = :address WHERE _id = :id',
-      arguments: {'id': orderId, 'address': address},
+      'UPDATE customers SET address = :address WHERE _id = :id',
+      arguments: {'id': customerId, 'address': newAddress},
     );
-  }, hint: 'replaceShippingAddress');
+  });
 }
 ```
 
@@ -185,7 +185,7 @@ Future<void> upsertOrderItem(
 }
 ```
 
-To remove an entry, use ``UNSET items.`<key>` `` after validating the key against a strict pattern (for example, a UUID) before placing it inside backticks; never splice unchecked input into a query. You can convert arrays to maps incrementally, as soon as you know more than one device writes them.
+To remove an entry, use ``UNSET items.`<key>` `` after validating the key against a strict pattern (for example, a UUID) before placing it inside backticks; never splice unchecked input into a query. You can convert arrays to maps incrementally, as soon as you know more than one device writes them. Write the map to a **new field** (for example, `lineItems` next to the old `items` array): writing a map under the array's field name changes its CRDT type, so the old array and the new map coexist under the same key.
 
 Guide: [Arrays and Maps](../../../guides/best-practices/ditto.md#arrays-and-maps). Example: [array-to-map.dart](examples/array-to-map.dart).
 
@@ -243,7 +243,7 @@ Concurrent edits alone are **not** a reason to split: map entries merge.
 **JOIN rules (SDK 5.1+):** local data only (never fetches from peers); not allowed in subscriptions or on Ditto Server; the inner collection needs an index on the join key, or join on its `_id`; qualify every field with its alias.
 
 ```sql
-CREATE INDEX IF NOT EXISTS orderItems_orderId ON orderItems (orderId)
+CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)
 ```
 
 ```sql

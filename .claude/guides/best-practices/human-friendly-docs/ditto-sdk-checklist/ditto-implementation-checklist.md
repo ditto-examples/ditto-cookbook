@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.2
+> **Version**: 2.3
 > **Last Updated**: 2026-10-08
 > **Applies to**: Ditto SDK 5.1.0 (Flutter `ditto_live` 5.1.0)
 >
@@ -84,19 +84,22 @@ class DittoProvider {
 **Code Example**:
 
 ```dart
-// ✅ GOOD: Small-peers-only deployment with a shared key and a license token.
-Future<Ditto> openSmallPeersOnly({
-  required String sharedKey, // provisioned securely, never hardcoded
-  required String offlineLicenseToken, // issued by Ditto
+// ✅ GOOD: Small-peers-only deployment. The shared key and the offline license
+// token (issued by Ditto) come from secure provisioning, never from source code.
+Future<Ditto> openProvisionedSmallPeer({
+  required Future<String> Function() readKeyFromSecureStorage,
+  required Future<String> Function() readLicenseFromSecureStorage,
 }) async {
   final ditto = await Ditto.open(
     DittoConfig(
       databaseID: 'YOUR_DATABASE_ID', // any UUID shared by all peers
-      connect: DittoConfigConnectSmallPeersOnly(privateKey: sharedKey),
+      connect: DittoConfigConnectSmallPeersOnly(
+        privateKey: await readKeyFromSecureStorage(),
+      ),
     ),
   );
   // Required before sync.start() in small-peers-only mode.
-  ditto.setOfflineOnlyLicenseToken(offlineLicenseToken);
+  ditto.setOfflineOnlyLicenseToken(await readLicenseFromSecureStorage());
   ditto.sync.start(); // no expiration handler is needed in this mode
   return ditto;
 }
@@ -214,9 +217,9 @@ void configureTransports(Ditto ditto) {
 
 ### ☐ Release Ditto objects explicitly and await pending work before close()
 
-**What this means:** Cancel `StoreObserver`, `StoreObserverV2`, and `SyncSubscription` objects with `cancel()`; stop `PresenceObserver`, transport-condition observers, and `AttachmentFetcher` objects with `stop()`. Before `await ditto.close()`, await your own pending queries and transactions and cancel your `StreamSubscription`s on observer `changes` streams. Call `close()` only when the whole app no longer needs Ditto, and use the instance only from the isolate that opened it.
+**What this means:** Cancel `StoreObserver`, `StoreObserverV2`, and `SyncSubscription` objects with `cancel()`; stop `PresenceObserver`, transport-condition observers, and `AttachmentFetcher` objects with `stop()`. Before `await ditto.close()`, await your own pending queries and transactions, and cancel your observers and the `StreamSubscription`s on their `changes` streams. Call `close()` only when the whole app no longer needs Ditto, and use the instance only from the isolate that opened it.
 
-**Why this matters:** Ditto objects hold native resources; do not rely on garbage collection to cancel them. `close()` does not wait for in-flight `execute()` calls or transactions (they can fail with `DittoClosedException`), does not end an `await for` loop over the `changes` stream of a `StoreObserver` or `StoreObserverV2`, and resets `DittoLogger.customLogCallback`.
+**Why this matters:** Ditto objects hold native resources; do not rely on garbage collection to cancel them. `close()` does not wait for in-flight `execute()` calls or transactions (they can fail with `DittoClosedException`), does not end an `await for` loop over the `changes` stream of a `StoreObserver` or `StoreObserverV2` (and `cancel()` does nothing once Ditto is closed), and resets `DittoLogger.customLogCallback` for the whole process.
 
 **Best-practices guide:** Resource Cleanup and Shutdown
 
@@ -484,23 +487,23 @@ Future<void> upsertOrderItem(
 **Code Example**:
 
 ```dart
-// ✅ GOOD: Replace a whole MAP value: clear it, then write the new object,
-// in one transaction so no reader sees the intermediate state.
-Future<void> replaceShippingAddress(
+// ✅ GOOD: Replace an object: remove the old map, then write the new one,
+// in one transaction so that no observer sees the object missing
+Future<void> replaceAddress(
   Ditto ditto,
-  String orderId,
+  String customerId,
   Map<String, dynamic> newAddress,
 ) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
     await tx.execute(
-      'UPDATE orders UNSET shippingAddress WHERE _id = :id',
-      arguments: {'id': orderId},
+      'UPDATE customers UNSET address WHERE _id = :id',
+      arguments: {'id': customerId},
     );
     await tx.execute(
-      'UPDATE orders SET shippingAddress = :address WHERE _id = :id',
-      arguments: {'id': orderId, 'address': newAddress},
+      'UPDATE customers SET address = :address WHERE _id = :id',
+      arguments: {'id': customerId, 'address': newAddress},
     );
-  }, hint: 'replaceShippingAddress');
+  });
 }
 ```
 
@@ -577,7 +580,7 @@ Future<void> createOrder(Ditto ditto, String storeId, String orderUuid) async {
 
 **What this means:** Ditto logs a warning for documents above 256 KiB (soft limit) and rejects `INSERT` and `UPDATE` statements that would exceed 5 MiB (hard limit). Store binary content as attachments, move data that grows without bound (history, readings, comments) into its own collection, and leave both limits at their defaults.
 
-**Why this matters:** Document size affects storage and memory on every device, merge cost, and initial replication: over Bluetooth LE, a 256 KiB document takes about 10 seconds to replicate the first time. A write that exceeds the hard limit fails with a `DittoException`. To bring an oversized document back under the limits, move large values to attachments or a separate collection and remove them from the document with `UNSET`.
+**Why this matters:** Document size affects storage and memory on every device, merge cost, and initial replication: over Bluetooth LE, a 256 KiB document takes more than 10 seconds to replicate the first time. A write that exceeds the hard limit fails with a `DittoException`. To bring an oversized document back under the limits, move large values to attachments or a separate collection and remove them from the document with `UNSET`.
 
 **Best-practices guide:** Document Size Limits
 
@@ -698,7 +701,7 @@ Future<void> seedDefaultCategories(Ditto ditto) async {
 
 **What this means:** Add new fields and read them with defaults for older documents. Instead of changing a field's meaning, unit, or type, add a new field (for example `mileageKm`). For breaking changes, version the data (a schema version in a composite `_id`, or a new collection per version) and ship a version that reads both formats before one that writes the new format.
 
-**Why this matters:** Devices run different app versions for weeks or months. A type change on an indexed field can make queries return wrong results, because only the most recently written type of a field is indexed. Backfilling old documents does not work, because devices that are offline during the backfill reintroduce them.
+**Why this matters:** Devices run different app versions for weeks or months. A change of CRDT type on an indexed field (for example, from a REGISTER to a MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed. Backfilling old documents does not work, because devices that are offline during the backfill reintroduce them.
 
 **Best-practices guide:** Schema Evolution
 
@@ -1011,7 +1014,7 @@ class SensorAggregator {
 
 **What this means:** Use `ditto.store.transaction(...)` for changes that span several documents (closing an order and creating its invoice), for read-check-write sequences, and for consistent multi-query reads (`isReadOnly: true`). Give every transaction a `hint`. Throwing or returning `TransactionCompletionAction.rollback` rolls the transaction back; a statement error that you catch inside the callback does not.
 
-**Why this matters:** A single statement is already atomic, so wrapping it in a transaction adds nothing. The `hint` appears in warnings about long-running transactions, which makes them traceable. If you catch an error and continue, the remaining changes are committed unless you roll back.
+**Why this matters:** A single statement is already atomic, so wrapping it in a transaction adds nothing. The `hint` appears in log messages about long-running transactions, which makes them traceable. If you catch an error and continue, the remaining changes are committed unless you roll back.
 
 **Best-practices guide:** Using store.transaction
 
@@ -1057,7 +1060,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 **What this means:** Read, decide, write, and return. Prepare network responses, files, user input, and attachments (`newAttachment`) before the transaction starts, and never make network calls, show dialogs, or await timers inside it. Track pending transactions and await them before `ditto.close()`.
 
-**Why this matters:** While a read-write transaction runs, every other read-write transaction and plain write waits. Ditto logs warnings once a transaction has run for 10 seconds, and `close()` does not wait for in-flight transactions.
+**Why this matters:** While a read-write transaction runs, every other read-write transaction and plain write waits. Once a transaction has run for 10 seconds, Ditto logs a message about it every 5 seconds, starting at debug level and escalating to higher levels. `close()` does not wait for in-flight transactions.
 
 **Best-practices guide:** Transaction Rules, Concurrency and Duration
 
@@ -1143,7 +1146,9 @@ Future<void> softDeleteOrder(Ditto ditto, String orderId) async {
     'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
     arguments: {
       'id': orderId,
-      'deletedAt': DateTime.now().toUtc().toIso8601String(),
+      // utcTimestamp(): see "Store timestamps in UTC with a zone designator".
+      // deletedAt is compared with cleanup cutoffs, so it needs the fixed-precision helper.
+      'deletedAt': utcTimestamp(),
     },
   );
 }
@@ -1218,12 +1223,12 @@ class OrderRetention {
   OrderRetention(this.ditto);
 
   final Ditto ditto;
+  static const retention = Duration(days: 7);
   SyncSubscription? _subscription;
 
-  String _cutoff() => DateTime.now()
-      .toUtc()
-      .subtract(const Duration(days: 7))
-      .toIso8601String();
+  // Same fixed-precision format as createdAt (utcTimestamp(): see
+  // "Store timestamps in UTC with a zone designator").
+  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
 
   /// Call once at startup (before ditto.sync.start()).
   void start() {
@@ -1235,13 +1240,16 @@ class OrderRetention {
     final cutoff = _cutoff();
     // 1. Stop asking peers for the documents that are about to be evicted.
     _subscription?.cancel();
-    // 2. Evict exactly the complement of the new subscription.
-    await ditto.store.execute(
-      'EVICT FROM orders WHERE createdAt < :cutoff',
-      arguments: {'cutoff': cutoff},
-    );
-    // 3. Subscribe again with the moved boundary.
-    _subscription = _subscribeFrom(cutoff);
+    try {
+      // 2. Evict exactly the complement of the new subscription.
+      await ditto.store.execute(
+        'EVICT FROM orders WHERE createdAt < :cutoff',
+        arguments: {'cutoff': cutoff},
+      );
+    } finally {
+      // 3. Subscribe again with the moved boundary, even if the eviction failed.
+      _subscription = _subscribeFrom(cutoff);
+    }
   }
 
   SyncSubscription _subscribeFrom(String cutoff) =>
@@ -1301,7 +1309,8 @@ Future<void> ensureIndexes(Ditto ditto) async {
     try {
       await ditto.store.execute(statement);
     } catch (error) {
-      // A missing index makes queries slower, not wrong: report and continue.
+      // Without the index, queries that use it fall back to a collection scan
+      // (and a JOIN on it fails): report and continue.
       showError(error);
     }
   }
@@ -1320,7 +1329,7 @@ Future<void> ensureIndexes(Ditto ditto) async {
 
 ```sql
 -- ✅ GOOD: Index the join key of the inner collection
-CREATE INDEX IF NOT EXISTS ix_orders_customerId ON orders (customerId)
+CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)
 
 SELECT c.name, o._id AS orderId, o.total
 FROM customers c
@@ -1434,7 +1443,8 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
       'photo': {
         '_id': photoId,
         'image': attachment,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        // utcTimestamp(): see "Store timestamps in UTC with a zone designator".
+        'createdAt': utcTimestamp(),
       },
     },
   );
@@ -1516,14 +1526,15 @@ Future<Ditto> openProvisionedSmallPeer({
 }) async {
   final ditto = await Ditto.open(
     DittoConfig(
-      databaseID: 'YOUR_DATABASE_ID',
+      databaseID: 'YOUR_DATABASE_ID', // any UUID shared by all peers
       connect: DittoConfigConnectSmallPeersOnly(
         privateKey: await readKeyFromSecureStorage(),
       ),
     ),
   );
+  // Required before sync.start() in small-peers-only mode.
   ditto.setOfflineOnlyLicenseToken(await readLicenseFromSecureStorage());
-  ditto.sync.start();
+  ditto.sync.start(); // no expiration handler is needed in this mode
   return ditto;
 }
 

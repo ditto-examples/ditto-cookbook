@@ -88,7 +88,8 @@ function recordPaymentDate(ditto, orderId) {
 
 /**
  * ❌ BAD: Every other read-write transaction waits while this one waits for
- * the network. After 10 seconds Ditto logs long-running transaction warnings.
+ * the network. After 10 seconds Ditto logs messages about the long-running
+ * transaction.
  *
  * @param {Ditto} ditto
  * @param {string} orderId

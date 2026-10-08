@@ -169,7 +169,7 @@ Guide: [Cancelling subscriptions and local data](../../../../guides/best-practic
 - Evict on a regular schedule, but no more than about once per day, during periods of minimal disruption such as after hours.
 - (SDK 5.1+) Ditto writes a warning-level log entry when post-eviction session cleanup runs too frequently within a sliding window. Treat it as a sign to evict less often.
 - Local `DELETE` and `EVICT` execution is fast, but the sync cost of each eviction on connected peers still applies.
-- `EVICT` supports `LIMIT` and `RETURNING`, so a large cleanup can be split into short transactions (see [SKILL.md pattern 7](../SKILL.md#7-evict-on-a-schedule-in-batches-priority-high)). One cleanup run is still one eviction event for connected peers.
+- `EVICT` supports `LIMIT` and `RETURNING`, so a large cleanup can be split into short transactions (see [SKILL.md pattern 7](../SKILL.md#7-evict-on-a-schedule-in-batches-priority-high)). Batching does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule, not as many separate cleanups.
 - **Advanced:** `DISABLE_REPLICATION_GC_ON_EVICT` (default `false`) stops each eviction from triggering immediate per-peer replication metadata cleanup; periodic background garbage collection still runs. Leave it at the default unless profiling shows eviction-time write latency.
 
 Guide: [Eviction frequency](../../../../guides/best-practices/ditto.md#eviction-frequency)

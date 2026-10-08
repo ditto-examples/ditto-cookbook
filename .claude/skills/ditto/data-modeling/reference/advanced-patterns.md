@@ -28,7 +28,7 @@ Future<void> recordPosition(
 ) async {
   // utcTimestamp() is the fixed-precision helper from the Timestamps section.
   final recordedAt = utcTimestamp();
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'recordPosition', (tx) async {
     await tx.execute(
       'INSERT INTO vehiclePositions DOCUMENTS (:event)',
       arguments: {
@@ -52,7 +52,7 @@ Future<void> recordPosition(
         },
       },
     );
-  }, hint: 'recordPosition');
+  });
 }
 ```
 
@@ -101,14 +101,14 @@ Devices run different app versions for weeks or months, so a schema change must 
 
 **✅ Prefer additive changes.** Old versions ignore unknown fields; new versions must tolerate documents without the field (`MISSING`). Instead of changing a field's meaning or unit (`mileage` from miles to kilometers), add a new field (`mileageKm`).
 
-**❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. A type change on an **indexed** field can make queries return wrong results, because Ditto tracks only the most recently written data-type variant for a field.
+**❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. A change of CRDT type on an **indexed** field (for example, from a REGISTER to a MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed.
 
 | | Version in a composite `_id` | New collection per version |
 |---|---|---|
 | Example | `_id: {"id": "...", "schemaVersion": 2}` | `cars` to `carsV2` |
 | Subscription | `WHERE _id.schemaVersion = 2` | `SELECT * FROM carsV2` |
 | References from other collections | Unchanged | Must point at the new collection |
-| Type change on an indexed field | Risky while both versions coexist locally | Safe (separate indexes) |
+| CRDT type change on an indexed field | Risky while both versions coexist locally | Safe (separate indexes) |
 
 ```sql
 SELECT * FROM cars WHERE _id.schemaVersion = :version
@@ -123,7 +123,7 @@ SELECT * FROM cars WHERE _id.schemaVersion = :version
 
 **Do not backfill** (reading every v1 document and writing a v2 copy): devices that are offline during the backfill reintroduce v1 documents later.
 
-**Changing CRDT types** (a REGISTER object to a MAP, a number to a COUNTER) is also breaking: old and new values coexist under the same key. Introduce a new field with the new type (`stockCount` as a COUNTER next to the old `stock` register).
+**Changing CRDT types** (an array or a REGISTER object to a MAP, a number to a COUNTER) is also breaking: old and new values coexist under the same key. Introduce a new field with the new type (`stockCount` as a COUNTER next to the old `stock` register).
 
 Guide: [Schema Evolution](../../../../guides/best-practices/ditto.md#schema-evolution). Example: [composite-id-patterns.dart](../examples/composite-id-patterns.dart).
 
@@ -134,7 +134,7 @@ Guide: [Schema Evolution](../../../../guides/best-practices/ditto.md#schema-evol
 Permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` grants access at any level (`"_id.region == 'eu'"`, `"_id.storeId == 'store-12'"` in the permission rules; see [Design `_id` for permission scoping](../../../../guides/best-practices/ditto.md#design-_id-for-permission-scoping) for the rule format); the same subfields filter subscriptions and queries (`WHERE _id.storeId = :storeId`) and can be indexed. Key order inside a composite `_id` does not matter.
 
 ```sql
-CREATE INDEX IF NOT EXISTS orders_id_storeId ON orders (_id.storeId)
+CREATE INDEX IF NOT EXISTS idx_orders_id_storeId ON orders (_id.storeId)
 ```
 
 ```sql

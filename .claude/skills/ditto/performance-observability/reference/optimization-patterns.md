@@ -208,9 +208,9 @@ SELECT * FROM orders WHERE _id IN :ids
 | `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` (disabled) | Cancels longer requests with a timeout error (cooperative cancellation) |
 
 ```sql
-ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS TO 10
+ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10
 
-ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS TO 30
+ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS = 30
 ```
 
 System parameters are not persisted: apply them after every `Ditto.open`, before `ditto.sync.start()`. Before enabling a timeout in production, handle the resulting error for every query.

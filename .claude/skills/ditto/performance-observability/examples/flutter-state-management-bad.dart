@@ -127,7 +127,7 @@ class _LeakyOrderListState extends State<LeakyOrderList> {
 // ============================================================================
 
 /// ❌ BAD: `changes` is a single-subscription stream. The second listen()
-/// throws `StateError: Bad state: Stream has already been listened to`,
+/// throws a StateError (`Bad state: Stream has already been listened to.`),
 /// even if the first subscription was cancelled. Use one listener and fan out
 /// plain values yourself (for example through a ValueNotifier).
 void listenTwice(Ditto ditto) {
