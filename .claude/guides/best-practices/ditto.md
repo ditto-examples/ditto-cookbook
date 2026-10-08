@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 2.2
+> **Version**: 2.3
 > **Last Updated**: 2026-10-08
 > **Applies to**: Ditto SDK 5.1.0 (Flutter `ditto_live` 5.1.0; notes for JavaScript, Swift, and Kotlin where behavior differs)
 
@@ -15,7 +15,7 @@ Upgrading an existing application from SDK v4? Follow the [migration guides](htt
 - **(SDK 5.1+)**: Marks features introduced in Ditto SDK 5.1. Everything else is available in 5.0 and later.
 - **(Experimental)** / **(Beta)**: Marks APIs that the SDK itself marks as experimental or beta. Their signatures or behavior may change in a future release.
 - **Note (SDK 5.1.0)**: Describes SDK 5.1.0 behavior that can silently produce wrong results, crash, or block, together with the recommended pattern that avoids it.
-- **Verification**: The Dart examples in this guide were compiled against `ditto_live` 5.1.0, and the DQL statements were validated against Ditto SDK 5.1.0. Placeholders such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
+- **Verification**: The Dart examples in this guide were compiled against `ditto_live` 5.1.0, and the DQL statements were validated against Ditto SDK 5.1.0. Placeholders such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
 - **Finding topics**: Start from the [Quick Reference](#quick-reference) or the [Anti-Pattern Checklist](#anti-pattern-checklist), which link to the detailed sections; each section is written to be read on its own. To jump to a topic directly, search for the exact API name, DQL keyword, system parameter, or error message, or for "Note (SDK 5.1.0)" to find behavior that needs a specific pattern.
 
 ## Table of Contents
@@ -163,7 +163,7 @@ Ditto is an **offline-first edge sync platform**. The **Ditto Edge SDK** embeds 
 - **Ditto Server (formerly Big Peer)**: An optional cluster, hosted by Ditto or run by you, that Small Peers reach over WebSocket when they have connectivity. It connects separate meshes, handles authentication, and integrates with backend systems.
 - **Conflict-free merging**: Documents are stored as CRDTs (Conflict-free Replicated Data Types). Changes made independently on different devices merge deterministically when the devices reconnect, without a central coordinator.
 
-```
+```text
   Ditto Server (optional, over WebSocket)
           |                 |
      Small Peer A      Small Peer D
@@ -192,6 +192,8 @@ Ditto is an **offline-first edge sync platform**. The **Ditto Edge SDK** embeds 
 - A device running the SDK, such as a mobile device, is designed to handle up to about 2 GB of key-value data and tens of thousands of documents in a collection. Actual limits depend on data shape, query complexity, and performance requirements.
 
 ### Terminology
+
+The terms below are used throughout this guide. The [Glossary](#glossary) at the end defines further terms.
 
 | Term | Meaning |
 |---|---|
@@ -273,7 +275,7 @@ Ditto SDK 5.1.0 for Flutter (`ditto_live` 5.1.0) has the following requirements:
 | Apple dependency manager | CocoaPods (the Flutter plugin does not support Swift Package Manager) |
 | Android | `minSdk` 24 (Android 7.0) or later, set explicitly in your app's Gradle file |
 | Kotlin Gradle plugin | 2.0 or later |
-| Windows / Linux | Windows 10+ (x64); Linux x64 and AArch64 |
+| Windows / Linux | Windows 10 or later (x64); Linux x64 and AArch64 |
 | Web | Supported with limitations (see below) |
 
 Pin the SDK version in `pubspec.yaml` so every developer and CI build uses the same release:
@@ -319,28 +321,33 @@ There are two connection modes:
 
 **❌ DON'T:**
 - Ship `DittoConfigConnectSmallPeersOnly()` without a `privateKey` to production: traffic between peers is **not encrypted in transit** in that mode.
-- Hardcode the shared key in the app binary (see [Security](#security)).
+- Hardcode the shared key in the app binary (see [Small-Peers-Only Deployments](#small-peers-only-deployments)).
 
 **Why:** In small-peers-only mode, `ditto.sync.start()` throws (`The operation failed because the Ditto instance is not yet activated`) until a valid offline license token has been set, regardless of whether a private key is used. The local store works without a license, which is why tests can open Ditto without one as long as they do not start sync.
 
 ```dart
-// ✅ GOOD: Small-peers-only deployment with a shared key and a license token.
-Future<Ditto> openSmallPeersOnly({
-  required String sharedKey, // provisioned securely, never hardcoded
-  required String offlineLicenseToken, // issued by Ditto
+// ✅ GOOD: Small-peers-only deployment. The shared key and the offline license
+// token (issued by Ditto) come from secure provisioning, never from source code.
+Future<Ditto> openProvisionedSmallPeer({
+  required Future<String> Function() readKeyFromSecureStorage,
+  required Future<String> Function() readLicenseFromSecureStorage,
 }) async {
   final ditto = await Ditto.open(
     DittoConfig(
       databaseID: 'YOUR_DATABASE_ID', // any UUID shared by all peers
-      connect: DittoConfigConnectSmallPeersOnly(privateKey: sharedKey),
+      connect: DittoConfigConnectSmallPeersOnly(
+        privateKey: await readKeyFromSecureStorage(),
+      ),
     ),
   );
   // Required before sync.start() in small-peers-only mode.
-  ditto.setOfflineOnlyLicenseToken(offlineLicenseToken);
+  ditto.setOfflineOnlyLicenseToken(await readLicenseFromSecureStorage());
   ditto.sync.start(); // no expiration handler is needed in this mode
   return ditto;
 }
 ```
+
+For generating, distributing, and storing the shared key, see [Small-Peers-Only Deployments](#small-peers-only-deployments).
 
 #### Ditto.open, Ditto.openSync, and Ditto.init
 
@@ -400,8 +407,8 @@ class DittoProvider {
 ```
 
 ```dart
-// ❌ BAD: Every call opens the same directory again. The second open does
-// not complete while the first instance is still open.
+// ❌ BAD: Every call opens the same directory again. The second open may
+// never complete while the first instance is still open.
 Future<List<Map<String, dynamic>>> loadOrders() async {
   final ditto = await Ditto.open(const DittoConfig(databaseID: 'YOUR_DATABASE_ID'));
   final result = await ditto.store.execute('SELECT * FROM orders');
@@ -476,7 +483,7 @@ class DittoService {
       //    start. The in-browser store on the Web does not support indexes.
       if (!kIsWeb) {
         await ditto.store.execute(
-          'CREATE INDEX IF NOT EXISTS ix_orders_storeId ON orders (storeId)',
+          'CREATE INDEX IF NOT EXISTS idx_orders_storeId ON orders (storeId)',
         );
       }
 
@@ -590,7 +597,7 @@ Future<void> configureAuthenticationBadly(Ditto ditto) async {
 }
 ```
 
-**Why:** Credentials are issued by Ditto Server after your webhook validates the token, and they expire after the `expirationSeconds` your webhook returns. The handler is the single place where the SDK asks your app for a new token, so it must be reliable and must not crash.
+**Why:** Credentials are issued by Ditto Server after your webhook validates the token (see [Authentication in Production](#authentication-in-production)), and they expire after the `expirationSeconds` your webhook returns. The handler is the single place where the SDK asks your app for a new token, so it must be reliable and must not crash.
 
 **Logging out**: `await ditto.auth.logout()` clears the credentials and **stops sync**. Call `ditto.sync.start()` again after the next successful login if the device should resume syncing. `ditto.auth.status` exposes `isAuthenticated` and `userID`.
 
@@ -626,7 +633,7 @@ Future<void> applySystemParameters(
 }
 ```
 
-To restore a default, use `ALTER SYSTEM RESET <parameter>`. To list everything, use `SHOW ALL` (optionally filtered, for example `SHOW ALL LIKE 'dql%'`). The parameters that this guide refers to are listed in [System Parameters Reference](#system-parameters-reference).
+To restore a default, use `ALTER SYSTEM RESET <parameter>`. To list everything, use `SHOW ALL` (optionally filtered, for example `SHOW ALL LIKE 'dql%'`). The parameters most relevant to app developers are listed in [System Parameters Reference](#system-parameters-reference); others are described in the section that uses them.
 
 ### Starting and Stopping Sync
 
@@ -646,8 +653,8 @@ void ensureSyncStarted(Ditto ditto) {
 ```
 
 ```dart
-// ❌ BAD: Starting sync before the expiration handler is set throws for
-// server connections, and parameters applied afterwards arrive too late.
+// ❌ BAD: For server connections, sync.start() throws because no expiration
+// handler is set yet, so the handler below is never registered.
 Future<void> startTooEarly(Ditto ditto) async {
   ditto.sync.start();
   await ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) {});
@@ -721,8 +728,8 @@ Ditto objects hold native resources. Always release these objects explicitly; do
 - **Idempotent**: calling it twice is safe. Use `ditto.isClosed` to check.
 - **Stops sync** and releases observers, subscriptions, and other resources. Afterwards, observers and subscriptions report `isCancelled == true`, `cancel()` and `stop()` do nothing, and every other API call throws `DittoClosedException`.
 - **Does not wait** for your pending work. In-flight `execute()` calls and transactions can fail with `DittoClosedException`, so await your own pending work before closing.
-- **Resets `DittoLogger.customLogCallback`** to `null`. Set it again after reopening.
-- **Does not close the `changes` stream of a `StoreObserver`**: an `await for` loop over it does not end when Ditto closes. Cancel your `StreamSubscription`s (or break out of the loop) yourself.
+- **Resets `DittoLogger.customLogCallback`** to `null` for the whole process. If you reopen Ditto, set it again after `Ditto.init()` and before `Ditto.open()` (see [Forwarding logs to your own pipeline](#forwarding-logs-to-your-own-pipeline)).
+- **Does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2`**: an `await for` loop over it does not end when Ditto closes, and `cancel()` does nothing once Ditto is closed. Cancel observers and your `StreamSubscription`s (or break out of the loop) before closing.
 
 **Isolates**: `Ditto` and `Store` cannot be sent to another isolate. Use the instance from the isolate that opened it. On native platforms, `store.execute()` already runs queries on a background isolate managed by the SDK, so you do not need your own isolate for that.
 
@@ -764,7 +771,7 @@ class AppShutdown {
 
 A new Ditto instance enables the peer-to-peer transports that are stable on the current platform (Bluetooth LE, LAN, and AWDL or Wi-Fi Aware). When you connect with `DittoConfigConnectServer`, the Server URL is used automatically; you do not need to add it to the transport configuration.
 
-`TransportConfig` is immutable. Change it with `ditto.updateTransportConfig()`, which gives you a builder initialized with the current configuration:
+`TransportConfig` is immutable. Change it with `ditto.updateTransportConfig()`, which gives you a builder initialized with the current configuration.
 
 **✅ DO:**
 - Use `updateTransportConfig()` and change only the settings you need.
@@ -839,7 +846,7 @@ Future<TransportConditionsObserver> watchTransports(Ditto ditto) async {
 }
 ```
 
-#### Multicast (Beta, SDK 5.1+)
+#### Multicast (Beta) (SDK 5.1+)
 
 Multicast is an opt-in transport that sends each update once to a multicast group instead of once per connection, which reduces connection overhead in dense deployments. It is a private beta feature: **use it only in coordination with Ditto support**. It is configured through `peerToPeer.multicastBeta`, requires additional platform entitlements and permissions (for example the multicast entitlement on iOS and `CHANGE_WIFI_MULTICAST_STATE` on Android), is not available on the Web or on Windows, and changes made while sync is active take effect only after sync is stopped and started again.
 
@@ -921,7 +928,6 @@ The concepts are the same on every platform, but some APIs behave differently. K
 | Read-write transaction nested inside a read-write transaction | Deadlocks (the SDK does not detect it); never do it | Deadlocks; never do it | Can deadlock; never do it | Can deadlock; never do it |
 
 See [Observing Changes](#observing-changes) and [Transactions](#transactions) for details on each platform's patterns.
-
 
 ---
 
@@ -1075,9 +1081,13 @@ INSERT INTO orders DOCUMENTS ({_id: 'order-1', status: 'open'})
 ```sql
 -- ❌ BAD: No error, but o is returned as {} (the unquoted key is evaluated as a field reference)
 SELECT {a: 1} AS o FROM system:dual
+```
 
+```sql
 -- ✅ GOOD: Quoted keys
 INSERT INTO orders DOCUMENTS ({'_id': 'order-1', 'status': 'open'})
+
+SELECT {'a': 1} AS o FROM system:dual
 ```
 
 The recommended form is to avoid inline objects entirely and pass the document as a parameter (`DOCUMENTS (:order)`).
@@ -1243,6 +1253,8 @@ Every row of a `SELECT` is materialized in the result. On mobile devices:
 - **Count** with `SELECT COUNT(*)` instead of loading documents to call `.length`.
 - **Check existence** with `LIMIT 1`.
 
+---
+
 ## Reading Data with SELECT
 
 ```text
@@ -1305,7 +1317,8 @@ SELECT DISTINCT status FROM orders ORDER BY status
 | Function | Result |
 |---|---|
 | `COUNT(*)` | Number of rows |
-| `COUNT(expr)` / `COUNT(DISTINCT expr)` | Number of rows where `expr` is **not** `null`, missing, **or `false`** |
+| `COUNT(expr)` | Number of rows where `expr` is **not** `null`, missing, **or `false`** |
+| `COUNT(DISTINCT expr)` | Number of distinct values of `expr`, with the same exclusions |
 | `SUM(expr)` / `AVG(expr)` | Sum / average of numeric values; other types are ignored |
 | `MIN(expr)` / `MAX(expr)` | Smallest / largest value in Ditto's type order |
 | `MEDIAN(expr)` | Positional median of numeric values |
@@ -1324,7 +1337,7 @@ SELECT DISTINCT status FROM orders ORDER BY status
 **✅ DO:**
 - Use `COUNT(*)` to count documents. A full-collection `COUNT(*)` is answered from a dedicated fast path (SDK 5.1+).
 - Count values that exist with `COUNT(field IS NOT MISSING)` when the field can be `false`.
-- Wrap aggregates that may see zero rows: `ifmissing(SUM(total), 0)`. With no matching rows, `SUM`/`AVG`/`MIN`/`MAX` return MISSING (the alias is absent from the row), while `COUNT(*)` and `COUNT(expr)` return `0`.
+- Wrap aggregates that may see zero rows: `ifmissing(SUM(total), 0)`. With no matching rows, every aggregate other than `COUNT` (`SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `MID`) returns MISSING (the alias is absent from the row), while `COUNT(*)` and `COUNT(expr)` return `0`.
 - Use `LIMIT 1` to check whether at least one matching document exists.
 
 **❌ DON'T:**
@@ -1434,6 +1447,13 @@ Sorting large result sets costs memory and time unless an index provides the ord
 
 `LIMIT` and `OFFSET` accept parameters. Always combine them with `ORDER BY`, otherwise the page contents are not well defined.
 
+**✅ DO:**
+- Prefer keyset pagination (`WHERE sortKey < :lastValue ORDER BY sortKey DESC LIMIT n`) for long lists; use a unique sort key or add a tie-breaker.
+- Use `LIMIT` in `execute` and observers to cap memory.
+
+**❌ DON'T:**
+- Put `LIMIT` or `ORDER BY` in a subscription. Subscriptions reject them by default, and a subscription defines which documents sync, not how a screen pages through them. See [Subscription Rules](#subscription-rules).
+
 ```dart
 // ✅ GOOD: Keyset pagination: continue after the last row of the previous page.
 // _id breaks ties between rows that share the same createdAt.
@@ -1469,13 +1489,6 @@ Future<List<Map<String, dynamic>>> pageByOffset(Ditto ditto, int page) async {
   return result.items.map((item) => item.value).toList();
 }
 ```
-
-**✅ DO:**
-- Prefer keyset pagination (`WHERE sortKey < :lastValue ORDER BY sortKey DESC LIMIT n`) for long lists; use a unique sort key or add a tie-breaker.
-- Use `LIMIT` in `execute` and observers to cap memory.
-
-**❌ DON'T:**
-- Put `LIMIT` or `ORDER BY` in a subscription. Subscriptions reject them by default, and a subscription defines which documents sync, not how a screen pages through them. See [Subscription Rules](#subscription-rules).
 
 ### USE IDS
 
@@ -1592,11 +1605,11 @@ JOIN customers c ON c.email = o.customerEmail
 Query failed: `Joining to "c" disallowed without appropriate index support. Please run ADVISE for recommendations.`
 ```
 
-The fix is to index the join key of the inner collection (here `CREATE INDEX IF NOT EXISTS ix_customers_email ON customers (email)`). The same pattern for orders joined by `customerId`:
+The fix is to index the join key of the inner collection (here `CREATE INDEX IF NOT EXISTS idx_customers_email ON customers (email)`). The same pattern for orders joined by `customerId`:
 
 ```sql
 -- ✅ GOOD: Index the join key of the inner collection
-CREATE INDEX IF NOT EXISTS ix_orders_customerId ON orders (customerId)
+CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)
 ```
 
 ```sql
@@ -1705,6 +1718,8 @@ Joins make separate, normalized collections practical to query, but they do not 
 **❌ DON'T:**
 - Use `USE INDEX ''` on large collections to silence the index error: every outer row then scans the whole inner collection.
 - Rely on a join to pull related documents onto a device: subscribe to them explicitly.
+
+---
 
 ## Writing Data
 
@@ -1846,13 +1861,13 @@ The `SELECT` follows `INSERT INTO c` directly. Wrapping it in parentheses or in 
 ```text
 UPDATE collection [USE IDS ...]
 [APPLY counterField INCREMENT BY n, ...]
-SET field = value, nested.path = value, ...
-UNSET field, nested.path, ...
+[SET field = value, nested.path = value, ...]
+[UNSET field, nested.path, ...]
 [WHERE condition]
 [RETURNING projection]
 ```
 
-At least one of `APPLY`, `SET`, or `UNSET` is required. Without `WHERE`, every document in the collection is updated. `APPLY` (counters) must come before `SET`. Counter updates are covered in [Counters](#counters).
+At least one of `APPLY`, `SET`, or `UNSET` is required. Without `WHERE`, every document in the collection is updated. The clauses must appear in this order: `APPLY` (counters) before `SET`, and `UNSET` after `SET`. Counter updates are covered in [Counters](#counters).
 
 ```dart
 // ✅ GOOD: Change only the fields that changed
@@ -1885,7 +1900,7 @@ Future<void> clearDiscount(Ditto ditto, String orderId) async {
 ```
 
 Errors to expect:
-- `SET _id = ...` fails: `The document id _id cannot be modified`.
+- `SET _id = ...` fails: ``The document id `_id` cannot be modified``.
 - Setting the same path twice in one statement fails: `More than one modification specified for the path ...`.
 - Array elements cannot be assigned (`SET items[0] = ...` is a syntax error). Replace the whole array, or model the collection as a map keyed by ID (see [Arrays and Maps](#arrays-and-maps)).
 
@@ -1893,14 +1908,7 @@ Errors to expect:
 
 With the default strict mode (`DQL_STRICT_MODE = false`), an object field is a CRDT map. `SET obj = {...}` **merges** the new keys into the existing object instead of replacing it, and `SET obj = {}` leaves the object unchanged.
 
-| Starting value of `address` | Statement | Result |
-|---|---|---|
-| `{"city": "Oslo", "zip": "0150"}` | `SET address = :a` with `{"country": "NO"}` | `{"city": "Oslo", "zip": "0150", "country": "NO"}` |
-| `{"city": "Oslo", "zip": "0150"}` | `SET address = {}` | Unchanged (the document is still reported as mutated) |
-| `{"city": "Oslo", "zip": "0150"}` | `UNSET address.zip` | `{"city": "Oslo"}` |
-| `{"city": "Oslo", "zip": "0150"}` | `UNSET address`, then `SET address = :a` with `{"city": "Bergen"}`, in one transaction | `{"city": "Bergen"}` |
-
-The complete set of local write semantics for maps is in [CRDT Types and Merge Behavior](#crdt-types-and-merge-behavior).
+Keys are removed only by `UNSET`, so replacing an object takes `UNSET` followed by `SET` in one transaction. The full table of local write semantics for maps, including upserts and scalar overwrites, is in [Local write semantics you must know](#local-write-semantics-you-must-know).
 
 **✅ DO:**
 - Update nested fields individually: `SET address.city = :city`.
@@ -1919,7 +1927,7 @@ Future<void> replaceAddress(
   String customerId,
   Map<String, dynamic> newAddress,
 ) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
     await tx.execute(
       'UPDATE customers UNSET address WHERE _id = :id',
       arguments: {'id': customerId},
@@ -1928,7 +1936,7 @@ Future<void> replaceAddress(
       'UPDATE customers SET address = :address WHERE _id = :id',
       arguments: {'id': customerId, 'address': newAddress},
     );
-  }, hint: 'replaceAddress');
+  });
 }
 ```
 
@@ -1936,7 +1944,7 @@ Future<void> replaceAddress(
 
 **✅ DO:**
 - Use `UPDATE ... SET` for the fields that changed.
-- Skip writes that would not change anything, for example with a condition in `WHERE`, or use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts.
+- Skip writes that would not change anything, for example with a condition in `WHERE`, or use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts (it skips unchanged fields but does not protect a stale in-memory copy; see [Prefer field-level updates](#prefer-field-level-updates)).
 
 **❌ DON'T:**
 - Read a document, modify it in Dart, and write the whole map back with `INSERT ... ON ID CONFLICT DO UPDATE`.
@@ -2031,20 +2039,9 @@ Choosing between them, tombstone lifetime, soft delete, and storage cleanup are 
 
 > **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`), such as `DELETE FROM orders USE IDS 'a'`, completes without an error but removes nothing. Select documents by ID with `WHERE _id = :id` or `WHERE _id IN :ids` instead.
 
-```dart
-// ✅ GOOD: Delete by ID with WHERE
-Future<void> deleteOrders(Ditto ditto, List<String> ids) async {
-  await ditto.store.execute(
-    'DELETE FROM orders WHERE _id IN :ids',
-    arguments: {'ids': ids},
-  );
-}
+`RETURNING` (SDK 5.1+) on `DELETE` and `EVICT` returns the documents as they were before removal; see [DELETE and Tombstones](#delete-and-tombstones) for examples.
 
-// ❌ BAD: Completes without an error, but deletes nothing in SDK 5.1.0
-Future<void> deleteOrderWithUseIds(Ditto ditto) async {
-  await ditto.store.execute("DELETE FROM orders USE IDS 'order-1'");
-}
-```
+---
 
 ## DQL Functions and Operators
 
@@ -2057,7 +2054,7 @@ This section lists DQL functions from the [DQL operators and expressions](https:
 
 Date functions accept either **ISO-8601 strings with a time zone** (`2026-03-15T10:30:45.123Z` or `...+09:00`) or **epoch milliseconds** (integers). `date_add`, `date_sub`, `date_trunc`, and `date_range` return strings for string input and epoch milliseconds for numeric input.
 
-> **Important:** An ISO-8601 string **without** a zone designator, such as the output of Dart's `DateTime.now().toIso8601String()` for a local time, is not accepted by date functions unless you pass an explicit format to `date_cast`: the result is MISSING. Store timestamps with `DateTime.now().toUtc().toIso8601String()` (ends in `Z`) or as `millisecondsSinceEpoch`. See [Timestamps](#timestamps). <!-- lint-ignore -->
+> **Note:** An ISO-8601 string **without** a zone designator, such as the output of Dart's `DateTime.now().toIso8601String()` for a local time, is not accepted by date functions unless you pass an explicit format to `date_cast`: the result is MISSING. Store timestamps in UTC, where `DateTime.now().toUtc().toIso8601String()` ends in `Z` (use the `utcTimestamp()` helper from [Timestamps](#timestamps) for values that are sorted or compared), or as `millisecondsSinceEpoch`. <!-- lint-ignore -->
 
 | Function | Description | Example → result |
 |---|---|---|
@@ -2083,7 +2080,7 @@ Date functions accept either **ISO-8601 strings with a time zone** (`2026-03-15T
 
 **❌ DON'T:**
 - Compare an ISO string field with `clock()` (a number); values of different types are never equal or ordered against each other.
-- Mix ISO strings with different fractional precision in one field. String comparison then does not match chronological order (`'...45Z' < '...45.123Z'` is false). Dart's `toIso8601String()` omits the microsecond digits when they are zero, so on native platforms one device produces both `.123456Z` and `.123Z`, while on the Web it always emits milliseconds (`.123Z`). Produce compared values with the fixed-precision helper from [Timestamps](#timestamps). <!-- lint-ignore -->
+- Mix ISO strings with different fractional precision in one field. String comparison then does not match chronological order (`'...45Z' < '...45.123Z'` is false). Dart's `toIso8601String()` alone produces such mixed values on native platforms (see [Timestamps](#timestamps) for why); produce compared values with the fixed-precision helper `utcTimestamp()` from that section. <!-- lint-ignore -->
 - Expect `clock()` to give a trusted time: it is the clock of the device running the query.
 
 ```dart
@@ -2347,7 +2344,6 @@ ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 
 `system:dual` is a built-in collection with a single document. Use it to try out expressions: `SELECT date_add(:now, 'day', 1) AS tomorrow FROM system:dual`.
 
-
 ---
 
 ## Data Modeling
@@ -2363,9 +2359,7 @@ This section covers the CRDT types and how documents map to them, strict mode, t
 - Use maps keyed by ID (not arrays) for collections of items that several devices edit.
 - Keep documents well under 256 KiB and store binary data as attachments.
 - Use UUIDs or other collision-free IDs, never sequential numbers.
-- Store timestamps in UTC with a zone designator.
-
----
+- Store timestamps in UTC with a zone designator, produced by one fixed-precision helper when they are sorted or compared.
 
 ### CRDT Types and Merge Behavior
 
@@ -2413,7 +2407,7 @@ Several MAP behaviors differ from what developers expect from a JSON document st
 |---|---|---|
 | `UPDATE ... SET obj.a = 10` | `{"a": 10, "b": 2}` | Field-level update |
 | `UPDATE ... SET obj = {'c': 3}` | `{"a": 1, "b": 2, "c": 3}` | Assigning an object to a MAP **merges**; it does not replace |
-| `UPDATE ... SET obj = {}` | `{"a": 1, "b": 2}` | An empty object adds nothing |
+| `UPDATE ... SET obj = {}` | `{"a": 1, "b": 2}` | An empty object adds nothing (the document is still reported as mutated) |
 | `UPDATE ... UNSET obj.b` | `{"a": 1}` | `UNSET` is the only way to remove a key |
 | `SET obj = 5`, then later `SET obj = {'w': 1}` | `{"a": 1, "b": 2, "w": 1}` | The old map keys come back: overwriting with a scalar does not clear the map |
 | `UNSET obj`, then `SET obj = {'w': 1}`, in one transaction | `{"w": 1}` | Clearing first, then writing, replaces the object |
@@ -2443,26 +2437,7 @@ await ditto.store.execute(
 );
 ```
 
-```dart
-// ✅ GOOD: Replace a whole MAP value: clear it, then write the new object,
-// in one transaction so no reader sees the intermediate state.
-Future<void> replaceShippingAddress(
-  Ditto ditto,
-  String orderId,
-  Map<String, dynamic> newAddress,
-) async {
-  await ditto.store.transaction((tx) async {
-    await tx.execute(
-      'UPDATE orders UNSET shippingAddress WHERE _id = :id',
-      arguments: {'id': orderId},
-    );
-    await tx.execute(
-      'UPDATE orders SET shippingAddress = :address WHERE _id = :id',
-      arguments: {'id': orderId, 'address': newAddress},
-    );
-  }, hint: 'replaceShippingAddress');
-}
-```
+To replace a whole MAP value, clear it and then write the new object in one transaction, so no reader sees the intermediate state: see `replaceAddress()` in [Assigning an object merges it](#assigning-an-object-merges-it).
 
 ```dart
 // ❌ BAD: Expecting this to replace the address. Under the default settings the
@@ -2497,8 +2472,6 @@ Future<void> replaceShippingAddressIncorrectly(
 | Binary content (images, PDFs) | `ATTACHMENT` | `photo` |
 | Unbounded, independently accessed records | A separate collection | `orderEvents`, `orderItems` |
 
----
-
 ### Strict Mode
 
 `DQL_STRICT_MODE` controls how Ditto types values that a statement does not declare explicitly. **The default is `false`**, and the rest of this guide assumes it. You can check the current value:
@@ -2517,7 +2490,7 @@ SHOW DQL_STRICT_MODE
 | `SELECT` / `WHERE` on fields stored as MAP, COUNTER, or ATTACHMENT without a declaration | Values are visible | **Fields are invisible**: `SELECT *` omits them and `WHERE` conditions on them do not match |
 | Index use | Indexes are used | Indexes are not used (see the note below) |
 
-> **Note:** With `DQL_STRICT_MODE = true`, the 5.1.0 query planner does not use indexes: `EXPLAIN` shows a full collection scan even for a query on an indexed field (ID lookups are not affected; see [Strict mode and data types](#strict-mode-and-data-types)). Keep the default (`false`) if you rely on indexes for query performance.
+> **Note:** With `DQL_STRICT_MODE = true`, the SDK 5.1.0 query planner does not use indexes: `EXPLAIN` shows a full collection scan even for a query on an indexed field (ID lookups are not affected; see [Strict mode and data types](#strict-mode-and-data-types)). Keep the default (`false`) if you rely on indexes for query performance.
 
 #### When to choose strict mode
 
@@ -2604,8 +2577,6 @@ Strict mode is a local setting of each peer. Data syncs between peers regardless
 **❌ DON'T:**
 - Mix settings across peers unless every statement on the strict peers declares the map fields it reads.
 
----
-
 ### Arrays and Maps
 
 Arrays are registers: the whole array is replaced on every write, and when two devices change the same array concurrently, one version wins and the other change is lost silently. Maps keyed by ID merge each entry independently. Choose the shape as follows:
@@ -2623,7 +2594,7 @@ Arrays are registers: the whole array is replaced on every write, and when two d
 
 **❌ DON'T:**
 - Store line items, participants, or checklist entries that several devices edit in an array.
-- Expect concurrent array edits to merge or to produce duplicates. Instead, one device's change disappears without an error.
+- Expect concurrent array edits to merge or to produce duplicates: one device's change disappears without an error.
 
 #### Shapes
 
@@ -2771,39 +2742,15 @@ An index on an array field matches only the complete array value, so element loo
 
 #### Incremental adoption
 
-You do not have to convert every array at once. Start with the simple shape, and convert an array to a map as soon as you know that more than one device writes it. Keep the collection name and `_id` structure unchanged so that documents stay compatible.
-
----
+You do not have to convert every array at once. Start with the simple shape, and convert an array to a map as soon as you know that more than one device writes it. Keep the collection name and `_id` structure unchanged so that documents stay compatible, but write the map to a **new field** (for example, `lineItems` next to the old `items` array). Writing a map under the array's field name changes its CRDT type: the old array and the new map then coexist under the same key, and app versions that still write the array make the field switch back and forth (see [Changing CRDT types](#changing-crdt-types)).
 
 ### Document Structure
 
 #### Prefer field-level updates
 
-Write only what changed: when a user edits a document, update only the fields that the user changed. A field-level `UPDATE` touches only the named fields, so concurrent edits to other fields survive.
+Write only what changed: update only the fields that the user changed, so concurrent edits to other fields survive. The rule and its examples are in [Prefer field-level updates over whole-document rewrites](#prefer-field-level-updates-over-whole-document-rewrites); this subsection covers the one case that an upsert does not make safe, a stale in-memory copy.
 
-`ON ID CONFLICT DO UPDATE_LOCAL_DIFF` compares the incoming document with the local document and skips fields whose values are equal; every field that differs is written. That suits upserts and re-imports of data that another system owns, but it does not protect a stale copy: if a change from another device has already reached the local store and your in-memory copy still holds the old value, the old value differs from the stored one and is written back. (`DO UPDATE` writes every field you pass, even unchanged ones, which gives those fields new timestamps and can override a concurrent change from another device.) See [INSERT and Conflict Handling](#insert-and-conflict-handling) for all conflict policies.
-
-**✅ DO:**
-```dart
-// ✅ GOOD: The user changed only the status, so only status is written.
-await ditto.store.execute(
-  'UPDATE orders SET status = :status, updatedAt = :updatedAt WHERE _id = :id',
-  arguments: {
-    'id': 'order-1',
-    'status': 'ready',
-    'updatedAt': DateTime.now().toUtc().toIso8601String(),
-  },
-);
-
-// ✅ GOOD: Re-importing reference data that your backend owns. Fields whose
-// values equal the local document are skipped and keep their timestamps.
-await ditto.store.execute(
-  'INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-  arguments: {
-    'product': {'_id': 'p1', 'name': 'Espresso', 'priceCents': 350},
-  },
-);
-```
+`ON ID CONFLICT DO UPDATE_LOCAL_DIFF` compares the incoming document with the local document and skips fields whose values are equal (those fields keep their timestamps); every field that differs is written. That suits upserts and re-imports of data that another system owns, but it does not protect a stale copy: if a change from another device has already reached the local store and your in-memory copy still holds the old value, the old value differs from the stored one and is written back. (`DO UPDATE` writes every field you pass, even unchanged ones, which gives those fields new timestamps and can override a concurrent change from another device.) See [INSERT and Conflict Handling](#insert-and-conflict-handling) for all conflict policies.
 
 **❌ DON'T:**
 ```dart
@@ -2873,10 +2820,10 @@ Distinguish derived values from **snapshot values**. The unit price at the time 
 Ditto syncs only the fields that change once a document has replicated, but every stored field still costs storage and memory on every device that holds the document, adds to the initial replication of new documents, and adds to merge cost. Keep documents to durable, shared business data.
 
 **❌ DON'T store in synced documents:**
-- UI state: `isExpanded`, `isSelected`, scroll positions
-- Temporary progress flags: `isSaving`, `uploadProgress`
-- Device-local data: local file paths, cache locations
-- Derived values: totals, averages, ages, "days until" values
+- UI state: `isExpanded`, `isSelected`, scroll positions.
+- Temporary progress flags: `isSaving`, `uploadProgress`.
+- Device-local data: local file paths, cache locations.
+- Derived values: totals, averages, ages, "days until" values.
 
 **✅ DO:**
 - Keep UI and device-local state in widget state, a state-management layer, or local preferences.
@@ -2887,8 +2834,6 @@ Ditto syncs only the fields that change once a document has replicated, but ever
 - Field names are always strings. Use one convention (this guide uses camelCase).
 - If a field name collides with a DQL keyword or contains special characters, quote it with backticks in queries (for example, `` `value` ``).
 - Never name a collection `collection`; it is a DQL keyword.
-
----
 
 ### Document Size Limits
 
@@ -2909,7 +2854,7 @@ Query failed: DQL Internal execution error: Insert failed: <store> Document `_id
 
 In Flutter, a failed statement throws a `DittoException`; catch it like any other DQL error.
 
-**Why the limits matter:** Size affects local storage and memory on every device holding the document, serialization time, CRDT merge cost (which scales with document size, not change size), and initial replication. Over Bluetooth LE (roughly 20 KB/s in practice), a 256 KiB document takes about 10 seconds to replicate the first time. Later edits sync only the changed fields.
+**Why the limits matter:** Size affects local storage and memory on every device holding the document, serialization time, CRDT merge cost (which scales with document size, not change size), and initial replication. Over Bluetooth LE (roughly 20 KB/s in practice), a 256 KiB document takes more than 10 seconds to replicate the first time. Later edits sync only the changed fields.
 
 **✅ DO:**
 - Design documents to stay well below 256 KiB.
@@ -2960,8 +2905,6 @@ WHERE _id = :id
 | Status history | Keep a bounded audit-log map, or move events to an event collection (see [Event History and Audit Logs](#event-history-and-audit-logs)) |
 
 To bring an oversized document back under the limits, remove the data that made it grow: move large values to attachments or to a separate collection, and remove them from the document with `UNSET`.
-
----
 
 ### Relationships: Embedding, Separate Collections, and JOIN
 
@@ -3031,7 +2974,7 @@ final subscription = ditto.sync.registerSubscription(
 Create the index once at startup (`IF NOT EXISTS` makes this idempotent):
 
 ```sql
-CREATE INDEX IF NOT EXISTS orderItems_orderId ON orderItems (orderId)
+CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)
 ```
 
 Subscribe to each collection separately. A subscription reads a single collection with `SELECT *` (no JOIN or projection), so a child collection cannot be filtered by a field of its parent: copy the filter key (`storeId`) into the child documents when you create them.
@@ -3048,7 +2991,7 @@ class StoreSync {
 
   Future<void> start() async {
     await ditto.store.execute(
-      'CREATE INDEX IF NOT EXISTS orderItems_orderId ON orderItems (orderId)',
+      'CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)',
     );
     _subscriptions.addAll([
       ditto.sync.registerSubscription(
@@ -3090,68 +3033,9 @@ WHERE o._id = :orderId
 ORDER BY i.productId
 ```
 
-The first query drives from `orderItems` through the `orderItems_orderId` index and looks up each product by `_id`. The second needs the same index because `orderItems` is the inner collection. Without a usable index, the statement fails with `Joining to "i" disallowed without appropriate index support`, unless you explicitly allow a scan of that join term with `USE INDEX ""` (see [Joining Collections (SDK 5.1+)](#joining-collections-sdk-51)).
+The first query drives from `orderItems` through the `idx_orderItems_orderId` index and looks up each product by `_id`. The second needs the same index because `orderItems` is the inner collection. Without a usable index, the statement fails with `Joining to "i" disallowed without appropriate index support`, unless you explicitly allow a scan of that join term with `USE INDEX ""` (see [Joining Collections (SDK 5.1+)](#joining-collections-sdk-51)).
 
-A screen that shows the joined result follows the standard observer pattern (see [Store Observers in Flutter](#store-observers-in-flutter)):
-
-```dart
-class OrderItemsView extends StatefulWidget {
-  const OrderItemsView({super.key, required this.ditto, required this.orderId});
-
-  final Ditto ditto;
-  final String orderId;
-
-  @override
-  State<OrderItemsView> createState() => _OrderItemsViewState();
-}
-
-class _OrderItemsViewState extends State<OrderItemsView> {
-  // Registered once for widget.orderId. If orderId can change while the widget
-  // is mounted, re-register in didUpdateWidget (see "Filter locally instead of
-  // re-registering" in Sync and Subscriptions).
-  late final StoreObserver _observer;
-  late final StreamSubscription<QueryResult> _changes;
-  List<Map<String, dynamic>> _lines = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _observer = widget.ditto.store.registerObserver(
-      '''
-      SELECT i._id AS itemId, i.quantity, p.name, p.priceCents
-      FROM orderItems AS i
-      JOIN products AS p ON p._id = i.productId
-      WHERE i.orderId = :orderId
-      ORDER BY p.name
-      ''',
-      arguments: {'orderId': widget.orderId},
-    );
-    _changes = _observer.changes.listen((result) {
-      setState(() {
-        _lines = result.items.map((item) => item.value).toList();
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _changes.cancel();
-    _observer.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => ListView(
-        children: [
-          for (final line in _lines)
-            ListTile(
-              title: Text('${line['name']}'),
-              trailing: Text('x${line['quantity']}'),
-            ),
-        ],
-      );
-}
-```
+Observe the join with the standard observer pattern (see [Joins in observers](#joins-in-observers) and [Store Observers in Flutter](#store-observers-in-flutter)); an observer registered for one `orderId` must be re-registered in `didUpdateWidget` if that ID can change while the widget is mounted (see [Filter locally instead of re-registering](#filter-locally-instead-of-re-registering)).
 
 **✅ DO:**
 - Subscribe to every collection a JOIN reads, and copy the subscription filter key into child documents.
@@ -3169,8 +3053,6 @@ class _OrderItemsViewState extends State<OrderItemsView> {
 #### Copying values versus embedding
 
 Embedding (the order owns its items) is different from copying another entity's values into a document. Copy a value only when it is a snapshot that must not change with the source (the price at the time of sale), or when a subscription needs it as a filter key (`storeId` in `orderItems`). For values that should always be current (a product's name in a catalog screen), reference the other document by ID and JOIN at read time.
-
----
 
 ### Document IDs
 
@@ -3192,18 +3074,19 @@ Key order inside a composite `_id` does not matter: `{"storeId": "s1", "orderId"
 
 `UPDATE orders SET _id = ...` fails with ``The document id `_id` cannot be modified``. To "change" an ID, copy the document to a new `_id` and remove the old one, in one transaction. Removing the old document has the usual deletion trade-offs (see [DELETE and Tombstones](#delete-and-tombstones) and [Soft Delete](#soft-delete)), and every reference to the old ID must be updated, so choose IDs carefully up front.
 
-A query result contains plain values, not CRDT types. Declare in the `SELECT` and in the `INSERT` the same types that every other statement on the collection uses (see [Keep type declarations consistent](#keep-type-declarations-consistent)); otherwise the copy stores a counter as a plain number and an attachment token as a map. With `DQL_STRICT_MODE = true`, declare the `MAP` fields as well.
+A query result contains plain values, not CRDT types. Declare in the `SELECT` and in the `INSERT` the same types that every other statement on the collection uses (see [Keep type declarations consistent](#keep-type-declarations-consistent)); otherwise the copy stores a counter as a plain number and an attachment token as a map, and a field read with a different declaration (for example, a MAP read as a `REGISTER`) is missing from the copy. With `DQL_STRICT_MODE = true`, declare the `MAP` fields as well.
 
 ```dart
 /// Copies an order to a new ID and deletes the original, atomically.
 /// Both statements declare the order's COUNTER, ATTACHMENT, and REGISTER
-/// fields, so the copy keeps their CRDT types.
+/// fields exactly as the other statements on orders do, so the copy keeps
+/// their CRDT types. Undeclared objects such as shippingAddress are MAPs.
 Future<void> moveOrder(Ditto ditto, String oldId, String newId) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'moveOrder', (tx) async {
     final result = await tx.execute(
       '''
       SELECT * FROM COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
       WHERE _id = :id
       ''',
       arguments: {'id': oldId},
@@ -3214,7 +3097,7 @@ Future<void> moveOrder(Ditto ditto, String oldId, String newId) async {
     await tx.execute(
       '''
       INSERT INTO COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
       DOCUMENTS (:doc)
       ''',
       arguments: {'doc': copy},
@@ -3223,7 +3106,7 @@ Future<void> moveOrder(Ditto ditto, String oldId, String newId) async {
       'DELETE FROM orders WHERE _id = :id',
       arguments: {'id': oldId},
     );
-  }, hint: 'moveOrder');
+  });
 }
 ```
 
@@ -3302,7 +3185,7 @@ SyncSubscription subscribeToStore(Ditto ditto, String storeId) =>
 ```
 
 ```sql
-CREATE INDEX IF NOT EXISTS orders_id_storeId ON orders (_id.storeId)
+CREATE INDEX IF NOT EXISTS idx_orders_id_storeId ON orders (_id.storeId)
 ```
 
 Put only **immutable** attributes into a composite `_id`. A store that might move to another region, or an order that might be reassigned to another store, needs those values as regular fields instead.
@@ -3347,8 +3230,6 @@ Future<void> createOrderWithLabel(
   );
 }
 ```
-
----
 
 ### Counters
 
@@ -3476,8 +3357,6 @@ Future<void> sellOne(Ditto ditto, String itemId) async {
   );
 }
 ```
-
----
 
 ### Event History and Audit Logs
 
@@ -3617,7 +3496,7 @@ Future<void> recordPosition(
 }) async {
   // utcTimestamp() is defined in the Timestamps section.
   final recordedAt = utcTimestamp();
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'recordPosition', (tx) async {
     await tx.execute(
       'INSERT INTO vehiclePositions DOCUMENTS (:event)',
       arguments: {
@@ -3643,11 +3522,11 @@ Future<void> recordPosition(
         },
       },
     );
-  }, hint: 'recordPosition');
+  });
 }
 ```
 
-Devices can subscribe to what they need: a live map subscribes only to `vehicles`, and an analysis tool also subscribes to `vehiclePositions`. Keep in mind how transactions replicate. Ditto's [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes that a peer that subscribes to only part of the documents a transaction changed receives only that part, and it can relay only that part to other peers. Peers that need both halves together should subscribe to both collections.
+Devices can subscribe to what they need: a live map subscribes only to `vehicles`, and an analysis tool also subscribes to `vehiclePositions`. Keep in mind how transactions replicate: a peer that subscribes to only part of the documents a transaction changed receives only that part, and it can relay only that part to other peers (see [Transactions and Sync](#transactions-and-sync)). Peers that need both halves together should subscribe to both collections.
 
 | | Audit-log map | Event documents | Current state + history |
 |---|---|---|---|
@@ -3655,8 +3534,6 @@ Devices can subscribe to what they need: a live map subscribes only to `vehicles
 | Atomic with the parent | Yes (one document) | Only with a transaction | Only with a transaction |
 | Readable without the parent | No | Yes | Yes |
 | Best for | Status and workflow history of one record | Unbounded logs, analytics, compliance trails | Live dashboards plus history |
-
----
 
 ### Default Data with INITIAL Documents
 
@@ -3706,8 +3583,6 @@ INITIAL DOCUMENTS (:item)
 - Use `INITIAL DOCUMENTS` for data that only one device should create (orders, events); use a regular `INSERT` with a new UUID.
 - Use `INITIAL DOCUMENTS` to keep data off the network. Whether data syncs is decided by subscriptions.
 
----
-
 ### Schema Evolution
 
 Ditto is schemaless: documents in a collection can have different fields, and sync stores and replicates them without validation. In a mesh, however, devices run different app versions for weeks or months, so a schema change must work while old and new versions read and write the same data.
@@ -3735,7 +3610,7 @@ class Car {
 
 Instead of changing the meaning or unit of a field (`mileage` from miles to kilometers), **add a new field** (`mileageKm`) and let each version read the field it understands.
 
-**❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. Old peers may crash or show wrong data, and a type change on an **indexed** field can make queries return wrong results, because Ditto tracks only the most recently written data-type variant for a field.
+**❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. Old peers may crash or show wrong data. A change of CRDT type on an **indexed** field (for example, from a REGISTER to a MAP) can also make queries return wrong results, because only the most recently written CRDT type of a field is indexed (see [Strict mode and data types](#strict-mode-and-data-types)).
 
 #### Pattern 1: Schema version in a composite `_id`
 
@@ -3764,14 +3639,14 @@ Future<void> insertCarV2(Ditto ditto, String carId) async {
 
 #### Pattern 2: A separate collection per breaking version
 
-Write the new schema to a new collection (`cars` to `carsV2`). Subscriptions are per collection, so peers that do not subscribe to `carsV2` never receive it. Prefer this pattern when you change the type of an indexed field, because each version's index stays isolated.
+Write the new schema to a new collection (`cars` to `carsV2`). Subscriptions are per collection, so peers that do not subscribe to `carsV2` never receive it. Prefer this pattern when you change the CRDT type of an indexed field, because each version's index stays isolated.
 
 | | Pattern 1: version in `_id` | Pattern 2: new collection |
 |---|---|---|
 | Collection name | Unchanged | New per version |
 | Subscription | `WHERE _id.schemaVersion = 2` | `SELECT * FROM carsV2` |
 | References from other collections | Unchanged | Must point at the new collection |
-| Type change on an indexed field | Risky while both versions coexist locally | Safe (separate indexes) |
+| CRDT type change on an indexed field | Risky while both versions coexist locally | Safe (separate indexes) |
 
 #### Rolling out a breaking change
 
@@ -3784,9 +3659,7 @@ Remove old-version documents with `EVICT` (local only, per device) or `DELETE` (
 
 #### Changing CRDT types
 
-Changing how a field is typed (a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). Introduce a new field with the new type instead (`stockCount` as a COUNTER next to the old `stock` register) and migrate readers as described above.
-
----
+Changing how a field is typed (an array or a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). Introduce a new field with the new type instead (`stockCount` as a COUNTER next to the old `stock` register) and migrate readers as described above.
 
 ### Timestamps
 
@@ -3798,8 +3671,8 @@ Use one of two representations consistently within a field:
 
 | Format | Dart | Notes |
 |---|---|---|
-| ISO-8601 string in UTC with a zone designator (recommended) | `DateTime.now().toUtc().toIso8601String()`, for example `2026-10-08T10:30:00.123456Z` (precision differs by platform; see below) | Human-readable; compares as text when every value uses the same precision |
-| Epoch milliseconds (integer) | `DateTime.now().millisecondsSinceEpoch` | Compact; DQL date functions accept and return epoch milliseconds |
+| ISO-8601 string in UTC with a zone designator (recommended) | `utcTimestamp()` below (fixed millisecond precision, for example `2026-10-08T10:30:00.123Z`) for values that are sorted or compared; otherwise `DateTime.now().toUtc().toIso8601String()`, whose precision differs by platform (see below) | Human-readable; compares as text when every value uses the same precision |
+| Epoch milliseconds (integer) | `DateTime.now().millisecondsSinceEpoch` | Compact; DQL date functions accept epoch milliseconds, and `date_add`, `date_sub`, and `date_trunc` return them for numeric input |
 
 > **Note:** In Dart, `DateTime.now().toIso8601String()` returns local time **without** a zone designator (for example, `2026-10-08T19:30:00.123456`). DQL date functions return `MISSING` for such strings (`date_part`, `date_diff`, `date_add`, `date_cast`, and the others), and no error is raised. Always call `toUtc()` first. <!-- lint-ignore -->
 
@@ -3868,7 +3741,6 @@ Device clocks drift and can be set wrong. iOS clocks are usually within 100 ms o
 - Rely on your own timestamp fields to decide which of two conflicting writes should win. Ditto resolves concurrent register writes with its own Hybrid Logical Clock, independently of your fields; and if you compare your own timestamps at read time, a device with a fast clock always wins. Where order matters, model the data so that the merge cannot go wrong: a counter, a map keyed by ID, or an audit log with a derivation such as "most advanced state" (see [Event History and Audit Logs](#event-history-and-audit-logs)).
 - Use timestamps as document IDs (see [Document IDs](#document-ids)).
 
-
 ---
 
 ## Sync and Subscriptions
@@ -3882,7 +3754,7 @@ Ditto uses **query-based sync**: subscriptions tell other peers which documents 
 | `ditto.store.registerObserver(query)` | Local store (live) | ❌ No |
 | `ditto.store.transaction(...)` | Local store | ❌ No |
 
-Showing synced data therefore needs both a long-lived subscription, owned by an app-level or feature-level service (see [Subscription Lifecycle](#subscription-lifecycle)), and a local query or observer on the screen; see [Core Principles](#core-principles) for the full explanation.
+Showing synced data therefore needs both a long-lived subscription, owned by an app-level or feature-level service (see [Subscription Lifecycle](#subscription-lifecycle)), and a local query or observer on the screen (see [Core Principles](#core-principles) and [Where Queries Run](#where-queries-run)).
 
 ### Subscription Rules
 
@@ -3952,13 +3824,13 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 #### Scope subscriptions to what the device needs
 
 **✅ DO:**
-- Filter subscriptions by the dimensions that partition your data: tenant, store, region, team, or user
-- Use the same subscription shape on peers in the same role; when peers run the same subscription, any peer with matching documents can serve any other peer
-- Keep subscription predicates simple (flat comparisons such as `storeId = :storeId`); deeply nested `AND`/`OR` trees and deep object paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` errors from Ditto Server
+- Filter subscriptions by the dimensions that partition your data: tenant, store, region, team, or user.
+- Use the same subscription shape on peers in the same role; when peers run the same subscription, any peer with matching documents can serve any other peer.
+- Keep subscription predicates simple (flat comparisons such as `storeId = :storeId`); deeply nested `AND`/`OR` trees and deep object paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` errors from Ditto Server.
 
 **❌ DON'T:**
-- Subscribe to an entire large collection on every device "just in case"
-- Generate subscription predicates dynamically from arrays or nested structures without reviewing the resulting query strings
+- Subscribe to an entire large collection on every device "just in case".
+- Generate subscription predicates dynamically from arrays or nested structures without reviewing the resulting query strings.
 
 ```dart
 // ❌ BAD: Every device receives and stores every order of every tenant.
@@ -3982,15 +3854,15 @@ SyncSubscription subscribeToStore(Ditto ditto, String storeId) {
 Registering, cancelling, or changing a subscription makes peers across the mesh re-evaluate what they owe the device. Doing this often degrades sync throughput and can interrupt in-flight transfers. **Avoid changing subscriptions more often than about every 15 minutes.**
 
 **✅ DO:**
-- Register subscriptions when the data first becomes relevant: at app start, after login, or when the user enters a workspace (store, region, team)
-- Own subscriptions in an app-level or feature-level service, not in individual widgets
-- Keep a reference to every subscription you register, and call `cancel()` when its data is no longer relevant (logout, leaving a workspace) or when you register a replacement; subscriptions stay active until cancelled or until the `Ditto` instance is closed
-- Filter what the user sees with local queries and observers on top of a stable subscription
+- Register subscriptions when the data first becomes relevant: at app start, after login, or when the user enters a workspace (store, region, team).
+- Own subscriptions in an app-level or feature-level service, not in individual widgets.
+- Keep a reference to every subscription you register, and call `cancel()` when its data is no longer relevant (logout, leaving a workspace) or when you register a replacement; subscriptions stay active until cancelled or until the `Ditto` instance is closed.
+- Filter what the user sees with local queries and observers on top of a stable subscription.
 
 **❌ DON'T:**
-- Register subscriptions in `build()` or on every screen visit
-- Re-register a subscription with new arguments whenever the user changes a filter, search term, or sort order
-- Drop the reference to a subscription without cancelling it. Always release these objects explicitly; do not rely on garbage collection to cancel them
+- Register subscriptions in `build()` or on every screen visit.
+- Re-register a subscription with new arguments whenever the user changes a filter, search term, or sort order.
+- Drop the reference to a subscription without cancelling it. Always release these objects explicitly; do not rely on garbage collection to cancel them.
 
 ```dart
 // ✅ GOOD: A session-level service owns long-lived subscriptions.
@@ -4094,7 +3966,7 @@ class _OrdersByStatusState extends State<OrdersByStatus> {
 
   void _observe() {
     final observer = widget.ditto.store.registerObserver(
-      'SELECT * FROM orders WHERE storeId = :storeId AND status = :status ORDER BY createdAt DESC',
+      'SELECT * FROM orders WHERE storeId = :storeId AND status = :status ORDER BY createdAt DESC, _id',
       arguments: {'storeId': widget.storeId, 'status': widget.status},
     );
     _observer = observer;
@@ -4197,18 +4069,19 @@ Subscription scope is a trade-off. Too broad wastes resources; too narrow can le
 
 Ditto can relay documents through intermediate devices that are not directly connected to each other. Ditto's [multi-hop sync documentation](https://docs.ditto.live/home/glossary#multi-hop-sync) describes that an intermediate device **can only relay documents it has in its local store**: if its subscription is too narrow, it does not store certain documents and cannot pass them on.
 
-Ditto's [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) gives a concrete example: Peer 1 changes documents A and B in one transaction, Peer 2 subscribes only to A, and Peer 3 is connected only to Peer 2 but subscribes to both A and B. Peer 3 receives only the change to A, because Peer 2 never had the change to B. The mitigation is to ensure sufficient connectivity with peers that have broader subscription sets.
+The same limit applies to transactions: a device connected only through a relay with narrower subscriptions can receive only part of a multi-document transaction (see [Transactions and Sync](#transactions-and-sync) for an example).
 
 **✅ DO:**
-- Give devices in the same role the same subscriptions, so that each of them can serve the others
-- On devices that act as relays or hubs (for example, a fixed tablet that many handhelds connect to), subscribe to at least everything the devices behind them need
-- Filter subscriptions on stable fields that do not change during a document's lifetime (`storeId`, `tenantId`, `region`)
+- Give devices in the same role the same subscriptions, so that each of them can serve the others.
+- On devices that act as relays or hubs (for example, a fixed tablet that many handhelds connect to), subscribe to at least everything the devices behind them need.
+- Filter subscriptions on stable fields that do not change during a document's lifetime (`storeId`, `tenantId`, `region`).
+- Ensure sufficient connectivity with peers that have broader subscription sets.
 
 **❌ DON'T:**
-- Give a relay device a narrower subscription than the devices that depend on it
-- Filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states (soft-delete flags are a special case; see [Soft Delete](#soft-delete))
+- Give a relay device a narrower subscription than the devices that depend on it.
+- Filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states (soft-delete flags are a special case; see the next paragraph).
 
-**Soft delete:** Keep soft-deleted documents inside the subscription at least until every device has received the flag, and filter them out in local queries. See [Soft Delete](#soft-delete) for the two subscription variants and how each affects cleanup.
+**Soft delete:** Keep soft-deleted documents inside the subscription at least until every device has received the flag, and filter them out in local queries. See [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup) for the two subscription variants and how each affects cleanup.
 
 ### Sync Scopes
 
@@ -4236,15 +4109,15 @@ Future<void> applySyncScopesAndStart(Ditto ditto) async {
 ```
 
 **✅ DO:**
-- Set `USER_COLLECTION_SYNC_SCOPES` after every `Ditto.open` and **before** `ditto.sync.start()`; `ALTER SYSTEM` settings are not persisted, and setting scopes late can let data sync unintentionally (see [Applying System Parameters](#applying-system-parameters))
-- Apply the same sync scopes on **every** device that can store the collection (devices that write it, subscribe to it, or relay it); a scope is checked by the device that sends the data, so a device without the setting can send the collection to Ditto Server
-- Quote the collection names (map keys) in the literal, or build the statement from a reviewed constant
-- List every scoped collection in one statement: each `ALTER SYSTEM SET USER_COLLECTION_SYNC_SCOPES` replaces the whole map, so collections left out of a later statement lose their scope
+- Set `USER_COLLECTION_SYNC_SCOPES` after every `Ditto.open` and **before** `ditto.sync.start()`; `ALTER SYSTEM` settings are not persisted, and setting scopes late can let data sync unintentionally (see [Applying System Parameters](#applying-system-parameters)).
+- Apply the same sync scopes on **every** device that can store the collection (devices that write it, subscribe to it, or relay it); a scope is checked by the device that sends the data, so a device without the setting can send the collection to Ditto Server.
+- Quote the collection names (map keys) in the literal, or build the statement from a reviewed constant.
+- List every scoped collection in one statement: each `ALTER SYSTEM SET USER_COLLECTION_SYNC_SCOPES` replaces the whole map, so collections left out of a later statement lose their scope.
 
 **❌ DON'T:**
-- Treat sync scopes as an access-control mechanism; they control what *this* device sends, not what other devices are allowed to read (use permissions for that, see [Security](#security))
-- Apply sync scopes to system collections (names starting with `__`); the update fails
-- Rely on sync scopes for remote query requests; they are not enforced there
+- Treat sync scopes as an access-control mechanism; they control what *this* device sends, not what other devices are allowed to read (use permissions for that, see [Security](#security)).
+- Apply sync scopes to system collections (names starting with `__`); the update fails.
+- Rely on sync scopes for remote query requests; they are not enforced there.
 
 **Why:** Sync scopes and subscriptions are complementary. Subscriptions decide what a device *receives*; sync scopes limit where a device *sends* data, even if another peer subscribes to it. Typical uses are device-local drafts and caches (`LocalPeerOnly`) and high-frequency, mesh-local data such as kitchen display tickets (`SmallPeersOnly`).
 
@@ -4270,17 +4143,17 @@ SELECT * FROM system:data_sync_info WHERE is_ditto_server = true
 ```
 
 **✅ DO:**
-- Use sync status to **enhance** the user experience (an "uploaded" check mark, a pending-changes badge), never to block the user from working
-- Query `system:data_sync_info` with `execute` when you need a snapshot (for example, when the user opens a status screen)
-- Keep observer callbacks on `system:data_sync_info` trivial and update the UI only when the derived value actually changes
-- Track only the commit IDs that matter (payments, submitted forms) and forget them once confirmed
+- Use sync status to **enhance** the user experience (an "uploaded" check mark, a pending-changes badge), never to block the user from working.
+- Query `system:data_sync_info` with `execute` when you need a snapshot (for example, when the user opens a status screen).
+- Keep observer callbacks on `system:data_sync_info` trivial and update the UI only when the derived value actually changes.
+- Track only the commit IDs that matter (payments, submitted forms) and forget them once confirmed.
 
 **❌ DON'T:**
-- Register observers on `system:data_sync_info` in many widgets: these observers fire on a **fixed 500 ms interval, even when nothing changed**
-- Do heavy work (JSON decoding of large structures, database writes, network calls) in such an observer
-- Register subscriptions on `system:data_sync_info`; it is local-only, so such a subscription is accepted but has no effect
-- Expect `system:data_sync_info` on platforms with in-memory storage such as web browsers
-- Expect attachment transfer progress here; `system:data_sync_info` does not report it (use the fetch events, see [Attachments](#attachments))
+- Register observers on `system:data_sync_info` in many widgets: these observers fire on a **fixed 500 ms interval, even when nothing changed**.
+- Do heavy work (JSON decoding of large structures, database writes, network calls) in such an observer.
+- Register subscriptions on `system:data_sync_info`; it is local-only, so such a subscription is accepted but has no effect.
+- Expect `system:data_sync_info` on platforms with in-memory storage such as web browsers.
+- Expect attachment transfer progress here; `system:data_sync_info` does not report it (use the fetch events, see [Attachments](#attachments)).
 
 ```dart
 // ✅ GOOD: One lightweight observer that only rebuilds when the derived state changes.
@@ -4348,6 +4221,8 @@ Future<int?> submitOrder(Ditto ditto, Map<String, dynamic> order) async {
 
 **Why:** `system:data_sync_info` is cheap to read, but observers on it are timer-driven. A single small observer per relevant screen is fine; dozens of observers that rebuild widgets twice per second are not. For connectivity information (which peers are nearby, whether Ditto Server is connected), use the presence API instead (see [Presence](#presence)).
 
+---
+
 ## Observing Changes
 
 A **store observer** is a live local query. Ditto re-runs it whenever a local write or an incoming sync changes its result, and delivers the new result to your code. Observers never cause data to sync; pair them with a subscription (see [Sync and Subscriptions](#sync-and-subscriptions)).
@@ -4384,7 +4259,7 @@ class _OrdersListState extends State<OrdersList> {
   void initState() {
     super.initState();
     _observer = widget.ditto.store.registerObserver(
-      "SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC",
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
       arguments: {'status': 'open'},
     );
     _changes = _observer.changes.listen((result) {
@@ -4402,22 +4277,26 @@ class _OrdersListState extends State<OrdersList> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-        children: [for (final o in _orders) ListTile(title: Text('${o['_id']}'))],
+  Widget build(BuildContext context) => ListView.builder(
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return ListTile(key: ValueKey(order['_id']), title: Text('${order['_id']}'));
+        },
       );
 }
 ```
 
 **✅ DO:**
-- Register observers in `initState()` (or in a service), never in `build()`
-- Copy plain values out of the result (`item.value`, or your own model objects) before storing them in state; do not keep `QueryResult` or `QueryResultItem` objects around (see [Working with Query Results](#working-with-query-results))
-- Add `ORDER BY` whenever the order of results matters; without it, the order of observer results is not guaranteed
-- Cancel the stream subscription **and** the observer in `dispose()`
+- Register observers in `initState()` (or in a service), never in `build()`.
+- Copy plain values out of the result (`item.value`, or your own model objects) before storing them in state; do not keep `QueryResult` or `QueryResultItem` objects around (see [Working with Query Results](#working-with-query-results)).
+- Add `ORDER BY` whenever the order of results matters; without it, the order of observer results is not guaranteed.
+- Cancel the stream subscription **and** the observer in `dispose()`.
 
 **❌ DON'T:**
-- Pass `onChange` and leave the `changes` stream unconsumed (see the note below)
-- Listen to `changes` twice; it is a single-subscription stream
-- Create an observer per list item; observe the list once and pass values down
+- Pass `onChange` and leave the `changes` stream unconsumed (see the note below).
+- Listen to `changes` twice; it is a single-subscription stream.
+- Create an observer per list item; observe the list once and pass values down.
 
 > **Note (SDK 5.1.0):** When an observer is registered with `onChange`, every result is **also** queued in its `changes` stream. If nothing listens to `changes`, those queued results stay in memory for the lifetime of the observer, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` stream right after registering it, never later. Use the pattern above (no `onChange`, consume `changes`). If you need `onChange`, also drain the stream, for example with `observer.changes.listen((_) {})`.
 
@@ -4460,12 +4339,11 @@ StoreObserver observeTasksOrdered(Ditto ditto) => ditto.store.registerObserver(
 | Behavior (`registerObserver`) | Consequence |
 |---|---|
 | Without `onChange`, the observer starts querying only when `changes` is first listened to | An observer that is registered but never listened to produces no events and does no query work, but still holds resources until cancelled |
-| With `onChange`, the observer starts immediately | Results are delivered to `onChange` and queued in `changes` (see the note above) |
-| `changes` is a single-subscription stream | A second `listen()` throws `StateError: Bad state: Stream has already been listened to`, including after the first subscription was cancelled |
+| With `onChange`, the observer starts immediately | Results are delivered to `onChange` and also buffered in `changes` until something listens (see the note above); listen right after registering |
+| `changes` is a single-subscription stream | A second `listen()` throws a `StateError` (`Bad state: Stream has already been listened to.`), including after the first subscription was cancelled |
 | Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` as well |
 | `observer.cancel()` closes the `changes` stream | A pending `await for` loop over `changes` ends |
 | `await ditto.close()` marks observers as cancelled (`isCancelled == true`) but does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2` | Do not rely on `close()` to end an `await for` loop over observer results; cancel observers explicitly before closing |
-| With `onChange`, events emitted before the first listener attaches are buffered | Listen right after registering; do not register in `initState` and listen much later |
 
 Because `changes` is single-subscription, a `StreamBuilder` works well when the observer is created once in `initState` and its stream is handed to exactly one `StreamBuilder`:
 
@@ -4488,7 +4366,7 @@ class _OpenOrdersStreamState extends State<OpenOrdersStream> {
     super.initState();
     // Create the observer once; never in build().
     _observer = widget.ditto.store.registerObserver(
-      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC',
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
       arguments: {'status': 'open'},
     );
   }
@@ -4528,14 +4406,14 @@ class _OpenOrdersStreamState extends State<OpenOrdersStream> {
 `registerObserver` has no backpressure: Ditto never waits for your code before delivering the next result. Pausing the `changes` stream of a `StoreObserver` does not slow Ditto down; results queue up in the stream instead.
 
 **✅ DO:**
-- Keep the listener synchronous and short: copy values, map them to model objects, call `setState`
-- Move expensive decoding or computation off the UI isolate (for example, with Flutter's `compute()` on plain values copied out of the result)
-- Use `registerObserverV2` or `registerObserverWithSignalNext` when each update triggers slow or asynchronous work (see [Backpressure (SDK 5.1+)](#backpressure-sdk-51))
-- Throttle UI updates for very busy collections if the user cannot perceive every intermediate state
+- Keep the listener synchronous and short: copy values, map them to model objects, call `setState`.
+- Move expensive decoding or computation off the UI isolate (for example, with Flutter's `compute()` on plain values copied out of the result).
+- Use `registerObserverV2` or `registerObserverWithSignalNext` when each update triggers slow or asynchronous work (see [Backpressure (SDK 5.1+)](#backpressure-sdk-51)).
+- Throttle UI updates for very busy collections if the user cannot perceive every intermediate state.
 
 **❌ DON'T:**
-- `await` network calls, file I/O, or database writes inside a `registerObserver` listener; the next results keep arriving while you wait
-- Write to the same collection from inside its observer without a guard; each write triggers the observer again
+- `await` network calls, file I/O, or database writes inside a `registerObserver` listener; the next results keep arriving while you wait.
+- Write to the same collection from inside its observer without a guard; each write triggers the observer again.
 
 ```dart
 // ❌ BAD: Slow async work per update without backpressure; uploads overlap and queue up.
@@ -4677,7 +4555,7 @@ Backpressure works differently on each platform. Do not port Flutter code one-to
 | Flutter | `registerObserver(query, arguments:)` + `changes`; no backpressure | `registerObserverV2` (auto, follows pause/resume) or `registerObserverWithSignalNext` (manual); both experimental |
 | JavaScript | `registerObserver(query, handler, args)` signals the next update automatically when the handler **returns**; an `async` handler is not awaited | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` for asynchronous work |
 | Swift | `registerObserver(query:arguments:deliverOn:handler:)` signals automatically when the handler returns; delivered on the main queue by default | `handlerWithSignalNext:` for manual `signalNext()`; pass `deliverOn:` to move heavy work off the main queue |
-| Kotlin | `registerObserver(query, args) { result -> }` with a suspending handler, or `observe(...)` returning a `Flow` (use `.conflate()` for slow collectors) | No `signalNext`; `collect(query, args) { result -> }` requests the next event only after the suspending handler returns. Observers and subscriptions are released with `close()` |
+| Kotlin | `registerObserver(query, args) { result -> }` with a suspending handler, or `observe(...)` returning a `Flow` (use `.conflate()` for slow collectors). Observers and subscriptions are released with `close()` | No `signalNext`; `collect(query, args) { result -> }` requests the next event only after the suspending handler returns |
 
 ### Diffing Results
 
@@ -4753,7 +4631,7 @@ class _AnimatedOrdersState extends State<AnimatedOrders> {
   void initState() {
     super.initState();
     _observer = widget.ditto.store.registerObserver(
-      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC LIMIT 200',
+      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id LIMIT 200',
       arguments: {'status': 'open'},
     );
     _changes = _observer.changes.listen(_apply);
@@ -4814,15 +4692,15 @@ class _AnimatedOrdersState extends State<AnimatedOrders> {
 An observer delivers a new result for **any** change that affects its query. If that result triggers `setState` at the top of a large screen, the whole screen rebuilds, which can cause dropped frames, lost scroll position, or lost input focus on busy collections.
 
 **✅ DO:**
-- Give each screen region its own small observer and its own widget, so a change rebuilds only that region
-- Use lazy list builders (`ListView.builder`) with a `ValueKey(_id)` per row; only visible rows are built, and keys preserve row state across updates
-- Use aggregate queries for summary widgets (a badge needs `COUNT(*)`, not the full list)
-- With state management libraries (Riverpod, Bloc, Provider), let one provider or controller own each observer, cancel it in the provider's dispose hook, and remember that `changes` can only be listened to once
-- Map results to immutable model classes that implement `==` if you rely on equality checks to skip rebuilds; `item.value` creates a new `Map` for every result, so two maps with identical contents are never `==` to each other
+- Give each screen region its own small observer and its own widget, so a change rebuilds only that region.
+- Use lazy list builders (`ListView.builder`) with a `ValueKey(_id)` per row; only visible rows are built, and keys preserve row state across updates.
+- Use aggregate queries for summary widgets (a badge needs `COUNT(*)`, not the full list).
+- With state management libraries (Riverpod, Bloc, Provider), let one provider or controller own each observer, cancel it in the provider's dispose hook, and remember that `changes` can only be listened to once.
+- Map results to immutable model classes that implement `==` if you rely on equality checks to skip rebuilds; `item.value` creates a new `Map` for every result, so two maps with identical contents are never `==` to each other.
 
 **❌ DON'T:**
-- Observe a whole collection in the root widget and rebuild the entire screen on every change
-- Rebuild an app bar, filters, and list together when only one row changed
+- Observe a whole collection in the root widget and rebuild the entire screen on every change.
+- Rebuild an app bar, filters, and list together when only one row changed.
 
 ```dart
 // ✅ GOOD: The count badge and the list each observe what they need.
@@ -4891,6 +4769,8 @@ class OrdersScreen extends StatelessWidget {
 
 **Why:** Several narrow observers (one per region) often cost less than rebuilding the entire screen for every change, and they make each widget self-contained. Each observer re-runs its query when its data changes, so keep the number of observers on busy collections reasonable. Use Flutter DevTools to confirm which widgets rebuild before optimizing further.
 
+---
+
 ## Transactions
 
 A transaction runs several DQL statements against the local store **atomically**: either all of their changes are committed, or none are. Transactions are a local concept; they do not lock anything on other peers, and concurrent edits from other devices are still merged with CRDT rules (see [CRDT Types and Merge Behavior](#crdt-types-and-merge-behavior)).
@@ -4926,7 +4806,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
             '_id': invoiceId,
             'orderId': orderId,
             'total': order['total'],
-            'createdAt': DateTime.now().toUtc().toIso8601String(),
+            'createdAt': utcTimestamp(), // Defined in the Timestamps section.
           },
         },
       );
@@ -4945,7 +4825,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 |---|---|---|---|
 | `callback` (positional) | `Future<T> Function(Transaction)` | required | The work to do. Use only the `Transaction` passed in. |
 | `isReadOnly` | `bool` | `false` | Read-only transactions reject mutating statements and can run concurrently |
-| `hint` | `String?` | `null` | A label written to the logs (for example, in warnings about long-running transactions) |
+| `hint` | `String?` | `null` | A label written to the logs (for example, in messages about long-running transactions) |
 
 How a transaction ends:
 
@@ -4983,8 +4863,8 @@ Future<bool> shipOrder(Ditto ditto, String orderId) async {
 // ✅ GOOD: A read-only transaction for a consistent multi-query snapshot.
 Future<(int open, int closed)> orderCounts(Ditto ditto) {
   return ditto.store.transaction(
-    isReadOnly: true,
     hint: 'orderCounts',
+    isReadOnly: true,
     (tx) async {
       final open = await tx.execute(
         'SELECT COUNT(*) AS n FROM orders WHERE status = :status',
@@ -5006,19 +4886,19 @@ Future<(int open, int closed)> orderCounts(Ditto ditto) {
 ### Transaction Rules
 
 **✅ DO:**
-- Use **only** `tx.execute(...)` inside the callback
-- Keep transactions short: read, decide, write, return
-- Prepare everything that needs I/O (network responses, files, user input, attachments created with `newAttachment`) **before** starting the transaction
-- Give every transaction a `hint`
-- Use `isReadOnly: true` for transactions that only read
-- Await all pending transactions before calling `ditto.close()`; closing does not wait for them
+- Use **only** `tx.execute(...)` inside the callback.
+- Keep transactions short: read, decide, write, return.
+- Prepare everything that needs I/O (network responses, files, user input, attachments created with `newAttachment`) **before** starting the transaction.
+- Give every transaction a `hint`.
+- Use `isReadOnly: true` for transactions that only read.
+- Await all pending transactions before calling `ditto.close()`; closing does not wait for them.
 
 **❌ DON'T:**
 - Call `ditto.store.execute(...)` inside the callback. In Flutter it throws a `DittoException` ("Attempting to use `ditto.store.execute` while in a transaction scope. Use `transaction.execute` instead ..."). In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies.
 - Start a read-write transaction inside another read-write transaction. Only one read-write transaction runs at a time, so the inner one waits for the outer one forever (deadlock). Flutter has no guard against this.
-- Make network calls, show dialogs, wait for user input, or `await` timers inside a transaction
-- Store the `Transaction` object or use it after the callback returns; Flutter throws a `DittoException` when it is used outside its scope
-- Read `commitID` inside the transaction to track sync status; it is `null` until the transaction commits. Keep the `QueryResult` of the write (for example, return it from the callback) and read its `commitID` after `transaction()` completes
+- Make network calls, show dialogs, wait for user input, or `await` timers inside a transaction.
+- Store the `Transaction` object or use it after the callback returns; Flutter throws a `DittoException` when it is used outside its scope.
+- Read `commitID` inside the transaction to track sync status; it is `null` until the transaction commits. Keep the `QueryResult` of the write (for example, return it from the callback) and read its `commitID` after `transaction()` completes.
 
 ```dart
 // ❌ BAD: Mixing store.execute into a transaction, nesting, and doing network I/O.
@@ -5072,7 +4952,7 @@ Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() charg
 - **One read-write transaction at a time:** Any other read-write transaction started meanwhile waits until the current one commits or rolls back. A plain `store.execute` write issued meanwhile also waits.
 - **Read-only transactions** can run concurrently with each other and with the active read-write transaction. A mutating statement inside a read-only transaction throws (`A mutating DQL query was attempted using a read-only transaction.`).
 - **Arrival order (SDK 5.1+):** Small Peer write transactions are processed in arrival order, which prevents a write from being starved indefinitely by competing operations.
-- **Long transactions are logged:** After a transaction has run for 10 seconds, Ditto logs warnings (including the `hint`) every 5 seconds, starting at debug level and escalating. The thresholds are configurable with the system parameters `TRANSACTION_DURATION_BEFORE_LOGGING_MS` and `TRANSACTION_TRACE_INTERVAL_MS`.
+- **Long transactions are logged:** After a transaction has run for 10 seconds, Ditto logs a message about it (including the `hint`) every 5 seconds, starting at debug level and escalating to higher levels. The thresholds are configurable with the system parameters `TRANSACTION_DURATION_BEFORE_LOGGING_MS` and `TRANSACTION_TRACE_INTERVAL_MS`.
 - **Closing:** `ditto.close()` in Flutter does not wait for in-flight transactions. Track pending transactions yourself and await them before closing (see [Resource Cleanup and Shutdown](#resource-cleanup-and-shutdown)).
 
 ```dart
@@ -5101,18 +4981,20 @@ class TransactionTracker {
 Atomicity is guaranteed on the device that commits the transaction. For replication, the [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes two limits:
 
 - A peer whose subscriptions cover only part of a transaction's documents receives only that part. If it later broadens its subscriptions, the remaining changes arrive only when replication catches up.
-- A peer that relays changes can forward only what it has. A device connected only through a relay with narrower subscriptions may receive an incomplete transaction (see [Multi-Hop Relay](#multi-hop-relay)).
+- A peer that relays changes can forward only what it has. A device connected only through a relay with narrower subscriptions may receive an incomplete transaction (see [Multi-hop relay](#multi-hop-relay)). For example, Peer 1 changes documents A and B in one transaction, Peer 2 subscribes only to A, and Peer 3 is connected only to Peer 2 but subscribes to both A and B. Peer 3 receives only the change to A, because Peer 2 never had the change to B.
 
-Keep documents that are changed together in the same subscription scope (for example, both carry the same `storeId`), and give relay devices subscriptions that cover what the devices behind them need.
+Keep documents that are changed together in the same subscription scope (for example, both carry the same `storeId`), give relay devices subscriptions that cover what the devices behind them need, and ensure sufficient connectivity with peers that have broader subscription sets.
 
 ### Transactions on Other Platforms
 
 | Platform | API | Explicit rollback | Notes |
 |---|---|---|---|
-| Flutter | `ditto.store.transaction((tx) async {...}, isReadOnly:, hint:)` | Return `TransactionCompletionAction.rollback` | Any other return value commits; `store.execute` inside throws |
+| Flutter | `ditto.store.transaction(hint:, isReadOnly:, (tx) async {...})` | Return `TransactionCompletionAction.rollback` | Any other return value commits; `store.execute` inside throws |
 | JavaScript | `ditto.store.transaction(async (tx) => {...}, { isReadOnly, hint })` | Return `'rollback'` | `store.execute` writes or nested read-write transactions inside can deadlock |
 | Swift | `try await ditto.store.transaction(hint:isReadOnly:) { tx in ... }` | Return `.rollback` | Return `.commit` (or a value) to commit |
 | Kotlin | `ditto.store.transaction(hint, isReadOnly) { tx -> ... }` | Return `DittoTransaction.Result.Rollback` | The block must return `DittoTransaction.Result.Commit(value)` or `DittoTransaction.Result.Rollback` |
+
+---
 
 ## Attachments
 
@@ -5155,13 +5037,13 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
       'photo': {
         '_id': photoId,
         'image': attachment,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(), // Defined in the Timestamps section.
       },
     },
   );
 }
 
-// ✅ GOOD: Create an attachment from bytes (the only option on the web).
+// ✅ GOOD: Create an attachment from bytes (the only option on the Web).
 Future<Attachment> attachmentFromBytes(Ditto ditto, Uint8List bytes, String name) {
   return ditto.store.newAttachment(bytes, AttachmentMetadata({'name': name}));
 }
@@ -5175,13 +5057,13 @@ Future<Attachment> attachmentFromBytes(Ditto ditto, Uint8List bytes, String name
 | Result | An `Attachment` with `id`, `len`, `metadata`, `data` (a `Future<Uint8List>`) and `copyToPath(destination)` (native platforms only) |
 
 **✅ DO:**
-- Declare attachment fields in the statement: `INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)`; the `COLLECTION` keyword is required when you declare types
-- Pass the `Attachment` object as part of a parameter; never build tokens by hand
-- Create the attachment **before** starting a transaction that stores it (see [Transactions](#transactions))
+- Declare attachment fields in the statement: `INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)`; the `COLLECTION` keyword is required when you declare types.
+- Pass the `Attachment` object as part of a parameter; never build tokens by hand.
+- Create the attachment **before** starting a transaction that stores it (see [Transactions](#transactions)).
 
 **❌ DON'T:**
-- Store base64-encoded files in regular document fields; they count toward the document size limit and are re-sent with the document
-- Put non-string values into `AttachmentMetadata`
+- Store base64-encoded files in regular document fields; they count toward the document size limit and are re-sent with the document.
+- Put non-string values into `AttachmentMetadata`.
 
 **Why declare the type:** With the default `DQL_STRICT_MODE = false`, an attachment inserted without the declaration is still stored as an attachment. With strict mode enabled, the declaration is required, and fields written as `ATTACHMENT` are not visible to queries that do not declare them (see [Strict Mode](#strict-mode)). With strict mode enabled, statements that do not declare the field, including `UNSET`, leave the attachment value unchanged without an error. Declaring the type works in both modes.
 
@@ -5234,6 +5116,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
   Uint8List? _bytes;
   double? _progress;
   bool _failed = false;
+  int _fetchGeneration = 0; // Identifies the current fetch.
 
   @override
   void initState() {
@@ -5246,8 +5129,15 @@ class _AttachmentImageState extends State<AttachmentImage> {
     _failed = false;
     _progress = null;
     _restartStallTimer();
-    _fetcher = widget.ditto.store.fetchAttachment(widget.token, _onFetchEvent);
+    final generation = ++_fetchGeneration;
+    _fetcher = widget.ditto.store.fetchAttachment(
+      widget.token,
+      (event) => _onFetchEvent(event, generation),
+    );
   }
+
+  // False for events of a replaced fetch (token change, retry) or a disposed widget.
+  bool _isCurrent(int generation) => mounted && generation == _fetchGeneration;
 
   void _restartStallTimer() {
     _stallTimer?.cancel();
@@ -5258,24 +5148,26 @@ class _AttachmentImageState extends State<AttachmentImage> {
     });
   }
 
-  Future<void> _onFetchEvent(AttachmentFetchEvent event) async {
+  Future<void> _onFetchEvent(AttachmentFetchEvent event, int generation) async {
+    if (!_isCurrent(generation)) return;
     switch (event) {
       case AttachmentFetchEventProgress(:final downloadedBytes, :final totalBytes):
         _restartStallTimer(); // Progress resets the stall timer.
-        if (mounted && totalBytes > 0) {
+        if (totalBytes > 0) {
           setState(() => _progress = downloadedBytes / totalBytes);
         }
       case AttachmentFetchEventCompleted(:final attachment):
         _stallTimer?.cancel();
         try {
           final bytes = await attachment.data;
-          if (mounted) setState(() => _bytes = bytes);
+          // Check again: the token can change while the bytes are read.
+          if (_isCurrent(generation)) setState(() => _bytes = bytes);
         } catch (error) {
-          if (mounted) setState(() => _failed = true);
+          if (_isCurrent(generation)) setState(() => _failed = true);
         }
       case AttachmentFetchEventDeleted():
         _stallTimer?.cancel();
-        if (mounted) setState(() => _failed = true);
+        setState(() => _failed = true);
       default: // AttachmentFetchEvent is not sealed.
         break;
     }
@@ -5323,15 +5215,15 @@ Map<String, dynamic>? imageToken(Map<String, dynamic> photo) {
 ```
 
 **✅ DO:**
-- Fetch attachments **lazily**, when the widget that shows them is built (for example, inside a row of `ListView.builder`, which only builds visible rows)
-- Keep the `AttachmentFetcher` until the fetch completes, and call `stop()` when the user navigates away first
-- Implement your own timeout: restart a timer on every progress event, and stop the fetcher and offer a retry when it fires
-- Show `len` and metadata from the token (size, file name) before the download starts
+- Fetch attachments **lazily**, when the widget that shows them is built (for example, inside a row of `ListView.builder`, which only builds visible rows).
+- Keep the `AttachmentFetcher` until the fetch completes, and call `stop()` when the user navigates away first.
+- Implement your own timeout: restart a timer on every progress event, and stop the fetcher and offer a retry when it fires.
+- Show `len` and metadata from the token (size, file name) before the download starts.
 
 **❌ DON'T:**
-- Fetch every attachment of every document as soon as it syncs; this downloads data the user may never look at
-- Start a new fetch for the same token on every rebuild or observer update; keep one fetcher per token
-- Treat a fetch that has not made progress as an error immediately; peers that have the blob may connect later
+- Fetch every attachment of every document as soon as it syncs; this downloads data the user may never look at.
+- Start a new fetch for the same token on every rebuild or observer update; keep one fetcher per token.
+- Treat a fetch that has not made progress as an error immediately; peers that have the blob may connect later.
 
 ### Attachments Are Immutable
 
@@ -5398,7 +5290,7 @@ Future<void> savePhotoWithThumbnail(
         '_id': photoId,
         'thumbnail': thumbnail,
         'image': fullSize,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(), // Defined in the Timestamps section.
       },
     },
   );
@@ -5454,12 +5346,12 @@ An attachment can only be fetched while a peer that **holds the blob** is reacha
 - Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available (for example, a product image), make sure a well-connected device or Ditto Server fetches it.
 
 **✅ DO:**
-- Show a placeholder with the attachment's metadata while the blob is unavailable
-- Let devices that act as hubs, or a backend connected to Ditto Server, fetch attachments that many devices will need
+- Show a placeholder with the attachment's metadata while the blob is unavailable.
+- Let devices that act as hubs, or a backend connected to Ditto Server, fetch attachments that many devices will need.
 
 **❌ DON'T:**
-- Assume that receiving a document means its attachment can be downloaded right away
-- Delete the original file on the creating device before the attachment is stored with `newAttachment` (afterwards, the copy in Ditto's store is what matters)
+- Assume that receiving a document means its attachment can be downloaded right away.
+- Delete the original file on the creating device before the attachment is stored with `newAttachment` (afterwards, the copy in Ditto's store is what matters).
 
 ### Size Guidance
 
@@ -5472,14 +5364,13 @@ An attachment can only be fetched while a peer that **holds the blob** is reacha
 | Transfer progress | Reported only through fetch events; `system:data_sync_info` does not include attachments |
 
 **✅ DO:**
-- Store images, documents, audio, and other binary files as attachments rather than inside documents
-- Compress and downscale media on the creating device before calling `newAttachment`
-- Consider the slowest transport your users rely on (Bluetooth LE is much slower than Wi-Fi) when deciding what to fetch automatically and what to fetch on demand
+- Store images, documents, audio, and other binary files as attachments rather than inside documents.
+- Compress and downscale media on the creating device before calling `newAttachment`.
+- Consider the slowest transport your users rely on (Bluetooth LE is much slower than Wi-Fi) when deciding what to fetch automatically and what to fetch on demand.
 
 **❌ DON'T:**
-- Fetch large attachments automatically on devices that may only be connected over Bluetooth LE
-- Keep many versions of large files alive by referencing old tokens from history documents unless you need them; every referenced blob stays on the device
-
+- Fetch large attachments automatically on devices that may only be connected over Bluetooth LE.
+- Keep many versions of large files alive by referencing old tokens from history documents unless you need them; every referenced blob stays on the device.
 
 ---
 
@@ -5500,7 +5391,7 @@ Ditto offers three tools for these needs:
 |---|---|---|
 | `DELETE` | Removes the document's values and leaves a tombstone that propagates the deletion to other peers | Mesh-wide |
 | Soft delete | An `UPDATE` that sets a flag such as `isDeleted`; queries filter flagged documents out | Mesh-wide (it is an ordinary update) |
-| `EVICT` | Removes documents from the local store only; nothing is sent to other peers | This device only |
+| `EVICT` | Removes documents from the local store only; the removal is not propagated to other peers | This device only |
 
 In deployments with a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typically on the Ditto Server) and `EVICT` to manage storage on edge devices. If you plan to use `DELETE` in a deployment with Small Peers only, contact Ditto support to review the design. See [Choosing DELETE, Soft Delete, or EVICT](#choosing-delete-soft-delete-or-evict) for a decision table.
 
@@ -5564,7 +5455,7 @@ DELETE FROM orders WHERE _id IN :ids
 DELETE FROM orders WHERE status = 'cancelled' AND createdAt < :cutoff RETURNING COUNT(*) AS removed
 ```
 
-`mutatedDocumentIDs()` is still populated when `RETURNING` is used. See [RETURNING (SDK 5.1+)](#returning-sdk-51) for the full syntax.
+`mutatedDocumentIDs()` is still populated when `RETURNING` is used, but include `_id` in the `RETURNING` projection when you need the IDs. See [RETURNING (SDK 5.1+)](#returning-sdk-51) for the full syntax.
 
 #### Tombstone TTL and reaping
 
@@ -5586,7 +5477,7 @@ Consequences for your design:
 - **A device that is offline for longer than the TTL can resurrect deleted data.** If it reconnects after every other peer has already reaped the tombstone, nobody can tell it the document was deleted, and it shares its old copy again. This is known as "zombie data".
 - **The TTL is measured from the deleting device's clock.** A device with an inaccurate clock can make tombstones expire earlier or later than expected.
 - **Very short TTLs can make deletions fail to propagate**, because the tombstone may expire before it reaches the other peers.
-- **Never configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) to exceed the Ditto Server TTL.** The Ditto Server always syncs documents, so tombstones that outlive the server's copy are sent back to it repeatedly, which wastes resources. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
+- **Never configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) to exceed the Ditto Server TTL.** The Ditto Server always syncs documents, so a Small Peer tombstone that outlives the Ditto Server's own tombstone is sent back to the server repeatedly, which wastes resources. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
 
 If devices can legitimately stay offline longer than 7 days, you can raise `TOMBSTONE_TTL_HOURS` (staying at or below the Ditto Server TTL), or prefer a soft delete for that data. `ALTER SYSTEM` settings are not persisted, so apply them after every open (see [Applying System Parameters](#applying-system-parameters)):
 
@@ -5655,8 +5546,9 @@ Future<void> softDeleteOrder(Ditto ditto, String orderId) async {
     'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
     arguments: {
       'id': orderId,
-      // Use your app's single UTC timestamp helper (see "Timestamps"); inlined here.
-      'deletedAt': DateTime.now().toUtc().toIso8601String(),
+      // utcTimestamp() is defined in the Timestamps section; deletedAt is
+      // compared with cleanup cutoffs, so it needs the fixed-precision helper.
+      'deletedAt': utcTimestamp(),
     },
   );
 }
@@ -5777,8 +5669,8 @@ class OrderSoftDeleteRetention {
   static const retention = Duration(days: 30);
   SyncSubscription? _subscription;
 
-  String _cutoff() =>
-      DateTime.now().toUtc().subtract(retention).toIso8601String();
+  // Same fixed-precision format as deletedAt (utcTimestamp() from "Timestamps").
+  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
 
   /// Call once at startup (before ditto.sync.start()).
   void start() {
@@ -5792,15 +5684,17 @@ class OrderSoftDeleteRetention {
     // 1. Stop asking peers for the documents that are about to be evicted.
     _subscription?.cancel();
 
-    // 2. Evict only documents outside the new subscription.
-    await ditto.store.execute(
-      'EVICT FROM orders '
-      'WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff',
-      arguments: {'storeId': storeId, 'cutoff': cutoff},
-    );
-
-    // 3. Subscribe again with the moved boundary.
-    _subscription = _subscribe(cutoff);
+    try {
+      // 2. Evict only documents outside the new subscription.
+      await ditto.store.execute(
+        'EVICT FROM orders '
+        'WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff',
+        arguments: {'storeId': storeId, 'cutoff': cutoff},
+      );
+    } finally {
+      // 3. Subscribe again with the moved boundary, even if the eviction failed.
+      _subscription = _subscribe(cutoff);
+    }
   }
 
   SyncSubscription _subscribe(String cutoff) =>
@@ -5818,7 +5712,7 @@ class OrderSoftDeleteRetention {
 
 ### EVICT
 
-`EVICT` removes documents from the **local** store only. It has the same shape as `DELETE` (including `WHERE`, `LIMIT`, and `RETURNING` (SDK 5.1+)):
+`EVICT` removes documents from the **local** store only. It has the same shape as `DELETE`, including `WHERE`, `LIMIT`, and `RETURNING` (SDK 5.1+):
 
 ```sql
 EVICT FROM orders WHERE createdAt < :cutoff
@@ -5827,7 +5721,7 @@ EVICT FROM orders WHERE createdAt < :cutoff
 What eviction does and does not do:
 
 - The documents are removed from this device immediately and disappear from local queries.
-- Nothing is sent to other peers and no tombstone is created. The documents remain on every other peer, including the Ditto Server.
+- The removal is not propagated to other peers and no tombstone is created. The documents remain on every other peer, including the Ditto Server. (Each eviction still triggers a resync with every connected peer; see the **Why** below.)
 - The same `_id` can be inserted again later without a conflict.
 - **If an active subscription on this device still matches an evicted document, connected peers notice that it is missing and sync it back.** This can turn into a loop of evicting and re-syncing.
 
@@ -5874,8 +5768,8 @@ class OrderRetention {
   static const retention = Duration(days: 7);
   SyncSubscription? _subscription;
 
-  String _cutoff() =>
-      DateTime.now().toUtc().subtract(retention).toIso8601String();
+  // Same fixed-precision format as createdAt (utcTimestamp() from "Timestamps").
+  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
 
   /// Call once at startup (before ditto.sync.start()).
   void start() {
@@ -5889,15 +5783,17 @@ class OrderRetention {
     // 1. Stop asking peers for the documents that are about to be evicted.
     _subscription?.cancel();
 
-    // 2. Evict exactly the complement of the new subscription.
-    final result = await ditto.store.execute(
-      'EVICT FROM orders WHERE createdAt < :cutoff',
-      arguments: {'cutoff': cutoff},
-    );
-
-    // 3. Subscribe again with the moved boundary.
-    _subscription = _subscribeFrom(cutoff);
-    return result.mutatedDocumentIDs().length;
+    try {
+      // 2. Evict exactly the complement of the new subscription.
+      final result = await ditto.store.execute(
+        'EVICT FROM orders WHERE createdAt < :cutoff',
+        arguments: {'cutoff': cutoff},
+      );
+      return result.mutatedDocumentIDs().length;
+    } finally {
+      // 3. Subscribe again with the moved boundary, even if the eviction failed.
+      _subscription = _subscribeFrom(cutoff);
+    }
   }
 
   SyncSubscription _subscribeFrom(String cutoff) =>
@@ -5912,7 +5808,7 @@ class OrderRetention {
 
 **Why:** The subscription and the eviction use the same cutoff with complementary operators (`>=` and `<`), so no evicted document matches an active subscription.
 
-Documents that were already in flight through the cancelled subscription can still arrive shortly after the eviction. If your boundary changes significantly (for example when the user switches stores), run the same `EVICT` a second time after a short delay.
+Documents that were already in flight through the cancelled subscription can still arrive shortly after the eviction. If your boundary changes significantly (for example when the user switches stores), run the same `EVICT` again in the next scheduled cleanup or at the next app start, rather than immediately, so that evictions stay infrequent.
 
 #### Flag-based eviction
 
@@ -5960,7 +5856,7 @@ Future<int> evictInBatches(Ditto ditto, String cutoff) async {
 }
 ```
 
-Batching keeps individual write transactions short. It does not change how often you should evict: one cleanup run is still one eviction event for your connected peers.
+Batching keeps individual write transactions short. It does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule (see [Eviction frequency](#eviction-frequency)), not as many separate cleanups.
 
 #### Eviction frequency
 
@@ -6020,6 +5916,8 @@ Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
 **❌ DON'T** register a long-lived observer on `system:system_info`: such observers run every 500 ms regardless of whether anything changed. Query it with `execute` when you need it.
 
 To keep storage under control, combine monitoring with a retention policy ([EVICT](#evict)) and keep individual documents small (see [Document Size Limits](#document-size-limits)).
+
+---
 
 ## Indexing and Query Performance
 
@@ -6092,7 +5990,7 @@ Example output for the indexes created above:
 - **Indexes are local to each device.** `CREATE INDEX` and `DROP INDEX` run on the local SDK. Create the indexes your queries need on every device, as part of startup.
 - **`CREATE INDEX` / `DROP INDEX` run only through `execute`.**
 - **Indexes speed up `execute` and store observers;** subscriptions and Ditto Server queries do not use them, and custom indexes are not supported on the Ditto Server.
-- **In-memory stores do not support indexes.** On the web (Flutter Web and JavaScript Web), where the store is in memory, skip index creation; `CREATE INDEX` fails there with `the database implementation does not support indexing`.
+- **In-memory stores do not support indexes.** On the Web (Flutter Web and JavaScript Web), where the store is in memory, skip index creation; `CREATE INDEX` fails there with `the database implementation does not support indexing`.
 
 **✅ DO:**
 - Create indexes at startup with `CREATE INDEX IF NOT EXISTS`, which is idempotent and needs no extra query.
@@ -6103,7 +6001,7 @@ Example output for the indexes created above:
 **❌ DON'T:**
 - Create indexes on demand right before a query; creation scans the collection.
 - Index every field "just in case".
-- Rely on indexes when [strict mode](#strict-mode) is enabled (see [Index Usage Rules](#index-usage-rules)).
+- Rely on indexes when [strict mode](#strict-mode) is enabled (see [Strict mode and data types](#strict-mode-and-data-types)).
 
 ```dart
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -6122,7 +6020,8 @@ Future<void> ensureIndexes(Ditto ditto) async {
     try {
       await ditto.store.execute(statement);
     } catch (error) {
-      // A missing index makes most queries slower (a JOIN fails without its index): report and continue.
+      // Without the index, queries that use it fall back to a collection scan
+      // (and a JOIN on it fails): report and continue.
       showError(error);
     }
   }
@@ -6147,7 +6046,7 @@ The query planner chooses indexes by rules, not by statistics about your data. `
 | `lower(name) = 'abc'`, any function applied to the field | Collection scan | Functions on the value side (for example `= :param`) are fine |
 | `status != 'open'`, `NOT (status = 'open')` | Index scan over two ranges | |
 | `flag IS MISSING` | Index scan | SDK indexes include documents without the field |
-| `coalesce(isDeleted, false) = false` | Collection scan | See [Indexing Soft-Delete Filters](#indexing-soft-delete-filters) |
+| `coalesce(isDeleted, false) = false` | Collection scan | See [Indexing soft-delete filters](#indexing-soft-delete-filters) |
 | `_id = :id`, `_id IN :ids`, `USE IDS` | ID scan | No index needed |
 | `a = 1 OR b = 2` (both indexed) | Union scan | |
 | `a = 1 OR b = 2` (`b` not indexed) | **Collection scan** | Every `OR` branch must be indexable |
@@ -6385,7 +6284,8 @@ SELECT * FROM orders USE INDEX 'idx_orders_customerId' WHERE customerId = :custo
 ```
 
 - `USE INDEX ''` explicitly requests a collection scan (also used to allow a JOIN without an index on the inner collection).
-- Comment-style directives (`/*+ {...} */`) and `USE DIRECTIVES` give finer control (place them after `SELECT` or after the collection name; a directive comment after `WHERE` is ignored); the system parameter `DQL_DEFAULT_DIRECTIVES` sets defaults for every statement.
+- Comment-style directives (`/*+ {...} */`) and `USE DIRECTIVES` give finer control. Place them after `SELECT` or after the collection name; a directive comment after `WHERE` is ignored.
+- The system parameter `DQL_DEFAULT_DIRECTIVES` sets default directives for every statement.
 - Do not put directives in subscription queries; indexes and directives only affect local query execution.
 
 See the [DQL directives documentation](https://docs.ditto.live/dql/directives) for the available directives.
@@ -6448,9 +6348,9 @@ Two system parameters help you detect and contain slow DQL requests:
 | `DQL_REQUEST_TIMEOUT_SECONDS` | `0` (disabled) | Cancels requests that run longer than this and fails them with a timeout error. Cancellation is cooperative, so execution can continue briefly past the limit |
 
 ```sql
-ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS TO 10
+ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10
 
-ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS TO 30
+ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS = 30
 ```
 
 A lower warning threshold during development surfaces slow queries early. Apply these settings after every open (see [Applying System Parameters](#applying-system-parameters)). Before enabling a timeout in production, make sure your code handles the resulting error for every query.
@@ -6468,6 +6368,8 @@ void enableInlineExecute() {
   Store.experimentalSkipExecuteIsolateOffload = true;
 }
 ```
+
+---
 
 ## Logging and Observability
 
@@ -6602,8 +6504,8 @@ The `system:` namespace contains virtual collections that describe the local dev
 
 | Collection | Purpose |
 |---|---|
-| `system:system_info` | Key/value rows about the device: SDK version, database ID, peer key, storage usage, document counts per collection, local subscriptions, log settings, non-default system parameters |
-| `system:indexes` | Indexes defined on this device (see [Listing Indexes](#listing-indexes)) |
+| `system:system_info` | Key/value rows about the device: SDK version, database ID, peer key, storage usage, document counts per collection, local subscriptions, log settings, non-default system parameters (storage keys: see [Monitoring Storage](#monitoring-storage)) |
+| `system:indexes` | Indexes defined on this device (see [Listing indexes](#listing-indexes)) |
 | `system:data_sync_info` | One row per sync connection with its sync status (see [Monitoring Sync Status](#monitoring-sync-status)) |
 | `system:active_requests` | DQL requests that are executing right now, with their plan and timings |
 | `system:request_history` | Recently completed DQL requests that matched the history qualifiers (in memory, not persisted) |
@@ -6651,7 +6553,7 @@ SELECT text, state, times, `~qualifier` AS qualifier FROM system:request_history
 
 - `system:request_history` is held in memory and is not persisted across restarts. Its size is controlled by `DQL_REQUEST_HISTORY_SIZE` (default `4096` entries).
 - Which requests are recorded is controlled by `DQL_REQUEST_HISTORY_QUALIFIERS`, for example failed requests and requests slower than a threshold. Setting this parameter replaces the whole qualifier object; see the [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) for the available qualifiers.
-- On Small Peers, querying `system:active_requests` at exactly the right moment is often impractical; the slow-request warning (see [Long-Running Requests (SDK 5.1+)](#long-running-requests-sdk-51)) writes the same details to the log.
+- On Small Peers, querying `system:active_requests` at exactly the right moment is often impractical; the slow-request warning (see [Long-running requests (SDK 5.1+)](#long-running-requests-sdk-51)) writes the same details to the log.
 
 ```dart
 // ✅ GOOD: Collect a small diagnostics snapshot on demand.
@@ -6697,7 +6599,7 @@ ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
 - `SHOW ALL` returns a single row with every parameter; `SHOW ALL LIKE '<pattern>'` (or `ILIKE`) narrows it.
 - Parameter names are case-insensitive (`DQL_STRICT_MODE` and `dql_strict_mode` are the same parameter).
 - Unknown names fail with `unknown parameter '<name>'`, and values of the wrong type fail with a type error.
-- **Settings are not persisted.** After closing and reopening Ditto, every parameter is back at its default. Apply your settings after every `Ditto.open`, before `ditto.sync.start()`; see [Applying System Parameters](#applying-system-parameters).
+- **Settings are not persisted.** After closing and reopening Ditto, every parameter is back at its default. Apply your settings after every `Ditto.open`, before `ditto.sync.start()` and before queries or observers run; see [Applying System Parameters](#applying-system-parameters).
 
 Parameters most relevant to app developers:
 
@@ -6705,21 +6607,21 @@ Parameters most relevant to app developers:
 |---|---|---|---|
 | `DQL_STRICT_MODE` | `false` | When `true`, objects are treated as registers unless declared; in 5.1.0 the planner then does not use secondary indexes | [Strict Mode](#strict-mode) |
 | `DQL_RESTRICT_SUBSCRIPTIONS` | `true` | Rejects `LIMIT` and `ORDER BY` in subscription queries | [Subscription Rules](#subscription-rules) |
-| `USER_COLLECTION_SYNC_SCOPES` | `{}` | Per-collection sync scopes; set before `ditto.sync.start()` | [Sync and Subscriptions](#sync-and-subscriptions) |
-| `TOMBSTONE_TTL_ENABLED` | `true` | Automatic removal of expired tombstones | [DELETE and Tombstones](#delete-and-tombstones) |
-| `TOMBSTONE_TTL_HOURS` | `168` | Tombstone TTL on this device (never above the Ditto Server TTL) | [Tombstone TTL and Reaping](#tombstone-ttl-and-reaping) |
-| `DAYS_BETWEEN_REAPING` | `1` | Days between tombstone reaping runs | [Tombstone TTL and Reaping](#tombstone-ttl-and-reaping) |
-| `TOMBSTONE_REAP_BATCH_SIZE` (SDK 5.1+) | `10000` | Batch size for removing expired tombstones | [Tombstone TTL and Reaping](#tombstone-ttl-and-reaping) |
-| `DISABLE_REPLICATION_GC_ON_EVICT` | `false` | Skips immediate per-peer metadata cleanup on eviction (advanced) | [Eviction Frequency](#eviction-frequency) |
-| `DQL_SLOW_REQUEST_WARN_SECONDS` (SDK 5.1+) | `60` | Warning log for requests running longer than this; `0` disables | [Long-Running Requests (SDK 5.1+)](#long-running-requests-sdk-51) |
-| `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` | Request timeout in seconds; `0` disables | [Long-Running Requests (SDK 5.1+)](#long-running-requests-sdk-51) |
-| `DQL_REQUEST_HISTORY_SIZE` | `4096` | Number of entries kept in `system:request_history` | [Request Diagnostics](#request-diagnostics) |
+| `USER_COLLECTION_SYNC_SCOPES` | `{}` | Per-collection sync scopes; set before `ditto.sync.start()` | [Sync Scopes](#sync-scopes) |
+| `TOMBSTONE_TTL_ENABLED` | `true` | Automatic removal of expired tombstones | [Tombstone TTL and reaping](#tombstone-ttl-and-reaping) |
+| `TOMBSTONE_TTL_HOURS` | `168` | Tombstone TTL on this device (never above the Ditto Server TTL) | [Tombstone TTL and reaping](#tombstone-ttl-and-reaping) |
+| `DAYS_BETWEEN_REAPING` | `1` | Days between tombstone reaping runs | [Tombstone TTL and reaping](#tombstone-ttl-and-reaping) |
+| `TOMBSTONE_REAP_BATCH_SIZE` (SDK 5.1+) | `10000` | Batch size for removing expired tombstones | [Tombstone TTL and reaping](#tombstone-ttl-and-reaping) |
+| `DISABLE_REPLICATION_GC_ON_EVICT` | `false` | Skips immediate per-peer metadata cleanup on eviction (advanced) | [Eviction frequency](#eviction-frequency) |
+| `DQL_SLOW_REQUEST_WARN_SECONDS` (SDK 5.1+) | `60` | Warning log for requests running longer than this; `0` disables | [Long-running requests (SDK 5.1+)](#long-running-requests-sdk-51) |
+| `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` | Request timeout in seconds; `0` disables | [Long-running requests (SDK 5.1+)](#long-running-requests-sdk-51) |
+| `DQL_REQUEST_HISTORY_SIZE` | `4096` | Number of entries kept in `system:request_history` | [Request diagnostics](#request-diagnostics) |
 | `DQL_DEFAULT_DIRECTIVES` | `{}` | Default directives for every statement | [Directives](#directives) |
 | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | `262144` (256 KiB) | Documents above this size log a warning | [Document Size Limits](#document-size-limits) |
 | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `5242880` (5 MiB) | Writes that make a document larger than this fail | [Document Size Limits](#document-size-limits) |
-| `PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED` (SDK 5.1+) | `true` | Certificate revocation checks for peer connections | [Security](#security) |
+| `PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED` (SDK 5.1+) | `true` | Certificate revocation checks for peer connections | [Certificate Revocation (SDK 5.1+)](#certificate-revocation-sdk-51) |
 | `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables the `system:metrics` virtual collection | [System Virtual Collections](#system-virtual-collections) |
-| `ROTATING_LOG_FILE_MAX_SIZE_MB` / `ROTATING_LOG_FILE_MAX_AGE_H` / `ROTATING_LOG_FILE_MAX_FILES_ON_DISK` | `1` / `24` / `15` | On-disk log rotation; leave at defaults unless Ditto support advises otherwise | [On-Disk Logs and Exporting Them](#on-disk-logs-and-exporting-them) |
+| `ROTATING_LOG_FILE_MAX_SIZE_MB` / `ROTATING_LOG_FILE_MAX_AGE_H` / `ROTATING_LOG_FILE_MAX_FILES_ON_DISK` | `1` / `24` / `15` | On-disk log rotation; leave at defaults unless Ditto support advises otherwise | [On-disk logs and exporting them](#on-disk-logs-and-exporting-them) |
 
 `SHOW ALL` lists several hundred parameters. Most of them are internal tuning knobs for transports, sync, and storage. Do not change parameters that are not documented for your use case without guidance from Ditto support.
 
@@ -6748,7 +6650,6 @@ See [Applying System Parameters](#applying-system-parameters) for the complete s
 ### Remote Diagnostics
 
 The Ditto Portal complements on-device diagnostics. The [device dashboard](https://docs.ditto.live/cloud/portal/capturing-small-peer-info), which is populated from the Small Peer Info system collection, shows each device's mesh connection status, the time it was last seen by Ditto Server, its name and peer key, its operating system, its latest logs, and custom metadata that your app sets through `ditto.smallPeerInfo`. From a device's detail page you can request its logs or a data bundle (logs and other diagnostic data). Requests and uploads travel through sync, so a device does not need to be online when you make the request; it uploads the data when it next connects. See the [Ditto Portal troubleshooting documentation](https://docs.ditto.live/cloud/portal/troubleshooting) for the steps and required Portal permissions, and [Remote Observability](https://docs.ditto.live/sdk/latest/deployment/device-observability-and-ditto-logs) for the SDK side.
-
 
 ---
 
@@ -6812,14 +6713,15 @@ Future<Ditto> openProvisionedSmallPeer({
 }) async {
   final ditto = await Ditto.open(
     DittoConfig(
-      databaseID: 'YOUR_DATABASE_ID',
+      databaseID: 'YOUR_DATABASE_ID', // any UUID shared by all peers
       connect: DittoConfigConnectSmallPeersOnly(
         privateKey: await readKeyFromSecureStorage(),
       ),
     ),
   );
+  // Required before sync.start() in small-peers-only mode.
   ditto.setOfflineOnlyLicenseToken(await readLicenseFromSecureStorage());
-  ditto.sync.start();
+  ditto.sync.start(); // no expiration handler is needed in this mode
   return ditto;
 }
 ```
@@ -6853,7 +6755,6 @@ Use the response format and the permission query syntax shown in Ditto's [data a
 ```json
 {
   "authenticated": true,
-  "version": "1",
   "userID": "user-123",
   "expirationSeconds": 28800,
   "permissions": {
@@ -6890,7 +6791,8 @@ Future<void> createOrder(Ditto ditto, String storeId, String orderId) async {
       'order': {
         '_id': {'storeId': storeId, 'orderId': orderId},
         'status': 'open',
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        // utcTimestamp() is defined in the Timestamps section.
+        'createdAt': utcTimestamp(),
       },
     },
   );
@@ -7030,10 +6932,10 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 - Ship the development provider or development token.
 - Hardcode shared keys, tokens, or API keys in the app.
 - Use `DittoConfigConnectSmallPeersOnly()` without a key outside development and tests.
-- Rely on mutable fields, `syncGroup`, or client-side checks for access control.
+- Rely on mutable fields, `syncGroup`, sync scopes, or client-side checks for access control.
 - Put sensitive information in `identityServiceMetadata` or peer metadata.
+- Store secrets such as tokens or keys in Ditto documents.
 - Interpolate user input into DQL strings.
-
 
 ---
 
@@ -7185,7 +7087,7 @@ Future<void> replaceAddress(
   String customerId,
   Map<String, dynamic> address,
 ) async {
-  await ditto.store.transaction((tx) async {
+  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
     await tx.execute(
       'UPDATE customers UNSET address WHERE _id = :id',
       arguments: {'id': customerId},
@@ -7194,7 +7096,7 @@ Future<void> replaceAddress(
       'UPDATE customers SET address = :address WHERE _id = :id',
       arguments: {'id': customerId, 'address': address},
     );
-  }, hint: 'replaceAddress');
+  });
 }
 
 test('replaceAddress removes keys that are not in the new address', () async {
@@ -7275,11 +7177,11 @@ test('deleting by ID removes exactly the listed documents', () async {
 });
 ```
 
-Assertions on the number of removed documents also catch the 5.1.0 behavior where `DELETE` or `EVICT` with `USE IDS` and no `WHERE` clause removes nothing (see [DELETE and Tombstones](#delete-and-tombstones)). Tombstone expiry, husk documents, and "zombie data" from devices that were offline longer than the tombstone TTL involve several peers; cover them in multi-device tests (see [Testing on Multiple Devices](#testing-on-multiple-devices)).
+Assertions on the number of removed documents also catch the 5.1.0 behavior where `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) removes nothing (see [DELETE and Tombstones](#delete-and-tombstones)). Tombstone expiry, husk documents, and "zombie data" from devices that were offline longer than the tombstone TTL involve several peers; cover them in multi-device tests (see [Testing on Multiple Devices](#testing-on-multiple-devices)).
 
 ### Testing Observer Lifecycle
 
-Test that your observers deliver updates, and that your cleanup code cancels both the stream subscription and the observer (see [Observer lifecycle and cleanup](#observer-lifecycle-and-cleanup)). Wait for a specific result with a timeout instead of a fixed delay: observers coalesce rapid changes, so the number of callbacks is not deterministic.
+Test that your observers deliver updates, and that your cleanup code cancels both the stream subscription and the observer (see [Observer lifecycle and cleanup](#observer-lifecycle-and-cleanup)). Wait for a specific result with a timeout instead of a fixed delay, and do not assert on the number of callbacks; it is not guaranteed.
 
 ```dart
 import 'dart:async';
@@ -7444,18 +7346,18 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] `DELETE` when devices can stay offline longer than the tombstone TTL (deleted data comes back) → [Tombstone TTL and reaping](#tombstone-ttl-and-reaping)
 - [ ] `DELETE` used to free storage on one device (it removes the documents for every peer; use `EVICT`) → [DELETE and Tombstones](#delete-and-tombstones), [EVICT](#evict)
 - [ ] A plain `INSERT` or `ON ID CONFLICT DO UPDATE` for default data that every device creates (the second run fails with an ID conflict, or users' edits are overwritten) → [Default Data with INITIAL Documents](#default-data-with-initial-documents)
-- [ ] `DQL_STRICT_MODE = true` without understanding the consequences: fields written as MAP, COUNTER, or ATTACHMENT become invisible unless declared, and the 5.1.0 planner does not use secondary indexes → [Strict Mode](#strict-mode)
+- [ ] `DQL_STRICT_MODE = true` without understanding the consequences: fields written as MAP, COUNTER, or ATTACHMENT become invisible unless declared, and the SDK 5.1.0 planner does not use secondary indexes → [Strict Mode](#strict-mode)
 - [ ] Different type declarations (or none) for the same field in different statements → [Keep type declarations consistent](#keep-type-declarations-consistent)
 - [ ] Assuming `ALTER SYSTEM` settings persist (strict mode, sync scopes, and TTLs silently revert after a restart), or changing parameters such as `DQL_STRICT_MODE` after sync has started or queries and observers have run → [Applying System Parameters](#applying-system-parameters)
 - [ ] Timestamps without a zone designator, such as Dart's local `DateTime.now().toIso8601String()` (date functions return MISSING) → [Timestamps](#timestamps) <!-- lint-ignore -->
-- [ ] ISO timestamp strings with different fractional precision in one field that is sorted or compared, for example `.123456Z` and `.123Z` from different devices or platforms (string order no longer matches time order; use one fixed-precision helper) → [Timestamps](#timestamps), [Date and Time](#date-and-time)
+- [ ] ISO timestamp strings with different fractional precision in one field that is sorted or compared, for example `.123456Z` and `.123Z`, which Dart's `toIso8601String()` produces even on one device (string order no longer matches time order; use one fixed-precision helper) → [Timestamps](#timestamps), [Date and Time](#date-and-time)
 - [ ] `IS NOT NULL` used to test that a field exists (it is also true for a missing field; use `IS NOT MISSING`) → [MISSING and NULL](#missing-and-null) <!-- lint-ignore -->
 - [ ] Documents that can grow toward the 5 MiB hard limit (writes fail) → [Document Size Limits](#document-size-limits)
 - [ ] Throwing inside the authentication expiration handler, including rethrowing `response.exception` → [Authentication](#authentication)
 - [ ] The development provider or development token in a production build → [Authentication in Production](#authentication-in-production)
 - [ ] `DittoConfigConnectSmallPeersOnly()` without a `privateKey` outside development and tests (no encryption in transit) → [Small-Peers-Only Deployments](#small-peers-only-deployments)
 - [ ] Shared keys, tokens, or API keys hardcoded in the app → [Small-Peers-Only Deployments](#small-peers-only-deployments)
-- [ ] Secrets, tokens, or personal data in peer metadata or in the `identityServiceMetadata` returned by the authentication webhook (shared with every peer in the mesh) → [Presence](#presence)
+- [ ] Secrets, tokens, or personal data in peer metadata or in the `identityServiceMetadata` returned by the authentication webhook (shared with every peer in the mesh) → [Presence](#presence), [Identity metadata is visible to the mesh](#identity-metadata-is-visible-to-the-mesh)
 - [ ] Revocation checking (`PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED`) disabled in production → [Certificate Revocation (SDK 5.1+)](#certificate-revocation-sdk-51)
 - [ ] DQL built with string interpolation or concatenation → [Always pass values as parameters](#always-pass-values-as-parameters)
 - [ ] Unquoted keys in inline DQL object literals (rejected in `INSERT`, silently `{}` in `SELECT`) → [Quote every key in inline object literals](#quote-every-key-in-inline-object-literals)
@@ -7521,7 +7423,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 **Setup and lifecycle** ([SDK Setup and Lifecycle](#sdk-setup-and-lifecycle))
 - ✅ Open one `Ditto` instance per persistence directory and share it.
 - ✅ For Ditto Server connections, set the expiration handler before `ditto.sync.start()`; check `response.exception` and never throw in the handler.
-- ✅ Apply `ALTER SYSTEM` settings after every `Ditto.open()` and before `ditto.sync.start()`.
+- ✅ Apply `ALTER SYSTEM` settings after every `Ditto.open()`, before `ditto.sync.start()` and before queries or observers run.
 - ✅ Configure `DittoLogger` after `await Ditto.init()` and before `Ditto.open()`.
 - ✅ Cancel observers and subscriptions, stop fetchers, and await pending work before `await ditto.close()`.
 
@@ -7535,7 +7437,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 
 **Queries** ([DQL Fundamentals](#dql-fundamentals))
 - ✅ Pass every value as a parameter (`:name`); use `IN :values` for membership.
-- ✅ Filter optional flags with `coalesce(flag, false) = false`; test existence with `IS MISSING`.
+- ✅ Filter optional flags with `coalesce(flag, false) = false`; test whether a field is absent with `IS MISSING` (present: `IS NOT MISSING`).
 - ✅ Project only the fields you need, and add `ORDER BY` (with a tie-breaker) to observer queries.
 - ✅ Create indexes at startup with `CREATE INDEX IF NOT EXISTS`; check plans with `EXPLAIN` and `ADVISE` (SDK 5.1+).
 
@@ -7555,7 +7457,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 
 ### Common Code Shapes
 
-**Startup sequence** ([Complete app startup](#complete-app-startup)):
+**Startup sequence** (condensed; the full version in [Complete app startup](#complete-app-startup) also closes the instance when a step after `Ditto.open()` fails):
 
 ```dart
 import 'package:flutter/foundation.dart';
@@ -7609,9 +7511,12 @@ class OrderSync {
 
   final Ditto _ditto;
   SyncSubscription? _orders;
+  String? _storeId;
 
   void enterStore(String storeId) {
+    if (storeId == _storeId) return; // Already subscribed; do not re-register.
     _orders?.cancel();
+    _storeId = storeId;
     _orders = _ditto.sync.registerSubscription(
       'SELECT * FROM orders WHERE storeId = :storeId',
       arguments: {'storeId': storeId},
@@ -7622,6 +7527,7 @@ class OrderSync {
   void leaveStore() {
     _orders?.cancel();
     _orders = null;
+    _storeId = null;
   }
 }
 ```
@@ -7717,7 +7623,7 @@ await ditto.store.execute(
   'UPDATE orders SET isDeleted = true, deletedAt = :now WHERE _id = :id',
   arguments: {
     'id': 'order-1',
-    'now': DateTime.now().toUtc().toIso8601String(),
+    'now': utcTimestamp(), // fixed-precision helper (see Timestamps)
   },
 );
 final active = await ditto.store.execute(
@@ -7759,9 +7665,9 @@ Definitions as used in this guide. For the complete list of Ditto terms, see the
 |---|---|
 | **ADVISE** (SDK 5.1+) | A DQL prefix that returns index recommendations for a statement without executing it. `ADVISE AND PROVISION` also creates the suggested indexes. See [ADVISE (SDK 5.1+)](#advise-sdk-51). |
 | **Attachment** | Binary data (photos, PDFs, audio) referenced from a document field of type `ATTACHMENT` by a token. The token syncs with the document; the bytes (blob) are transferred only when a device fetches them. See [Attachments](#attachments). |
-| **AttachmentFetcher** | The object returned by `ditto.store.fetchAttachment()`. It reports progress through events; `stop()` cancels a fetch in progress. |
+| **AttachmentFetcher** | The object returned by `ditto.store.fetchAttachment()`. It reports progress through events; `stop()` cancels a fetch in progress. See [Fetching Attachments](#fetching-attachments). |
 | **Authentication webhook** | An HTTP service you operate that validates a user's token for Ditto Server and returns the user ID, session lifetime, and permissions. See [Authentication in Production](#authentication-in-production). |
-| **Backpressure** | Control over when the next observer result is delivered. In Flutter, provided by `registerObserverV2` and `registerObserverWithSignalNext` (both Experimental, SDK 5.1+). See [Backpressure (SDK 5.1+)](#backpressure-sdk-51). |
+| **Backpressure** | Control over when the next observer result is delivered. In Flutter, provided by `registerObserverV2` and `registerObserverWithSignalNext`, both (Experimental) (SDK 5.1+). See [Backpressure (SDK 5.1+)](#backpressure-sdk-51). |
 | **Big Peer** | The former name of Ditto Server. |
 | **Collection** | A named group of documents, similar to a table. A collection exists as soon as a document is written to it. |
 | **Commit ID** | A device-specific, increasing number returned in `QueryResult.commitID` for local writes. Comparing it with a peer's `synced_up_to_local_commit_id` tells you whether that peer has the write. See [Monitoring Sync Status](#monitoring-sync-status). |
@@ -7774,7 +7680,7 @@ Definitions as used in this guide. For the complete list of Ditto terms, see the
 | **Document** | A JSON-like object in a collection, identified by its immutable `_id`. |
 | **DQL** | Ditto Query Language, the SQL-like language for reading, writing, and observing documents. See [DQL Fundamentals](#dql-fundamentals). |
 | **Edge device** | A device at the edge of the network, such as a phone, tablet, or kiosk, that runs a Small Peer. |
-| **EVICT** | A DQL statement that removes documents from the local store only. Nothing is sent to other peers, and no tombstone is created. See [EVICT](#evict). |
+| **EVICT** | A DQL statement that removes documents from the local store only. The removal is not propagated to other peers, and no tombstone is created. See [EVICT](#evict). |
 | **Expiration handler** | The callback registered with `ditto.auth.setExpirationHandler()` that logs the device in to Ditto Server when it needs to authenticate and when credentials are about to expire. See [Authentication](#authentication). |
 | **EXPLAIN / PROFILE** | DQL prefixes that show a statement's query plan without running it (`EXPLAIN`) or run it and report timings per step (`PROFILE`). See [EXPLAIN and PROFILE](#explain-and-profile). |
 | **Husk document** | The result of a deletion on one device merging with a concurrent update on another: the updated fields keep their values, all other fields are `null`, and the document is not deleted. See [Husk documents](#husk-documents). |
@@ -7783,7 +7689,7 @@ Definitions as used in this guide. For the complete list of Ditto terms, see the
 | **INITIAL DOCUMENTS** | An `INSERT` form for default data that every peer may create independently; existing documents are never overwritten. See [Default Data with INITIAL Documents](#default-data-with-initial-documents). |
 | **JOIN** (SDK 5.1+) | Combining documents from several collections in one local `SELECT`. Not allowed in subscriptions; the inner collection needs an index or an `_id` join. See [Joining Collections (SDK 5.1+)](#joining-collections-sdk-51). |
 | **MAP** | A CRDT type for objects whose keys merge independently (add-wins). Objects are stored as maps by default. See [Arrays and Maps](#arrays-and-maps). |
-| **Mesh** | The network of peers connected directly to each other over peer-to-peer transports, optionally bridged to Ditto Server. |
+| **Mesh** | The network of peers connected to each other over peer-to-peer transports, optionally bridged to Ditto Server. |
 | **MISSING** | The state of a field that is absent from a document, distinct from a field whose value is `null`. Test it with `IS MISSING`. See [MISSING and NULL](#missing-and-null). |
 | **Multi-hop sync** | Relaying documents through intermediate peers that are not directly connected to each other. A peer can relay only documents it stores itself. See [Multi-hop relay](#multi-hop-relay). |
 | **Observer** (store observer) | A live local query registered with `ditto.store.registerObserver()` that delivers a new result whenever matching local data changes. Observers never cause data to sync. See [Observing Changes](#observing-changes). |
@@ -7801,7 +7707,7 @@ Definitions as used in this guide. For the complete list of Ditto terms, see the
 | **Tombstone** | The marker that `DELETE` leaves behind so that the deletion syncs to other peers. Tombstones expire after a TTL (7 days by default on Small Peers) and are then removed by reaping. See [DELETE and Tombstones](#delete-and-tombstones). |
 | **Transaction** | A group of DQL statements executed atomically against the local store with `ditto.store.transaction()`. See [Transactions](#transactions). |
 | **Transport** | A connection technology used for sync: Bluetooth LE, peer-to-peer Wi-Fi (AWDL, Wi-Fi Aware), LAN, and WebSocket. See [Transport Configuration](#transport-configuration). |
-| **Virtual collection** | A read-only, local-only collection in the `system:` namespace that describes the device and its query engine, such as `system:system_info` or `system:indexes`. See [System Virtual Collections](#system-virtual-collections). |
+| **Virtual collection** | A local-only collection in the `system:` namespace that describes the device and its query engine, such as `system:system_info` or `system:indexes`. Read-only, except that `DELETE FROM system:request_history` clears the request history. See [System Virtual Collections](#system-virtual-collections). |
 | **Zombie data** | Deleted data that reappears when a device that missed the deletion reconnects after the tombstones have expired. See [Tombstone TTL and reaping](#tombstone-ttl-and-reaping). |
 
 ---
@@ -7815,6 +7721,7 @@ Ditto documentation and resources, grouped by topic.
 - [What's new in Ditto SDK v5](https://docs.ditto.live/sdk/latest/v5-whats-new)
 - [Glossary](https://docs.ditto.live/home/glossary)
 - [FAQ](https://docs.ditto.live/home/faq)
+- [Ditto SDK 5.1 announcement (blog)](https://www.ditto.com/blog/ditto-sdk-v5-1)
 
 **Flutter SDK**
 - [Flutter install guide](https://docs.ditto.live/sdk/latest/install-guides/flutter)
@@ -7822,7 +7729,6 @@ Ditto documentation and resources, grouped by topic.
 - [Flutter release notes](https://docs.ditto.live/sdk/latest/release-notes/flutter)
 - [`ditto_live` on pub.dev](https://pub.dev/packages/ditto_live)
 - [`ditto_live` API reference](https://pub.dev/documentation/ditto_live/latest/)
-- [Ditto SDK 5.1 announcement (blog)](https://www.ditto.com/blog/ditto-sdk-v5-1)
 
 **DQL**
 - [DQL overview](https://docs.ditto.live/dql/dql)
@@ -7863,6 +7769,8 @@ Ditto documentation and resources, grouped by topic.
 
 **Data modeling**
 - [Data modeling best practices](https://docs.ditto.live/best-practices/data-modeling)
+- [Syncing data and CRDTs](https://docs.ditto.live/key-concepts/syncing-data)
+- [Conflict resolution patterns](https://docs.ditto.live/best-practices/conflict-resolution-patterns)
 - [Document size limits](https://docs.ditto.live/best-practices/document-size-limits)
 - [Timestamps](https://docs.ditto.live/best-practices/timestamps)
 - [Schema versioning](https://docs.ditto.live/best-practices/schema-versioning)
