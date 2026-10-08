@@ -2,8 +2,8 @@
 paths:
   - .claude/guides/best-practices/ditto.md
   - .claude/skills/ditto/**
-version: 1.0
-last_updated: 2025-12-23
+version: 1.1
+last_updated: 2026-10-08
 priority: CRITICAL
 ---
 
@@ -85,7 +85,7 @@ If the changes are not relevant to any skills, you may skip the update.
 - New critical patterns added to ditto.md
 - Existing patterns significantly revised
 - Platform-specific changes (Flutter vs non-Flutter)
-- SDK version updates (4.12+, v5)
+- Ditto SDK version updates (e.g., adopting a new 5.x release)
 
 ❌ **Skip Updates When**:
 - Minor wording improvements without semantic changes

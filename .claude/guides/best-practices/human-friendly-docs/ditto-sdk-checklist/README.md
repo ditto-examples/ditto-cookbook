@@ -12,6 +12,7 @@ The checklist is distributed as a **single self-contained HTML file** (`ditto-sd
 Development (Source Files)              Distribution (Generated)
 ├── ditto-implementation-checklist.md   ────┐
 ├── translations.json                   ────┤
+├── code-translations.json              ────┤
 ├── template.html                       ────┼─> ditto-sdk-checklist.html
 └── build-checklist.py                  ────┘    (single HTML file)
 ```
@@ -26,6 +27,7 @@ Development (Source Files)              Distribution (Generated)
     └── ditto-sdk-checklist/
         ├── ditto-implementation-checklist.md  # Content source (Markdown)
         ├── translations.json                  # English/Japanese translations
+        ├── code-translations.json             # Japanese-commented code examples
         ├── template.html                      # HTML/CSS shell + UI logic
         ├── build-checklist.py                 # Build script (Python)
         ├── validate-html-tags.py              # HTML validation tool
@@ -133,20 +135,22 @@ python3 build-checklist.py
   📋 Template: template.html
 
 1️⃣  Parsing Markdown...
-   ✓ Parsed 11 sections with 68 items
+   ✓ Parsed 12 sections with 77 items
 2️⃣  Loading translations...
    ✓ Loaded translations for 2 languages
 3️⃣  Generating HTML sections...
-   ✓ Generated 128,242 characters of HTML
+   ✓ Generated 280910 characters of HTML
 4️⃣  Loading template...
-   ✓ Loaded template (19,614 characters)
+   ✓ Loaded template (23922 characters)
 5️⃣  Injecting translations and sections...
+   ✓ Generated 42 English code examples
+   ✓ Generated 42 Japanese code examples
    ✓ Injection complete
 6️⃣  Writing output file...
    ✓ Written to: ditto-sdk-checklist.html
 
 ✅ Build complete!
-   📊 Output size: 161,624 characters
+   📊 Output size: 729,844 characters
    📦 Output file: ditto-sdk-checklist.html
 ```
 
@@ -215,6 +219,9 @@ Test these features:
    Add entries to:
    - `ja.items[]` - Japanese item title
    - `ja.whatMeansSections[]` - Japanese "What this means" content
+   - `ja.whyMattersSections[]` - Japanese "Why this matters" content
+
+   All arrays are aligned by index with the items in the Markdown file. If the item has a code example, also add an entry to `code-translations.json` (`originalCode` must match the Markdown block exactly; `translatedCode` differs only in its comments).
 
 4. **Rebuild**:
    ```bash
@@ -387,5 +394,5 @@ For issues or questions:
 
 ---
 
-**Last Updated**: 2025-12-21
+**Last Updated**: 2026-10-08
 **Architecture Version**: 1.0

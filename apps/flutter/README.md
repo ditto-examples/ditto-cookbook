@@ -140,32 +140,48 @@ flutter run --release
 
 ### SDK Installation
 
-Each Flutter app includes the Ditto SDK via `pubspec.yaml`:
+Each Flutter app includes the Ditto SDK (`ditto_live`) via `pubspec.yaml`. Pin the version so every build uses the same release:
 
 ```yaml
 dependencies:
-  ditto_flutter: ^latest_version
+  ditto_live: 5.1.0
 ```
 
-Check [pub.dev/packages/ditto_flutter](https://pub.dev/packages/ditto_flutter) for the latest version.
+Check [pub.dev/packages/ditto_live](https://pub.dev/packages/ditto_live) for the latest version, and follow the [Flutter install guide](https://docs.ditto.live/sdk/latest/install-guides/flutter) for platform permissions and requirements.
 
 ### Initialization Pattern
 
-Common Ditto initialization pattern used across apps:
+Common Ditto initialization pattern used across apps (typically in a service created at startup):
 
 ```dart
-import 'package:ditto_flutter/ditto_flutter.dart';
+import 'package:ditto_live/ditto_live.dart';
 
-// Initialize Ditto (typically in main.dart or a service)
-final ditto = await Ditto.open(
-  identity: OnlinePlayground(
-    appId: Platform.environment['DITTO_DATABASE_ID']!,
-    token: Platform.environment['DITTO_ONLINE_PLAYGROUND_TOKEN']!,
-  ),
-);
+Future<Ditto> openDitto({
+  required String databaseId,
+  required String serverUrl,
+  required Future<String> Function() fetchToken,
+}) async {
+  final ditto = await Ditto.open(
+    DittoConfig(
+      databaseID: databaseId,
+      connect: DittoConfigConnectServer(url: serverUrl),
+    ),
+  );
 
-// Start sync
-await ditto.startSync();
+  // Server connections require an expiration handler before sync starts.
+  await ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) async {
+    final response = await ditto.auth.login(
+      token: await fetchToken(),
+      provider: Authenticator.developmentProvider, // development only
+    );
+    if (response.exception != null) {
+      // Report the failure; do not throw inside the handler.
+    }
+  });
+
+  ditto.sync.start(); // returns void
+  return ditto;
+}
 ```
 
 ### Offline-First Patterns
@@ -179,24 +195,33 @@ Apps demonstrate:
 
 ### Real-Time Observers
 
-Live query pattern for reactive UI:
+Subscriptions decide what syncs to the device; store observers deliver local query results to the UI:
 
 ```dart
-// Subscribe to collection changes
-final subscription = ditto
-    .store
-    .collection('orders')
-    .find('status == "active"')
-    .observe((docs) {
-      // Update UI with new data
-      setState(() {
-        orders = docs.map((doc) => Order.fromDitto(doc)).toList();
-      });
-    });
+// Sync matching documents to this device (keep it for the feature's lifetime).
+final subscription = ditto.sync.registerSubscription(
+  'SELECT * FROM orders WHERE status = :status',
+  arguments: {'status': 'active'},
+);
 
-// Don't forget to cancel subscription
+// Observe local results and consume them through the changes stream.
+final observer = ditto.store.registerObserver(
+  'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC',
+  arguments: {'status': 'active'},
+);
+final changes = observer.changes.listen((result) {
+  setState(() {
+    orders = result.items.map((item) => Order.fromJson(item.value)).toList();
+  });
+});
+
+// Clean up when the screen or feature is disposed.
+changes.cancel();
+observer.cancel();
 subscription.cancel();
 ```
+
+See the [Ditto best practices guide](../../.claude/guides/best-practices/ditto.md) for the full set of recommended patterns.
 
 ## State Management
 
@@ -270,21 +295,30 @@ open coverage/html/index.html
 
 ### Testing with Ditto
 
-Mock Ditto operations in tests:
+`Ditto` and `Store` are `final` classes, so they cannot be mocked with mockito or mocktail. Instead:
+
+- **Test business logic against a real local store**: open Ditto in small-peers-only mode with a temporary persistence directory per test. Local queries and writes need no network and no license; only peer-to-peer sync requires an offline license token.
+- **Mock your own abstraction**: put Ditto access behind a repository interface in `lib/services/` and mock that interface in widget tests.
 
 ```dart
-// Use mockito or mocktail for mocking
-class MockDitto extends Mock implements Ditto {}
+import 'dart:io';
 
-// Test with mocked Ditto instance
-test('orders are loaded correctly', () {
-  final mockDitto = MockDitto();
-  when(() => mockDitto.store.collection('orders').find())
-      .thenAnswer((_) => mockDocuments);
+import 'package:ditto_live/ditto_live.dart';
 
-  // Test your logic
-});
+// Opens an isolated, local-only Ditto instance for a test.
+Future<Ditto> openTestDitto() async {
+  final dir = await Directory.systemTemp.createTemp('ditto_test_');
+  return Ditto.open(
+    DittoConfig(
+      databaseID: '00000000-0000-4000-8000-000000000001',
+      connect: const DittoConfigConnectSmallPeersOnly(),
+      persistenceDirectory: dir.path,
+    ),
+  );
+}
 ```
+
+See [Testing Strategies](../../.claude/guides/best-practices/ditto.md#testing-strategies) in the best practices guide for complete examples.
 
 ## Project Structure
 

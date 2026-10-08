@@ -179,16 +179,15 @@ Update my-web-app? (y/N): n
 
 ℹ Platform: flutter
 
-  • task-app: 4.12.4 (latest)
-  • chat-app: 4.12.3 (outdated)
+  • task-app: 5.1.0 (latest)
+  • chat-app: 5.0.3 (outdated)
 
 ⚠ Version Inconsistency Detected!
 
 Found 2 different Ditto SDK versions across projects.
 
 ℹ Recommendation:
-  • Consider standardizing on Ditto SDK v4.12.4 (stable)
-  • Or use v5.0.0-preview.3 (preview) for all projects
+  • Standardize all projects on Ditto SDK v5.1.0
 ```
 
 ---
@@ -208,7 +207,7 @@ Found 2 different Ditto SDK versions across projects.
 **Example**:
 ```yaml
 dependencies:
-  ditto_flutter: ^4.12.4
+  ditto_live: 5.1.0
   http: ^1.2.0
 ```
 
@@ -239,7 +238,7 @@ dependencies:
 ```json
 {
   "dependencies": {
-    "@dittolive/ditto": "^4.12.4",
+    "@dittolive/ditto": "5.1.0",
     "react": "^18.2.0"
   }
 }
@@ -261,7 +260,7 @@ dependencies:
 
 **Example**:
 ```
-ditto==4.12.4
+dittolive-ditto==<version>   # Python SDK (Public Preview): pin the exact version you test with
 requests==2.31.0
 ```
 
@@ -281,9 +280,10 @@ requests==2.31.0
 
 **Example**:
 ```ruby
-pod 'Ditto', '~> 4.12.4'
 pod 'Alamofire', '~> 5.8'
 ```
+
+**Note**: The Ditto Swift SDK is distributed through Swift Package Manager ([DittoSwiftPackage](https://github.com/getditto/DittoSwiftPackage)). Flutter apps still use CocoaPods for their iOS and macOS targets.
 
 ---
 
@@ -304,7 +304,7 @@ pod 'Alamofire', '~> 5.8'
 **Example (build.gradle)**:
 ```gradle
 dependencies {
-    implementation 'live.ditto:ditto:4.12.4'
+    implementation 'com.ditto:ditto-kotlin:5.1.0'
     implementation 'androidx.core:core-ktx:1.12.0'
 }
 ```
@@ -339,15 +339,11 @@ This will:
 
 ### Ditto SDK Version Strategy
 
-**Stable Release (Recommended for Production)**:
-- SDK v4.12.x (latest: 4.12.4)
-- Full production support
-- All platforms: Flutter, iOS, Android, JavaScript, Python
-
-**Preview Release (Public Preview)**:
-- SDK v5.0.0-preview.x (latest: 5.0.0-preview.3)
-- Subject to changes
-- Limited platform support
+**Recommended Release**:
+- Ditto SDK 5.1.0 (latest stable)
+- Packages: Flutter `ditto_live`, Swift `DittoSwift` (Swift Package Manager), Kotlin `com.ditto:ditto-kotlin`, JavaScript `@dittolive/ditto`
+- The Python SDK (`dittolive-ditto`) is in Public Preview
+- Recommended patterns for this version: [Ditto SDK Best Practices](best-practices/ditto.md)
 
 ### Upgrading Ditto SDK
 
@@ -357,39 +353,39 @@ This will:
 ```
 
 **Step 2**: Review Ditto release notes
-- [v4 Release Notes](https://docs.ditto.live/sdk/latest/release-notes)
-- [v5 Preview Documentation](https://docs.ditto.live/sdk/v5)
+- [Release Notes](https://docs.ditto.live/sdk/latest/release-notes)
+- [What's New in SDK v5](https://docs.ditto.live/sdk/latest/v5-whats-new)
 
 **Step 3**: Update dependency files
 
 For Flutter (`pubspec.yaml`):
 ```yaml
 dependencies:
-  ditto_flutter: ^4.12.4
+  ditto_live: 5.1.0
 ```
 
 For Node.js (`package.json`):
 ```json
 {
   "dependencies": {
-    "@dittolive/ditto": "^4.12.4"
+    "@dittolive/ditto": "5.1.0"
   }
 }
 ```
 
-For iOS (`Podfile`):
-```ruby
-pod 'Ditto', '~> 4.12.4'
+For iOS/macOS Swift apps (Swift Package Manager):
+```swift
+.package(url: "https://github.com/getditto/DittoSwiftPackage", exact: "5.1.0")
 ```
 
 For Android (`build.gradle`):
 ```gradle
-implementation 'live.ditto:ditto:4.12.4'
+implementation 'com.ditto:ditto-kotlin:5.1.0'
 ```
 
 For Python (`requirements.txt`):
 ```
-ditto==4.12.4
+dittolive-ditto==<version>   # Public Preview
 ```
 
 **Step 4**: Run updates
@@ -409,11 +405,11 @@ ditto==4.12.4
 
 ### Version Compatibility
 
-From Ditto's documentation:
+From Ditto's release notes:
 
-- **v4 can sync with v3 or v5** (but not both simultaneously)
-- **Upgrade path**: Ensure all devices are on v4 before deploying v5
-- **Ditto Server**: v4.0 and higher are supported
+- **5.1 peers sync with 5.0 peers and with v4 peers (4.11 or later)**, so devices can be upgraded gradually
+- **Index format**: 5.1 migrates the on-disk index format on first launch; downgrades must go through 5.0.2+ or 4.14.6+
+- **Upgrading from v4**: follow the official [migration guides](https://docs.ditto.live/sdk/latest/v5-whats-new) before adopting the 5.x patterns
 
 ---
 
@@ -476,11 +472,11 @@ Example (Flutter):
 ```yaml
 # Pinned (exact version)
 dependencies:
-  ditto_flutter: 4.12.4
+  ditto_live: 5.1.0
 
-# Range (allows patch updates)
+# Range (allows compatible 5.x updates)
 dependencies:
-  ditto_flutter: ^4.12.4
+  ditto_live: ^5.1.0
 ```
 
 ---
@@ -622,7 +618,7 @@ sudo gem install cocoapods
 
 **Solution**:
 1. Run `/update-deps ditto` to see all versions
-2. Choose a target version (e.g., 4.12.4)
+2. Choose a target version (e.g., 5.1.0)
 3. Manually update all dependency files
 4. Run `/update-deps update` to install
 5. Run `/update-deps ditto` to verify
@@ -661,7 +657,7 @@ When committing dependency updates, use clear messages:
 
 ```bash
 # Good commit messages
-git commit -m "Update Ditto SDK to v4.12.4 across all projects"
+git commit -m "Update Ditto SDK to v5.1.0 across all projects"
 git commit -m "Update Flutter dependencies for task-app"
 git commit -m "Upgrade Node.js packages in web-dashboard"
 
@@ -758,8 +754,9 @@ jobs:
 ### Official Documentation
 
 - [Ditto SDK Documentation](https://docs.ditto.live/)
-- [Ditto SDK v4 Release Notes](https://docs.ditto.live/sdk/latest/release-notes)
-- [Ditto SDK v5 Preview](https://docs.ditto.live/sdk/v5)
+- [Ditto SDK Release Notes](https://docs.ditto.live/sdk/latest/release-notes)
+- [What's New in Ditto SDK v5](https://docs.ditto.live/sdk/latest/v5-whats-new)
+- [Ditto SDK Best Practices](best-practices/ditto.md)
 
 ### Package Manager Documentation
 
@@ -801,4 +798,4 @@ If you find issues or have suggestions for the dependency management system:
 
 ---
 
-**Last Updated**: 2025-12-16
+**Last Updated**: 2026-10-08

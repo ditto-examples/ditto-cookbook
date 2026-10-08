@@ -121,7 +121,7 @@ List all major technologies:
 
 - **Platform**: Flutter (Mobile - iOS & Android)
 - **Language**: Dart 3.2+
-- **Ditto SDK**: 4.5.0
+- **Ditto SDK**: 5.1.0
 - **Key Dependencies**:
   - provider (6.1.1) - State management
   - uuid (4.2.0) - Unique ID generation
@@ -177,23 +177,23 @@ Explain how Ditto SDK is used:
 
 ### Initialization
 
-Ditto is initialized in the `DittoService` constructor with online playground
-configuration:
+Ditto is initialized once in `DittoService.initialize()` with a Ditto Server
+connection:
 
 \`\`\`dart
 _ditto = await Ditto.open(
-  identity: await OnlinePlaygroundIdentity.create(
-    appId: appId,
-    token: token,
+  DittoConfig(
+    databaseID: databaseId,
+    connect: DittoConfigConnectServer(url: serverUrl),
   ),
 );
 \`\`\`
 
 ### Sync Strategy
 
-- **Sync Mode**: Online with observers for real-time updates
-- **Conflict Resolution**: Last-write-wins (automatic)
-- **Subscriptions**: Subscribe to entire collections with observers
+- **Sync Mode**: Ditto Server connection with store observers for real-time updates
+- **Conflict Resolution**: Built-in CRDT merging with field-level updates
+- **Subscriptions**: One long-lived, filtered subscription per feature
 ```
 
 #### 6. Testing Strategy
@@ -395,7 +395,7 @@ Primary use case: Quickly scaffold Ditto models for new projects or features.
 **Purpose**: Provides data access layer for task entities with Ditto sync
 
 **Responsibilities**:
-- CRUD operations for tasks using Ditto collections
+- CRUD operations for tasks using DQL
 - Subscribe to task changes and emit updates
 - Handle conflict resolution for concurrent edits
 - Maintain local cache for offline access
@@ -433,63 +433,74 @@ repository.watchAll().listen((tasks) {
 
 ### Initialization
 
-Ditto is initialized in `DittoService.initialize()` using environment-based
-configuration. For development, we use Online Playground identity:
+Ditto is initialized once in `DittoService.initialize()` using environment-based
+configuration. For development, we authenticate with the development provider:
 
 \`\`\`dart
-final appId = dotenv.env['DITTO_APP_ID']!;
-final token = dotenv.env['DITTO_TOKEN']!;
+final databaseId = dotenv.env['DITTO_DATABASE_ID']!;
+final serverUrl = dotenv.env['DITTO_SERVER_URL']!;
+final token = dotenv.env['DITTO_DEVELOPMENT_TOKEN']!;
 
 _ditto = await Ditto.open(
-  identity: await OnlinePlaygroundIdentity.create(
-    appId: appId,
-    token: token,
+  DittoConfig(
+    databaseID: databaseId,
+    connect: DittoConfigConnectServer(url: serverUrl),
   ),
 );
 
-await _ditto.startSync();
+await _ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) async {
+  final response = await ditto.auth.login(
+    token: token,
+    provider: Authenticator.developmentProvider,
+  );
+  if (response.exception != null) {
+    _log.warning('Ditto login failed', response.exception);
+  }
+});
+
+_ditto.sync.start();
 \`\`\`
 
-See [`lib/services/ditto_service.dart:28-42`](lib/services/ditto_service.dart#L28-L42)
+See [`lib/services/ditto_service.dart:28-52`](lib/services/ditto_service.dart#L28-L52)
 
 ### Sync Strategy
 
-**Mode**: Online with real-time observers
+**Mode**: Ditto Server connection with real-time store observers
 
-**Conflict Resolution**: Last-write-wins with timestamp tracking
-- Each document includes `_updatedAt` timestamp
-- Ditto automatically selects most recent version
+**Conflict Resolution**: Ditto's built-in CRDT merging
+- Field-level updates (`UPDATE ... SET`) instead of whole-document rewrites
+- Task status is a single register field (last writer wins)
+- Checklist items are stored as a map keyed by item ID so concurrent edits merge
 - No custom conflict resolution needed for current use cases
 
 **Subscriptions**:
-We subscribe to entire collections rather than individual documents to ensure
-all data is available offline:
+One long-lived subscription per feature, registered when the feature starts and
+cancelled when it ends:
 
 \`\`\`dart
-final subscription = _ditto.store
-  .collection('tasks')
-  .findAll()
-  .subscribe();
+final subscription = _ditto.sync.registerSubscription(
+  'SELECT * FROM tasks WHERE coalesce(isDeleted, false) = false',
+);
 \`\`\`
 
 **Observers**:
-Real-time updates use observers with stream controllers:
+Real-time updates use store observers whose `changes` stream feeds the state layer:
 
 \`\`\`dart
-final observer = _ditto.store
-  .collection('tasks')
-  .findAll()
-  .observe((docs) {
-    _controller.add(docs.map((d) => Task.fromDitto(d)).toList());
-  });
+final observer = _ditto.store.registerObserver(
+  'SELECT * FROM tasks WHERE coalesce(isDeleted, false) = false ORDER BY createdAt DESC',
+);
+_changes = observer.changes.listen((result) {
+  _controller.add(result.items.map((item) => Task.fromJson(item.value)).toList());
+});
 \`\`\`
 
 ### Data Models
 
 All models follow this pattern for Ditto integration:
 
-1. **fromDitto factory**: Deserialize from DittoDocument
-2. **toDitto method**: Serialize to Map for Ditto
+1. **fromJson factory**: Deserialize from `QueryResultItem.value`
+2. **toJson method**: Serialize to a Map passed as a DQL parameter
 3. **Unique IDs**: Use UUID v4 for document IDs
 4. **Timestamps**: Include created/updated timestamps
 

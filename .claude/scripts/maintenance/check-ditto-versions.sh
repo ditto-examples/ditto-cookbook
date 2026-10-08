@@ -22,19 +22,17 @@ source "$PROJECT_ROOT/.claude/scripts/testing/utils/test-helpers.sh"
 
 # Ditto SDK package names by platform
 declare -A DITTO_PACKAGES=(
-    ["flutter"]="ditto_flutter"
+    ["flutter"]="ditto_live"
     ["ios_cocoapods"]="Ditto"
     ["ios_swift"]="DittoSwift"
-    ["android_gradle"]="live.ditto:ditto"
+    ["android_gradle"]="com.ditto:ditto-kotlin"
     ["javascript_npm"]="@dittolive/ditto"
-    ["python_pip"]="ditto"
+    ["python_pip"]="dittolive-ditto"
 )
 
-# Known stable versions (as of the search)
-# SDK v4.12.x is the current stable release
-# SDK v5 is in public preview
-RECOMMENDED_VERSION_V4="4.12.4"
-RECOMMENDED_VERSION_V5="5.0.0-preview.3"
+# Latest stable Ditto SDK release (verified on pub.dev and the release notes, 2026-10-08).
+# Update this value when a new stable release is adopted.
+RECOMMENDED_VERSION="5.1.0"
 
 # Store found Ditto SDK references
 declare -A found_versions
@@ -58,7 +56,7 @@ scan_flutter_projects() {
         fi
 
         # Extract Ditto version from pubspec.yaml
-        local ditto_version=$(grep -E "^\s*ditto_flutter:" "$pubspec" | sed -E 's/.*:\s*[^0-9]*(.*)/\1/' | tr -d ' ' || echo "")
+        local ditto_version=$(grep -E "^\s*ditto_live:" "$pubspec" | sed -E 's/.*:\s*[^0-9]*(.*)/\1/' | tr -d ' ' || echo "")
 
         if [[ -n "$ditto_version" ]]; then
             local app_name=$(basename "$app_dir")
@@ -86,7 +84,7 @@ scan_ios_projects() {
         fi
 
         # Extract Ditto version from Podfile
-        local ditto_version=$(grep -E "^\s*pod\s+['\"]Ditto" "$podfile" | sed -E "s/.*['\"][^'\"]*['\"].*['\"]([^'\"]+)['\"].*/\1/" || echo "")
+        local ditto_version=$(grep -E "^\s*pod\s+['\"]DittoSwift" "$podfile" | sed -E "s/.*['\"][^'\"]*['\"].*['\"]([^'\"]+)['\"].*/\1/" || echo "")
 
         if [[ -n "$ditto_version" ]]; then
             local app_name=$(basename "$app_dir")
@@ -115,7 +113,7 @@ scan_android_projects() {
             fi
 
             # Extract Ditto version
-            local ditto_version=$(grep -E "live\.ditto:ditto:" "$gradle_file" | sed -E "s/.*:([0-9]+\.[0-9]+\.[0-9]+[^'\"]*).*/\1/" || echo "")
+            local ditto_version=$(grep -E "com\.ditto:ditto-kotlin:" "$gradle_file" | sed -E "s/.*:([0-9]+\.[0-9]+\.[0-9]+[^'\"]*).*/\1/" || echo "")
 
             if [[ -n "$ditto_version" ]]; then
                 local app_name=$(basename "$app_dir")
@@ -173,7 +171,7 @@ scan_python_tools() {
         fi
 
         # Extract Ditto version from requirements.txt
-        local ditto_version=$(grep -iE "^ditto(live)?==" "$requirements" | sed -E 's/.*==([0-9]+\.[0-9]+\.[0-9]+[^[:space:]]*).*/\1/' || echo "")
+        local ditto_version=$(grep -iE "^dittolive-ditto==" "$requirements" | sed -E 's/.*==([0-9]+\.[0-9]+\.[0-9]+[^[:space:]]*).*/\1/' || echo "")
 
         if [[ -n "$ditto_version" ]]; then
             local tool_name=$(basename "$tool_dir")
@@ -187,20 +185,17 @@ compare_version() {
     local version=$1
     local major=$(echo "$version" | cut -d. -f1)
 
-    # Check if it's v5 preview
-    if [[ "$version" == *"preview"* ]]; then
+    # Strip common range prefixes such as ^ or ~
+    local plain="${version#[\^~]}"
+
+    if [[ "$plain" == *"preview"* || "$plain" == *"dev"* || "$plain" == *"experimental"* ]]; then
         echo "preview"
-    elif [[ "$major" == "5" ]]; then
-        echo "preview"
-    elif [[ "$major" == "4" ]]; then
-        # Compare with recommended v4
-        if [[ "$version" == "$RECOMMENDED_VERSION_V4" ]]; then
-            echo "latest"
-        else
-            echo "outdated"
-        fi
-    elif [[ "$major" == "3" ]]; then
+    elif [[ "$plain" == "$RECOMMENDED_VERSION" ]]; then
+        echo "latest"
+    elif [[ "$major" =~ ^[\^~]?[0-9]+$ ]] && (( ${major#[\^~]} < 5 )); then
         echo "deprecated"
+    elif [[ "$major" =~ ^[\^~]?[0-9]+$ ]]; then
+        echo "outdated"
     else
         echo "unknown"
     fi
@@ -281,8 +276,7 @@ print_report() {
         echo "Found $unique_versions different Ditto SDK versions across projects."
         echo ""
         print_info "Recommendation:"
-        echo "  • Consider standardizing on Ditto SDK v$RECOMMENDED_VERSION_V4 (stable)"
-        echo "  • Or use v$RECOMMENDED_VERSION_V5 (preview) for all projects"
+        echo "  • Standardize all projects on Ditto SDK v$RECOMMENDED_VERSION"
         echo ""
     else
         print_success "All projects use the same Ditto SDK version"
@@ -292,24 +286,19 @@ print_report() {
     # Print recommendations
     print_info "Ditto SDK Information:"
     echo ""
-    echo "  Stable Release (Recommended for Production):"
-    echo "    • SDK v4.12.x (latest: $RECOMMENDED_VERSION_V4)"
-    echo "    • Full production support"
-    echo "    • All platforms: Flutter, iOS, Android, JavaScript, Python"
-    echo ""
-    echo "  Preview Release (Public Preview):"
-    echo "    • SDK v5.0.0-preview.x (latest: $RECOMMENDED_VERSION_V5)"
-    echo "    • Subject to changes"
-    echo "    • Limited platform support (check docs)"
+    echo "  Recommended Release:"
+    echo "    • Ditto SDK v$RECOMMENDED_VERSION (latest stable)"
+    echo "    • Packages: Flutter ditto_live, Swift DittoSwift, Kotlin com.ditto:ditto-kotlin, JavaScript @dittolive/ditto"
     echo ""
     echo "  Documentation:"
     echo "    • Latest SDK: https://docs.ditto.live/sdk/latest"
-    echo "    • v4 Release Notes: https://docs.ditto.live/sdk/latest/release-notes"
-    echo "    • v5 Preview: https://docs.ditto.live/sdk/v5"
+    echo "    • What's New in v5: https://docs.ditto.live/sdk/latest/v5-whats-new"
+    echo "    • Release Notes: https://docs.ditto.live/sdk/latest/release-notes"
+    echo "    • Best practices: .claude/guides/best-practices/ditto.md"
     echo ""
     echo "  Version Compatibility:"
-    echo "    • v4 can sync with v3 or v5 (but not both simultaneously)"
-    echo "    • Upgrade all devices to v4 before deploying v5"
+    echo "    • 5.1 peers sync with 5.0 peers and with v4 peers (4.11 or later)"
+    echo "    • 5.1 changes the on-disk index format; downgrades must go through 5.0.2+ or 4.14.6+"
     echo ""
 }
 
