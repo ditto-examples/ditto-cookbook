@@ -19,6 +19,18 @@ import 'package:ditto_live/ditto_live.dart';
 
 final _random = Random.secure();
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 /// Returns a random (version 4) UUID such as
 /// "3f0c9a8e-5b1d-4c2a-9e7f-1a2b3c4d5e6f". A maintained package (for example,
 /// `uuid` on pub.dev) works equally well.
@@ -45,7 +57,7 @@ Future<String> createOrder(Ditto ditto, String storeId) async {
         '_id': orderId,
         'storeId': storeId,
         'status': 'open',
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(),
       },
     },
   );
@@ -118,7 +130,7 @@ Future<void> createOrderWithLabel(
       'order': {
         '_id': uuidV4(),
         'displayNumber': displayNumber(terminalCode, localSequence),
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'createdAt': utcTimestamp(),
       },
     },
   );

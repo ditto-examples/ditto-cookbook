@@ -164,7 +164,7 @@ class OrdersScreen extends StatelessWidget {
 // ============================================================================
 
 /// ✅ GOOD: Report inserted, deleted, updated, and moved documents.
-StreamSubscription<QueryResult> logCarChanges(StoreObserver observer) {
+StreamSubscription<QueryResult> logOrderChanges(StoreObserver observer) {
   final differ = Differ();
   var previousIds = <Object?>[];
 
@@ -189,9 +189,9 @@ StreamSubscription<QueryResult> logCarChanges(StoreObserver observer) {
   });
 }
 
-/// Registers a bounded observer for logCarChanges.
-StoreObserver observeRecentCars(Ditto ditto) => ditto.store.registerObserver(
-      'SELECT * FROM cars ORDER BY updatedAt DESC, _id LIMIT 100',
+/// Registers a bounded observer for logOrderChanges.
+StoreObserver observeRecentOrders(Ditto ditto) => ditto.store.registerObserver(
+      'SELECT * FROM orders ORDER BY updatedAt DESC, _id LIMIT 100',
     );
 
 // ============================================================================

@@ -26,7 +26,8 @@ Future<void> recordPosition(
   double lat,
   double lon,
 ) async {
-  final recordedAt = DateTime.now().toUtc().toIso8601String();
+  // utcTimestamp() is the fixed-precision helper from the Timestamps section.
+  final recordedAt = utcTimestamp();
   await ditto.store.transaction((tx) async {
     await tx.execute(
       'INSERT INTO vehiclePositions DOCUMENTS (:event)',
@@ -130,17 +131,17 @@ Guide: [Schema Evolution](../../../../guides/best-practices/ditto.md#schema-evol
 
 ## Pattern 4: Composite IDs and Display Numbers
 
-Permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` grants access at any level (`"_id.region == 'eu'"`, `"_id.locationId == 'store-12'"` in the permission rules; see [Security](../../../../guides/best-practices/ditto.md#security) for the rule format); the same subfields filter subscriptions and queries (`WHERE _id.locationId = :locationId`) and can be indexed. Key order inside a composite `_id` does not matter.
+Permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` grants access at any level (`"_id.region == 'eu'"`, `"_id.storeId == 'store-12'"` in the permission rules; see [Design `_id` for permission scoping](../../../../guides/best-practices/ditto.md#design-_id-for-permission-scoping) for the rule format); the same subfields filter subscriptions and queries (`WHERE _id.storeId = :storeId`) and can be indexed. Key order inside a composite `_id` does not matter.
 
 ```sql
-CREATE INDEX IF NOT EXISTS orders_locationId ON orders (_id.locationId)
+CREATE INDEX IF NOT EXISTS orders_id_storeId ON orders (_id.storeId)
 ```
 
 ```sql
-SELECT * FROM orders WHERE _id.locationId = :locationId
+SELECT * FROM orders WHERE _id.storeId = :storeId
 ```
 
-- Combine stable scope fields with a UUID: `{"region": "eu", "locationId": "store-12", "orderId": "<uuid>"}`.
+- Combine stable scope fields with a UUID: `{"region": "eu", "storeId": "store-12", "orderId": "<uuid>"}`.
 - Put only **immutable** attributes into `_id`; a store that may change region or an order that may be reassigned needs those values as regular fields.
 - Human-readable numbers ("#A-0042") are labels in a separate field, never `_id` or a lookup key. A terminal code that you assign plus a local sequence, shown with the date, avoids coordination.
 

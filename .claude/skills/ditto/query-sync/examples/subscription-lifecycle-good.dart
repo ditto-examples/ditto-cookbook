@@ -44,7 +44,8 @@ class OrderSync {
         'SELECT * FROM orderItems WHERE storeId = :storeId',
         arguments: {'storeId': storeId},
       ))
-      // Small reference data may be subscribed to without a filter.
+      // A small reference-data collection that every device needs may be
+      // subscribed to without a filter.
       ..add(_ditto.sync.registerSubscription('SELECT * FROM productCategories'));
   }
 

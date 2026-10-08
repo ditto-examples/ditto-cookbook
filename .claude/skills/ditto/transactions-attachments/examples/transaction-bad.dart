@@ -6,7 +6,7 @@
 //
 // ANTI-PATTERNS DEMONSTRATED:
 // 1. ❌ ditto.store.execute inside a transaction (throws DittoException)
-// 2. ❌ Nested read-write transaction (can deadlock; the SDK does not detect it)
+// 2. ❌ Nested read-write transaction (deadlocks; the SDK does not detect it)
 // 3. ❌ Network calls or timers inside a transaction (blocks all writes)
 // 4. ❌ Storing the Transaction and using it later (throws DittoException)
 // 5. ❌ Swallowing an error and committing a half-done change

@@ -5,9 +5,9 @@ description: |
 
   CRITICAL ISSUES PREVENTED:
   - Deleted data resurrected by devices that stay offline longer than the tombstone TTL (7 days by default)
-  - Edge tombstone TTL configured above the Ditto Server TTL
+  - Small Peer tombstone TTL (TOMBSTONE_TTL_HOURS) configured above the Ditto Server TTL
   - Evicted documents syncing straight back because a subscription still matches them
-  - DELETE/EVICT with USE IDS and no WHERE clause silently removing nothing (SDK 5.1.0)
+  - DELETE/EVICT with USE IDS and no WHERE predicate silently removing nothing (SDK 5.1.0)
   - Soft-delete filters (isDeleted != true) that hide documents where the flag is missing or null
   - Husk documents caused by DELETE racing a concurrent UPDATE
   - Evicting too often and overloading connected peers with resyncs
@@ -93,7 +93,7 @@ Guide: [Choosing DELETE, Soft Delete, or EVICT](../../../guides/best-practices/d
 
 ### 1. Target DELETE and EVICT with WHERE (Priority: CRITICAL)
 
-**Problem**: `DELETE` and `EVICT` with `USE IDS` and no `WHERE` clause complete without an error but remove nothing.
+**Problem**: `DELETE` and `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) complete without an error but remove nothing.
 
 > **Note (SDK 5.1.0):** `DELETE` and `EVICT` statements that use `USE IDS` without a `WHERE` predicate (no `WHERE` clause, or `WHERE true`) remove nothing. Use `WHERE _id IN :ids` instead; it is planned as an ID scan, so it is just as efficient.
 
@@ -162,7 +162,7 @@ SHOW ALL LIKE '%tombstone%'
 - Apply `ALTER SYSTEM` settings after every `Ditto.open` and before `ditto.sync.start()`; they are not persisted.
 
 **❌ DON'T**:
-- Configure the Edge TTL above the Ditto Server TTL. The Ditto Server always syncs documents, so tombstones that outlive its copy are sent back to it repeatedly. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
+- Configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) above the Ditto Server TTL. The Ditto Server always syncs documents, so tombstones that outlive its copy are sent back to it repeatedly. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
 - Choose a very short TTL; the tombstone can expire before it reaches the other peers.
 - Look for a tombstone-lifetime method on the SDK: the TTL is a system parameter, set with `ALTER SYSTEM`.
 
@@ -431,6 +431,7 @@ Details and a null-tolerant rendering example: [reference/deletion-patterns.md](
 
 ```dart
 // ✅ GOOD: Evict in batches of 1,000 until nothing is left to evict.
+// First cancel or narrow every subscription that matches these documents (pattern 5).
 Future<int> evictInBatches(Ditto ditto, String cutoff) async {
   var total = 0;
   while (true) {
@@ -455,7 +456,8 @@ Guide: [Batching evictions](../../../guides/best-practices/ditto.md#batching-evi
 ## Quick Reference Checklist
 
 ### DELETE
-- [ ] Targets documents with `WHERE _id = :id` / `WHERE _id IN :ids`, never `USE IDS` without `WHERE`
+- [ ] Targets documents with `WHERE _id = :id` / `WHERE _id IN :ids`, never `USE IDS` without a `WHERE` predicate
+- [ ] Not used to free storage on one device (it removes the documents for every peer; use `EVICT`)
 - [ ] Uses `RETURNING` (SDK 5.1+) when the removed content is needed
 - [ ] Not used for shared records edited concurrently (husk documents)
 - [ ] Every device connects within the tombstone TTL (7 days by default), or the data uses soft delete

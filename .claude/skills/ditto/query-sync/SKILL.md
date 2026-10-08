@@ -187,7 +187,7 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 ```
 
 **✅ DO**: filter by stable partition keys (tenant, store, region, team); use the same subscriptions on peers in the same role; keep predicates flat and simple; give relay devices at least the subscriptions of the devices behind them.
-**❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for small reference data); filter subscriptions on fields that change often (`status`, `assignee`).
+**❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for a small reference-data collection that every device needs); filter subscriptions on fields that change often (`status`, `assignee`).
 
 **Soft delete**: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Variant A subscribes to the whole collection (or partition) and cleans up with a synced `DELETE`; Variant B subscribes to active documents plus a retention window so devices can `EVICT` older ones. See [Soft delete, subscriptions, and cleanup](../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup) and the storage-lifecycle skill.
 
@@ -215,9 +215,12 @@ class OrderSync {
 
   final Ditto _ditto;
   final List<SyncSubscription> _subscriptions = [];
+  String? _storeId;
 
   void enterStore(String storeId) {
+    if (storeId == _storeId) return; // Already subscribed; do not re-register.
     leaveStore();
+    _storeId = storeId;
     _subscriptions.add(_ditto.sync.registerSubscription(
       'SELECT * FROM orders WHERE storeId = :storeId',
       arguments: {'storeId': storeId},
@@ -229,6 +232,7 @@ class OrderSync {
       subscription.cancel(); // No-op if already cancelled or Ditto was closed
     }
     _subscriptions.clear();
+    _storeId = null;
   }
 }
 ```
@@ -310,7 +314,7 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 | `items` | `Iterable<QueryResultItem>`, not a `List`; each pass creates new wrappers |
 | `item.value` | `Map<String, dynamic>`, decoded on first access and cached on that item |
 | `item.jsonString`, `item.cborBytes` | Properties, not methods |
-| `mutatedDocumentIDs()` | Builds a new list on every call; call once. With `RETURNING`, read the affected documents from `items` instead |
+| `mutatedDocumentIDs()` | Builds a new list on every call; call once. With `RETURNING`, treat `items` as the result and include `_id` in the projection when you need the IDs |
 | `commitID` | `int?`; `null` for reads, and `null` inside a transaction until it commits |
 
 **✅ DO**: iterate `items` once and convert rows to maps or model objects right away; project only the fields you need.
@@ -452,7 +456,7 @@ JavaScript passes arguments as the second positional parameter (`execute(query, 
 - [ ] Values passed as `:parameters`; arrays as `IN :values` (no parentheses)
 - [ ] Inline object literal keys quoted; documents passed as `DOCUMENTS (:doc)`
 - [ ] Optional booleans filtered with `coalesce(field, false)`; existence tested with `IS [NOT] MISSING`
-- [ ] No `ANY ... SATISFIES` membership filters in `WHERE`
+- [ ] No `ANY` or `EVERY ... SATISFIES` over a parameter or literal array in `WHERE`; membership uses `IN :values`
 - [ ] `ORDER BY` with `_id` tie-breaker wherever order matters; `LIMIT` combined with `ORDER BY`
 - [ ] `GROUP BY` / `HAVING` repeat expressions instead of aliases; empty aggregates wrapped with `ifmissing`
 - [ ] JOIN inner keys indexed (or joined on `_id`); fields qualified with aliases

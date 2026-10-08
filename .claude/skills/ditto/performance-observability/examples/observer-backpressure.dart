@@ -55,6 +55,7 @@ class SensorAggregator {
     String deviceId,
     Future<void> Function(List<Map<String, dynamic>> readings) persistAggregates,
   ) async {
+    stop(); // Cancel a previous run, if any.
     final observer = _ditto.store.registerObserverV2(
       'SELECT * FROM sensorReadings WHERE deviceId = :deviceId '
       'ORDER BY recordedAt DESC LIMIT 100',
@@ -122,6 +123,7 @@ class OpenOrdersUploader {
   StreamSubscription<QueryResult>? _changes;
 
   void start() {
+    stop(); // Cancel a previous start, if any.
     final observer = _ditto.store.registerObserverWithSignalNext(
       'SELECT * FROM orders WHERE status = :status ORDER BY createdAt',
       arguments: {'status': 'open'},

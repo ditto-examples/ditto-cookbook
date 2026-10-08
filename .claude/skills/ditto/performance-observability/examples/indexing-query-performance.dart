@@ -150,6 +150,8 @@ Future<int> countUrgentOrders(Ditto ditto) async {
 /// CREATE INDEX statements. Copy the suggestions into ensureIndexes().
 /// Do not run ADVISE AND PROVISION in production code paths; it creates
 /// indexes as a side effect.
+/// `isDeleted = false` is correct only when every document has the field;
+/// otherwise keep the coalesce form (see #indexing-soft-delete-filters).
 Future<void> printOrderIndexAdvice(Ditto ditto) async {
   final result = await ditto.store.execute(
     'ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false '

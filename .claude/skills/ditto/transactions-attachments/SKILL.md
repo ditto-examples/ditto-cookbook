@@ -5,7 +5,7 @@ description: |
 
   CRITICAL ISSUES PREVENTED:
   - Calling ditto.store.execute inside a transaction (throws in Flutter, can deadlock in JavaScript, Swift, and Kotlin)
-  - Nested read-write transactions (can deadlock on every platform; the SDK does not detect it)
+  - Nested read-write transactions (deadlock in Flutter and JavaScript, can deadlock in Swift and Kotlin; the SDK does not detect it)
   - Network calls, dialogs, or timers inside a transaction (block all other writes)
   - Closing Ditto while transactions are still running (close() does not wait)
   - Assuming subscriptions download attachment blobs (only tokens sync)
@@ -83,7 +83,7 @@ A transaction runs several DQL statements against the local store atomically. It
 
 ### 1. Use tx.execute Only, and Never Nest (Priority: CRITICAL)
 
-**Problem**: Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one can deadlock on every platform, because only one read-write transaction runs at a time; the Flutter SDK does not detect it. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences).
+**Problem**: Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one deadlocks in Flutter and JavaScript (and can deadlock in Swift and Kotlin), because only one read-write transaction runs at a time; the Flutter SDK does not detect it. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences).
 
 ```dart
 // ✅ GOOD: Close an order and create its invoice atomically, using only tx.

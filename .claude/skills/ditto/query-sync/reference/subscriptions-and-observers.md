@@ -28,7 +28,7 @@ A subscription query selects whole documents from one collection: `SELECT * FROM
 | `GROUP BY` | ❌ | `Unsupported feature: Grouping` |
 | `JOIN` | ❌ | `Unsupported feature: Joining` |
 | `USE IDS` | ❌ | `Unsupported feature: USE IDS` |
-| `LIMIT`, `ORDER BY` | ❌ (by default) | `Unsupported feature: Limit or Order by` |
+| `LIMIT`, `ORDER BY` | ❌ (while `DQL_RESTRICT_SUBSCRIPTIONS` has its default value `true`) | `Unsupported feature: Limit or Order by` |
 | Non-`SELECT` statements | ❌ | `Unsupported feature: non-SELECT statement in sync subscription` |
 
 Consequences:
@@ -52,7 +52,7 @@ Consequences:
   - **Variant A** (whole-collection or whole-partition subscription): simplest; devices cannot `EVICT` old soft-deleted documents because they still match the subscription, so cleanup is a `DELETE` after the retention period, run on the Ditto Server or by another authorized peer, that syncs to every device.
   - **Variant B** (retention-window subscription, `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff`): devices evict documents deleted before the cutoff; the subscription is re-registered when the cutoff moves (at most about once a day). Choose a window longer than the longest expected offline period.
   - See [Soft delete, subscriptions, and cleanup](../../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup).
-- Unfiltered subscriptions are acceptable only for small reference data.
+- An unfiltered subscription is acceptable only for a small reference-data collection that every device needs.
 
 ## Subscription Lifecycle
 

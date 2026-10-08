@@ -253,11 +253,11 @@ The concepts are the same on every platform, but some APIs behave differently (s
 | Create / open | `await Ditto.open(DittoConfig(...))` | `await Ditto.open(new DittoConfig(...))`; on the Web, call `await init()` first | `try await Ditto.open(config:)` | `DittoFactory.create(config)` |
 | Close | `await ditto.close()` | `await ditto.close()` | No public `close()`; release all references | `ditto.close()` |
 | Login failure | Returns `AuthResponse` with `exception`; does not throw | Returns a result with `error`; does not throw | Reported to the completion handler as `error` | **Throws** |
-| Observer backpressure | `registerObserver`: none. `registerObserverV2` (automatic) and `registerObserverWithSignalNext` (manual) are (Experimental) | `registerObserver` signals the next update when a synchronous handler returns; use `registerObserverWithSignalNext` for async work | `handler:` signals automatically; `handlerWithSignalNext:` is manual | No `signalNext`: suspend handlers and `collect` wait; `observe` returns a `Flow` |
+| Observer backpressure | `registerObserver`: none. `registerObserverV2` (automatic) and `registerObserverWithSignalNext` (manual), both (Experimental) (SDK 5.1+) | `registerObserver` signals the next update when a synchronous handler returns; use `registerObserverWithSignalNext` for async work | `handler:` signals automatically; `handlerWithSignalNext:` is manual | No `signalNext`: suspend handlers and `collect` wait; `observe` returns a `Flow` |
 | Release observers and subscriptions | `cancel()` | `cancel()` | `cancel()` | `close()` |
 | Transaction completion | Return a value to commit; throw or return `TransactionCompletionAction.rollback` to roll back | Return a value, or `'rollback'` | Return a value, or `.rollback` | Must return `DittoTransaction.Result.Commit(value)` or `DittoTransaction.Result.Rollback` |
 | `ditto.store.execute` inside a transaction | Throws `DittoException` | Can deadlock; never do it | Can deadlock; never do it | Can deadlock; never do it |
-| Nested read-write transaction | Can deadlock (the SDK does not detect it); never do it | Deadlocks; never do it | Can deadlock; never do it | Can deadlock; never do it |
+| Nested read-write transaction | Deadlocks (the SDK does not detect it); never do it | Deadlocks; never do it | Can deadlock; never do it | Can deadlock; never do it |
 
 **Notes**:
 - **Flutter**: Consume observer results through the `changes` stream. An observer registered with `onChange` whose `changes` stream is never listened to keeps every result in memory.

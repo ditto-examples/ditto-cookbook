@@ -250,8 +250,9 @@ Future<void> deleteOrders(Ditto ditto, List<String> ids) async {
   );
 }
 
-/// ❌ BAD: DELETE (or EVICT) with USE IDS and no WHERE clause completes
-/// without an error but removes nothing in SDK 5.1.0.
+/// ❌ BAD: DELETE (or EVICT) with USE IDS and no WHERE predicate (no WHERE
+/// clause, or WHERE true) completes without an error but removes nothing in
+/// SDK 5.1.0.
 Future<void> deleteOrderWithUseIds(Ditto ditto) async {
   await ditto.store.execute("DELETE FROM orders USE IDS 'order-1'");
 }

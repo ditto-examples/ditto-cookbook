@@ -407,7 +407,7 @@ Future<void> configureDittoLogging() async {
 **❌ DON'T:**
 - Set `DittoLogger` properties before `Ditto.init()` (or `Ditto.open`) has completed
 - Leave `LogLevel.verbose` enabled in production
-- Register long-lived observers on `system:system_info` or `system:data_sync_info`; query them with `execute` when needed ([System Virtual Collections](../../../guides/best-practices/ditto.md#system-virtual-collections))
+- Register long-lived observers on `system:system_info`, or observers on `system:data_sync_info` in many places; query them with `execute` when needed, and for live sync status use a single observer with a trivial callback ([System Virtual Collections](../../../guides/best-practices/ditto.md#system-virtual-collections), [Monitoring Sync Status](../../../guides/best-practices/ditto.md#monitoring-sync-status))
 - Change the `ROTATING_LOG_FILE_*` parameters unless Ditto support advises otherwise
 
 **See**: [examples/logging-configuration-good.dart](examples/logging-configuration-good.dart), [examples/logging-configuration-bad.dart](examples/logging-configuration-bad.dart)
@@ -449,6 +449,7 @@ Future<void> configureDittoLogging() async {
 - [ ] Observers registered outside `build()`, one per region, not per item
 - [ ] `StreamSubscription.cancel()` and `observer.cancel()` in `dispose()`
 - [ ] No slow `await` inside `registerObserver` listeners
+- [ ] No writes to the observed collection from inside its own observer without a guard
 - [ ] `registerObserverV2` / `registerObserverWithSignalNext` labeled **(Experimental)**; `signalNext()` in `finally`
 - [ ] Observer result sets bounded with `WHERE` and `LIMIT`; `Differ` only on bounded results
 

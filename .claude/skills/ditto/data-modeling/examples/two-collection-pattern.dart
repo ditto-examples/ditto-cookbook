@@ -12,6 +12,18 @@
 
 import 'package:ditto_live/ditto_live.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 /// ✅ GOOD: Both writes in one transaction, so local observers never see one
 /// without the other. The position is declared as a REGISTER in every
 /// statement because latitude and longitude from two readings must never mix.
@@ -22,7 +34,8 @@ Future<void> recordPosition(
   required double lat,
   required double lon,
 }) async {
-  final recordedAt = DateTime.now().toUtc().toIso8601String();
+  // recordedAt is sorted and range-filtered, so it uses the fixed-precision helper.
+  final recordedAt = utcTimestamp();
   await ditto.store.transaction((tx) async {
     await tx.execute(
       'INSERT INTO vehiclePositions DOCUMENTS (:event)',

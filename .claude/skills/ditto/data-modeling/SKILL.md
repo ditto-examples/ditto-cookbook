@@ -354,7 +354,7 @@ Guide: [Counters](../../../guides/best-practices/ditto.md#counters). Example: [c
 
 - Strings and objects are recommended; floats and `null` are rejected. Do not depend on the format of generated IDs.
 - `_id` is immutable: to change it, copy to a new `_id` and remove the old document in one transaction. Declare the document's `COUNTER`, `ATTACHMENT`, and `REGISTER` fields in both the `SELECT` and the `INSERT`; a query result holds plain values, so an undeclared copy stores a counter as a plain number and an attachment token as a map.
-- Put only immutable attributes into a composite `_id`; filter and index subfields (`_id.locationId`).
+- Put only immutable attributes into a composite `_id`; filter and index subfields (`_id.storeId`).
 - **Never** use sequential or timestamp-only IDs: two offline devices produce the same ID, and the documents merge into one.
 - Keep human-readable numbers (`#A-0042`) in a separate field; they are labels, not keys.
 
@@ -416,6 +416,7 @@ Guide: [Timestamps](../../../guides/best-practices/ditto.md#timestamps). Example
 - [ ] No stored derived values; snapshot values copied deliberately
 - [ ] Concurrent tallies use `COUNTER` with `APPLY`
 - [ ] UUID (or composite / natural) IDs; display numbers separate from `_id`
+- [ ] Shared defaults seeded with `INITIAL DOCUMENTS`, not a plain `INSERT` or `ON ID CONFLICT DO UPDATE`
 - [ ] Documents well under 256 KiB; binaries as attachments
 - [ ] Timestamps in UTC with a zone designator, written by one fixed-precision helper
 

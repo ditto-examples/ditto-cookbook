@@ -66,7 +66,7 @@ When every change matters, record each change as a new fact instead of overwriti
 |---|---|---|---|
 | Shape | `statusLog: {"<UTC ms timestamp>": "shipped"}` in the record | One document per event, UUID `_id` | Bounded current-state document plus append-only history collection |
 | Size | Grows the parent | Parent unaffected | Current state bounded; history grows |
-| Atomic with the parent | Yes (one document) | No (use a transaction) | Yes, with a transaction |
+| Atomic with the parent | Yes (one document) | Only with a transaction | Only with a transaction |
 | Readable without the parent | No | Yes | Yes |
 | Best for | Status and workflow history of one record | Unbounded logs, analytics, compliance trails | Live dashboards plus history |
 

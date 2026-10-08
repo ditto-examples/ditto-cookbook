@@ -9,6 +9,18 @@
 
 import 'package:ditto_live/ditto_live.dart';
 
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
+
 // ---------------------------------------------------------------------------
 // Parameters
 // ---------------------------------------------------------------------------
@@ -56,7 +68,8 @@ Future<void> createOrder(Ditto ditto, String id, String customerId) async {
         'customerId': customerId,
         'status': 'open',
         'total': 0,
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        // createdAt is sorted and compared, so it uses the fixed-precision helper.
+        'createdAt': utcTimestamp(),
       },
     },
   );
@@ -146,6 +159,7 @@ Future<List<Map<String, dynamic>>> orderSummaries(Ditto ditto) async {
 
 /// ✅ GOOD: Keyset pagination continues after the last row of the previous page.
 /// _id breaks ties between rows that share the same createdAt.
+/// Load the first page with the same query without the WHERE clause.
 Future<List<Map<String, dynamic>>> nextPage(
   Ditto ditto, {
   required String afterCreatedAt,

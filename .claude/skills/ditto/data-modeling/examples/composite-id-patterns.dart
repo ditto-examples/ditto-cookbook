@@ -3,7 +3,7 @@
 // Composite (object) document IDs
 //
 // Permission rules are queries on _id and its subfields. A hierarchical
-// composite _id lets you grant access at any level (a region, a location),
+// composite _id lets you grant access at any level (a region, a store),
 // and the same subfields filter subscriptions and queries and can be indexed.
 // Put only immutable attributes into _id. Key order inside a composite _id
 // does not matter.
@@ -17,17 +17,17 @@ import 'package:ditto_live/ditto_live.dart';
 // ✅ GOOD: Scope fields plus a UUID
 // ---------------------------------------------------------------------------
 
-Future<void> createLocationOrder(
+Future<void> createStoreOrder(
   Ditto ditto, {
   required String region,
-  required String locationId,
+  required String storeId,
   required String orderId, // a new UUID
 }) async {
   await ditto.store.execute(
     'INSERT INTO orders DOCUMENTS (:order)',
     arguments: {
       'order': {
-        '_id': {'region': region, 'locationId': locationId, 'orderId': orderId},
+        '_id': {'region': region, 'storeId': storeId, 'orderId': orderId},
         'status': 'open',
         'createdAt': DateTime.now().toUtc().toIso8601String(),
       },
@@ -36,17 +36,18 @@ Future<void> createLocationOrder(
 }
 
 /// Index the subfield used for local queries (indexes persist; create once).
-Future<void> createLocationIndex(Ditto ditto) async {
+Future<void> createStoreIdIndex(Ditto ditto) async {
   await ditto.store.execute(
-    'CREATE INDEX IF NOT EXISTS orders_locationId ON orders (_id.locationId)',
+    'CREATE INDEX IF NOT EXISTS orders_id_storeId ON orders (_id.storeId)',
   );
 }
 
-/// Each store device syncs only its own location's orders.
-SyncSubscription subscribeToLocation(Ditto ditto, String locationId) =>
+/// Each store device syncs only its own store's orders. The caller owns the
+/// returned subscription and cancels it when it is no longer needed.
+SyncSubscription subscribeToStore(Ditto ditto, String storeId) =>
     ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE _id.locationId = :locationId',
-      arguments: {'locationId': locationId},
+      'SELECT * FROM orders WHERE _id.storeId = :storeId',
+      arguments: {'storeId': storeId},
     );
 
 /// Filtering on the complete _id value uses a direct ID lookup.

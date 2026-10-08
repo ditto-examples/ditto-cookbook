@@ -56,7 +56,7 @@ The planner chooses indexes by rules, not by statistics. `EXPLAIN` shows these p
 | Predicate | Plan | Notes |
 |---|---|---|
 | `status = :status` | Index scan | |
-| `status IN :statuses` (array parameter) | Index scan, one span per value | Write `IN :statuses`, not `IN (:statuses)` |
+| `status IN :statuses` (array parameter) | Index scan, one span per value | Write `IN :statuses`; `IN (:statuses)` matches nothing |
 | `total > 100`, `total >= :min AND total < :max` | Index range scan | |
 | `name LIKE 'abc%'` | Index range scan | Case-sensitive prefix without a leading wildcard; works with a literal or a parameter |
 | `starts_with(name, 'abc')` | Collection scan | Use `LIKE 'abc%'` |
@@ -119,6 +119,8 @@ SELECT _id, status FROM orders WHERE status = :status
 ```sql
 ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false ORDER BY createdAt DESC
 ```
+
+This statement filters with `isDeleted = false`, which is correct only when every document has the field; otherwise keep the `coalesce` form (see [Indexing soft-delete filters](../../../../guides/best-practices/ditto.md#indexing-soft-delete-filters)).
 
 ---
 
@@ -275,7 +277,7 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 
 **Guide**: [System Virtual Collections](../../../../guides/best-practices/ditto.md#system-virtual-collections), [Request Diagnostics](../../../../guides/best-practices/ditto.md#request-diagnostics)
 
-Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` or `system:data_sync_info` (such observers fire every 500 ms regardless of whether anything changed).
+Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info`, or observers on `system:data_sync_info` in many places (such observers fire every 500 ms regardless of whether anything changed). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
 
 | Collection | Purpose |
 |---|---|

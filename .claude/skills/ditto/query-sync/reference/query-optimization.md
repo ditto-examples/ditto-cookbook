@@ -35,6 +35,7 @@ Always combine `LIMIT` with `ORDER BY`. Keyset pagination avoids re-reading skip
 ```dart
 // ✅ GOOD: Keyset pagination with a parameterized page size.
 // _id breaks ties between rows that share the same createdAt.
+// Load the first page with the same query without the WHERE clause.
 Future<List<Map<String, dynamic>>> nextPage(
   Ditto ditto,
   String afterCreatedAt,

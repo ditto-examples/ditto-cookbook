@@ -278,7 +278,7 @@ With `UNSET` and `SET`, the field is still a map, so a nested edit that another 
 | `DELETE ... RETURNING` / `EVICT ... RETURNING` | Documents before removal |
 
 - Same projection syntax as `SELECT`, including aliases, expressions, and aggregates over all affected documents.
-- Read the affected documents from `items`; do not rely on `mutatedDocumentIDs()` also being populated for a statement with `RETURNING`.
+- `commitID` is populated as usual, and so is `mutatedDocumentIDs()`. Treat `items` as the result: include `_id` in the `RETURNING` projection when you need the IDs, rather than making that code depend on `mutatedDocumentIDs()`.
 
 ```sql
 DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed

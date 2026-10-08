@@ -181,7 +181,8 @@ Future<void> applyDiagnosticsParameters(Ditto ditto) async {
 /// ✅ GOOD: Query system: virtual collections with execute when needed (a
 /// diagnostics screen or support action). They are local to this device,
 /// read only, and never synced. Do not register long-lived observers on
-/// system:system_info or system:data_sync_info.
+/// system:system_info, or observers on system:data_sync_info in many places
+/// (for live sync status, use a single observer with a trivial callback).
 Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
   List<Map<String, dynamic>> values(QueryResult result) =>
       result.items.map((item) => item.value).toList();

@@ -141,17 +141,22 @@ List<Map<String, dynamic>> sortedItems(Map<String, dynamic> order) {
 /// Tags are a list of scalars, replaced as a whole and edited by one device.
 /// DQL has no element assignment (`SET tags[0] = ...` is a parser error), so
 /// build the new array in Dart; the write replaces the whole register.
+/// Reading and writing in one transaction keeps two local calls from
+/// interleaving and dropping a tag; a concurrent edit on another device can
+/// still win the merge.
 Future<void> addTag(Ditto ditto, String productId, String tag) async {
-  final result = await ditto.store.execute(
-    'SELECT tags FROM products WHERE _id = :id',
-    arguments: {'id': productId},
-  );
-  if (result.items.isEmpty) return;
-  final current = (result.items.first.value['tags'] as List?) ?? const [];
-  await ditto.store.execute(
-    'UPDATE products SET tags = :tags WHERE _id = :id',
-    arguments: {'id': productId, 'tags': [...current, tag]},
-  );
+  await ditto.store.transaction(hint: 'addTag', (tx) async {
+    final result = await tx.execute(
+      'SELECT tags FROM products WHERE _id = :id',
+      arguments: {'id': productId},
+    );
+    if (result.items.isEmpty) return;
+    final current = (result.items.first.value['tags'] as List?) ?? const [];
+    await tx.execute(
+      'UPDATE products SET tags = :tags WHERE _id = :id',
+      arguments: {'id': productId, 'tags': [...current, tag]},
+    );
+  });
 }
 
 /// Membership filter on an array field: use IN or array_contains.

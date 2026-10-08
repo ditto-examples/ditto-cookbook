@@ -123,6 +123,7 @@ Future<void> resetViewsIncorrectly(Ditto ditto, String productId) async {
 //   enforce a constraint. Record transactions as events and validate when you
 //   derive the balance.
 // - Values derivable from stored documents: use SELECT COUNT(*) ...
-// - Fractional amounts: COUNTER is integer-only (INCREMENT BY 1.5 fails).
+// - Fractional amounts: COUNTER is integer-only (INCREMENT BY 1.5 fails with
+//   "Expected 1.5 to be an integer value").
 //   Count in minor units such as cents.
 // - Mixing COUNTER and the legacy PN_INCREMENT operator on one field.
