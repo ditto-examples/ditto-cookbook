@@ -318,8 +318,9 @@ collections:
 #   SELECT * FROM menuItems WHERE storeId = :storeId
 #   SELECT * FROM orders WHERE storeId = :storeId AND createdAt >= :cutoff
 #
-# - Only SELECT * FROM <collection> [WHERE ...] is accepted in subscriptions:
-#   no projections, ORDER BY, LIMIT, or JOIN.
+# - Subscriptions select whole documents from one collection with
+#   SELECT * FROM <collection> [WHERE ...]: no projections, ORDER BY, LIMIT,
+#   or JOIN.
 # - Filter by stable keys (storeId, a cutoff that moves once a day). Screens
 #   filter further with local queries; they never re-register subscriptions.
 #
@@ -374,7 +375,7 @@ collections:
 # ============================================================================
 #
 # Soft limit: 256 KiB (a warning is logged). Hard limit: 5 MiB (writes fail).
-# Sizes include CRDT metadata, not only the JSON you write.
+# The limits apply to the size of each stored document.
 #
 # - menuItems: about 1 KiB
 # - orders: about 5-30 KiB for 10-30 line items

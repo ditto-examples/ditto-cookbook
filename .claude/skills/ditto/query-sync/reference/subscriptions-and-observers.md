@@ -17,7 +17,7 @@ Detailed rules behind the subscription and observer patterns in [SKILL.md](../SK
 
 ## Subscription Rules
 
-A subscription query must be `SELECT * FROM <collection> [WHERE <condition>]`. The SDK validates it when `registerSubscription` is called and throws otherwise, even before sync starts.
+A subscription query selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. The SDK validates it when `registerSubscription` is called and rejects the features below with an error, even before sync starts. Subscriptions on `system:` collections (such as `system:data_sync_info`) are accepted but have no effect.
 
 | Query feature | Accepted? | Error message |
 |---|---|---|
@@ -46,7 +46,7 @@ Consequences:
 
 - Use the same subscriptions on peers in the same role so any of them can serve the others.
 - An intermediate device relays only documents in its local store: give relay or hub devices at least the subscriptions of the devices behind them.
-- Keep predicates flat (`storeId = :storeId`); deeply nested `AND`/`OR` trees and deep paths add server-side processing, and overly complex subscription queries are a known cause of `503 Service Unavailable` from Ditto Server.
+- Keep predicates flat (`storeId = :storeId`); deeply nested `AND`/`OR` trees and deep paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` from Ditto Server.
 - Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below).
 - Soft delete: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Two designs meet this requirement:
   - **Variant A** (whole-collection or whole-partition subscription): simplest; devices cannot `EVICT` old soft-deleted documents because they still match the subscription, so cleanup is a `DELETE` after the retention period, run on the Ditto Server or by another authorized peer, that syncs to every device.
@@ -60,7 +60,7 @@ Consequences:
 - Register when data becomes relevant (app start, login, entering a workspace) in an app- or feature-level service; keep every `SyncSubscription` reference.
 - Re-register only when the set of data the device needs changes (switching store or tenant). Search, tabs, filters, and sort orders change observers.
 - Subscriptions stay active until `cancel()` or `ditto.close()`. Always release them explicitly; do not rely on garbage collection to cancel them.
-- Cancelling does not delete local data; documents stop receiving updates. To free storage, cancel first, then `EVICT`. Documents already in flight can still arrive shortly after cancelling, so run the eviction once more after a short delay.
+- Cancelling does not delete local data; documents stop receiving updates. To free storage, cancel first, then `EVICT`. Data that was already being transferred can still arrive after cancelling; if the device must not keep it, run the eviction again later (for example, on the next app start or in a periodic cleanup).
 - `ditto.sync.stop()` pauses all subscriptions; `start()` resumes them. `await ditto.close()` marks them cancelled; `cancel()` afterwards is a no-op.
 - `ditto.sync.subscriptions` is for debugging: read `queryString` and `isCancelled` only.
 
@@ -117,13 +117,13 @@ The experimental APIs may change in a future release; the stable `registerObserv
 | `changes` is single-subscription | A second `listen()` throws `StateError`, even after the first was cancelled |
 | Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` too |
 | `observer.cancel()` closes `changes` | A pending `await for` ends |
-| `await ditto.close()` marks observers cancelled but does not close a `StoreObserver`'s `changes` | Cancel observers explicitly before closing |
+| `await ditto.close()` marks observers cancelled but does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2` | Cancel observers explicitly before closing |
 | With `onChange`, events emitted before the first listener attaches are buffered | Listen right after registering |
 
-> **Note (SDK 5.1.0):** With `onChange` and an unconsumed `changes` stream, every delivered result stays in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2` with `onChange` only. Register without `onChange` and consume `changes`; if `onChange` is required, also drain the stream.
+> **Note (SDK 5.1.0):** With `onChange` and an unconsumed `changes` stream, every delivered result stays in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` right after registering it. Register without `onChange` and consume `changes`; if `onChange` is required, also drain the stream.
 
 Callback rules:
-- `registerObserver` never waits for your code. Rapid changes are coalesced, but pausing its stream only queues results.
+- `registerObserver` has no backpressure: it never waits for your code, and pausing its stream only queues results.
 - Keep listeners synchronous: copy values, map to models, call `setState`. Move heavy computation off the UI isolate (for example `compute()` on copied values).
 - Do not `await` network, file, or database work in a `registerObserver` listener; do not write to the observed collection without a guard.
 - Observers on `system:data_sync_info` fire every 500 ms even without changes: use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
@@ -134,7 +134,7 @@ Callback rules:
 `registerObserverV2` (Experimental):
 - Readiness is signalled automatically after each result is added to `changes`; `await for` pauses the subscription while the loop body runs.
 - While paused, delivery stops after the update that arrived at the pause; on resume, that update and the latest state are delivered and intermediate states are merged.
-- Leaving the loop cancels the stream subscription, which also cancels the observer. `observer.cancel()` ends the loop.
+- Leaving the loop cancels the stream subscription, which also cancels the observer. `observer.cancel()` ends the loop; `ditto.close()` does not, so cancel the observer before closing.
 - `signalNext()` has no effect.
 
 `registerObserverWithSignalNext` (Experimental):

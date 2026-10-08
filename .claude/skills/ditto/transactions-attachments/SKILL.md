@@ -5,7 +5,7 @@ description: |
 
   CRITICAL ISSUES PREVENTED:
   - Calling ditto.store.execute inside a transaction (throws in Flutter, can deadlock in JavaScript, Swift, and Kotlin)
-  - Nested read-write transactions (deadlock on every platform; Flutter has no guard)
+  - Nested read-write transactions (can deadlock on every platform; the SDK does not detect it)
   - Network calls, dialogs, or timers inside a transaction (block all other writes)
   - Closing Ditto while transactions are still running (close() does not wait)
   - Assuming subscriptions download attachment blobs (only tokens sync)
@@ -83,7 +83,7 @@ A transaction runs several DQL statements against the local store atomically. It
 
 ### 1. Use tx.execute Only, and Never Nest (Priority: CRITICAL)
 
-**Problem**: Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one deadlocks on every platform, because only one read-write transaction runs at a time; Flutter has no guard against it. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences).
+**Problem**: Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one can deadlock on every platform, because only one read-write transaction runs at a time; the Flutter SDK does not detect it. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences).
 
 ```dart
 // ✅ GOOD: Close an order and create its invoice atomically, using only tx.
@@ -160,7 +160,7 @@ Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() charg
 
 **❌ DON'T**:
 - `await` network calls, dialogs, or timers inside the callback
-- Read `commitID` inside the transaction to track sync status; it is only assigned after the commit
+- Read `commitID` inside the transaction to track sync status; it is `null` until the transaction commits. Keep the `QueryResult` of the write (for example, return it from the callback) and read its `commitID` after `transaction()` completes
 
 ---
 
@@ -199,7 +199,7 @@ Future<bool> shipOrder(Ditto ditto, String orderId) async {
 
 ### 4. Await Pending Transactions Before close() (Priority: HIGH)
 
-**Problem**: `ditto.close()` in Flutter does not wait for in-flight transactions; calls that are still running fail. Track pending transactions and await them before closing. Guide: [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown).
+**Problem**: `ditto.close()` in Flutter does not wait for in-flight transactions; calls that are still running can fail with `DittoClosedException`. Track pending transactions and await them before closing. Guide: [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown).
 
 ```dart
 // ✅ GOOD: Track in-flight transactions so shutdown can wait for them.
@@ -214,7 +214,9 @@ class TransactionTracker {
 
   Future<void> closeWhenIdle(Ditto ditto) async {
     // Errors are reported to the callers of run(); ignore them here.
-    await Future.wait(_pending.map((f) => f.catchError((Object _) => null)));
+    // then() with an onError callback works for any result type T, whereas a
+    // catchError handler would have to return a value of type T.
+    await Future.wait(_pending.map((f) => f.then<void>((_) {}, onError: (Object _) {})));
     await ditto.close();
   }
 }
@@ -256,8 +258,8 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
 ```
 
 **✅ DO**:
-- Pass a file path (`String`) or bytes (`Uint8List`) to `newAttachment`; on the web only bytes work (paths throw). Relative paths resolve from the Ditto persistence directory.
-- Declare the field (`COLLECTION photos (image ATTACHMENT)`); the `COLLECTION` keyword is required when you declare types. With the default `DQL_STRICT_MODE = false`, an attachment inserted without the declaration is still stored as an attachment, but strict mode requires the declaration and hides undeclared ATTACHMENT fields from queries ([Strict Mode](../../../guides/best-practices/ditto.md#strict-mode)). Declaring works in both modes.
+- Pass a file path (`String`) or bytes (`Uint8List`) to `newAttachment`; on the web only bytes work (paths throw). Pass an absolute file path (for example, one built from `path_provider`).
+- Declare the field (`COLLECTION photos (image ATTACHMENT)`); the `COLLECTION` keyword is required when you declare types. With the default `DQL_STRICT_MODE = false`, an attachment inserted without the declaration is still stored as an attachment, but strict mode requires the declaration and hides undeclared ATTACHMENT fields from queries ([Strict Mode](../../../guides/best-practices/ditto.md#strict-mode)). With strict mode enabled, statements that do not declare the field, including `UNSET`, leave the attachment value unchanged without an error. Declaring works in both modes.
 - Pass the `Attachment` object inside a parameter; never build tokens by hand
 - Create the attachment **before** starting a transaction that stores it
 
@@ -336,7 +338,7 @@ class PhotoLoader {
 
 ### 9. Replace, Never Modify (Priority: HIGH)
 
-Attachment contents never change. To "edit" a file, create a new attachment and replace the token. Attachments cannot be deleted directly: remove the token (`UNSET` or a new token) or evict the document. On Small Peers, blobs that are no longer referenced are garbage-collected automatically every 10 minutes; garbage collection runs only on Small Peers, not on Ditto Server. Guide: [Attachments Are Immutable](../../../guides/best-practices/ditto.md#attachments-are-immutable).
+Attachment contents never change. To "edit" a file, create a new attachment and replace the token. Attachments cannot be deleted directly: remove the token (`UPDATE COLLECTION photos (image ATTACHMENT) UNSET image ...`, or set a new token), delete the document with `DELETE` (for every peer), or evict it from this device with `EVICT`. On Small Peers, blobs that are no longer referenced are garbage-collected automatically every 10 minutes; garbage collection runs only on Small Peers, not on Ditto Server. Guide: [Attachments Are Immutable](../../../guides/best-practices/ditto.md#attachments-are-immutable).
 
 ```dart
 // ✅ GOOD: Replace the attachment by updating the token field.
@@ -405,7 +407,7 @@ Future<void> savePhotoWithThumbnail(
 
 ### 11. Plan for Availability and Size (Priority: MEDIUM)
 
-An attachment can be fetched only while a peer that **holds the blob** is reachable. A blob exists on a device only if that device created or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) describes that a blob created while a Small Peer is not connected to Ditto Server spreads through the mesh only as other peers explicitly fetch it, so Ditto Server can end up with the token but not the blob. An interrupted transfer resumes from where it stopped. Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available, make sure a well-connected device or Ditto Server fetches it. Guide: [Availability](../../../guides/best-practices/ditto.md#availability), [Size Guidance](../../../guides/best-practices/ditto.md#size-guidance).
+An attachment can be fetched only while a peer that **holds the blob** is reachable. A blob exists on a device only if that device created or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) describes that Ditto Server can hold a document with an attachment token but not the blob, for example when Small Peers replicate the document among themselves without fetching the attachment. An interrupted transfer resumes from where it stopped. Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available, make sure a well-connected device or Ditto Server fetches it. Guide: [Availability](../../../guides/best-practices/ditto.md#availability), [Size Guidance](../../../guides/best-practices/ditto.md#size-guidance).
 
 **✅ DO**:
 - Show a placeholder with metadata while the blob is unavailable
@@ -444,7 +446,7 @@ There is no fixed maximum attachment size in the SDK; device storage and bandwid
 - [ ] Fetchers are stopped when the UI goes away; `fetcher.attachment` is never awaited after `stop()`
 - [ ] A stall timer (reset on progress) and a retry action handle unavailable blobs
 - [ ] `switch` on `AttachmentFetchEvent` has a `default` branch
-- [ ] Updates create a new attachment and replace the token; removal uses `UNSET`
+- [ ] Updates create a new attachment and replace the token; removal uses `UNSET` with the `ATTACHMENT` declaration
 - [ ] Lists fetch thumbnails; full-size files are fetched on demand
 
 ---

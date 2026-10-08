@@ -15,14 +15,15 @@
 // Ditto syncs changes at field level. Writing only what changed keeps sync
 // deltas small and reduces the chance that an unchanged value written by this
 // device overwrites a concurrent edit from another peer. It also avoids
-// mutations that fire observers for no visible change.
+// mutations that wake observers for no visible change.
 //
 // | Write                                  | Values unchanged                    |
 // |----------------------------------------|-------------------------------------|
 // | ON ID CONFLICT DO UPDATE               | All supplied fields written again;  |
-// |                                        | document mutated, observers fire    |
-// | ON ID CONFLICT DO UPDATE_LOCAL_DIFF    | No-op                               |
-// | UPDATE ... SET f = <current value>     | Mutation recorded, observers fire   |
+// |                                        | document mutated, observers can fire|
+// | ON ID CONFLICT DO UPDATE_LOCAL_DIFF    | Nothing written                     |
+// | UPDATE ... SET f = <current value>     | Mutation recorded, observers can    |
+// |                                        | fire                                |
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Upserts and re-imports with DO UPDATE_LOCAL_DIFF
@@ -30,7 +31,7 @@
 // 3. ✅ Skipping documents that are already in the target state
 // 4. ✅ Nested field updates and UNSET
 // 5. ✅ Replacing an object deliberately (UNSET, then SET)
-// 6. ✅ Writing a full document from local state with DO UPDATE_LOCAL_DIFF
+// 6. ✅ Saving a form: writing only the fields the user changed
 //
 // ============================================================================
 
@@ -43,7 +44,7 @@ import 'package:flutter/foundation.dart';
 
 /// ✅ GOOD: Refreshing reference data from a backend. Documents whose values
 /// did not change are not written, so they do not appear in
-/// mutatedDocumentIDs() and observers do not fire for them.
+/// mutatedDocumentIDs() and observers are not woken for them.
 Future<int> importProducts(Ditto ditto, List<Map<String, dynamic>> products) async {
   final result = await ditto.store.execute(
     'INSERT INTO products DOCUMENTS (:products) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
@@ -136,6 +137,9 @@ Future<void> clearDiscount(Ditto ditto, String orderId) async {
 /// ✅ GOOD: With the default strict mode, `SET address = :address` merges into
 /// the existing object. To replace it completely, run UNSET and then SET
 /// inside one transaction, so no reader sees the document without an address.
+/// The field is still a map, so a nested edit that another device makes at the
+/// same time can merge into the new object; declare the field as REGISTER if
+/// that must never happen.
 Future<void> replaceAddress(
   Ditto ditto,
   String customerId,
@@ -154,16 +158,18 @@ Future<void> replaceAddress(
 }
 
 // ============================================================================
-// PATTERN 6: Full document from local state
+// PATTERN 6: Saving a form
 // ============================================================================
 
-/// ✅ GOOD: When the app keeps a full copy of the document in memory (for
-/// example, a form), DO UPDATE_LOCAL_DIFF compares it with the stored document
-/// and writes only the fields whose values differ.
-Future<bool> saveOrderForm(Ditto ditto, Map<String, dynamic> order) async {
+/// ✅ GOOD: When the user edits a form, write only the fields the user changed.
+/// Writing the whole in-memory copy back, even with DO UPDATE_LOCAL_DIFF, would
+/// also write a stale value of a field that another device changed after the
+/// form was loaded, because the stale value differs from the stored one.
+Future<bool> saveOrderStatus(Ditto ditto, String orderId, String status) async {
   final result = await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {'order': order},
+    'UPDATE orders SET status = :status '
+    'WHERE _id = :id AND coalesce(status, :none) != :status',
+    arguments: {'id': orderId, 'status': status, 'none': ''},
   );
   return result.mutatedDocumentIDs().isNotEmpty; // false when nothing changed.
 }

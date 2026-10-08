@@ -69,7 +69,7 @@ Guide: [Event History and Audit Logs](../../../../guides/best-practices/ditto.md
 |---|---|
 | No document with that `_id` exists | Inserted |
 | A document exists, even an edited one | Nothing happens; no error |
-| The document was deleted earlier on this device | The deletion wins; a document with `null` fields remains |
+| The document was deleted earlier on this device | The deletion wins. With a seed identical to the `INITIAL` insert that created the document, it stays deleted; with different content, or if the document was created with a regular `INSERT`, a document with `null` fields remains |
 | The document was evicted earlier on this device | Inserted again |
 | Combined with `ON ID CONFLICT` | Parser error |
 
@@ -84,7 +84,7 @@ INITIAL DOCUMENTS (:item)
 
 **✅ DO:**
 - Use fixed, well-known `_id` values, and ship identical seed content in every app version that seeds them. Do not rely on how peers reconcile initial documents with *different* content for the same `_id`.
-- Let users "remove" seed documents with a flag (`isArchived`), because seeding a deleted ID leaves a document with `null` fields.
+- Let users "remove" seed documents with a flag (`isArchived`) if the seed content may change in a later app version: seeding a deleted ID with different content leaves a document with `null` fields.
 
 **❌ DON'T:**
 - Seed shared defaults with a regular `INSERT` (the second run fails with an ID conflict) or with `ON ID CONFLICT DO UPDATE` (overwrites users' edits).
@@ -130,7 +130,7 @@ Guide: [Schema Evolution](../../../../guides/best-practices/ditto.md#schema-evol
 
 ## Pattern 4: Composite IDs and Display Numbers
 
-Permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` grants access at any level (`_id.region = 'eu'`, `_id.locationId = 'store-12'`); the same subfields filter subscriptions and can be indexed. Key order inside a composite `_id` does not matter.
+Permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` grants access at any level (`"_id.region == 'eu'"`, `"_id.locationId == 'store-12'"` in the permission rules; see [Security](../../../../guides/best-practices/ditto.md#security) for the rule format); the same subfields filter subscriptions and queries (`WHERE _id.locationId = :locationId`) and can be indexed. Key order inside a composite `_id` does not matter.
 
 ```sql
 CREATE INDEX IF NOT EXISTS orders_locationId ON orders (_id.locationId)

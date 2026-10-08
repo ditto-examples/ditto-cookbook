@@ -8,7 +8,7 @@ description: |
   - Filters that silently drop documents (MISSING vs NULL, IN (:values), ANY ... SATISFIES)
   - Subscriptions rejected at registration (projections, JOIN, LIMIT/ORDER BY) or re-registered on every filter change
   - Uncancelled subscriptions and observers; onChange-only observers retaining every result
-  - Upserts that rewrite unchanged data and fire observers (DO UPDATE instead of DO UPDATE_LOCAL_DIFF)
+  - Upserts that rewrite unchanged data and wake observers (DO UPDATE instead of DO UPDATE_LOCAL_DIFF)
   - JOIN queries failing without an index on the inner collection
   - Retained QueryResult / QueryResultItem objects
 
@@ -49,7 +49,7 @@ Every DQL statement runs against the **local store**. Only subscriptions cause d
 | `ditto.store.registerObserver(query, arguments: ...)` | Local store (live) | ❌ No |
 | `ditto.store.transaction((tx) async { ... })` | Local store | ❌ No |
 
-Subscriptions are long-lived and broad (app or feature scope). Observers and `execute` calls are short-lived and as specific as the screen needs (screen scope). An empty local result does not mean "no data exists"; it may not have synced yet.
+Subscriptions are long-lived and scoped by stable partition keys (app or feature scope). Observers and `execute` calls are short-lived and as specific as the screen needs (screen scope). An empty local result does not mean "no data exists"; it may not have synced yet.
 
 **Guide**: [Where Queries Run](../../../guides/best-practices/ditto.md#where-queries-run), [Sync and Subscriptions](../../../guides/best-practices/ditto.md#sync-and-subscriptions)
 
@@ -156,7 +156,7 @@ Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
 
 ### 5. Subscription Rules (CRITICAL)
 
-A subscription must be `SELECT * FROM <collection> [WHERE <condition>]`. Anything else throws when `registerSubscription` is called.
+A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. `registerSubscription` rejects the features below with an error, even before sync starts. Subscriptions on `system:` collections (such as `system:data_sync_info`) are accepted but have no effect.
 
 | Rejected in subscriptions | Do instead |
 |---|---|
@@ -284,7 +284,7 @@ class _OrdersListState extends State<OrdersList> {
 }
 ```
 
-> **Note (SDK 5.1.0):** With `onChange`, every result is also queued in `changes`. If nothing listens to `changes`, those results stay in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2` with `onChange` only. Use the pattern above; if you need `onChange`, also drain the stream (`observer.changes.listen((_) {})`).
+> **Note (SDK 5.1.0):** With `onChange`, every result is also queued in `changes`. If nothing listens to `changes`, those results stay in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` right after registering it. Use the pattern above; if you need `onChange`, also drain the stream (`observer.changes.listen((_) {})`).
 
 Lifecycle facts (`registerObserver`): `changes` is single-subscription (a second `listen()` throws, even after the first subscription was cancelled; a `StreamBuilder` works if it stays mounted for the observer's lifetime). Without `onChange`, the query starts when `changes` is first listened to; with `onChange`, events emitted before the first listener attaches are buffered, so listen right after registering. Cancelling the `StreamSubscription` does not cancel a `StoreObserver`, and `await ditto.close()` does not close its `changes` stream: always call `observer.cancel()` before closing. More in [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md#observer-lifecycle).
 
@@ -299,7 +299,7 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 
 - Add `ORDER BY` with a unique tie-breaker: `ORDER BY createdAt DESC, _id`.
 - Ascending type order: `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing. `DESC` puts missing values first.
-- Always combine `LIMIT`/`OFFSET` with `ORDER BY`; prefer keyset pagination (`WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize`) for long lists. Check existence with `SELECT _id ... LIMIT 1`; count with `COUNT(*)`.
+- Always combine `LIMIT`/`OFFSET` with `ORDER BY`; prefer keyset pagination with an `_id` tie-breaker (`WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId) ORDER BY createdAt DESC, _id DESC LIMIT :pageSize`) for long lists. Check existence with `SELECT _id ... LIMIT 1`; count with `COUNT(*)`.
 
 **Guide**: [ORDER BY](../../../guides/best-practices/ditto.md#order-by), [LIMIT and OFFSET](../../../guides/best-practices/ditto.md#limit-and-offset)
 
@@ -310,8 +310,8 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 | `items` | `Iterable<QueryResultItem>`, not a `List`; each pass creates new wrappers |
 | `item.value` | `Map<String, dynamic>`, decoded on first access and cached on that item |
 | `item.jsonString`, `item.cborBytes` | Properties, not methods |
-| `mutatedDocumentIDs()` | Builds a new list on every call; call once. Still populated with `RETURNING` |
-| `commitID` | `int?`; `null` for reads |
+| `mutatedDocumentIDs()` | Builds a new list on every call; call once. With `RETURNING`, read the affected documents from `items` instead |
+| `commitID` | `int?`; `null` for reads, and `null` inside a transaction until it commits |
 
 **✅ DO**: iterate `items` once and convert rows to maps or model objects right away; project only the fields you need.
 **❌ DON'T**: store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks (they reference native memory).
@@ -338,11 +338,11 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 |---|---|
 | `FAIL` (default) | Statement fails |
 | `DO NOTHING` | Unchanged |
-| `DO UPDATE` | Supplied fields merged in, even if identical (mutation recorded, observers fire) |
-| `DO UPDATE_LOCAL_DIFF` | Only differing fields written; no-op if nothing changed |
+| `DO UPDATE` | Supplied fields merged in, even if identical (mutation recorded, observers can fire again) |
+| `DO UPDATE_LOCAL_DIFF` | Only differing fields written; nothing written if nothing changed |
 
 **✅ DO**: use `DO UPDATE_LOCAL_DIFF` for upserts and re-imports; update only changed fields with `UPDATE ... SET`; remove fields with `UNSET`; replace an object with `UNSET obj` followed by `SET obj = :value` inside one transaction (two `tx.execute` calls).
-**❌ DON'T**: read-modify-write whole documents with `DO UPDATE`; expect `DO UPDATE` or `SET obj = {...}` to remove keys (with the default `DQL_STRICT_MODE = false`, objects merge).
+**❌ DON'T**: read-modify-write whole documents with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (a stale in-memory value differs from the stored one, so it is written back); expect `DO UPDATE` or `SET obj = {...}` to remove keys (with the default `DQL_STRICT_MODE = false`, objects merge).
 
 ```dart
 // ✅ GOOD: Re-upserting unchanged data is a no-op
@@ -420,7 +420,7 @@ ORDER BY c.name, o.total DESC
 
 ### 15. DELETE and EVICT by ID Use WHERE (HIGH)
 
-> **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` clause completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
+> **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
 
 `DELETE` removes documents on all peers (tombstone); `EVICT` removes them from this device only. See the storage-lifecycle skill.
 

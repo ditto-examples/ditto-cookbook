@@ -16,10 +16,10 @@ The patterns in [SKILL.md](../SKILL.md) apply to every platform; the API shapes 
 
 | Platform | API | Explicit rollback | Inside the scope |
 |---|---|---|---|
-| Flutter | `ditto.store.transaction((tx) async {...}, isReadOnly:, hint:)` | Return `TransactionCompletionAction.rollback` | `store.execute` throws a `DittoException`; a nested read-write transaction deadlocks (no guard) |
+| Flutter | `ditto.store.transaction((tx) async {...}, isReadOnly:, hint:)` | Return `TransactionCompletionAction.rollback` | `store.execute` throws a `DittoException`; a nested read-write transaction can deadlock (the SDK does not detect it) |
 | JavaScript | `ditto.store.transaction(async (tx) => {...}, { isReadOnly, hint })` | Return `'rollback'` | `store.execute` writes or nested read-write transactions can deadlock (no error is thrown); never do it |
 | Swift | `try await ditto.store.transaction(hint:isReadOnly:) { tx in ... }` | Return `.rollback` | `store.execute` or nesting can deadlock; never do it |
-| Kotlin | `ditto.store.transaction(hint, isReadOnly) { tx -> ... }` | Return `Result.Rollback` | `store.execute` or nesting can deadlock; never do it |
+| Kotlin | `ditto.store.transaction(hint, isReadOnly) { tx -> ... }` | Return `DittoTransaction.Result.Rollback` | `store.execute` or nesting can deadlock; never do it |
 
 Rules shared by all platforms:
 - Use only the transaction object passed to the scope for queries.
@@ -206,7 +206,7 @@ suspend fun <T> transaction(
 // Transaction object: execute(query, args) returns Unit; execute(query, args) { result -> ... } returns the handler's value
 ```
 
-- The block **must** return `Result.Commit(value)` or `Result.Rollback`; there is no "return any value to commit" form.
+- The block **must** return `DittoTransaction.Result.Commit(value)` or `DittoTransaction.Result.Rollback`; there is no "return any value to commit" form.
 - `tx.execute(query, args)` returns `Unit`. To read inside a transaction, use the overload with a result handler; the result is closed after the handler returns, so copy out what you need.
 - A mutating statement in a read-only transaction throws `DittoException.StoreException`.
 - Calling `ditto.store.execute` or starting a nested transaction inside the block can deadlock; never do it.

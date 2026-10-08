@@ -99,7 +99,8 @@ Future<void> mixedDeclarations(Ditto ditto) async {
 /// ATTACHMENT field in every statement. Trade-offs:
 /// - Undeclared MAP/COUNTER/ATTACHMENT fields are invisible to SELECT/WHERE.
 /// - Note (SDK 5.1.0): with strict mode on, the query planner does not use
-///   indexes (EXPLAIN shows a full scan).
+///   secondary indexes (EXPLAIN shows a collection scan); ID lookups and
+///   full-collection COUNT(*) are not affected.
 /// - Each peer interprets data with its own setting: use the same value on
 ///   every peer.
 ///

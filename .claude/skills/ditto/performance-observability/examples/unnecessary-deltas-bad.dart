@@ -30,7 +30,8 @@ import 'package:ditto_live/ditto_live.dart';
 // ============================================================================
 
 /// ❌ BAD: DO UPDATE writes every supplied field, even if the value is
-/// identical. Every run reports all documents as mutated and fires observers.
+/// identical. Every run reports all documents as mutated and can wake
+/// observers.
 /// Use ON ID CONFLICT DO UPDATE_LOCAL_DIFF instead.
 Future<void> refreshCatalogEveryMinute(
   Ditto ditto,
@@ -65,6 +66,8 @@ Future<void> completeOrderByRewrite(Ditto ditto, String orderId) async {
 
 /// ❌ BAD: A stale in-memory copy is written back with DO UPDATE. A concurrent
 /// change that another device made to tableNumber can be overwritten.
+/// DO UPDATE_LOCAL_DIFF does not prevent this either: the stale value differs
+/// from the stored one, so it is written. Update only the changed field.
 Future<void> saveStaleCopy(Ditto ditto) async {
   await ditto.store.execute(
     'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE',
@@ -80,7 +83,7 @@ Future<void> saveStaleCopy(Ditto ditto) async {
 
 /// ❌ BAD: Called on every heartbeat. An UPDATE that sets a field to its
 /// current value is still recorded as a mutation, appears in
-/// mutatedDocumentIDs(), and fires observers. Add a WHERE condition that skips
+/// mutatedDocumentIDs(), and can wake observers. Add a WHERE condition that skips
 /// documents already in the target state.
 Future<void> heartbeat(Ditto ditto, String deviceId) async {
   await ditto.store.execute(

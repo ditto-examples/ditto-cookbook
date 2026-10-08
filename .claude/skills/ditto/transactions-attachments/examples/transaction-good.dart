@@ -207,7 +207,11 @@ class TransactionTracker {
 
   Future<void> closeWhenIdle(Ditto ditto) async {
     // Errors are reported to the callers of run(); ignore them here.
-    await Future.wait(_pending.map((f) => f.catchError((Object _) => null)));
+    // then() with an onError callback works for any result type T, whereas a
+    // catchError handler would have to return a value of type T.
+    await Future.wait(
+      _pending.map((f) => f.then<void>((_) {}, onError: (Object _) {})),
+    );
     await ditto.close();
   }
 }

@@ -13,7 +13,8 @@ import 'package:ditto_live/ditto_live.dart';
 
 /// ISO-8601 UTC timestamp with exactly millisecond precision, for example
 /// "2026-10-08T10:30:00.123Z". Fixed precision keeps keys and values sortable
-/// as text across platforms.
+/// as text (native Dart omits zero microseconds, so even one device would
+/// otherwise mix precisions).
 String utcTimestamp([DateTime? time]) {
   final utc = (time ?? DateTime.now()).toUtc();
   return DateTime.fromMillisecondsSinceEpoch(
@@ -58,7 +59,10 @@ Future<void> setStatusOnly(Ditto ditto, String orderId, String status) async {
 // ---------------------------------------------------------------------------
 
 /// Appends a status transition. Each device adds its own keys and the add-wins
-/// map keeps every transition. The key is passed as data inside a partial
+/// map keeps every entry whose key is distinct. Two transitions recorded in the
+/// same millisecond on different devices share a key and only one is kept; if
+/// that matters, append a device identifier to the key
+/// ("2026-10-08T10:05:12.437Z_t3"). The key is passed as data inside a partial
 /// document; unchanged entries are not rewritten.
 Future<void> appendStatus(Ditto ditto, String orderId, String status) async {
   await ditto.store.execute(

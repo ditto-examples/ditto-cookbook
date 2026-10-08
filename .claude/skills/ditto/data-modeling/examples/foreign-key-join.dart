@@ -144,8 +144,9 @@ Future<List<Map<String, dynamic>>> openOrdersWithItems(
   return result.items.map((item) => item.value).toList();
 }
 
-/// ✅ GOOD: A screen that observes the joined result. The observer fires when
-/// any of the joined collections changes. Results are consumed through the
+/// ✅ GOOD: A screen that observes the joined result. The observer delivers a
+/// new result when a change in any of the joined collections changes the
+/// joined rows. Results are consumed through the
 /// `changes` stream; both are cancelled in dispose().
 class OrderItemsView extends StatefulWidget {
   const OrderItemsView({super.key, required this.ditto, required this.orderId});

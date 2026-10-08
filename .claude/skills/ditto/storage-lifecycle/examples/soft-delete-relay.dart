@@ -168,8 +168,9 @@ class OrderSoftDeleteRetention {
   void dispose() => _subscription?.cancel();
 }
 
-/// ❌ BAD: A flagged document leaves the subscription immediately, so devices
-/// (and relays) that do not have the flag yet can miss it.
+/// ❌ BAD: A flagged document leaves the subscription immediately. Keep flagged
+/// documents in the subscription until every device (including relays) has
+/// received the flag.
 SyncSubscription subscribeToActiveOrdersOnly(Ditto ditto) {
   return ditto.sync.registerSubscription(
     'SELECT * FROM orders WHERE coalesce(isDeleted, false) = false',

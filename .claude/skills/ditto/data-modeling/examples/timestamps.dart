@@ -15,7 +15,8 @@ import 'package:ditto_live/ditto_live.dart';
 /// ISO-8601 UTC string with exactly millisecond precision, for example
 /// "2026-10-08T10:30:00.123Z". ISO strings sort chronologically as text only
 /// when they share one format. Native Dart prints microseconds
-/// ("...00.123456Z") while the web prints milliseconds ("...00.123Z"), so use
+/// ("...00.123456Z"), but omits them when they are zero ("...00.123Z"), and the
+/// web always prints milliseconds, so use
 /// this one helper for every timestamp field that is sorted or compared.
 String utcTimestamp([DateTime? time]) {
   final utc = (time ?? DateTime.now()).toUtc();

@@ -13,14 +13,14 @@ Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditt
 
 ## Pattern 1: Field-Level Updates and Upserts
 
-Write only what changed. A field-level `UPDATE` touches only the named fields, so concurrent edits to other fields survive.
+Write only what changed. A field-level `UPDATE` touches only the named fields, so concurrent edits to other fields survive. When a user edits a document, update only the fields the user changed.
 
 | Conflict policy | When the `_id` exists locally |
 |---|---|
 | `FAIL` (default) | The statement fails |
 | `DO NOTHING` | Existing document unchanged; use for "create if absent" |
-| `DO UPDATE` | Supplied fields are written and merged, **even identical values**: the document is reported as mutated and observers fire |
-| `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; a no-op when nothing changed |
+| `DO UPDATE` | Supplied fields are written and merged, **even identical values**: the document is reported as mutated and observers can fire again |
+| `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; nothing is written when nothing changed. Use it for upserts and re-imports; it does not protect a stale in-memory copy |
 
 No `INSERT` policy deletes fields: use `UNSET`.
 
@@ -37,19 +37,20 @@ Future<void> markReady(Ditto ditto, String orderId) async {
   );
 }
 
-// ✅ GOOD: Writing a full document from local state: only differing fields
-// are written, and an unchanged document is a no-op.
-Future<bool> saveOrder(Ditto ditto, Map<String, dynamic> order) async {
+// ✅ GOOD: Re-importing reference data that your backend owns. Fields whose
+// values equal the local document are skipped, and an unchanged document is
+// not written at all.
+Future<bool> importProduct(Ditto ditto, Map<String, dynamic> product) async {
   final result = await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {'order': order},
+    'INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
+    arguments: {'product': product},
   );
   return result.mutatedDocumentIDs().isNotEmpty;
 }
 ```
 
 **❌ DON'T:**
-- Save a stale in-memory copy with `DO UPDATE`: every supplied field gets a new timestamp and can override a concurrent change from another device.
+- Save a stale in-memory copy with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`. `DO UPDATE` gives every supplied field a new timestamp; `DO UPDATE_LOCAL_DIFF` writes back any old value that differs from the stored one. Both can override a concurrent change from another device.
 - Use `DO UPDATE` for periodic re-upserts of unchanged data (for example, refreshing reference data from a backend).
 - Expect `DO UPDATE` to replace a document or an object: it merges.
 
@@ -70,7 +71,7 @@ When every change matters, record each change as a new fact instead of overwriti
 | Best for | Status and workflow history of one record | Unbounded logs, analytics, compliance trails | Live dashboards plus history |
 
 **✅ DO:**
-- Key audit-log entries by millisecond-precision ISO-8601 UTC timestamps, and append them with a partial-document upsert (`ON ID CONFLICT DO UPDATE_LOCAL_DIFF`).
+- Key audit-log entries by millisecond-precision ISO-8601 UTC timestamps, and append them with a partial-document upsert (`ON ID CONFLICT DO UPDATE_LOCAL_DIFF`). Two entries recorded in the same millisecond on different devices share a key and only one is kept; if that matters, append a device identifier to the key (`2026-10-08T10:05:12.437Z_t3`).
 - Derive the current state when reading: latest timestamp, **most advanced state** (progressions that must not regress), earliest occurrence, or custom rules.
 - Plan cleanup of event collections from the start with `EVICT`, using a subscription scope that is the complement of the eviction query.
 
@@ -124,7 +125,7 @@ Guide: [Document Structure](../../../../guides/best-practices/ditto.md#document-
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | Write succeeds; a warning is logged |
 | Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` / `UPDATE` fails; the stored document is unchanged |
 
-Size is the serialized size on disk, including CRDT metadata and the tombstones of earlier writes. It affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes about 10 seconds to replicate the first time.
+The limits apply to the size of each stored document. Size affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes about 10 seconds to replicate the first time.
 
 | Cause of growth | Fix |
 |---|---|
@@ -133,7 +134,7 @@ Size is the serialized size on disk, including CRDT metadata and the tombstones 
 | One document holding data for many users or locations | Split by owner or location (often simplifies permissions too) |
 | Status history | A bounded audit-log map, or an event collection (see [Event History and Audit Logs](#pattern-2-event-history-and-audit-logs)) |
 
-Estimate the size of a value with `object_size()`; it is approximate and excludes CRDT metadata, so leave headroom:
+Estimate the size of a value with `object_size()`; it is approximate and can differ from the stored size, so leave headroom. To bring an oversized document back under the limits, move large values to attachments or to a separate collection and remove them from the document with `UNSET`:
 
 ```sql
 SELECT _id, object_size(o) AS approxBytes

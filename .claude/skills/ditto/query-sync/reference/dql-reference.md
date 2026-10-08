@@ -28,7 +28,7 @@ Detailed rules behind the patterns in [SKILL.md](../SKILL.md). Extracted from th
 | `INSERT` | Create documents, upsert with `ON ID CONFLICT`, seed defaults with `INITIAL DOCUMENTS` |
 | `UPDATE` | Change fields with `SET` / `UNSET`, counters with `APPLY` |
 | `DELETE` / `EVICT` | Delete everywhere (tombstone) / remove from this device only |
-| `CREATE INDEX` / `DROP INDEX`, `EXPLAIN`, `PROFILE`, `ADVISE` (SDK 5.1+) | Indexing and diagnostics |
+| `CREATE INDEX` / `DROP INDEX`, `EXPLAIN`, `PROFILE`; `ADVISE` (SDK 5.1+) | Indexing and diagnostics |
 | `ALTER SYSTEM` / `SHOW` | Runtime system parameters |
 
 There is no statement to create or drop a collection: a collection exists as soon as a document is written to it.
@@ -49,7 +49,7 @@ There is no statement to create or drop a collection: a collection exists as soo
 | Identifier | `` `my field` `` | Backticks quote names with special characters or reserved words |
 | Number | `42`, `2.5`, `1e3`, `0xFF` | `5 / 2` is `2`; `5.0 / 2` is `2.5` |
 | Boolean / null | `true`, `FALSE`, `null` | Case-insensitive |
-| Object | `{'status': 'open'}` | Every key quoted; unquoted keys fail in `INSERT` and become `{}` in `SELECT` |
+| Object | `{'status': 'open'}` | Every key quoted; unquoted keys fail in `INSERT` and are evaluated as field references in `SELECT` (usually `{}`) |
 
 ```sql
 SELECT 'it\'s' AS a, "double quoted" AS b, `my field` AS c, 0xFF AS d
@@ -77,8 +77,8 @@ Which documents each expression matches when `isDeleted` holds `true`, `false`, 
 
 Related behavior:
 - In projections, an expression that evaluates to MISSING is omitted from the row; `null` appears as `null`.
-- Comparing values of different types (`1 < 'a'`) evaluates to MISSING.
-- Aggregates over zero rows return MISSING (except `COUNT(*)`, which returns `0`).
+- Comparing values of different types, including with `=` and `!=` (`1 = 'a'`, `1 != 'a'`, `1 < 'a'`), evaluates to MISSING. Integers and floats compare normally (`1 = 1.0` is `true`).
+- Aggregates over zero rows return MISSING (except `COUNT(*)` and `COUNT(expr)`, which return `0`).
 - `UNSET field` makes a field missing; writing `null` keeps it present.
 
 ## Membership and USE IDS
@@ -117,7 +117,7 @@ SELECT * FROM orders USE IDS LIST :ids
 | All fields plus expressions | `SELECT orders.*, total * 1.1 AS gross FROM orders` (qualify `*`) |
 | All fields except some | `SELECT orders.*, MISSING notes FROM orders` |
 
-- Without `AS`, computed columns are named `($1)`, `($2)`, and so on.
+- Without `AS`, a computed column is named after its position in the projection list, such as `($2)` for the second element.
 - An unqualified `*` with other projections fails (`unqualified * with other projection elements is not supported`).
 - Projections shape the local result only; subscriptions always sync whole documents.
 - `DISTINCT` keeps every distinct row in memory: use it on a few low-cardinality fields, never with `_id` or `*`.
@@ -125,7 +125,7 @@ SELECT * FROM orders USE IDS LIST :ids
 | Aggregate | Result |
 |---|---|
 | `COUNT(*)` | Number of rows (`0` for no rows) |
-| `COUNT(expr)` / `COUNT(DISTINCT expr)` | Rows where `expr` is not `null`, missing, or `false` |
+| `COUNT(expr)` / `COUNT(DISTINCT expr)` | Rows where `expr` is not `null`, missing, or `false` (`0` for no rows) |
 | `SUM` / `AVG` | Numeric values only; MISSING for no rows |
 | `MIN` / `MAX` | By Ditto's type order; MISSING for no rows |
 | `MEDIAN(expr)` | Positional median |
@@ -164,7 +164,7 @@ ORDER BY day
 - Ascending type order: `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing. `DESC` reverses it, so missing values come first.
 - `ORDER BY status = 'urgent'` puts matching documents last in ascending order; use `DESC` or a `CASE` expression.
 - Add a unique tie-breaker: `ORDER BY createdAt DESC, _id`. Store sortable values in one consistent type.
-- Combine `LIMIT`/`OFFSET` with `ORDER BY`. Prefer keyset pagination over large offsets.
+- Combine `LIMIT`/`OFFSET` with `ORDER BY`. Prefer keyset pagination over large offsets, with an `_id` tie-breaker in the `WHERE` clause (`createdAt < :after OR (createdAt = :after AND _id < :afterId)`).
 - `LIMIT` and `ORDER BY` are not allowed in subscriptions by default.
 
 ```sql
@@ -217,7 +217,7 @@ Restrictions:
 - Rejected by `registerSubscription` (`Unsupported feature: Joining`); not supported on Ditto Server.
 - A later `RIGHT JOIN` fails; a `RIGHT JOIN` is rewritten as a `LEFT JOIN` with sides swapped, so the left collection becomes the inner side and needs the index.
 - At most 10 joins per statement by default (directive `#max_joins`).
-- Observers accept joins and fire when any joined collection changes; rows carry a composite `_id` usable as a diff key.
+- Observers accept joins and deliver a new result when a change in any joined collection changes the joined rows; rows carry a composite `_id` usable as a diff key.
 
 Embedding remains the default modeling choice; see [Relationships: Embedding, Separate Collections, and JOIN](../../../../guides/best-practices/ditto.md#relationships-embedding-separate-collections-and-join).
 
@@ -227,8 +227,8 @@ Embedding remains the default modeling choice; see [Relationships: Embedding, Se
 |---|---|
 | `FAIL` (default) | Fails: `Identifier conflict on document "...": using FAIL conflict policy` |
 | `DO NOTHING` | Existing document unchanged; no error |
-| `DO UPDATE` | Supplied fields written (merged, nested objects merged) even if identical; mutation recorded, observers fire |
-| `DO UPDATE_LOCAL_DIFF` | Same merge, only differing fields written; no-op if nothing changed |
+| `DO UPDATE` | Supplied fields written (merged, nested objects merged) even if identical; mutation recorded, observers can fire again |
+| `DO UPDATE_LOCAL_DIFF` | Same merge, only differing fields written; nothing written if nothing changed (for upserts and re-imports; it does not protect a stale in-memory copy) |
 
 - A multi-document insert is atomic. Two documents with the same `_id` in one statement fail with `Expected unique document identifiers`.
 - No `INSERT` policy removes fields; use `UNSET`.
@@ -249,36 +249,36 @@ UPDATE collection [USE IDS ...]
 [APPLY counterField INCREMENT BY n, ...]
 SET field = value, nested.path = value, ...
 UNSET field, nested.path, ...
-WHERE condition
+[WHERE condition]
 [RETURNING projection]
 ```
 
-- At least one of `APPLY`, `SET`, `UNSET`; `APPLY` comes before `SET`. Counters: see [Counters](../../../../guides/best-practices/ditto.md#counters).
+- At least one of `APPLY`, `SET`, `UNSET`; `APPLY` comes before `SET`. Without `WHERE`, every document in the collection is updated. Counters: see [Counters](../../../../guides/best-practices/ditto.md#counters).
 - Missing intermediate objects in nested `SET` paths are created.
 - Errors: `SET _id = ...` (`The document id _id cannot be modified`); the same path twice (`More than one modification specified for the path ...`); `SET items[0] = ...` (syntax error; replace the array or use a map keyed by ID).
-- An `UPDATE` that writes the current value is still a mutation: it appears in `mutatedDocumentIDs()` and fires observers. Skip unchanged documents in `WHERE` (`coalesce(status, :none) != :status`).
+- An `UPDATE` that writes the current value is still a mutation: it appears in `mutatedDocumentIDs()` and can wake observers. Skip unchanged documents in `WHERE` (`coalesce(status, :none) != :status`).
 
 With the default `DQL_STRICT_MODE = false`, objects are CRDT maps and assignments merge:
 
 | Starting `address` | Statement | Result |
 |---|---|---|
 | `{"city": "Oslo", "zip": "0150"}` | `SET address = :a` with `{"country": "NO"}` | `{"city": "Oslo", "zip": "0150", "country": "NO"}` |
-| `{"city": "Oslo", "zip": "0150"}` | `SET address = {}` | Unchanged |
+| `{"city": "Oslo", "zip": "0150"}` | `SET address = {}` | Unchanged (the document is still reported as mutated) |
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address.zip` | `{"city": "Oslo"}` |
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address`, then `SET address = :a` with `{"city": "Bergen"}`, as two `tx.execute` calls in one transaction | `{"city": "Bergen"}` |
 
-See [Strict Mode](../../../../guides/best-practices/ditto.md#strict-mode) for `REGISTER` declarations that always replace a value as a whole.
+With `UNSET` and `SET`, the field is still a map, so a nested edit that another device made at the same time can merge into the new object. Only a `REGISTER` declaration guarantees that concurrent edits never mix two versions; see [Strict Mode](../../../../guides/best-practices/ditto.md#strict-mode).
 
 ## RETURNING (SDK 5.1+)
 
 | Statement | Rows in `items` |
 |---|---|
-| `INSERT ... RETURNING` | Inserted documents (not those skipped by `DO NOTHING`) |
+| `INSERT ... RETURNING` | Documents written (not those skipped by `DO NOTHING` or left unchanged by `DO UPDATE_LOCAL_DIFF`) |
 | `UPDATE ... RETURNING` | Documents after the update |
 | `DELETE ... RETURNING` / `EVICT ... RETURNING` | Documents before removal |
 
 - Same projection syntax as `SELECT`, including aliases, expressions, and aggregates over all affected documents.
-- `mutatedDocumentIDs()` and `commitID` are still populated.
+- Read the affected documents from `items`; do not rely on `mutatedDocumentIDs()` also being populated for a statement with `RETURNING`.
 
 ```sql
 DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
@@ -291,6 +291,6 @@ DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
 | `DELETE FROM c WHERE ...` | Deletes on all peers; leaves a tombstone that syncs the deletion |
 | `EVICT FROM c WHERE ...` | Removes from this device only; can sync back while a matching subscription is active |
 
-> **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` clause completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
+> **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
 
 Choosing between them, soft delete, and tombstones: [Deletion and Storage Management](../../../../guides/best-practices/ditto.md#deletion-and-storage-management).

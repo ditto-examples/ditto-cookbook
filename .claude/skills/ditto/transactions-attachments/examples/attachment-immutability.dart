@@ -16,8 +16,9 @@
 // versions: every referenced blob stays on the device.
 //
 // Deleting and garbage collection:
-// - Attachments cannot be deleted directly. Remove the token (UNSET or a new
-//   token), or evict the whole document with EVICT.
+// - Attachments cannot be deleted directly. Remove the token (UNSET with the
+//   ATTACHMENT declaration, or a new token), delete the document with DELETE
+//   (for every peer), or evict it from this device with EVICT.
 // - On Small Peers, blobs that no document on the device references are
 //   garbage-collected automatically every 10 minutes. Garbage collection runs
 //   only on Small Peers, not on Ditto Server.
@@ -84,10 +85,11 @@ Future<void> replaceSignedContract(
 // ============================================================================
 
 /// ✅ GOOD: The blob becomes eligible for garbage collection once no document
-/// on the device references it.
+/// on the device references it. Declare the field: with DQL_STRICT_MODE = true,
+/// an undeclared UNSET leaves the attachment unchanged without an error.
 Future<void> removePhoto(Ditto ditto, String photoId) async {
   await ditto.store.execute(
-    'UPDATE photos UNSET image WHERE _id = :id',
+    'UPDATE COLLECTION photos (image ATTACHMENT) UNSET image WHERE _id = :id',
     arguments: {'id': photoId},
   );
 }

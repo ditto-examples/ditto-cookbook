@@ -72,7 +72,7 @@ Labels: **(SDK 5.1+)** marks features introduced in 5.1. **(Experimental)** mark
 
 Register the observer **without** `onChange`, consume `changes` with one `StreamSubscription`, and cancel both in `dispose()`.
 
-> **Note (SDK 5.1.0):** When an observer is registered with `onChange`, every result is **also** queued in its `changes` stream. If nothing listens to `changes`, those queued results stay in memory for the lifetime of the observer, so memory use grows with every update. The same applies to `registerObserverV2` with `onChange` only. If you need `onChange`, also drain the stream, for example with `observer.changes.listen((_) {})`.
+> **Note (SDK 5.1.0):** When an observer is registered with `onChange`, every result is **also** queued in its `changes` stream. If nothing listens to `changes`, those queued results stay in memory for the lifetime of the observer, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` stream right after registering it. If you need `onChange`, also drain the stream, for example with `observer.changes.listen((_) {})`.
 
 **Detection** (red flags):
 - `registerObserver(..., onChange: ...)` or `registerObserverV2(..., onChange: ...)` with no `.changes.listen` / `await for` on the same observer
@@ -174,7 +174,7 @@ StoreObserver observeOrdersWithCallbackOnly(Ditto ditto, void Function(int) onCo
 
 **Guide**: [Keep Observer Callbacks Fast](../../../guides/best-practices/ditto.md#keep-observer-callbacks-fast)
 
-`registerObserver` has no backpressure. Ditto coalesces rapid changes, but it never waits for your code. Pausing the `changes` stream of a `StoreObserver` does not slow Ditto down; results queue up in the stream instead.
+`registerObserver` has no backpressure: Ditto never waits for your code before delivering the next result. Pausing the `changes` stream of a `StoreObserver` does not slow Ditto down; results queue up in the stream instead.
 
 **Detection**: an `async` listener on `StoreObserver.changes` that `await`s network calls, file I/O, or database writes; a listener that writes to the collection it observes without a guard.
 
@@ -285,9 +285,9 @@ An observer delivers a new result for **any** change that affects its query. A `
 
 | Write | Effect when values are unchanged |
 |---|---|
-| `ON ID CONFLICT DO UPDATE` | Every supplied field is written again; the document is reported as mutated and observers fire |
-| `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` | Only fields whose values differ are written; no-op when nothing changed |
-| `UPDATE ... SET f = <current value>` | Still recorded as a mutation, appears in `mutatedDocumentIDs()`, fires observers |
+| `ON ID CONFLICT DO UPDATE` | Every supplied field is written again; the document is reported as mutated and observers can fire again |
+| `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` | Only fields whose values differ are written; nothing is written when nothing changed |
+| `UPDATE ... SET f = <current value>` | Still recorded as a mutation, appears in `mutatedDocumentIDs()`, can wake observers |
 
 **Detection**: periodic re-imports with `DO UPDATE`; read-modify-write of a whole document; `UPDATE` without a condition that skips documents already in the target state.
 
@@ -318,7 +318,7 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 - Use `coalesce` in the skip condition so documents with a missing or `null` field stay eligible
 
 **❌ DON'T:**
-- Read a document, modify it in Dart, and write the whole map back with `DO UPDATE`
+- Read a document, modify it in Dart, and write the whole map back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (a stale value that differs from the stored one is written back)
 - Expect `DO UPDATE` or `SET obj = {...}` to replace an object; with the default strict mode they merge, and fields not supplied remain (remove keys with `UNSET`)
 
 **Why**: Ditto syncs changes at field level. Rewriting a whole document makes the change larger, and an unchanged field written by this device can win a merge against a real concurrent change made on another device.
@@ -345,8 +345,8 @@ Key usage rules (full table in [reference/optimization-patterns.md](reference/op
 - Index scans: `=`, `IN :values`, ranges, prefix `LIKE 'abc%'` (literal or parameter), `!=`, `IS MISSING`
 - **Collection scans**: any function applied to the field (`lower(name) = ...`, `starts_with(...)`, `coalesce(isDeleted, false) = false`), element lookups (`array_contains(tags, 'x')`), and `OR` when any branch is not indexed
 - Match the sort direction of a composite index to avoid an extra sort step
-- With `DQL_STRICT_MODE` set to `true`, the 5.1.0 planner does **not** use index scans at all; keep the default (`false`) if you rely on indexes
-- Keep each field's type consistent; mixed types can produce incorrect or mis-ordered index results
+- With `DQL_STRICT_MODE` set to `true`, the 5.1.0 planner does **not** use secondary indexes (ID lookups and full-collection `COUNT(*)` are not affected, and `ADVISE` returns no suggestions); keep the default (`false`) if you rely on indexes
+- Keep type declarations consistent: only the most recently written CRDT type of a field is indexed, so a field written with different declarations (for example `REGISTER` and `MAP`) can produce incorrect or mis-ordered index results
 
 **✅ DO:**
 - Create indexes at startup with `CREATE INDEX IF NOT EXISTS`, after `Ditto.open` and before queries and observers start
@@ -400,7 +400,7 @@ Future<void> configureDittoLogging() async {
 |---|---|
 | `LogLevel`: `error`, `warning`, `info`, `debug`, `verbose`; default `info` | Set the level explicitly: `warning` in production, `debug` while debugging |
 | `LogLevel.verbose` can significantly slow down replication | Use it only for short, targeted investigations |
-| `ditto.close()` resets `DittoLogger.customLogCallback` to `null` | Set the callback again after every reopen |
+| `ditto.close()` resets `DittoLogger.customLogCallback` to `null` for the whole process | Set the callback again before every `Ditto.open()` (after `Ditto.init()`), so logs emitted while Ditto opens are forwarded too |
 | On-disk logs always include debug-level entries, independent of `minimumLogLevel` | A `warning` console level in production does not reduce what support can retrieve |
 | `DittoLogger.exportLogs(path)` writes gzip-compressed JSON Lines and returns the byte count; the file must not exist and its directory must exist | Use a fresh, timestamped `.jsonl.gz` path |
 
@@ -468,7 +468,7 @@ Future<void> configureDittoLogging() async {
 ### Logging
 - [ ] `await Ditto.init()` before `DittoLogger`
 - [ ] `LogLevel.warning` in production, no `verbose`
-- [ ] `customLogCallback` set again after reopening
+- [ ] `customLogCallback` set again before every `Ditto.open()`
 - [ ] Log export path is new and its directory exists
 
 ---

@@ -95,11 +95,11 @@ Guide: [Choosing DELETE, Soft Delete, or EVICT](../../../guides/best-practices/d
 
 **Problem**: `DELETE` and `EVICT` with `USE IDS` and no `WHERE` clause complete without an error but remove nothing.
 
-> **Note (SDK 5.1.0):** `DELETE` and `EVICT` statements that use `USE IDS` without a `WHERE` clause remove nothing. Use `WHERE _id IN :ids` instead; it is planned as an ID scan, so it is just as efficient.
+> **Note (SDK 5.1.0):** `DELETE` and `EVICT` statements that use `USE IDS` without a `WHERE` predicate (no `WHERE` clause, or `WHERE true`) remove nothing. Use `WHERE _id IN :ids` instead; it is planned as an ID scan, so it is just as efficient.
 
 **✅ DO**:
 - Target documents with `WHERE _id = :id` or `WHERE _id IN :ids`.
-- Add `RETURNING` (SDK 5.1+) when you need the removed content (undo banner, audit record). It is the only way to read a document after `DELETE`, because the tombstone keeps no values.
+- Add `RETURNING` (SDK 5.1+) when you need the removed content (undo banner, audit record). It returns the removed content from the same atomic statement; the tombstone keeps no values.
 
 **❌ DON'T**:
 - Write `DELETE FROM orders USE IDS LIST :ids` or `EVICT FROM orders USE IDS 'a'`.
@@ -116,7 +116,7 @@ Future<List<Map<String, dynamic>>> deleteOrders(
     arguments: {'ids': orderIds},
   );
   // With RETURNING, each item holds the document as it was before deletion.
-  // mutatedDocumentIDs() is still populated.
+  // Read the removed documents from items, not from mutatedDocumentIDs().
   return result.items.map((item) => item.value).toList();
 }
 
@@ -267,7 +267,7 @@ Guide: [Soft Delete](../../../guides/best-practices/ditto.md#soft-delete), [Inde
 
 ### 4. Keep Soft-Deleted Documents in Subscriptions (Priority: CRITICAL)
 
-**Problem**: The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. Devices that already have the document keep it (cancelling or narrowing a subscription never deletes local data), and under the subscription model a device that does not have the flag can miss it and keep showing the document as active.
+**Problem**: The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. Devices that already have the document keep it (cancelling or narrowing a subscription never deletes local data), and a subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
 
 **✅ DO**:
 - Keep soft-deleted documents inside the subscription at least until every device has received the flag.
@@ -284,7 +284,7 @@ Guide: [Soft Delete](../../../guides/best-practices/ditto.md#soft-delete), [Inde
 | Cleanup | A `DELETE` after the retention period, executed on the Ditto Server or by another authorized peer, that syncs to every device | Each device evicts documents deleted before the cutoff; the record stays on the Ditto Server until it is deleted there |
 | Device-side `EVICT` of old soft-deleted documents | ❌ They still match the subscription and sync back | ✅ They are outside the subscription |
 | Subscription changes | None | Re-registered when the cutoff moves (for example once a day) |
-| Trade-offs | Simplest design. Soft-deleted documents use storage on every device until the `DELETE` runs, and the `DELETE` is subject to the tombstone rules | More moving parts. A device that stays offline longer than the retention window can miss the flag, so choose a window longer than the longest expected offline period |
+| Trade-offs | Simplest design. Soft-deleted documents use storage on every device until the `DELETE` runs, and the `DELETE` is subject to the tombstone rules | More moving parts. Choose a window longer than the longest expected offline period, so that every device receives the flag while the document is still inside its subscription |
 
 ```dart
 // ✅ GOOD (Variant A): The subscription (owned by a long-lived service such as
@@ -296,8 +296,8 @@ SyncSubscription subscribeToStoreOrders(Ditto ditto, String storeId) {
   );
 }
 
-// ❌ BAD: The document leaves the subscription as soon as it is flagged,
-// so devices that do not have the flag yet can miss it.
+// ❌ BAD: The document leaves the subscription as soon as it is flagged.
+// Keep flagged documents in the subscription until every device has the flag.
 SyncSubscription subscribeToActiveOrdersOnly(Ditto ditto) {
   return ditto.sync.registerSubscription(
     'SELECT * FROM orders WHERE coalesce(isDeleted, false) = false',
@@ -327,7 +327,7 @@ Guide: [Soft delete, subscriptions, and cleanup](../../../guides/best-practices/
 - Cancel or narrow the affected subscriptions **before** evicting.
 - Make the eviction query the exact complement of the remaining subscription (same cutoff value, `>=` in the subscription and `<` in the eviction).
 - Keep subscription references in an app-level or feature-level service so you can cancel them.
-- For a large boundary change (for example a store switch), consider running the same `EVICT` again after a short delay for documents that were in flight.
+- For a large boundary change (for example a store switch), data that was already being transferred can still arrive after cancelling; if the device must not keep it, run the same `EVICT` again later (for example, on the next app start or in a periodic cleanup).
 
 **❌ DON'T**:
 - Evict and then register a subscription that matches the evicted documents again (for example `SELECT * FROM orders`).

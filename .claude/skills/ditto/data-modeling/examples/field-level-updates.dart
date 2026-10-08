@@ -4,7 +4,8 @@
 //
 // Under the default settings an object is stored as a MAP: assigning an object
 // merges it into the stored map, and only UNSET removes keys. Write only what
-// changed, and prefer DO UPDATE_LOCAL_DIFF when writing a full in-memory copy.
+// changed. DO UPDATE_LOCAL_DIFF suits upserts and re-imports of data that
+// another system owns; it does not protect a stale in-memory copy.
 //
 // Guide: .claude/guides/best-practices/ditto.md
 //   #local-write-semantics-you-must-know, #document-structure,
@@ -45,30 +46,33 @@ Future<void> removeAddressLine2(Ditto ditto, String orderId) async {
 }
 
 // ---------------------------------------------------------------------------
-// Writing a full document from local state
+// Upserting a full document
 // ---------------------------------------------------------------------------
 
-/// ✅ GOOD: DO UPDATE_LOCAL_DIFF compares the incoming document with the stored
-/// one and writes only the fields whose values differ. Re-writing unchanged
-/// data is a no-op (no mutation, no observer callback).
-Future<bool> saveOrder(Ditto ditto, Map<String, dynamic> order) async {
+/// ✅ GOOD: Re-importing reference data that your backend owns.
+/// DO UPDATE_LOCAL_DIFF compares the incoming document with the local one and
+/// skips fields whose values are equal. Re-writing unchanged data writes
+/// nothing (no mutation, no observer callback).
+Future<bool> importProduct(Ditto ditto, Map<String, dynamic> product) async {
   final result = await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {'order': order},
+    'INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
+    arguments: {'product': product},
   );
   // Empty when the stored document already had the same values.
   return result.mutatedDocumentIDs().isNotEmpty;
 }
 
-/// ❌ BAD: DO UPDATE writes every supplied field, even unchanged ones. Those
-/// fields get new timestamps, so a stale in-memory copy can override a
-/// concurrent change that another device made (for example, to tableNumber).
+/// ❌ BAD: Writing back a whole in-memory copy after the user changed only the
+/// status. If another device changed tableNumber after this copy was loaded,
+/// the stale value is written back: DO UPDATE writes every supplied field, and
+/// DO UPDATE_LOCAL_DIFF writes every field that differs from the stored one,
+/// which includes the stale tableNumber. Use a field-level UPDATE instead.
 Future<void> saveOrderIncorrectly(
   Ditto ditto,
   Map<String, dynamic> staleOrder,
 ) async {
   await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE',
+    'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
     arguments: {'order': staleOrder},
   );
 }
@@ -93,7 +97,9 @@ Future<void> replaceShippingAddressIncorrectly(
 }
 
 /// ✅ GOOD: Clear the map, then write the new object, in one transaction so no
-/// reader sees the intermediate state.
+/// reader sees the intermediate state. The field is still a map, so a nested
+/// edit that another device makes at the same time can merge into the new
+/// object; only a REGISTER declaration (below) prevents that.
 Future<void> replaceShippingAddress(
   Ditto ditto,
   String orderId,

@@ -6,7 +6,7 @@
 //
 // ANTI-PATTERNS DEMONSTRATED:
 // 1. ❌ ditto.store.execute inside a transaction (throws DittoException)
-// 2. ❌ Nested read-write transaction (deadlock; no guard in Flutter)
+// 2. ❌ Nested read-write transaction (can deadlock; the SDK does not detect it)
 // 3. ❌ Network calls or timers inside a transaction (blocks all writes)
 // 4. ❌ Storing the Transaction and using it later (throws DittoException)
 // 5. ❌ Swallowing an error and committing a half-done change
@@ -163,15 +163,16 @@ Future<void> swallowedError(Ditto ditto, String orderId, String invoiceId) async
 // ANTI-PATTERN 6: Reading commitID inside the transaction
 // ============================================================================
 
-/// ❌ BAD: The commit ID is only assigned after the commit, so this cannot be
-/// used to track sync status.
+/// ❌ BAD: commitID is null until the transaction commits, so this cannot be
+/// used to track sync status. Return the QueryResult from the callback and read
+/// its commitID after transaction() completes.
 Future<void> commitIdInsideTransaction(Ditto ditto, String orderId) async {
   await ditto.store.transaction((tx) async {
     final result = await tx.execute(
       'UPDATE orders SET status = :status WHERE _id = :id',
       arguments: {'id': orderId, 'status': 'shipped'},
     );
-    debugPrint('commitID: ${result.commitID}'); // Assigned only after the commit.
+    debugPrint('commitID: ${result.commitID}'); // null until the commit.
   });
 }
 
@@ -180,7 +181,8 @@ Future<void> commitIdInsideTransaction(Ditto ditto, String orderId) async {
 // ============================================================================
 
 /// ❌ BAD: ditto.close() does not wait for in-flight transactions. The
-/// unawaited transaction fails when the instance closes.
+/// unawaited transaction can fail with DittoClosedException when the instance
+/// closes.
 Future<void> closeWithoutWaiting(Ditto ditto, String orderId) async {
   unawaited(
     ditto.store.transaction((tx) async {

@@ -16,17 +16,18 @@
 //
 // Facts:
 // - Every DittoLogger member throws "Ditto not initialized" until the SDK is
-//   initialized. Ditto.open initializes it implicitly; call await Ditto.init()
+//   initialized. Ditto.open initializes it implicitly (SDK 5.1+); call await Ditto.init()
 //   to configure logging BEFORE opening, so startup is logged with your settings.
 // - LogLevel values: error, warning, info, debug, verbose. Defaults:
 //   isEnabled = true, minimumLogLevel = LogLevel.info, customLogCallback = null.
-// - ditto.close() resets DittoLogger.customLogCallback to null.
+// - ditto.close() resets DittoLogger.customLogCallback to null for the whole
+//   process; set it again before every Ditto.open(), after Ditto.init().
 // - On-disk logs always include debug-level entries, independent of
 //   isEnabled and minimumLogLevel; DittoLogger.exportLogs(path) exports them.
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Ditto.init() -> DittoLogger -> Ditto.open() startup order
-// 2. ✅ Forwarding warnings and errors, re-installed after every open
+// 2. ✅ Forwarding warnings and errors, re-installed before every open
 // 3. ✅ Exporting on-disk logs for a "Send diagnostics" action
 // 4. ✅ Temporary verbose logging for a targeted investigation
 // 5. ✅ Slow-request warnings during development (SDK 5.1+)
@@ -54,10 +55,11 @@ Future<void> configureDittoLogging() async {
   DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;
 }
 
-/// ✅ GOOD: Logging first, then open, then everything that depends on the
-/// instance (log forwarding, system parameters, auth handler, sync).
+/// ✅ GOOD: Logging and log forwarding first, then open, then everything that
+/// depends on the instance (system parameters, auth handler, sync).
 Future<Ditto> startDitto(void Function(String line) report) async {
   await configureDittoLogging();
+  installDittoLogForwarding(report); // Forwards logs emitted while Ditto opens.
 
   final ditto = await Ditto.open(
     const DittoConfig(
@@ -66,7 +68,6 @@ Future<Ditto> startDitto(void Function(String line) report) async {
     ),
   );
 
-  installDittoLogForwarding(report);
   await applyDiagnosticsParameters(ditto);
 
   await ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) async {
@@ -89,7 +90,7 @@ Future<Ditto> startDitto(void Function(String line) report) async {
 // ============================================================================
 
 /// ✅ GOOD: Forwards Ditto warnings and errors. The callback is fast and
-/// non-blocking because it runs for every log event that passes the level.
+/// non-blocking because it runs for every log event it receives.
 void installDittoLogForwarding(void Function(String line) report) {
   DittoLogger.customLogCallback = (LogLevel level, String message) {
     if (level == LogLevel.error || level == LogLevel.warning) {
@@ -98,7 +99,7 @@ void installDittoLogForwarding(void Function(String line) report) {
   };
 }
 
-/// ✅ GOOD: Re-installs the callback after every open, because ditto.close()
+/// ✅ GOOD: Re-installs the callback before every open, because ditto.close()
 /// clears it (for example when the user signs out and in again).
 class DittoSession {
   DittoSession(this._config, this._report);
@@ -108,8 +109,9 @@ class DittoSession {
   Ditto? _ditto;
 
   Future<Ditto> open() async {
+    await Ditto.init(); // No-op after the first call.
+    installDittoLogForwarding(_report); // Set before every open.
     final ditto = await Ditto.open(_config);
-    installDittoLogForwarding(_report); // Set again after every open.
     return _ditto = ditto;
   }
 

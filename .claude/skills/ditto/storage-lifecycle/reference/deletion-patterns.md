@@ -20,7 +20,7 @@ Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The autho
 - Tombstones are only shared with peers that have seen the document before it was deleted; a peer never receives a tombstone for a document it never knew about.
 - After `DELETE`, the document no longer appears in `SELECT`, is not counted by `COUNT(*)`, and an `UPDATE` no longer matches it.
 - A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear.
-- Inserting with `INITIAL DOCUMENTS` for an `_id` that was previously deleted produces a document whose fields are all `null`, because the tombstone is newer than the "initial" data.
+- Inserting with `INITIAL DOCUMENTS` for an `_id` that was previously deleted on this device does not bring the document back: the deletion wins. If the seed is identical to the `INITIAL` insert that created the document, the document stays deleted; if the content differs, or the document was originally created with a regular `INSERT`, a document remains whose fields are all `null`.
 
 Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md pattern 2](../SKILL.md#2-respect-the-tombstone-ttl-priority-critical) and the guide's [Tombstone TTL and reaping](../../../../guides/best-practices/ditto.md#tombstone-ttl-and-reaping).
 
@@ -156,7 +156,7 @@ Future<List<SyncSubscription>> switchStore(
 }
 ```
 
-Documents that were in flight when the subscriptions were cancelled can still arrive shortly afterwards. Run the same eviction once more after a short delay; see [examples/evict-subscription-management-good.dart](../examples/evict-subscription-management-good.dart).
+Data that was already being transferred when the subscriptions were cancelled can still arrive afterwards. If the device must not keep the old store's data, run the same eviction again later (for example, on the next app start or in a periodic cleanup); see [examples/evict-subscription-management-good.dart](../examples/evict-subscription-management-good.dart).
 
 Switch partitions only when the needed data really changes. Search boxes, tabs, filters, and sort orders should change local observers, not subscriptions (avoid changing subscriptions more often than about every 15 minutes).
 

@@ -31,9 +31,9 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 All three accept only `SELECT` queries and take parameters through `arguments:`. Observers never cause data to sync; pair them with a subscription.
 
 Behavior:
-- `registerObserver` coalesces rapid changes but never waits for your code.
-- With `onChange`, events emitted before the first listener attaches are buffered; listen right after registering.
-- `registerObserverV2`: while the stream is paused, Ditto stops delivering after the update that arrived at the pause; on resume, that update and the latest state are delivered. Leaving an `await for` loop cancels the subscription and the observer.
+- `registerObserver` has no backpressure: it never waits for your code.
+- With `onChange`, events emitted before the first listener attaches are buffered; listen right after registering. `registerObserverV2` starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` right away.
+- `registerObserverV2`: while the stream is paused, Ditto stops delivering after the update that arrived at the pause; on resume, that update and the latest state are delivered. Leaving an `await for` loop cancels the subscription and the observer; `ditto.close()` does not end the loop, so cancel the observer before closing.
 - `registerObserverWithSignalNext`: one result, then nothing until `signalNext()`. Do not pause or resume its stream (the SDK logs a warning).
 - `Differ` keeps the previous result in memory, and diffing is computationally expensive; debounce updates for large or busy result sets and keep diffed queries bounded (for example, with `LIMIT`). `Differ` only accepts items produced by Ditto (test doubles throw an `ArgumentError`).
 
@@ -77,8 +77,8 @@ Constraints ([Creating Indexes](../../../../guides/best-practices/ditto.md#creat
 - Expression, partial, and functional indexes are not supported.
 - `IF NOT EXISTS` checks only the index **name**; to change a definition, create it under a new name or drop and recreate it.
 - `DROP INDEX` requires `ON <collection>`.
-- With `DQL_STRICT_MODE` set to `true`, the SDK 5.1.0 planner uses no index scans; every query falls back to a collection scan.
-- Only the most recently written data type of a field is indexed; mixed types can produce incorrect or mis-ordered results, so keep each field's type consistent.
+- With `DQL_STRICT_MODE` set to `true`, the SDK 5.1.0 planner uses no secondary indexes; queries that would use an index scan fall back to a collection scan. ID lookups and full-collection `COUNT(*)` are not affected, and `ADVISE` returns no suggestions.
+- Only the most recently written CRDT type of a field is indexed. If the same field is written with different type declarations (for example `REGISTER` and `MAP`), an index on it can return incorrect or mis-ordered results; keep type declarations consistent, and do not index fields written with more than one type.
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_orders_city ON orders (address.city)
@@ -113,7 +113,7 @@ SELECT _id, status FROM orders WHERE status = :status
 **Guide**: [ADVISE (SDK 5.1+)](../../../../guides/best-practices/ditto.md#advise-sdk-51)
 
 - `ADVISE <statement>` plans but does not execute; available on Small Peers for `SELECT`, `UPDATE`, `DELETE`, `EVICT`, and `INSERT ... SELECT`.
-- The result row has `advice.suggestedIndexes` (each with `collection`, `reason`, `statement`), `advice.existingIndexes` when related indexes exist, and `advice.outcome` when there is nothing to suggest (for example `optimal indexes already exist` or `no advice available for statement`).
+- The result row has `advice.suggestedIndexes` (each with `collection`, `reason`, `statement`), `advice.existingIndexes` when related indexes exist, and `advice.outcome` when there is nothing to suggest (for example `optimal indexes already exist`, `no advice available for statement`, or `no keys to advise on` when every condition applies a function to the field).
 - `ADVISE AND PROVISION` also creates the suggested indexes (`createdIndexes`, `failedIndexes`). Keep it out of production code paths.
 
 ```sql
@@ -129,14 +129,14 @@ ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false ORDER B
 | | `EXPLAIN` | `PROFILE` |
 |---|---|---|
 | Executes the statement | No (parse and plan only) | Yes |
-| Returns | The query plan | The normal results plus one `~request_profile` row (for mutations, the profile row is the only row) |
+| Returns | The query plan | The normal results plus one `~request_profile` row (for mutations without `RETURNING`, the profile row is the only row) |
 | Use it to | Check access paths and indexes | Measure time and document counts per step |
-| Statements | Any DQL statement | `SELECT` and mutations (`INSERT`, `UPDATE`, `DELETE`, `EVICT`); mutations are executed |
+| Statements | `SELECT`, mutations, `CREATE INDEX` / `DROP INDEX`, and `ADVISE` (not `SHOW` or `ALTER SYSTEM`) | `SELECT` and mutations (`INSERT`, `UPDATE`, `DELETE`, `EVICT`); mutations are executed |
 
 | Operator | Meaning |
 |---|---|
 | `scan` | Collection scan; a warning sign on large collections |
-| `indexScan` | Reads an index (`desc.index`, `spans`, `covering`) |
+| `indexScan` | Reads an index (`desc.index`, `spans`; `covering: true` means the filter can be evaluated from the index) |
 | `idScan` | Direct lookup by `_id` |
 | `unionScan` / `intersectScan` | Combines index scans for `OR` / `AND` |
 | `countScan` | `COUNT(*)` without reading documents |
@@ -156,7 +156,7 @@ EXPLAIN SELECT * FROM orders WHERE status = 'open'
 PROFILE SELECT * FROM orders WHERE total = 5
 ```
 
-Directives ([Directives](../../../../guides/best-practices/ditto.md#directives)) override the planner for one statement; use them only after `EXPLAIN` and `PROFILE` show the planner's choice is wrong. `USE INDEX 'name'` is silently ignored if no index with that name exists, and `USE INDEX ''` requests a collection scan. Do not put directives in subscription queries; indexes and directives only affect local query execution.
+Directives ([Directives](../../../../guides/best-practices/ditto.md#directives)) override the planner for one statement; use them only after `EXPLAIN` and `PROFILE` show the planner's choice is wrong. `USE INDEX 'name'` is silently ignored if the index does not exist or cannot serve the query, and `USE INDEX ''` requests a collection scan. Do not put directives in subscription queries; indexes and directives only affect local query execution.
 
 ```sql
 SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
@@ -173,7 +173,7 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 - Project only the fields you need (subscriptions still sync whole documents and accept only `SELECT *`)
 - Use `ORDER BY ... LIMIT` for local queries and observers that need the first rows
 - Keep query strings constant and pass values as parameters (prepared statements are cached)
-- Prefer keyset pagination (`WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize`) over large `OFFSET` values, which re-read and skip earlier rows
+- Prefer keyset pagination with an `_id` tie-breaker (`WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId) ORDER BY createdAt DESC, _id DESC LIMIT :pageSize`) over large `OFFSET` values, which re-read and skip earlier rows
 - Use `DISTINCT` only on a few low-cardinality fields; it keeps every distinct row in memory
 - Count with `COUNT(*)` and check existence with `LIMIT 1`
 
@@ -183,14 +183,16 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 - Use `DISTINCT` with `_id` or `*`
 
 ```sql
-SELECT _id, title, createdAt FROM tasks WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize
+SELECT _id, title, createdAt FROM tasks
+WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId)
+ORDER BY createdAt DESC, _id DESC LIMIT :pageSize
 
 SELECT DISTINCT status FROM orders ORDER BY status
 
 SELECT * FROM orders WHERE _id IN :ids
 ```
 
-**Counting** ([Counting Documents](../../../../guides/best-practices/ditto.md#counting-documents)): a full-collection `COUNT(*)` is answered by a count scan (SDK 5.1+) without reading documents. Ditto's 5.1 benchmark reported about 167x faster full-collection counts and about 4.4x faster filtered counts, comparing median runtimes of SDK 5.0.3 and a 5.1.0 preview build on a single Android device (Orion O6) with one retail dataset of about 93,000 documents; results depend on device, data shape, indexes, and query mix. A filtered count still evaluates the filter, so index the filtered fields.
+**Counting** ([Counting Documents](../../../../guides/best-practices/ditto.md#counting-documents)): a full-collection `COUNT(*)` is answered by a count scan (SDK 5.1+) without reading documents. Ditto's 5.1 benchmark reported about 167x faster full-collection counts and about 4.4x faster filtered counts, comparing median runtimes of SDK 5.0.3 and 5.1.0 on a single Android device (Orion O6) with one retail dataset of about 93,000 documents; results depend on device, data shape, indexes, and query mix. A filtered count still evaluates the filter, so index the filtered fields.
 
 ---
 
@@ -223,15 +225,15 @@ On native platforms, `ditto.store.execute` runs on a long-lived worker isolate p
 |---|---|
 | `FAIL` (default) | The statement fails |
 | `DO NOTHING` | Existing document unchanged; no error |
-| `DO UPDATE` | Supplied fields are written (merged; fields not supplied remain). Identical values are still written, the document is reported as mutated, and observers fire |
-| `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; no-op when nothing changed |
+| `DO UPDATE` | Supplied fields are written (merged; fields not supplied remain). Identical values are still written, the document is reported as mutated, and observers can fire again |
+| `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; nothing is written when nothing changed (for upserts and re-imports; it does not protect a stale in-memory copy) |
 
 With the default strict mode (`DQL_STRICT_MODE = false`), object fields are CRDT maps:
 
 | Starting `address` | Statement | Result |
 |---|---|---|
 | `{"city": "Oslo", "zip": "0150"}` | `SET address = :a` with `{"country": "NO"}` | `{"city": "Oslo", "zip": "0150", "country": "NO"}` |
-| `{"city": "Oslo", "zip": "0150"}` | `SET address = {}` | Unchanged |
+| `{"city": "Oslo", "zip": "0150"}` | `SET address = {}` | Unchanged (the document is still reported as mutated) |
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address.zip` | `{"city": "Oslo"}` |
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address`, then `SET address = :a` with `{"city": "Bergen"}` (inside one transaction) | `{"city": "Bergen"}` |
 
@@ -243,7 +245,7 @@ UPDATE orders SET status = :status WHERE _id = :id AND coalesce(status, :none) !
 UPDATE orders UNSET discountCode, pricing.discount WHERE _id = :id
 ```
 
-An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and fires observers. Skip such writes with a `WHERE` condition (with `coalesce` so missing or `null` values stay eligible) or use `DO UPDATE_LOCAL_DIFF`.
+An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers. Skip such writes with a `WHERE` condition (with `coalesce` so missing or `null` values stay eligible) or use `DO UPDATE_LOCAL_DIFF`.
 
 ---
 
@@ -260,12 +262,12 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 | `verbose` | Very detailed tracing; can slow down replication |
 
 - `DittoLogger` members throw until the SDK is initialized; call `await Ditto.init()` before configuring logging, then `Ditto.open`.
-- `isEnabled` and `minimumLogLevel` control console and callback output, not the on-disk logs.
-- `customLogCallback` receives every event that passes `minimumLogLevel`; keep it fast. `ditto.close()` resets it to `null`.
+- `isEnabled` and `minimumLogLevel` control the logs Ditto emits at runtime, not the on-disk logs.
+- `customLogCallback` receives the log events that Ditto emits; keep it fast. `ditto.close()` resets it to `null` for the whole process, so set it again before every `Ditto.open()` (after `Ditto.init()`).
 - `DittoLogger.isDevtoolsLoggingEnabled = true` also sends Ditto logs to Flutter DevTools.
-- On-disk logs (debug level and above) are kept in the persistence directory of the most recently created `Ditto` instance, up to 15 MB with a maximum age of 15 days by default. They rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`); leave them at their defaults unless Ditto support advises otherwise.
+- On-disk logs (debug level and above) are kept in the persistence directory of the most recently created `Ditto` instance, about 15 MB of compressed logs or 15 days of logs by default (older entries are discarded once one of these limits is reached). They rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`); leave them at their defaults unless Ditto support advises otherwise.
 - Retrieve on-disk logs from the Ditto Portal device dashboard or with `DittoLogger.exportLogs(path)` (gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count).
-- Support bundles (SDK 5.1+) requested through the Ditto Portal include `config_snapshot.json` with the effective configuration and SDK version.
+- Data bundles requested through the Ditto Portal include (SDK 5.1+) a `config_snapshot.json` file with the device's effective configuration.
 
 ---
 
@@ -301,7 +303,7 @@ SELECT _id, text, state, times FROM system:active_requests
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| `DQL_STRICT_MODE` | `false` | When `true`, the 5.1.0 planner uses no index scans |
+| `DQL_STRICT_MODE` | `false` | When `true`, the 5.1.0 planner uses no secondary index scans |
 | `DQL_SLOW_REQUEST_WARN_SECONDS` (SDK 5.1+) | `60` | Slow-request warning threshold; `0` disables |
 | `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` | Request timeout; `0` disables |
 | `DQL_REQUEST_HISTORY_SIZE` | `4096` | Entries kept in `system:request_history` |

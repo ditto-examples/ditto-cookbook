@@ -50,7 +50,7 @@ Future<Ditto> configureLoggingTooEarly() async {
 // ANTI-PATTERN 2: Level set only after Ditto.open()
 // ============================================================================
 
-/// ❌ BAD: This does not throw (Ditto.open initializes the SDK), but startup
+/// ❌ BAD: This does not throw (Ditto.open initializes the SDK in SDK 5.1+), but startup
 /// is logged with the default level (info) instead of your settings.
 /// Fix: await Ditto.init(), configure DittoLogger, then Ditto.open().
 Future<Ditto> configureLoggingTooLate() async {
@@ -77,7 +77,8 @@ Future<void> verboseEverywhere() async {
 
 /// ❌ BAD: ditto.close() resets customLogCallback to null. After signing out
 /// and back in, Ditto logs no longer reach the app's pipeline.
-/// Fix: install the callback again after every Ditto.open().
+/// Fix: install the callback again before every Ditto.open() (after
+/// Ditto.init()).
 class SessionWithLostCallback {
   SessionWithLostCallback(void Function(String) report) {
     DittoLogger.customLogCallback = (level, message) => report(message);
@@ -97,7 +98,7 @@ class SessionWithLostCallback {
 // ANTI-PATTERN 5: Blocking work in the log callback
 // ============================================================================
 
-/// ❌ BAD: The callback runs for every log event that passes the level filter.
+/// ❌ BAD: The callback runs for every log event it receives.
 /// Synchronous file I/O per event blocks the calling isolate. Keep the
 /// callback fast: filter by level and hand lines to a buffered logger.
 void installBlockingCallback(File logFile) {

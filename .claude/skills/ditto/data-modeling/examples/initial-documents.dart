@@ -9,8 +9,10 @@
 // Behavior on a device:
 //   - No local document with that _id: inserted.
 //   - A document exists (even an edited one): nothing happens, no error.
-//   - Deleted earlier on this device: the deletion wins; a document with
-//     null fields remains.
+//   - Deleted earlier on this device: the deletion wins. With a seed identical
+//     to the INITIAL insert that created the document, it stays deleted; with
+//     different content, or if the document was created with a regular
+//     INSERT, a document with null fields remains.
 //   - Evicted earlier on this device: inserted again.
 //   - Combined with ON ID CONFLICT: parser error.
 // Initial documents are regular documents: whether they sync is decided by
@@ -47,8 +49,9 @@ Future<void> seedDefaultCategories(Ditto ditto) async {
   );
 }
 
-/// Users "remove" a seed document with a flag (soft delete), because seeding
-/// an ID that was deleted leaves a document with null fields.
+/// Users "remove" a seed document with a flag (soft delete), because a later
+/// app version may seed different content, and seeding a deleted ID with
+/// different content leaves a document with null fields.
 Future<void> archiveCategory(Ditto ditto, String categoryId) async {
   await ditto.store.execute(
     'UPDATE categories SET isArchived = true WHERE _id = :id',

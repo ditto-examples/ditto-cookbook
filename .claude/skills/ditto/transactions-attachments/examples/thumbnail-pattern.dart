@@ -82,7 +82,11 @@ class PhotoRow extends StatelessWidget {
       leading: SizedBox.square(
         dimension: 56,
         child: thumbnail is Map<String, dynamic>
-            ? LazyAttachmentImage(ditto: ditto, token: thumbnail)
+            ? LazyAttachmentImage(
+                key: ValueKey(thumbnail['id']),
+                ditto: ditto,
+                token: thumbnail,
+              )
             : const Icon(Icons.image_not_supported),
       ),
       title: Text('${photo['_id']}'),
@@ -93,6 +97,7 @@ class PhotoRow extends StatelessWidget {
                     appBar: AppBar(),
                     // Larger files need a longer stall timeout.
                     body: LazyAttachmentImage(
+                      key: ValueKey(fullSize['id']),
                       ditto: ditto,
                       token: fullSize,
                       stallTimeout: const Duration(minutes: 2),
@@ -106,7 +111,9 @@ class PhotoRow extends StatelessWidget {
 }
 
 /// A compact lazy image: fetches in initState, resets a stall timer on
-/// progress, and stops the fetcher in dispose. See
+/// progress, and stops the fetcher in dispose. Callers give it a
+/// ValueKey of the token id, so a new token creates a new State and a new
+/// fetch instead of reusing the old one. See
 /// attachment-lazy-loading-good.dart for a version with progress and retry.
 class LazyAttachmentImage extends StatefulWidget {
   const LazyAttachmentImage({

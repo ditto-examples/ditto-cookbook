@@ -145,16 +145,22 @@ Future<List<Map<String, dynamic>>> orderSummaries(Ditto ditto) async {
 }
 
 /// ✅ GOOD: Keyset pagination continues after the last row of the previous page.
+/// _id breaks ties between rows that share the same createdAt.
 Future<List<Map<String, dynamic>>> nextPage(
   Ditto ditto, {
   required String afterCreatedAt,
+  required String afterId,
   int pageSize = 50,
 }) async {
   final result = await ditto.store.execute(
     'SELECT _id, title, createdAt FROM tasks '
-    'WHERE createdAt < :after '
-    'ORDER BY createdAt DESC LIMIT :pageSize',
-    arguments: {'after': afterCreatedAt, 'pageSize': pageSize},
+    'WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId) '
+    'ORDER BY createdAt DESC, _id DESC LIMIT :pageSize',
+    arguments: {
+      'after': afterCreatedAt,
+      'afterId': afterId,
+      'pageSize': pageSize,
+    },
   );
   return result.items.map((item) => item.value).toList();
 }

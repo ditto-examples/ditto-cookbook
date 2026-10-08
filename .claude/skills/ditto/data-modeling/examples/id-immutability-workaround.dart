@@ -9,24 +9,38 @@
 // delete flag), and every reference must be updated, so choose IDs carefully
 // up front.
 //
+// A query result contains plain values, not CRDT types. Declare the same types
+// in the SELECT and in the INSERT that every other statement on the collection
+// uses; otherwise the copy stores a counter as a plain number and an attachment
+// token as a map. (With DQL_STRICT_MODE = true, declare the MAP fields too.)
+//
 // Guide: .claude/guides/best-practices/ditto.md#ids-are-immutable,
 //   #delete-and-tombstones, #soft-delete
 
 import 'package:ditto_live/ditto_live.dart';
 
 /// ✅ GOOD: Copies an order to a new ID, repoints its events, and deletes the
-/// original, atomically.
+/// original, atomically. Both statements declare the order's COUNTER,
+/// ATTACHMENT, and REGISTER fields, so the copy keeps their CRDT types.
 Future<bool> moveOrder(Ditto ditto, String oldId, String newId) async {
   return ditto.store.transaction((tx) async {
     final result = await tx.execute(
-      'SELECT * FROM orders WHERE _id = :id',
+      '''
+      SELECT * FROM COLLECTION orders
+        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+      WHERE _id = :id
+      ''',
       arguments: {'id': oldId},
     );
     if (result.items.isEmpty) return false;
     final copy = Map<String, dynamic>.from(result.items.first.value)
       ..['_id'] = newId;
     await tx.execute(
-      'INSERT INTO orders DOCUMENTS (:doc)',
+      '''
+      INSERT INTO COLLECTION orders
+        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+      DOCUMENTS (:doc)
+      ''',
       arguments: {'doc': copy},
     );
     await tx.execute(
@@ -51,7 +65,11 @@ Future<void> moveOrderWithSoftDelete(
 ) async {
   await ditto.store.transaction((tx) async {
     final result = await tx.execute(
-      'SELECT * FROM orders WHERE _id = :id',
+      '''
+      SELECT * FROM COLLECTION orders
+        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+      WHERE _id = :id
+      ''',
       arguments: {'id': oldId},
     );
     if (result.items.isEmpty) return;
@@ -59,7 +77,11 @@ Future<void> moveOrderWithSoftDelete(
       ..['_id'] = newId
       ..['isDeleted'] = false;
     await tx.execute(
-      'INSERT INTO orders DOCUMENTS (:doc)',
+      '''
+      INSERT INTO COLLECTION orders
+        (printCount COUNTER, receipt ATTACHMENT, shippingAddress REGISTER)
+      DOCUMENTS (:doc)
+      ''',
       arguments: {'doc': copy},
     );
     await tx.execute(

@@ -33,15 +33,18 @@ How to keep local queries and observers fast. Extracted from the guide sections 
 Always combine `LIMIT` with `ORDER BY`. Keyset pagination avoids re-reading skipped rows:
 
 ```dart
-// ✅ GOOD: Keyset pagination with a parameterized page size
+// ✅ GOOD: Keyset pagination with a parameterized page size.
+// _id breaks ties between rows that share the same createdAt.
 Future<List<Map<String, dynamic>>> nextPage(
   Ditto ditto,
   String afterCreatedAt,
+  String afterId,
 ) async {
   final result = await ditto.store.execute(
     'SELECT _id, title, createdAt FROM tasks '
-    'WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize',
-    arguments: {'after': afterCreatedAt, 'pageSize': 50},
+    'WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId) '
+    'ORDER BY createdAt DESC, _id DESC LIMIT :pageSize',
+    arguments: {'after': afterCreatedAt, 'afterId': afterId, 'pageSize': 50},
   );
   return result.items.map((item) => item.value).toList();
 }
@@ -98,8 +101,8 @@ The planner chooses indexes by rules, not data statistics. `EXPLAIN` shows these
 | `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan |
 
 - Index the full nested path you filter on (`address.city`).
-- Keep each field's type consistent across documents; mixed types can make index results incorrect or mis-ordered.
-- With `DQL_STRICT_MODE = true`, the SDK 5.1.0 planner does not use index scans at all. Keep the default (`false`) if you rely on indexes.
+- Keep type declarations consistent: only the most recently written CRDT type of a field is indexed, so a field written with different declarations (for example once as `REGISTER` and once as `MAP`) can give incorrect or mis-ordered index results. Do not index fields that are written with more than one type.
+- With `DQL_STRICT_MODE = true`, the SDK 5.1.0 planner does not use secondary indexes (queries fall back to a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default (`false`) if you rely on indexes.
 - In-memory stores (Flutter Web) do not support indexes.
 
 ## Composite Indexes and Covering Scans
@@ -115,7 +118,7 @@ WHERE customerId = :customerId AND createdAt >= :since
 ORDER BY createdAt DESC
 ```
 
-When a query projects only indexed fields (plus `_id`), the planner answers it from the index without fetching documents (`"covering": true` in `EXPLAIN`):
+When a query projects only indexed fields (plus `_id`), the planner answers it from the index without fetching documents (`"covering": true` and no `fetch` step in `EXPLAIN`):
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)

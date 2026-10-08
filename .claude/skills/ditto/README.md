@@ -34,7 +34,7 @@ All examples target Ditto SDK 5.1.0. Features introduced in 5.1 are labeled **(S
 - Pass values as parameters (`:name`), never by string interpolation; quote every key in inline object literals
 - MISSING vs NULL: filter with `coalesce(flag, false) = false` and `IS MISSING` / `IS NOT MISSING`
 - Membership filters with `field IN :values` (not `IN (:values)`, not `ANY ... SATISFIES` in `WHERE`)
-- Subscriptions accept only `SELECT * FROM c [WHERE ...]`; keep `ORDER BY` and `LIMIT` in local queries
+- Subscriptions select whole documents from one collection (`SELECT * FROM c [WHERE ...]`); keep `ORDER BY` and `LIMIT` in local queries
 - Subscriptions are owned by long-lived services; filter locally instead of re-registering per screen
 - The Flutter observer pattern: register without `onChange`, consume the `changes` stream, cancel both in `dispose()`
 - `DO UPDATE_LOCAL_DIFF` for re-upserts; field-level `UPDATE` instead of whole-document rewrites
@@ -255,9 +255,9 @@ The concepts are the same on every platform, but some APIs behave differently (s
 | Login failure | Returns `AuthResponse` with `exception`; does not throw | Returns a result with `error`; does not throw | Reported to the completion handler as `error` | **Throws** |
 | Observer backpressure | `registerObserver`: none. `registerObserverV2` (automatic) and `registerObserverWithSignalNext` (manual) are (Experimental) | `registerObserver` signals the next update when a synchronous handler returns; use `registerObserverWithSignalNext` for async work | `handler:` signals automatically; `handlerWithSignalNext:` is manual | No `signalNext`: suspend handlers and `collect` wait; `observe` returns a `Flow` |
 | Release observers and subscriptions | `cancel()` | `cancel()` | `cancel()` | `close()` |
-| Transaction completion | Return a value to commit; throw or return `TransactionCompletionAction.rollback` to roll back | Return a value, or `'rollback'` | Return a value, or `.rollback` | Must return `Result.Commit(value)` or `Result.Rollback` |
+| Transaction completion | Return a value to commit; throw or return `TransactionCompletionAction.rollback` to roll back | Return a value, or `'rollback'` | Return a value, or `.rollback` | Must return `DittoTransaction.Result.Commit(value)` or `DittoTransaction.Result.Rollback` |
 | `ditto.store.execute` inside a transaction | Throws `DittoException` | Can deadlock; never do it | Can deadlock; never do it | Can deadlock; never do it |
-| Nested read-write transaction | Deadlocks (no guard); never do it | Deadlocks; never do it | Can deadlock; never do it | Can deadlock; never do it |
+| Nested read-write transaction | Can deadlock (the SDK does not detect it); never do it | Deadlocks; never do it | Can deadlock; never do it | Can deadlock; never do it |
 
 **Notes**:
 - **Flutter**: Consume observer results through the `changes` stream. An observer registered with `onChange` whose `changes` stream is never listened to keeps every result in memory.

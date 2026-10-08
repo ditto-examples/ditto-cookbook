@@ -19,7 +19,8 @@
 // - Indexes are local to each device, persist across restarts, and are used by
 //   execute and store observers (not by subscriptions; not on Ditto Server).
 // - In-memory stores (Flutter Web) do not support indexes.
-// - With DQL_STRICT_MODE = true the planner uses no index scans at all.
+// - With DQL_STRICT_MODE = true the planner uses no secondary index scans
+//   (ID lookups and full-collection COUNT(*) are not affected).
 //   Keep the default (false) if you rely on indexes.
 // - CREATE INDEX IF NOT EXISTS checks only the name, not the field list.
 //

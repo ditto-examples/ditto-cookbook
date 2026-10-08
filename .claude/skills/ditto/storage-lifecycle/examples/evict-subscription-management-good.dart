@@ -18,8 +18,6 @@
 // - Evict on a schedule, at most about once per day.
 // - Target documents by ID with `WHERE _id IN :ids`, never `USE IDS` alone.
 
-import 'dart:async';
-
 import 'package:ditto_live/ditto_live.dart';
 
 // ============================================================================
@@ -79,7 +77,7 @@ class StoreSync {
 
   final Ditto ditto;
   final List<SyncSubscription> _subscriptions = [];
-  Timer? _lateArrivalCleanup;
+  String? _currentStoreId;
 
   /// Call after login or when the user switches to another store.
   Future<void> switchStore(String newStoreId) async {
@@ -87,6 +85,7 @@ class StoreSync {
     _cancelSubscriptions();
 
     // 2. Remove the old store's documents from this device only.
+    _currentStoreId = newStoreId;
     await _evictOtherStores(newStoreId);
 
     // 3. Ask for the new store's data.
@@ -100,12 +99,14 @@ class StoreSync {
         arguments: {'storeId': newStoreId},
       ));
 
-    // 4. Documents that were in flight through the cancelled subscriptions can
-    //    still arrive, so run the same eviction again after a short delay.
-    _lateArrivalCleanup?.cancel();
-    _lateArrivalCleanup = Timer(const Duration(seconds: 5), () {
-      unawaited(_evictOtherStores(newStoreId));
-    });
+  }
+
+  /// Data that was already being transferred when the old subscriptions were
+  /// cancelled can still arrive afterwards. Call this later, for example on the
+  /// next app start or from a periodic cleanup, to evict it again.
+  Future<void> evictLateArrivals() async {
+    final storeId = _currentStoreId;
+    if (storeId != null) await _evictOtherStores(storeId);
   }
 
   Future<void> _evictOtherStores(String storeId) async {
@@ -128,7 +129,6 @@ class StoreSync {
 
   /// Call on logout.
   void dispose() {
-    _lateArrivalCleanup?.cancel();
     _cancelSubscriptions();
   }
 }

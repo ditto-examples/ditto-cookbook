@@ -73,6 +73,17 @@ class _AttachmentImageState extends State<AttachmentImage> {
     _fetcher = widget.ditto.store.fetchAttachment(widget.token, _onFetchEvent);
   }
 
+  @override
+  void didUpdateWidget(AttachmentImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Flutter can reuse this State for a different token (list updates,
+    // replaced photos), so fetch again when the token changes.
+    if (oldWidget.token['id'] != widget.token['id']) {
+      _bytes = null;
+      _startFetch();
+    }
+  }
+
   void _restartStallTimer() {
     _stallTimer?.cancel();
     // No event simply means no reachable peer is delivering the blob.

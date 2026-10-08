@@ -276,8 +276,8 @@
     {
       "index": 39,
       "language": "dart",
-      "originalCode": "import 'package:flutter/foundation.dart';\n\n/// Call before Ditto.open().\nFuture<void> configureDittoLogging() async {\n  await Ditto.init(); // DittoLogger throws until Ditto is initialized.\n  DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;\n  DittoLogger.customLogCallback = (level, message) {\n    if (level == LogLevel.error) showError(message);\n  };\n}",
-      "translatedCode": "import 'package:flutter/foundation.dart';\n\n/// Ditto.open() の前に呼び出す。\nFuture<void> configureDittoLogging() async {\n  await Ditto.init(); // Dittoが初期化されるまでDittoLoggerは例外を投げる。\n  DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;\n  DittoLogger.customLogCallback = (level, message) {\n    if (level == LogLevel.error) showError(message);\n  };\n}",
+      "originalCode": "import 'package:flutter/foundation.dart';\n\n/// Call before Ditto.open().\nFuture<void> configureDittoLogging() async {\n  await Ditto.init(); // DittoLogger throws until Ditto is initialized.\n  DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;\n  // Set again before every reopen: ditto.close() clears the callback.\n  DittoLogger.customLogCallback = (level, message) {\n    if (level == LogLevel.error || level == LogLevel.warning) {\n      debugPrint('[ditto ${level.name}] $message'); // or your logging pipeline\n    }\n  };\n}",
+      "translatedCode": "import 'package:flutter/foundation.dart';\n\n/// Ditto.open() の前に呼び出す。\nFuture<void> configureDittoLogging() async {\n  await Ditto.init(); // Dittoが初期化されるまでDittoLoggerは例外を投げる。\n  DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;\n  // ditto.close() でコールバックがクリアされるため、開き直す前に毎回設定する。\n  DittoLogger.customLogCallback = (level, message) {\n    if (level == LogLevel.error || level == LogLevel.warning) {\n      debugPrint('[ditto ${level.name}] $message'); // またはアプリのログ基盤\n    }\n  };\n}",
       "hasComments": true
     },
     {

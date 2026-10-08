@@ -63,7 +63,8 @@ Future<void> seedDefaults(Ditto ditto) async {
 }
 
 /// ❌ BAD: Periodic re-upsert with DO UPDATE. Every supplied field is
-/// rewritten even when identical, a mutation is recorded, and observers fire.
+/// rewritten even when identical, a mutation is recorded, and observers can
+/// fire again.
 Future<void> refreshCatalogWithDoUpdate(
   Ditto ditto,
   List<Map<String, dynamic>> products,
@@ -127,7 +128,9 @@ Future<void> clearDiscount(Ditto ditto, String orderId) async {
 
 /// ✅ GOOD: Replace an object: UNSET it, then SET the new value, as two
 /// statements inside one transaction. A single SET address = :address would
-/// merge into the existing object.
+/// merge into the existing object. The field is still a map, so a nested edit
+/// that another device makes at the same time can merge into the new object;
+/// declare the field as REGISTER if that must never happen.
 Future<void> replaceAddress(
   Ditto ditto,
   String customerId,
@@ -179,7 +182,8 @@ Future<void> completeOrderByRewrite(Ditto ditto, String orderId) async {
 // ---------------------------------------------------------------------------
 
 /// ✅ GOOD: Update and read the new values in one statement (rows reflect the
-/// documents after the update). mutatedDocumentIDs() and commitID are still set.
+/// documents after the update). Read the affected documents from items rather
+/// than from mutatedDocumentIDs().
 Future<List<Map<String, dynamic>>> markShipped(
   Ditto ditto,
   List<String> ids,

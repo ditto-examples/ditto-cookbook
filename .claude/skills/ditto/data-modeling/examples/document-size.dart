@@ -2,7 +2,7 @@
 //
 // Document size limits
 //
-// Limits apply to the serialized size on disk, including CRDT metadata:
+// Limits apply to the size of each stored document:
 //   Soft limit 256 KiB (DOCUMENT_SIZE_SOFT_LIMIT_BYTES): write succeeds,
 //     warning "exceeds recommended limit" is logged.
 //   Hard limit 5 MiB (DOCUMENT_SIZE_HARD_LIMIT_BYTES): INSERT/UPDATE fails,
@@ -112,7 +112,7 @@ Future<bool> saveNotes(Ditto ditto, String visitId, String notes) async {
 }
 
 /// ✅ GOOD: Estimate size with object_size(). It returns an
-/// approximate size of the value, not the serialized size with CRDT metadata,
+/// approximate size of the value, which can differ from the stored size,
 /// so leave headroom.
 Future<int?> approximateOrderBytes(Ditto ditto, String orderId) async {
   final result = await ditto.store.execute(
@@ -123,27 +123,36 @@ Future<int?> approximateOrderBytes(Ditto ditto, String orderId) async {
   return (result.items.first.value['approxBytes'] as num?)?.toInt();
 }
 
-/// An oversized document does not shrink much when smaller values are
-/// written, because earlier values remain as CRDT metadata until compaction.
-/// The reliable remedy: write a new, smaller document under a new _id, update
-/// references to it, and remove the old one, in one transaction.
-Future<void> replaceOversizedDocument(
-  Ditto ditto, {
-  required String oldId,
-  required Map<String, dynamic> compactDocument, // contains the new _id
-}) async {
+/// ✅ GOOD: To bring an oversized document back under the limits, remove the
+/// data that made it grow: move the nested readings to their own collection
+/// and remove them from the device document with UNSET, in one transaction.
+Future<void> moveReadingsOut(Ditto ditto, String deviceId) async {
   await ditto.store.transaction((tx) async {
-    await tx.execute(
-      'INSERT INTO devices DOCUMENTS (:doc)',
-      arguments: {'doc': compactDocument},
+    final result = await tx.execute(
+      'SELECT readings FROM devices WHERE _id = :id',
+      arguments: {'id': deviceId},
     );
+    if (result.items.isEmpty) return;
+    final readings =
+        (result.items.first.value['readings'] as Map<String, dynamic>?) ??
+            const <String, dynamic>{};
+    final documents = [
+      for (final entry in readings.entries)
+        {
+          ...(entry.value as Map<String, dynamic>),
+          '_id': entry.key,
+          'deviceId': deviceId,
+        },
+    ];
+    if (documents.isNotEmpty) {
+      await tx.execute(
+        'INSERT INTO readings DOCUMENTS (:documents) ON ID CONFLICT DO NOTHING',
+        arguments: {'documents': documents},
+      );
+    }
     await tx.execute(
-      'UPDATE readings SET deviceId = :newId WHERE deviceId = :oldId',
-      arguments: {'newId': compactDocument['_id'], 'oldId': oldId},
+      'UPDATE devices UNSET readings WHERE _id = :id',
+      arguments: {'id': deviceId},
     );
-    await tx.execute(
-      'DELETE FROM devices WHERE _id = :id',
-      arguments: {'id': oldId},
-    );
-  }, hint: 'replaceOversizedDocument');
+  }, hint: 'moveReadingsOut');
 }
