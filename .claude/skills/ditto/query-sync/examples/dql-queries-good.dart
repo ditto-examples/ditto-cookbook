@@ -1,323 +1,268 @@
-// SDK Version: All
-// Platform: All
-// Last Updated: 2025-12-19
+// Recommended DQL read patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
 //
-// Example: DQL Query Best Practices
-// This file demonstrates the CURRENT, recommended DQL API patterns
+// Covers: parameters, membership filters, quoted object keys, MISSING/NULL,
+// ORDER BY / LIMIT / keyset pagination, projections, aggregates, GROUP BY,
+// and JOIN (SDK 5.1+) with an index on the inner collection.
+//
+// All statements read the local store only. Subscriptions decide which
+// documents are on the device (see subscription-lifecycle-good.dart).
 
-import 'package:ditto/ditto.dart';
+import 'package:ditto_live/ditto_live.dart';
 
-/// Example 1: Basic SELECT query with WHERE clause
-///
-/// ✅ GOOD: Uses DQL string-based API
-Future<void> queryActiveOrders(Ditto ditto) async {
+// ---------------------------------------------------------------------------
+// Parameters
+// ---------------------------------------------------------------------------
+
+/// ✅ GOOD: Every value from the app is passed as a typed parameter.
+/// The statement text stays constant, so the prepared plan can be reused.
+Future<List<Map<String, dynamic>>> findOrders(
+  Ditto ditto, {
+  required String customerId,
+  required List<String> statuses,
+  int pageSize = 50,
+}) async {
   final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE status = :status',
-    arguments: {'status': 'active'},
-  );
-
-  // Extract data immediately (see query-result-handling-good.dart)
-  final orders = result.items.map((item) {
-    return item.value; // Materialize data immediately
-  }).toList();
-
-  print('Found ${orders.length} active orders');
-}
-
-/// Example 2: Query with multiple conditions
-///
-/// ✅ GOOD: Clear, parameterized query
-Future<void> queryRecentOrders(Ditto ditto, DateTime since) async {
-  final result = await ditto.store.execute(
-    '''
-    SELECT * FROM orders
-    WHERE status = :status
-      AND createdAt >= :since
-    ORDER BY createdAt DESC
-    ''',
+    'SELECT * FROM orders '
+    'WHERE customerId = :customerId AND status IN :statuses '
+    'ORDER BY createdAt DESC, _id LIMIT :pageSize',
     arguments: {
-      'status': 'pending',
-      'since': since.toIso8601String(),
+      'customerId': customerId,
+      'statuses': statuses, // Array parameter: IN :statuses, no parentheses
+      'pageSize': pageSize,
     },
   );
-
-  final recentOrders = result.items.map((item) => item.value).toList();
-  print('Found ${recentOrders.length} recent pending orders');
-}
-
-/// Example 3: Query with field selection
-///
-/// ✅ GOOD: Select only needed fields for performance
-Future<void> queryOrderSummaries(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT _id, customerName, totalAmount FROM orders WHERE status = :status',
-    arguments: {'status': 'completed'},
-  );
-
-  final summaries = result.items.map((item) => item.value).toList();
-  print('Retrieved ${summaries.length} order summaries');
-}
-
-/// Example 4: COUNT query
-///
-/// ✅ GOOD: Efficient aggregation query
-Future<int> countActiveProducts(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT COUNT(*) as total FROM products WHERE isActive = true',
-  );
-
-  if (result.items.isEmpty) return 0;
-
-  final count = result.items.first.value['total'] as int;
-  return count;
-}
-
-/// Example 5: Query with LIMIT and OFFSET for pagination
-///
-/// ✅ GOOD: Paginated query pattern
-Future<List<Map<String, dynamic>>> queryProductsPage(
-  Ditto ditto,
-  int page,
-  int pageSize,
-) async {
-  final offset = page * pageSize;
-
-  final result = await ditto.store.execute(
-    '''
-    SELECT * FROM products
-    WHERE isActive = true
-    ORDER BY name
-    LIMIT :limit OFFSET :offset
-    ''',
-    arguments: {
-      'limit': pageSize,
-      'offset': offset,
-    },
-  );
-
   return result.items.map((item) => item.value).toList();
 }
 
-/// Example 6: UPDATE query
-///
-/// ✅ GOOD: Parameterized UPDATE with WHERE clause
-Future<void> updateOrderStatus(
-  Ditto ditto,
-  String orderId,
-  String newStatus,
-) async {
+/// ✅ GOOD: Text containing backslashes or quotes is passed as data.
+Future<void> saveExportPath(Ditto ditto) async {
   await ditto.store.execute(
-    '''
-    UPDATE orders
-    SET status = :status, updatedAt = :updatedAt
-    WHERE _id = :id
-    ''',
-    arguments: {
-      'id': orderId,
-      'status': newStatus,
-      'updatedAt': DateTime.now().toIso8601String(),
-    },
+    'UPDATE settings SET exportPath = :path WHERE _id = :id',
+    arguments: {'id': 'device', 'path': r'C:\temp\exports'},
   );
-
-  print('Updated order $orderId to status: $newStatus');
 }
 
-/// Example 7: INSERT query (upsert pattern)
-///
-/// ✅ GOOD: Use INSERT with DOCUMENTS keyword
-Future<void> createNewOrder(Ditto ditto, Map<String, dynamic> orderData) async {
+// ---------------------------------------------------------------------------
+// Inline object literals
+// ---------------------------------------------------------------------------
+
+/// ✅ GOOD (preferred): Pass the whole document as one parameter.
+Future<void> createOrder(Ditto ditto, String id, String customerId) async {
   await ditto.store.execute(
-    '''
-    INSERT INTO orders
-    DOCUMENTS (:order)
-    ''',
+    'INSERT INTO orders DOCUMENTS (:order)',
     arguments: {
       'order': {
-        '_id': orderData['_id'],
-        'customerName': orderData['customerName'],
-        'items': orderData['items'],
-        'totalAmount': orderData['totalAmount'],
-        'status': 'pending',
-        'createdAt': DateTime.now().toIso8601String(),
+        '_id': id,
+        'customerId': customerId,
+        'status': 'open',
+        'total': 0,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
       },
     },
   );
-
-  print('Created order: ${orderData['_id']}');
 }
 
-/// Example 8: EVICT query (remove local data)
-///
-/// ✅ GOOD: EVICT with specific WHERE clause
-/// WARNING: Always cancel subscription first to avoid re-sync loop
-Future<void> evictOldCompletedOrders(Ditto ditto, DateTime beforeDate) async {
-  // IMPORTANT: Cancel related subscription before EVICT
-  // See subscription-lifecycle-good.dart for full pattern
-
+/// ✅ GOOD: If an object literal is written inline, every key is quoted.
+Future<void> seedSampleOrder(Ditto ditto) async {
   await ditto.store.execute(
-    '''
-    EVICT FROM orders
-    WHERE status = 'completed'
-      AND completedAt < :beforeDate
-    ''',
-    arguments: {
-      'beforeDate': beforeDate.toIso8601String(),
-    },
+    "INSERT INTO orders DOCUMENTS ({'_id': 'sample-order', 'status': 'open'}) "
+    'ON ID CONFLICT DO NOTHING',
   );
-
-  print('Evicted completed orders before ${beforeDate.toIso8601String()}');
 }
 
-/// Example 9: Query with nested field access
-///
-/// ✅ GOOD: Use dot notation for nested fields
-Future<void> queryOrdersByShippingCity(Ditto ditto, String city) async {
+// ---------------------------------------------------------------------------
+// MISSING and NULL
+// ---------------------------------------------------------------------------
+
+/// ✅ GOOD: coalesce() treats a missing or null isDeleted flag as false.
+Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
   final result = await ditto.store.execute(
-    '''
-    SELECT * FROM orders
-    WHERE shippingAddress.city = :city
-      AND status != 'completed'
-    ''',
-    arguments: {'city': city},
+    'SELECT * FROM tasks WHERE coalesce(isDeleted, false) = false '
+    'ORDER BY createdAt, _id',
   );
-
-  final orders = result.items.map((item) => item.value).toList();
-  print('Found ${orders.length} orders for city: $city');
+  return result.items.map((item) => item.value).toList();
 }
 
-/// Example 10: Transaction alternative for Flutter
-///
-/// ✅ GOOD: Sequential DQL with error handling (Flutter transaction alternative)
-/// Note: Flutter SDK does not support transactions. Use sequential DQL instead.
-Future<void> transferProductStock(
-  Ditto ditto,
-  String fromWarehouseId,
-  String toWarehouseId,
-  String productId,
-  int quantity,
-) async {
-  try {
-    // Step 1: Decrement from source warehouse
-    await ditto.store.execute(
-      '''
-      UPDATE warehouses
-      SET stock[:productId] = stock[:productId] - :quantity
-      WHERE _id = :warehouseId
-      ''',
-      arguments: {
-        'productId': productId,
-        'quantity': quantity,
-        'warehouseId': fromWarehouseId,
-      },
-    );
-
-    // Step 2: Increment at destination warehouse
-    await ditto.store.execute(
-      '''
-      UPDATE warehouses
-      SET stock[:productId] = stock[:productId] + :quantity
-      WHERE _id = :warehouseId
-      ''',
-      arguments: {
-        'productId': productId,
-        'quantity': quantity,
-        'warehouseId': toWarehouseId,
-      },
-    );
-
-    print('Successfully transferred $quantity units of $productId');
-  } catch (e) {
-    print('Stock transfer failed: $e');
-    // Implement compensating logic if needed
-    rethrow;
-  }
-}
-
-/// Example 11: Query with complex object _id (composite keys)
-///
-/// ✅ GOOD: Query by component of complex _id
-Future<void> queryOrdersByLocation(Ditto ditto, String locationId) async {
+/// ✅ GOOD: IS MISSING / IS NOT MISSING test whether a field exists.
+Future<List<Map<String, dynamic>>> tasksWithoutAssignee(Ditto ditto) async {
   final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE _id.locationId = :locId',
-    arguments: {'locId': locationId},
+    'SELECT _id, title FROM tasks WHERE assignee IS MISSING ORDER BY _id',
   );
-
-  final orders = result.items.map((item) => item.value).toList();
-  print('Found ${orders.length} orders at location $locationId');
+  return result.items.map((item) => item.value).toList();
 }
 
-/// Example 12: Query with full complex object _id (exact match)
-///
-/// ✅ GOOD: Query by complete _id object
-Future<void> queryOrderByComplexId(
+// ---------------------------------------------------------------------------
+// Membership
+// ---------------------------------------------------------------------------
+
+/// ✅ GOOD: A field equals one of several values.
+Future<List<Map<String, dynamic>>> tasksWithStatus(
   Ditto ditto,
-  String orderId,
-  String locationId,
+  List<String> statuses,
 ) async {
   final result = await ditto.store.execute(
-    '''SELECT * FROM orders WHERE _id = :idObj''',
-    arguments: {
-      'idObj': {
-        'orderId': orderId,
-        'locationId': locationId
-      }
-    },
+    'SELECT * FROM tasks WHERE status IN :statuses ORDER BY _id',
+    arguments: {'statuses': statuses},
   );
-
-  if (result.items.isNotEmpty) {
-    final order = result.items.first.value;
-    print('Found order: ${order['_id']}, Total: ${order['total']}');
-  } else {
-    print('Order not found');
-  }
+  return result.items.map((item) => item.value).toList();
 }
 
-/// Example 13: Query multiple components of complex _id
-///
-/// ✅ GOOD: Filter by multiple _id components
-Future<void> queryOrdersByLocationAndTimePartition(
+/// ✅ GOOD: An array field contains a value (element lookups cannot use an index).
+Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM tasks WHERE :tag IN tags ORDER BY _id',
+    arguments: {'tag': tag},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ✅ GOOD: Several documents by ID in one query (planned as an ID scan).
+Future<List<Map<String, dynamic>>> ordersByIds(
   Ditto ditto,
-  String locationId,
-  String yearMonth,
+  List<String> ids,
 ) async {
   final result = await ditto.store.execute(
-    '''SELECT * FROM orders
-       WHERE _id.locationId = :locId
-         AND _id.yearMonth = :yearMonth
-       ORDER BY _id.orderId DESC''',
-    arguments: {
-      'locId': locationId,
-      'yearMonth': yearMonth,
-    },
+    'SELECT * FROM orders WHERE _id IN :ids',
+    arguments: {'ids': ids},
   );
-
-  final orders = result.items.map((item) => item.value).toList();
-  print('Found ${orders.length} orders for $locationId in $yearMonth');
+  return result.items.map((item) => item.value).toList();
 }
 
-/// Example 14: Aggregate with complex _id components
-///
-/// ✅ GOOD: GROUP BY using _id component
-Future<void> aggregateOrdersByLocation(Ditto ditto) async {
+// ---------------------------------------------------------------------------
+// Projections, ORDER BY, LIMIT
+// ---------------------------------------------------------------------------
+
+/// ✅ GOOD: Only the fields the screen shows, computed fields aliased,
+/// deterministic order with an _id tie-breaker.
+Future<List<Map<String, dynamic>>> orderSummaries(Ditto ditto) async {
   final result = await ditto.store.execute(
-    '''SELECT _id.locationId AS locationId,
-              COUNT(*) AS orderCount,
-              SUM(total) AS totalRevenue
-       FROM orders
-       WHERE status = :status
-       GROUP BY _id.locationId
-       ORDER BY totalRevenue DESC''',
-    arguments: {'status': 'completed'},
+    'SELECT _id, customerName, total * 1.1 AS totalWithTax '
+    'FROM orders WHERE status = :status '
+    'ORDER BY createdAt DESC, _id LIMIT 100',
+    arguments: {'status': 'open'},
   );
-
-  print('Revenue by location:');
-  for (final item in result.items) {
-    final data = item.value;
-    print('Location ${data['locationId']}: ${data['orderCount']} orders, \$${data['totalRevenue']}');
-  }
+  return result.items.map((item) => item.value).toList();
 }
 
-// See also:
-// - data-modeling/examples/complex-id-patterns.dart (complex _id design patterns)
-// - data-modeling/examples/id-immutability-workaround.dart (_id immutability)
-// - .claude/guides/best-practices/ditto.md#document-structure-best-practices
+/// ✅ GOOD: Keyset pagination continues after the last row of the previous page.
+Future<List<Map<String, dynamic>>> nextPage(
+  Ditto ditto, {
+  required String afterCreatedAt,
+  int pageSize = 50,
+}) async {
+  final result = await ditto.store.execute(
+    'SELECT _id, title, createdAt FROM tasks '
+    'WHERE createdAt < :after '
+    'ORDER BY createdAt DESC LIMIT :pageSize',
+    arguments: {'after': afterCreatedAt, 'pageSize': pageSize},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ✅ GOOD: Put urgent tasks first explicitly (false sorts before true in ASC).
+Future<List<Map<String, dynamic>>> tasksUrgentFirst(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM tasks WHERE coalesce(isDeleted, false) = false '
+    "ORDER BY CASE WHEN priority = 'urgent' THEN 0 ELSE 1 END, dueAt, _id",
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ✅ GOOD: An existence check stops at the first match.
+Future<bool> hasOpenOrders(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT _id FROM orders WHERE status = :status LIMIT 1',
+    arguments: {'status': 'open'},
+  );
+  return result.items.isNotEmpty;
+}
+
+// ---------------------------------------------------------------------------
+// Aggregates and GROUP BY
+// ---------------------------------------------------------------------------
+
+/// ✅ GOOD: COUNT(*) instead of loading documents; empty sets defaulted.
+Future<Map<String, dynamic>> orderStats(Ditto ditto, String customerId) async {
+  final result = await ditto.store.execute(
+    'SELECT COUNT(*) AS orderCount, '
+    'ifmissing(SUM(total), 0) AS revenue, '
+    'ifmissing(AVG(total), 0) AS averageOrder '
+    'FROM orders WHERE customerId = :customerId',
+    arguments: {'customerId': customerId},
+  );
+  return result.items.first.value;
+}
+
+/// ✅ GOOD: GROUP BY and HAVING repeat the expressions; ORDER BY may use aliases.
+Future<List<Map<String, dynamic>>> dailyRevenue(Ditto ditto, String since) async {
+  final result = await ditto.store.execute(
+    "SELECT date_format(createdAt, 'YYYY-MM-DD') AS day, SUM(total) AS revenue "
+    'FROM orders WHERE createdAt >= :since '
+    "GROUP BY date_format(createdAt, 'YYYY-MM-DD') "
+    'HAVING SUM(total) > :minRevenue '
+    'ORDER BY day',
+    arguments: {'since': since, 'minRevenue': 1000},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ✅ GOOD: DISTINCT on a low-cardinality field.
+Future<List<String>> knownStatuses(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT DISTINCT status FROM orders ORDER BY status',
+  );
+  return result.items
+      .map((item) => item.value['status'])
+      .whereType<String>()
+      .toList();
+}
+
+// ---------------------------------------------------------------------------
+// JOIN (SDK 5.1+)
+// ---------------------------------------------------------------------------
+
+/// ✅ GOOD: Create the index the join needs once per launch, at startup.
+/// Indexes persist, and IF NOT EXISTS makes this idempotent.
+Future<void> ensureJoinIndexes(Ditto ditto) async {
+  await ditto.store.execute(
+    'CREATE INDEX IF NOT EXISTS ix_orders_customerId ON orders (customerId)',
+  );
+}
+
+/// ✅ GOOD: The inner collection (orders) is looked up through
+/// ix_orders_customerId. Fields are qualified and colliding names aliased.
+Future<List<Map<String, dynamic>>> goldCustomerOrders(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT c.name, o._id AS orderId, o.total '
+    'FROM customers c '
+    'JOIN orders o ON o.customerId = c._id '
+    'WHERE c.tier = :tier '
+    'ORDER BY c.name, o.total DESC',
+    arguments: {'tier': 'gold'},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ✅ GOOD: Joining on the inner collection's _id needs no extra index.
+Future<List<Map<String, dynamic>>> openOrdersWithCustomerName(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT o._id, o.total, c.name AS customerName '
+    'FROM orders o '
+    'JOIN customers c ON c._id = o.customerId '
+    'WHERE o.status = :status '
+    'ORDER BY o._id',
+    arguments: {'status': 'open'},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ✅ GOOD: Customers without any order (unmatched LEFT JOIN rows).
+Future<List<Map<String, dynamic>>> customersWithoutOrders(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT c._id, c.name '
+    'FROM customers c '
+    'LEFT JOIN orders o ON o.customerId = c._id '
+    'WHERE o._id IS MISSING',
+  );
+  return result.items.map((item) => item.value).toList();
+}

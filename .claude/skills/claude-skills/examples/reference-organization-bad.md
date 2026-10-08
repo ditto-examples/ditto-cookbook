@@ -198,7 +198,7 @@ Use the authentication API to authenticate users...
 # API Reference
 
 > **Last Updated**: 2025-12-20
-> **SDK Version**: 4.12.0+
+> **SDK Version**: 5.1.0+
 
 ## Authentication
 

@@ -1,485 +1,210 @@
-// SDK Version: All
-// Platform: All
-// Last Updated: 2025-12-19
+// SDK Version: Ditto SDK 5.1.0 (ditto_live 5.1.0)
+// Platform: Flutter
+// Last Updated: 2026-10-08
 //
 // ============================================================================
-// Logging Configuration Best Practices
+// Logging and Diagnostics Configuration (Correct Patterns)
 // ============================================================================
 //
-// This example demonstrates proper logging configuration for Ditto SDK,
-// essential for debugging, monitoring, and production diagnostics.
+// Guide sections (.claude/guides/best-practices/ditto.md):
+// - #logging
+// - #dittoopen-dittoopensync-and-dittoinit
+// - #forwarding-logs-to-your-own-pipeline
+// - #on-disk-logs-and-exporting-them
+// - #system-virtual-collections
+// - #long-running-requests-sdk-51
+//
+// Facts:
+// - Every DittoLogger member throws "Ditto not initialized" until the SDK is
+//   initialized. Ditto.open initializes it implicitly; call await Ditto.init()
+//   to configure logging BEFORE opening, so startup is logged with your settings.
+// - LogLevel values: error, warning, info, debug, verbose. Defaults:
+//   isEnabled = true, minimumLogLevel = LogLevel.info, customLogCallback = null.
+// - ditto.close() resets DittoLogger.customLogCallback to null.
+// - On-disk logs always include debug-level entries, independent of
+//   isEnabled and minimumLogLevel; DittoLogger.exportLogs(path) exports them.
 //
 // PATTERNS DEMONSTRATED:
-// 1. ✅ Set log level BEFORE Ditto.open()
-// 2. ✅ Different log levels for dev vs production
-// 3. ✅ Rotating log file configuration
-// 4. ✅ System info query for debugging
-// 5. ✅ Conditional logging based on environment
-// 6. ✅ Log level adjustment at runtime
-// 7. ✅ Performance monitoring with logs
-//
-// CRITICAL RULE: Set log level BEFORE Ditto.open()
-// - Initialization diagnostics only captured if set before open()
-// - Cannot retroactively capture startup issues
-// - Missing early logs makes debugging very difficult
+// 1. ✅ Ditto.init() -> DittoLogger -> Ditto.open() startup order
+// 2. ✅ Forwarding warnings and errors, re-installed after every open
+// 3. ✅ Exporting on-disk logs for a "Send diagnostics" action
+// 4. ✅ Temporary verbose logging for a targeted investigation
+// 5. ✅ Slow-request warnings during development (SDK 5.1+)
+// 6. ✅ On-demand diagnostics snapshot from system: virtual collections
 //
 // ============================================================================
 
-import 'package:ditto/ditto.dart';
+import 'dart:async';
 import 'dart:io';
 
+import 'package:ditto_live/ditto_live.dart';
+import 'package:flutter/foundation.dart';
+
 // ============================================================================
-// PATTERN 1: Set Log Level BEFORE Ditto.open()
+// PATTERN 1: Startup order
 // ============================================================================
 
-/// ✅ GOOD: Configure logging before initialization
-class ProperLoggingSetup {
-  Future<Ditto> initializeDitto() async {
-    print('🔧 Initializing Ditto with proper logging...');
+/// ✅ GOOD: Call before Ditto.open().
+Future<void> configureDittoLogging() async {
+  // DittoLogger throws until Ditto is initialized.
+  await Ditto.init();
 
-    // ✅ STEP 1: Set log level FIRST (before Ditto.open())
-    DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-    print('  ✅ Log level set to DEBUG before initialization');
+  DittoLogger.isEnabled = true;
+  // warning in production, debug while debugging; never verbose in production.
+  DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;
+}
 
-    // ✅ STEP 2: Enable logging to file (optional)
-    DittoLogger.enabled = true;
+/// ✅ GOOD: Logging first, then open, then everything that depends on the
+/// instance (log forwarding, system parameters, auth handler, sync).
+Future<Ditto> startDitto(void Function(String line) report) async {
+  await configureDittoLogging();
 
-    // ✅ STEP 3: Now initialize Ditto
-    final ditto = await Ditto.open(
-      identity: DittoIdentity.onlinePlayground(
-        appID: 'your-app-id',
-        token: 'your-token',
-      ),
-      persistenceDirectory: await getApplicationDocumentsDirectory(),
+  final ditto = await Ditto.open(
+    const DittoConfig(
+      databaseID: 'YOUR_DATABASE_ID',
+      connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
+    ),
+  );
+
+  installDittoLogForwarding(report);
+  await applyDiagnosticsParameters(ditto);
+
+  await ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) async {
+    final response = await ditto.auth.login(
+      token: await fetchAuthToken(),
+      provider: 'YOUR_PROVIDER_NAME',
     );
+    if (response.exception != null) {
+      // Do not throw inside the handler; report instead.
+      report('Ditto login failed: ${response.exception}');
+    }
+  });
 
-    print('  ✅ Ditto initialized (startup logs captured)');
+  ditto.sync.start();
+  return ditto;
+}
 
-    return ditto;
+// ============================================================================
+// PATTERN 2: Forwarding logs to your own pipeline
+// ============================================================================
+
+/// ✅ GOOD: Forwards Ditto warnings and errors. The callback is fast and
+/// non-blocking because it runs for every log event that passes the level.
+void installDittoLogForwarding(void Function(String line) report) {
+  DittoLogger.customLogCallback = (LogLevel level, String message) {
+    if (level == LogLevel.error || level == LogLevel.warning) {
+      report('[ditto ${level.name}] $message');
+    }
+  };
+}
+
+/// ✅ GOOD: Re-installs the callback after every open, because ditto.close()
+/// clears it (for example when the user signs out and in again).
+class DittoSession {
+  DittoSession(this._config, this._report);
+
+  final DittoConfig _config;
+  final void Function(String line) _report;
+  Ditto? _ditto;
+
+  Future<Ditto> open() async {
+    final ditto = await Ditto.open(_config);
+    installDittoLogForwarding(_report); // Set again after every open.
+    return _ditto = ditto;
   }
 
-  Future<String> getApplicationDocumentsDirectory() async {
-    // Platform-specific document directory
-    return Directory.systemTemp.path;
+  Future<void> close() async {
+    await _ditto?.close(); // Also resets DittoLogger.customLogCallback.
+    _ditto = null;
   }
 }
 
 // ============================================================================
-// PATTERN 2: Different Log Levels for Dev vs Production
+// PATTERN 3: Exporting on-disk logs
 // ============================================================================
 
-/// ✅ GOOD: Environment-aware logging configuration
-class EnvironmentAwareLogging {
-  Future<Ditto> initializeDitto({required bool isProduction}) async {
-    print('🔧 Initializing Ditto (${isProduction ? "PRODUCTION" : "DEVELOPMENT"})...');
+/// ✅ GOOD: Exports Ditto's on-disk logs to a new gzip-compressed JSON Lines
+/// file. The file must not exist yet and [directory] must exist. Only logs of
+/// the most recently created Ditto instance are exported.
+Future<File> exportDittoLogs(Directory directory) async {
+  final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch;
+  final file = File('${directory.path}/ditto-logs-$timestamp.jsonl.gz');
+  final bytes = await DittoLogger.exportLogs(file.path);
+  debugPrint('Exported $bytes bytes of Ditto logs to ${file.path}');
+  return file;
+}
 
-    // ✅ Different log levels per environment
-    if (isProduction) {
-      // ✅ PRODUCTION: Minimal logging (warnings and errors only)
-      DittoLogger.minimumLogLevel = DittoLogLevel.warning;
-      DittoLogger.enabled = true; // Log to file for diagnostics
-      print('  ✅ Production logging: WARNING level (file enabled)');
-    } else {
-      // ✅ DEVELOPMENT: Verbose logging (debug level)
-      DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-      DittoLogger.enabled = true;
-      print('  ✅ Development logging: DEBUG level (verbose)');
-    }
+// ============================================================================
+// PATTERN 4: Temporary verbose logging
+// ============================================================================
 
-    final ditto = await Ditto.open(
-      identity: DittoIdentity.onlinePlayground(
-        appID: 'your-app-id',
-        token: 'your-token',
-      ),
-      persistenceDirectory: await getApplicationDocumentsDirectory(),
-    );
-
-    print('  ✅ Ditto initialized with environment-specific logging');
-
-    return ditto;
-  }
-
-  Future<String> getApplicationDocumentsDirectory() async {
-    return Directory.systemTemp.path;
+/// ✅ GOOD: Verbose logging can significantly slow down replication. Enable it
+/// only for a short, targeted investigation and restore the previous level.
+Future<T> withVerboseLogging<T>(Future<T> Function() investigate) async {
+  final previous = DittoLogger.minimumLogLevel;
+  DittoLogger.minimumLogLevel = LogLevel.verbose;
+  try {
+    return await investigate();
+  } finally {
+    DittoLogger.minimumLogLevel = previous;
   }
 }
 
 // ============================================================================
-// PATTERN 3: Rotating Log File Configuration
+// PATTERN 5: Slow-request warnings (SDK 5.1+)
 // ============================================================================
 
-/// ✅ GOOD: Configure rotating log files
-class RotatingLogConfiguration {
-  Future<Ditto> initializeDitto() async {
-    print('🔧 Initializing Ditto with rotating logs...');
-
-    // ✅ Set log level before initialization
-    DittoLogger.minimumLogLevel = DittoLogLevel.info;
-    DittoLogger.enabled = true;
-
-    // ✅ Configure rotating log file
-    // Logs automatically rotate when reaching size limit
-    // Keeps last N log files for diagnostics
-
-    final ditto = await Ditto.open(
-      identity: DittoIdentity.onlinePlayground(
-        appID: 'your-app-id',
-        token: 'your-token',
-      ),
-      persistenceDirectory: await getApplicationDocumentsDirectory(),
-    );
-
-    print('  ✅ Ditto initialized with rotating logs');
-    print('  Log files: ${ditto.persistenceDirectory}/logs/');
-
-    return ditto;
+/// ✅ GOOD: System parameters are not persisted. Apply them after every
+/// Ditto.open() and before ditto.sync.start(), then read back the
+/// non-default parameters to confirm.
+Future<void> applyDiagnosticsParameters(Ditto ditto) async {
+  if (!kReleaseMode) {
+    // Default is 60 seconds; a lower threshold surfaces slow queries early.
+    await ditto.store.execute('ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10');
   }
 
-  Future<String> getApplicationDocumentsDirectory() async {
-    return Directory.systemTemp.path;
-  }
-
-  /// ✅ Access log files for diagnostics
-  Future<List<File>> getLogFiles(Ditto ditto) async {
-    final logsDir = Directory('${ditto.persistenceDirectory}/logs');
-
-    if (!await logsDir.exists()) {
-      print('⚠️ Logs directory not found');
-      return [];
-    }
-
-    final files = await logsDir
-        .list()
-        .where((entity) => entity is File && entity.path.endsWith('.log'))
-        .map((entity) => entity as File)
-        .toList();
-
-    print('📂 Found ${files.length} log files:');
-    for (final file in files) {
-      final stat = await file.stat();
-      final sizeMB = stat.size / (1024 * 1024);
-      print('  - ${file.path.split('/').last} (${sizeMB.toStringAsFixed(2)} MB)');
-    }
-
-    return files;
+  final result = await ditto.store.execute(
+    "SELECT key, value FROM system:system_info "
+    "WHERE key LIKE 'non_default_system_parameter%'",
+  );
+  for (final item in result.items) {
+    debugPrint('${item.value['key']} = ${item.value['value']}');
   }
 }
 
 // ============================================================================
-// PATTERN 4: System Info Query for Debugging
+// PATTERN 6: On-demand diagnostics snapshot
 // ============================================================================
 
-/// ✅ GOOD: Query system info for diagnostics
-class SystemInfoDiagnostics {
-  final Ditto ditto;
+/// ✅ GOOD: Query system: virtual collections with execute when needed (a
+/// diagnostics screen or support action). They are local to this device,
+/// read only, and never synced. Do not register long-lived observers on
+/// system:system_info or system:data_sync_info.
+Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
+  List<Map<String, dynamic>> values(QueryResult result) =>
+      result.items.map((item) => item.value).toList();
 
-  SystemInfoDiagnostics(this.ditto);
+  final core = await ditto.store.execute(
+    "SELECT key, value FROM system:system_info "
+    "WHERE namespace = 'core' AND key LIKE 'ditto_sdk%'",
+  );
+  final logs = await ditto.store.execute(
+    "SELECT key, value FROM system:system_info WHERE namespace = 'logs'",
+  );
+  final syncConnections = await ditto.store.execute('SELECT * FROM system:data_sync_info');
+  final indexes = await ditto.store.execute('SELECT _id FROM system:indexes');
+  final activeRequests = await ditto.store.execute(
+    'SELECT _id, text, state, times FROM system:active_requests',
+  );
 
-  Future<void> logSystemInfo() async {
-    print('🔍 Querying Ditto system info...');
-
-    try {
-      // ✅ Query system information
-      final result = await ditto.store.execute('SELECT * FROM ditto_info');
-
-      if (result.items.isEmpty) {
-        print('⚠️ System info not available');
-        return;
-      }
-
-      final info = result.items.first.value;
-
-      print('  ✅ Ditto System Information:');
-      print('     SDK Version: ${info['sdk_version']}');
-      print('     Persistence Directory: ${info['persistence_directory']}');
-      print('     Site ID: ${info['site_id']}');
-      print('     Transport Configuration: ${info['transport_config']}');
-
-      // ✅ Log to diagnostics file
-      _saveDiagnostics(info);
-    } catch (e) {
-      print('  ❌ Failed to query system info: $e');
-    }
-  }
-
-  void _saveDiagnostics(Map<String, dynamic> info) {
-    // Save diagnostics to file for support
-    print('  💾 Diagnostics saved');
-  }
-
-  Future<void> logSyncStatus() async {
-    print('🔍 Querying sync status...');
-
-    // ✅ Query current subscriptions
-    try {
-      final subscriptions = await ditto.store.execute(
-        'SELECT * FROM ditto_subscriptions',
-      );
-
-      print('  ✅ Active subscriptions: ${subscriptions.items.length}');
-
-      for (final item in subscriptions.items) {
-        final sub = item.value;
-        print('     - ${sub['query']}');
-      }
-    } catch (e) {
-      print('  ❌ Failed to query subscriptions: $e');
-    }
-  }
+  return {
+    'core': values(core),
+    'logs': values(logs),
+    'syncConnections': values(syncConnections),
+    'indexes': values(indexes),
+    'activeRequests': values(activeRequests),
+  };
 }
 
-// ============================================================================
-// PATTERN 5: Conditional Logging Based on Environment
-// ============================================================================
-
-/// ✅ GOOD: Conditional logging for specific scenarios
-class ConditionalLogging {
-  Future<Ditto> initializeDitto({
-    required bool isProduction,
-    required bool debugSync,
-  }) async {
-    print('🔧 Initializing Ditto with conditional logging...');
-
-    // ✅ Base log level from environment
-    if (isProduction) {
-      DittoLogger.minimumLogLevel = DittoLogLevel.warning;
-    } else {
-      DittoLogger.minimumLogLevel = DittoLogLevel.info;
-    }
-
-    // ✅ Override for specific debugging scenarios
-    if (debugSync) {
-      print('  🐛 Debug mode: Sync debugging enabled');
-      DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-      // Additional sync-specific logging configuration
-    }
-
-    DittoLogger.enabled = true;
-
-    final ditto = await Ditto.open(
-      identity: DittoIdentity.onlinePlayground(
-        appID: 'your-app-id',
-        token: 'your-token',
-      ),
-      persistenceDirectory: await getApplicationDocumentsDirectory(),
-    );
-
-    print('  ✅ Ditto initialized with conditional logging');
-
-    return ditto;
-  }
-
-  Future<String> getApplicationDocumentsDirectory() async {
-    return Directory.systemTemp.path;
-  }
-}
-
-// ============================================================================
-// PATTERN 6: Log Level Adjustment at Runtime
-// ============================================================================
-
-/// ✅ GOOD: Adjust log level during runtime
-class RuntimeLogLevelAdjustment {
-  final Ditto ditto;
-
-  RuntimeLogLevelAdjustment(this.ditto);
-
-  void enableVerboseLogging() {
-    print('🔊 Enabling verbose logging...');
-
-    // ✅ Increase log level for debugging
-    DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-
-    print('  ✅ Log level set to DEBUG (verbose)');
-    print('  All sync and query operations will be logged');
-  }
-
-  void disableVerboseLogging() {
-    print('🔇 Disabling verbose logging...');
-
-    // ✅ Reduce log level for performance
-    DittoLogger.minimumLogLevel = DittoLogLevel.warning;
-
-    print('  ✅ Log level set to WARNING (minimal)');
-    print('  Only warnings and errors will be logged');
-  }
-
-  void enableDebugModeForDuration(Duration duration) async {
-    print('🐛 Enabling debug mode for ${duration.inSeconds}s...');
-
-    // ✅ Temporarily increase log level
-    final originalLevel = DittoLogger.minimumLogLevel;
-    DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-
-    print('  ✅ Debug logging enabled');
-
-    // Wait for duration
-    await Future.delayed(duration);
-
-    // ✅ Restore original log level
-    DittoLogger.minimumLogLevel = originalLevel;
-
-    print('  ✅ Debug logging disabled (restored to ${originalLevel.name})');
-  }
-}
-
-// ============================================================================
-// PATTERN 7: Performance Monitoring with Logs
-// ============================================================================
-
-/// ✅ GOOD: Use logs for performance monitoring
-class PerformanceMonitoring {
-  final Ditto ditto;
-
-  PerformanceMonitoring(this.ditto);
-
-  Future<void> monitorQueryPerformance() async {
-    print('📊 Monitoring query performance...');
-
-    // ✅ Enable debug logging to see query execution times
-    DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-
-    final stopwatch = Stopwatch()..start();
-
-    // Execute query
-    final result = await ditto.store.execute(
-      'SELECT * FROM todos WHERE isCompleted != true ORDER BY createdAt DESC',
-    );
-
-    stopwatch.stop();
-
-    print('  ✅ Query completed in ${stopwatch.elapsedMilliseconds}ms');
-    print('  Results: ${result.items.length} items');
-
-    // ✅ Check logs for detailed timing information
-    // Ditto SDK logs query execution details when DEBUG level is enabled
-  }
-
-  Future<void> monitorSyncPerformance() async {
-    print('📊 Monitoring sync performance...');
-
-    // ✅ Enable debug logging to see sync activity
-    DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-
-    print('  ✅ Sync activity will be logged');
-    print('  Check logs for:');
-    print('     - Peer connections');
-    print('     - Data transfer rates');
-    print('     - Sync errors');
-    print('     - Network transport events');
-  }
-}
-
-// ============================================================================
-// Complete Example: Production-Ready Logging Setup
-// ============================================================================
-
-/// ✅ Production-ready logging configuration
-class ProductionLoggingSetup {
-  Future<Ditto> initializeDitto({
-    required String environment, // 'dev', 'staging', 'production'
-    required String appVersion,
-  }) async {
-    print('🚀 Initializing Ditto for $environment ($appVersion)...');
-
-    // ✅ STEP 1: Configure log level before initialization
-    switch (environment) {
-      case 'dev':
-        DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-        print('  📝 Dev environment: DEBUG level');
-        break;
-      case 'staging':
-        DittoLogger.minimumLogLevel = DittoLogLevel.info;
-        print('  📝 Staging environment: INFO level');
-        break;
-      case 'production':
-        DittoLogger.minimumLogLevel = DittoLogLevel.warning;
-        print('  📝 Production environment: WARNING level');
-        break;
-      default:
-        DittoLogger.minimumLogLevel = DittoLogLevel.info;
-    }
-
-    // ✅ STEP 2: Enable file logging
-    DittoLogger.enabled = true;
-
-    // ✅ STEP 3: Initialize Ditto
-    final ditto = await Ditto.open(
-      identity: DittoIdentity.onlinePlayground(
-        appID: 'your-app-id',
-        token: 'your-token',
-      ),
-      persistenceDirectory: await getApplicationDocumentsDirectory(),
-    );
-
-    // ✅ STEP 4: Log initialization success
-    print('  ✅ Ditto initialized successfully');
-    await _logInitializationInfo(ditto, environment, appVersion);
-
-    return ditto;
-  }
-
-  Future<void> _logInitializationInfo(
-    Ditto ditto,
-    String environment,
-    String appVersion,
-  ) async {
-    print('  📋 Initialization Info:');
-    print('     Environment: $environment');
-    print('     App Version: $appVersion');
-    print('     Persistence Directory: ${ditto.persistenceDirectory}');
-    print('     Site ID: ${ditto.siteID}');
-
-    // Query system info
-    try {
-      final result = await ditto.store.execute('SELECT * FROM ditto_info');
-      if (result.items.isNotEmpty) {
-        final info = result.items.first.value;
-        print('     SDK Version: ${info['sdk_version']}');
-      }
-    } catch (e) {
-      print('     ⚠️ Could not query system info: $e');
-    }
-  }
-
-  Future<String> getApplicationDocumentsDirectory() async {
-    return Directory.systemTemp.path;
-  }
-}
-
-// ============================================================================
-// Best Practices Summary
-// ============================================================================
-
-void printBestPractices() {
-  print('✅ Logging Configuration Best Practices:');
-  print('');
-  print('DO:');
-  print('  ✓ Set DittoLogger.minimumLogLevel BEFORE Ditto.open()');
-  print('  ✓ Use different log levels for dev/staging/production');
-  print('  ✓ Enable file logging (DittoLogger.enabled = true)');
-  print('  ✓ Use DEBUG level in development');
-  print('  ✓ Use WARNING level in production');
-  print('  ✓ Query ditto_info for diagnostics');
-  print('  ✓ Adjust log level at runtime for debugging');
-  print('  ✓ Monitor performance with debug logs');
-  print('');
-  print('DON\'T:');
-  print('  ✗ Set log level after Ditto.open() (misses startup logs)');
-  print('  ✗ Use DEBUG level in production (performance impact)');
-  print('  ✗ Disable logging entirely in production');
-  print('  ✗ Ignore log files when debugging');
-  print('');
-  print('Log Levels:');
-  print('  • DEBUG: Verbose logging (dev only)');
-  print('  • INFO: Standard logging (staging)');
-  print('  • WARNING: Minimal logging (production)');
-  print('  • ERROR: Errors only');
-  print('');
-  print('WHY SET LOG LEVEL BEFORE OPEN:');
-  print('  • Captures initialization diagnostics');
-  print('  • Logs SDK version and configuration');
-  print('  • Logs transport setup');
-  print('  • Logs database migration (if any)');
-  print('  • Critical for debugging startup issues');
-}
+/// Placeholder for fetching an authentication token from your backend.
+Future<String> fetchAuthToken() async => 'token';

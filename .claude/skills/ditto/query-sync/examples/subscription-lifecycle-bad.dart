@@ -1,486 +1,156 @@
-// SDK Version: All
-// Platform: All
-// Last Updated: 2025-12-19
+// Subscription anti-patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
 //
-// Example: Subscription and Observer Lifecycle Anti-Patterns
-// This file demonstrates common mistakes that lead to memory leaks and bugs
+// Every example compiles and runs, but wastes bandwidth and storage, churns
+// the mesh, or leaks subscriptions. The corrected versions are in
+// subscription-lifecycle-good.dart.
+//
+// Subscription queries that are rejected when registerSubscription is called
+// (described here instead of executed):
+// - Projection:        SELECT _id, status FROM orders
+//   -> "Unsupported feature: A projection other than wildcard (*)"
+// - Aggregate:         SELECT COUNT(*) AS n FROM orders (same error)
+// - DISTINCT:          SELECT DISTINCT status FROM orders
+//   -> "Unsupported feature: DISTINCT"
+// - GROUP BY:          SELECT * FROM orders GROUP BY status
+//   -> "Unsupported feature: Grouping"
+// - JOIN:              SELECT * FROM orders o JOIN customers c ON c._id = o.customerId
+//   -> "Unsupported feature: Joining"
+// - USE IDS:           SELECT * FROM orders USE IDS 'order-1'
+//   -> "Unsupported feature: USE IDS"
+// - LIMIT / ORDER BY:  SELECT * FROM orders WHERE storeId = :storeId ORDER BY createdAt DESC LIMIT 50
+//   -> "Unsupported feature: Limit or Order by" (while DQL_RESTRICT_SUBSCRIPTIONS
+//      has its default value true; keep the default)
+// Subscribe with SELECT * FROM c WHERE ... and sort, limit, project, or join in
+// local queries instead.
 
-import 'package:ditto/ditto.dart';
-import 'package:flutter/widgets.dart';
+import 'package:ditto_live/ditto_live.dart';
+import 'package:flutter/material.dart';
 
-/// Anti-Pattern 1: Not canceling subscriptions and observers
-///
-/// ❌ BAD: Memory leak - subscriptions and observers never canceled
-class LeakyOrdersService {
+/// ❌ BAD: A new subscription on every rebuild, never cancelled. build() can
+/// run many times per second; each call adds a subscription that keeps
+/// replicating until the Ditto instance is closed.
+class OrdersBadge extends StatelessWidget {
+  const OrdersBadge({super.key, required this.ditto, required this.storeId});
+
   final Ditto ditto;
-
-  LeakyOrdersService(this.ditto);
-
-  void initialize() {
-    // Registered but never canceled - MEMORY LEAK!
-    ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
-
-    // Registered but never canceled - MEMORY LEAK!
-    ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-      onChange: (result, signalNext) {
-        final orders = result.items.map((item) => item.value).toList();
-        print('Orders: ${orders.length}');
-        signalNext();
-      },
-    );
-  }
-
-  // Missing dispose() method!
-  // Subscriptions and observers continue running even after service is destroyed
-}
-
-/// ✅ GOOD: Proper cleanup
-class ProperOrdersService {
-  final Ditto ditto;
-  late final Subscription _subscription;
-  late final StoreObserver _observer;
-
-  ProperOrdersService(this.ditto);
-
-  void initialize() {
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
-
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-      onChange: (result, signalNext) {
-        final orders = result.items.map((item) => item.value).toList();
-        print('Orders: ${orders.length}');
-        signalNext();
-      },
-    );
-  }
-
-  void dispose() {
-    _observer.cancel();
-    _subscription.cancel();
-  }
-}
-
-/// Anti-Pattern 2: Widget without proper lifecycle management
-///
-/// ❌ BAD: Subscription registered but never canceled in widget lifecycle
-class LeakyOrdersWidget extends StatefulWidget {
-  final Ditto ditto;
-
-  const LeakyOrdersWidget({required this.ditto, Key? key}) : super(key: key);
-
-  @override
-  State<LeakyOrdersWidget> createState() => _LeakyOrdersWidgetState();
-}
-
-class _LeakyOrdersWidgetState extends State<LeakyOrdersWidget> {
-  List<Map<String, dynamic>> _orders = [];
-
-  @override
-  void initState() {
-    super.initState();
-
-    // PROBLEM: No reference stored, can't cancel later!
-    widget.ditto.sync.registerSubscription(
-      'SELECT * FROM orders',
-    );
-
-    widget.ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) {
-        setState(() {
-          _orders = result.items.map((item) => item.value).toList();
-        });
-        signalNext();
-      },
-    );
-  }
-
-  // Missing dispose() - Memory leak!
+  final String storeId;
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      itemCount: _orders.length,
-      itemBuilder: (context, index) {
-        return ListTile(title: Text(_orders[index]['name'] ?? ''));
-      },
-    );
-  }
-}
-
-/// Anti-Pattern 3: Canceling in wrong order
-///
-/// ❌ BAD: Canceling subscription before observer can cause issues
-class WrongOrderCancellation {
-  final Ditto ditto;
-  late final Subscription _subscription;
-  late final StoreObserver _observer;
-
-  WrongOrderCancellation(this.ditto);
-
-  void initialize() {
-    _subscription = ditto.sync.registerSubscription('SELECT * FROM orders');
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) {
-        final orders = result.items.map((item) => item.value).toList();
-        signalNext();
-      },
-    );
-  }
-
-  void dispose() {
-    // WRONG ORDER: Canceling subscription first
-    // Observer might still try to process data
-    _subscription.cancel();
-    _observer.cancel(); // Should be first!
-  }
-}
-
-/// ✅ GOOD: Cancel in reverse order (observer first, subscription second)
-class CorrectOrderCancellation {
-  final Ditto ditto;
-  late final Subscription _subscription;
-  late final StoreObserver _observer;
-
-  CorrectOrderCancellation(this.ditto);
-
-  void initialize() {
-    _subscription = ditto.sync.registerSubscription('SELECT * FROM orders');
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) {
-        final orders = result.items.map((item) => item.value).toList();
-        signalNext();
-      },
-    );
-  }
-
-  void dispose() {
-    // CORRECT: Cancel observer first, then subscription
-    _observer.cancel();
-    _subscription.cancel();
-  }
-}
-
-/// Anti-Pattern 4: Re-creating subscriptions without canceling old ones
-///
-/// ❌ BAD: Creating new subscriptions without cleaning up old ones
-class MultipleLeakySubscriptions {
-  final Ditto ditto;
-
-  MultipleLeakySubscriptions(this.ditto);
-
-  void setFilter(String status) {
-    // PROBLEM: Old subscription still active, creating new one!
-    // Each call adds another subscription - LEAK!
     ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': status},
+      'SELECT * FROM orders WHERE storeId = :storeId',
+      arguments: {'storeId': storeId},
     );
-
-    ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': status},
-      onChange: (result, signalNext) {
-        print('Orders: ${result.items.length}');
-        signalNext();
-      },
-    );
+    return const Icon(Icons.receipt_long);
   }
 }
 
-/// ✅ GOOD: Cancel old subscriptions before creating new ones
-class ProperDynamicSubscriptions {
+/// ❌ BAD: Subscription owned by a screen. Every visit registers and cancels
+/// it, making peers across the mesh re-evaluate what they owe the device and
+/// interrupting in-flight transfers. Own it in an app/feature service.
+class OrdersScreen extends StatefulWidget {
+  const OrdersScreen({super.key, required this.ditto, required this.storeId});
+
   final Ditto ditto;
-  Subscription? _subscription;
-  StoreObserver? _observer;
-
-  ProperDynamicSubscriptions(this.ditto);
-
-  void setFilter(String status) {
-    // Cancel old subscriptions first
-    _observer?.cancel();
-    _subscription?.cancel();
-
-    // Create new subscriptions
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': status},
-    );
-
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': status},
-      onChange: (result, signalNext) {
-        print('Orders: ${result.items.length}');
-        signalNext();
-      },
-    );
-  }
-
-  void dispose() {
-    _observer?.cancel();
-    _subscription?.cancel();
-  }
-}
-
-/// Anti-Pattern 5: Subscription without observer (or vice versa)
-///
-/// ❌ BAD: Subscription without observer - data syncs but never accessed
-class SubscriptionWithoutObserver {
-  final Ditto ditto;
-  late final Subscription _subscription;
-
-  SubscriptionWithoutObserver(this.ditto);
-
-  void initialize() {
-    // Data is syncing but we're never observing it!
-    // Wastes bandwidth and storage
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
-
-    // Missing observer!
-  }
-
-  void dispose() {
-    _subscription.cancel();
-  }
-}
-
-/// ❌ BAD: Observer without subscription - only sees local data
-class ObserverWithoutSubscription {
-  final Ditto ditto;
-  late final StoreObserver _observer;
-
-  ObserverWithoutSubscription(this.ditto);
-
-  void initialize() {
-    // Only observes local changes, no mesh sync!
-    // Won't receive updates from other devices
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-      onChange: (result, signalNext) {
-        print('Local orders: ${result.items.length}');
-        signalNext();
-      },
-    );
-
-    // Missing subscription!
-  }
-
-  void dispose() {
-    _observer.cancel();
-  }
-}
-
-/// ✅ GOOD: Both subscription and observer together
-class ProperSubscriptionAndObserver {
-  final Ditto ditto;
-  late final Subscription _subscription;
-  late final StoreObserver _observer;
-
-  ProperSubscriptionAndObserver(this.ditto);
-
-  void initialize() {
-    // Subscription: Sync data from mesh
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
-
-    // Observer: React to local data changes (from sync or local updates)
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-      onChange: (result, signalNext) {
-        print('Orders (local + synced): ${result.items.length}');
-        signalNext();
-      },
-    );
-  }
-
-  void dispose() {
-    _observer.cancel();
-    _subscription.cancel();
-  }
-}
-
-/// Anti-Pattern 6: Storing observer in wrong scope
-///
-/// ❌ BAD: Observer created in method scope, can't be canceled
-class WrongScopeObserver {
-  final Ditto ditto;
-
-  WrongScopeObserver(this.ditto);
-
-  void setupOrders() {
-    // PROBLEM: Local variable, can't access in dispose()!
-    final observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) {
-        print('Orders: ${result.items.length}');
-        signalNext();
-      },
-    );
-
-    // observer goes out of scope here, can't cancel later!
-  }
-
-  void dispose() {
-    // Can't cancel observer here - no reference!
-  }
-}
-
-/// Anti-Pattern 7: Not handling null safety for cancellation
-///
-/// ❌ BAD: Potential null reference errors
-class UnsafeCancellation {
-  final Ditto ditto;
-  late Subscription _subscription; // Not nullable, not initialized
-  late StoreObserver _observer;
-
-  UnsafeCancellation(this.ditto);
-
-  void dispose() {
-    // CRASH RISK: If dispose() called before initialize()
-    _observer.cancel(); // Might crash!
-    _subscription.cancel(); // Might crash!
-  }
-}
-
-/// ✅ GOOD: Null-safe cancellation
-class SafeCancellation {
-  final Ditto ditto;
-  Subscription? _subscription; // Nullable
-  StoreObserver? _observer;
-
-  SafeCancellation(this.ditto);
-
-  void initialize() {
-    _subscription = ditto.sync.registerSubscription('SELECT * FROM orders');
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) => signalNext(),
-    );
-  }
-
-  void dispose() {
-    // Safe: Only cancel if not null
-    _observer?.cancel();
-    _subscription?.cancel();
-  }
-}
-
-/// Anti-Pattern 8: Using setState after widget disposed
-///
-/// ❌ BAD: Observer continues after widget disposed, causes setState errors
-class StateAfterDisposeWidget extends StatefulWidget {
-  final Ditto ditto;
-
-  const StateAfterDisposeWidget({required this.ditto, Key? key}) : super(key: key);
+  final String storeId;
 
   @override
-  State<StateAfterDisposeWidget> createState() => _StateAfterDisposeWidgetState();
+  State<OrdersScreen> createState() => _OrdersScreenState();
 }
 
-class _StateAfterDisposeWidgetState extends State<StateAfterDisposeWidget> {
-  late final StoreObserver _observer;
-  List<Map<String, dynamic>> _orders = [];
+class _OrdersScreenState extends State<OrdersScreen> {
+  late final SyncSubscription _subscription;
 
   @override
   void initState() {
     super.initState();
-
-    _observer = widget.ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) {
-        // PROBLEM: This might be called after dispose()
-        setState(() { // ERROR: setState called after dispose
-          _orders = result.items.map((item) => item.value).toList();
-        });
-        signalNext();
-      },
+    _subscription = widget.ditto.sync.registerSubscription(
+      'SELECT * FROM orders WHERE storeId = :storeId',
+      arguments: {'storeId': widget.storeId},
     );
   }
 
   @override
   void dispose() {
-    // Race condition: observer callback might still fire
-    super.dispose(); // Disposed too early!
-    _observer.cancel(); // Should cancel BEFORE super.dispose()
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      itemCount: _orders.length,
-      itemBuilder: (context, index) {
-        return ListTile(title: Text(_orders[index]['name'] ?? ''));
-      },
-    );
-  }
-}
-
-/// ✅ GOOD: Cancel observer before dispose, check mounted
-class SafeStateWidget extends StatefulWidget {
-  final Ditto ditto;
-
-  const SafeStateWidget({required this.ditto, Key? key}) : super(key: key);
-
-  @override
-  State<SafeStateWidget> createState() => _SafeStateWidgetState();
-}
-
-class _SafeStateWidgetState extends State<SafeStateWidget> {
-  late final StoreObserver _observer;
-  List<Map<String, dynamic>> _orders = [];
-
-  @override
-  void initState() {
-    super.initState();
-
-    _observer = widget.ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) {
-        // Check if widget is still mounted
-        if (mounted) {
-          setState(() {
-            _orders = result.items.map((item) => item.value).toList();
-          });
-        }
-        signalNext();
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    // Cancel BEFORE super.dispose()
-    _observer.cancel();
+    _subscription.cancel();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      itemCount: _orders.length,
-      itemBuilder: (context, index) {
-        return ListTile(title: Text(_orders[index]['name'] ?? ''));
-      },
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// ❌ BAD: Re-registering the subscription whenever the user changes a filter
+/// or search term. Change the local observer instead.
+class OrderSearchSync {
+  OrderSearchSync(this._ditto);
+
+  final Ditto _ditto;
+  SyncSubscription? _subscription;
+
+  void onSearchChanged(String storeId, String status, String customerName) {
+    _subscription?.cancel();
+    _subscription = _ditto.sync.registerSubscription(
+      'SELECT * FROM orders '
+      'WHERE storeId = :storeId AND status = :status AND customerName = :name',
+      arguments: {'storeId': storeId, 'status': status, 'name': customerName},
     );
   }
+}
+
+/// ❌ BAD: The reference is dropped without cancelling. Always release
+/// subscriptions explicitly; do not rely on garbage collection to cancel them.
+void subscribeAndForget(Ditto ditto, String storeId) {
+  ditto.sync.registerSubscription(
+    'SELECT * FROM orders WHERE storeId = :storeId',
+    arguments: {'storeId': storeId},
+  );
+}
+
+/// ❌ BAD: Every device receives and stores every order of every tenant.
+/// Filter by stable partition keys (tenant, store, region, team).
+SyncSubscription subscribeToEverything(Ditto ditto) {
+  return ditto.sync.registerSubscription('SELECT * FROM orders');
+}
+
+/// ❌ BAD: Filtering the subscription on fields that change often. Documents
+/// leave the subscription's scope when they change state, so devices and
+/// relays stop following them. Excluding soft-deleted documents has the same
+/// effect: a document stops matching as soon as it is flagged, so a device
+/// without the flag can miss it. Keep soft-deleted documents in the
+/// subscription (Variant A) or use a retention window (Variant B), as described
+/// in the guide section "Soft delete, subscriptions, and cleanup".
+SyncSubscription subscribeToOpenUndeletedOrders(Ditto ditto, String storeId) {
+  return ditto.sync.registerSubscription(
+    'SELECT * FROM orders WHERE storeId = :storeId AND status = :status '
+    'AND coalesce(isDeleted, false) = false',
+    arguments: {'storeId': storeId, 'status': 'open'},
+  );
+}
+
+/// ❌ BAD: Values interpolated into the subscription string. Use parameters.
+SyncSubscription subscribeWithInterpolation(Ditto ditto, String storeId) {
+  return ditto.sync.registerSubscription(
+    "SELECT * FROM orders WHERE storeId = '$storeId'",
+  );
+}
+
+/// ❌ BAD: Evicting while the matching subscription is still active. Connected
+/// peers notice the missing documents and send them back. Cancel first.
+Future<void> evictWhileSubscribed(Ditto ditto, String oldStoreId) async {
+  await ditto.store.execute(
+    'EVICT FROM orders WHERE storeId = :storeId',
+    arguments: {'storeId': oldStoreId},
+  );
+}
+
+/// ❌ BAD: Expecting execute() to fetch data from peers. Without a matching
+/// subscription it only sees what is already stored locally, and an empty
+/// result does not mean that no data exists.
+Future<bool> orderExistsAnywhere(Ditto ditto, String orderId) async {
+  final result = await ditto.store.execute(
+    'SELECT _id FROM orders WHERE _id = :id LIMIT 1',
+    arguments: {'id': orderId},
+  );
+  return result.items.isNotEmpty;
 }

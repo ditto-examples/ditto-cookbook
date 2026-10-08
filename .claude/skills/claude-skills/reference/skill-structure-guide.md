@@ -519,7 +519,7 @@ For SDK-specific skills:
 
 ```markdown
 > **Last Updated**: 2025-12-20
-> **SDK Version**: 4.12.0+
+> **SDK Version**: 5.1.0+
 > **Platform**: Flutter/Dart
 ```
 
@@ -527,7 +527,7 @@ For SDK-specific skills:
 
 ```python
 # Example: API Query Patterns (Good)
-# SDK Version: 4.12.0+
+# SDK Version: 5.1.0+
 # Platform: Python
 # Last Updated: 2025-12-20
 ```

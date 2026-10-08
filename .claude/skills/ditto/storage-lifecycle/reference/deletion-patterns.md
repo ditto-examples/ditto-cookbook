@@ -1,656 +1,210 @@
-# Storage Lifecycle Deletion Patterns
+# Storage Lifecycle: Additional Patterns
 
-This reference contains HIGH and MEDIUM priority patterns for data deletion, EVICT management, and storage optimization in Ditto. These patterns address common scenarios for managing document lifecycle.
+Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The authoritative source is the guide section [Deletion and Storage Management](../../../../guides/best-practices/ditto.md#deletion-and-storage-management).
 
 ## Table of Contents
 
-- [Pattern 4: Husked Document Filtering](#pattern-4-husked-document-filtering)
-- [Pattern 5: EVICT Frequency Limits](#pattern-5-evict-frequency-limits)
-- [Pattern 6: Opposite Query Pattern for EVICT](#pattern-6-opposite-query-pattern-for-evict)
-- [Pattern 7: Top-Level Subscription Declaration](#pattern-7-top-level-subscription-declaration)
-- [Pattern 8: Batch Deletion with LIMIT](#pattern-8-batch-deletion-with-limit)
-- [Pattern 9: Big Peer TTL Management](#pattern-9-big-peer-ttl-management)
-- [Pattern 10: Time-Based Eviction Patterns](#pattern-10-time-based-eviction-patterns)
+- [What DELETE Leaves Behind](#what-delete-leaves-behind)
+- [Husk Documents](#husk-documents)
+- [Deleting on the Ditto Server](#deleting-on-the-ditto-server)
+- [Cleaning Up Soft-Deleted Documents](#cleaning-up-soft-deleted-documents)
+- [Switching Partitions (Store Switch)](#switching-partitions-store-switch)
+- [Eviction Scheduling](#eviction-scheduling)
+- [Monitoring Storage](#monitoring-storage)
 
 ---
 
-### 4. Husked Document Filtering (Priority: HIGH)
+## What DELETE Leaves Behind
 
-**Problem**: Concurrent DELETE operations from Device A and UPDATE operations from Device B create "husked documents" containing only system fields (`_id`, `_meta`). These appear in query results and can cause UI issues.
+- The values are removed. A small tombstone remains: the document ID, metadata such as the deletion time, and the field names the document had. Tombstones are internal and cannot be queried.
+- Tombstones are only shared with peers that have seen the document before it was deleted; a peer never receives a tombstone for a document it never knew about.
+- After `DELETE`, the document no longer appears in `SELECT`, is not counted by `COUNT(*)`, and an `UPDATE` no longer matches it.
+- A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear.
+- Inserting with `INITIAL DOCUMENTS` for an `_id` that was previously deleted produces a document whose fields are all `null`, because the tombstone is newer than the "initial" data.
 
-**Detection**:
-```dart
-// Query returns husked documents
-final result = await ditto.store.execute('SELECT * FROM tasks');
-
-for (final item in result.items) {
-  final taskName = item.value['name'];  // May be null if husked!
-  if (taskName == null) {
-    // Husked document detected
-  }
-}
-```
-
-### Solution: Filter Out Husked Documents
-
-```dart
-// ✅ GOOD: Filter out husked documents
-final result = await ditto.store.execute(
-  'SELECT * FROM tasks WHERE name IS NOT NULL'
-);
-// Only returns documents with actual data
-```
-
-### Why Husked Documents Occur
-
-**Concurrent operations**:
-- Device A: `DELETE FROM tasks WHERE _id = '123'`
-- Device B: `UPDATE tasks SET priority = 'high' WHERE _id = '123'`
-
-**After sync**:
-- DELETE removes all fields except `_id`, `_meta`
-- UPDATE adds `priority` field to deleted document
-- Result: `{"_id": "123", "_meta": {...}, "priority": "high"}` (husked - missing other fields)
-
-### Filtering Strategies
-
-**Option 1: Field-Level Filtering** (Recommended):
-```dart
-// Filter by required fields
-'SELECT * FROM tasks WHERE name IS NOT NULL AND status IS NOT NULL'
-```
-
-**Option 2: Soft-Delete Filtering**:
-```dart
-// If using isDeleted pattern (Soft-Delete)
-'SELECT * FROM tasks WHERE isDeleted != true'
-```
-
-**Option 3: Client-Side Filtering** (Last resort):
-```dart
-final items = result.items.where((item) {
-  final value = item.value;
-  return value.containsKey('name') && value.containsKey('status');
-}).toList();
-```
-
-### Trade-offs
-
-| Approach | Performance | Safety | Complexity |
-|----------|------------|--------|------------|
-| Field-level WHERE | ✅ Fast (server-side) | ✅ Guaranteed | ✅ Simple |
-| Soft-Delete | ✅ Fast (server-side) | ⚠️ Requires pattern | ⚠️ Additional field |
-| Client-side | ❌ Slower | ✅ Flexible | ⚠️ More code |
-
-- `../SKILL.md` Pattern 3: Soft-Delete Pattern
-- 
+Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md pattern 2](../SKILL.md#2-respect-the-tombstone-ttl-priority-critical) and the guide's [Tombstone TTL and reaping](../../../../guides/best-practices/ditto.md#tombstone-ttl-and-reaping).
 
 ---
 
-### 5. EVICT Frequency Limits (Priority: HIGH)
+## Husk Documents
 
-**Problem**: Calling `EVICT` too frequently (e.g., on every query change) wastes CPU and battery. Ditto recommends EVICT at most once every few minutes.
+When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) describes the result as a *husk document*: the updated fields keep their new values, every other field is `null`, and the document is not deleted:
 
-**Detection**:
+```text
+Initial:            {"_id": "abc123", "color": "red", "make": "Toyota", "year": 2020}
+Device A:           DELETE FROM cars WHERE _id = 'abc123'
+Device B (offline): UPDATE cars SET color = 'blue' WHERE _id = 'abc123'
+After merge:        {"_id": "abc123", "color": "blue", "make": null, "year": null}
+```
+
+To avoid husk documents:
+
+1. Use a soft delete for data that may be edited concurrently.
+2. Manage edge storage with `EVICT` and perform permanent deletion on the Ditto Server (for example through its HTTP API).
+3. Coordinate your workflow so that the same document is not deleted and updated at the same time.
+
+If husk documents are possible in your data, make the UI tolerate `null` fields instead of assuming every field is present:
+
 ```dart
-// ❌ BAD: EVICT on every observer callback
-ditto.store.registerObserver(
-  'SELECT * FROM tasks'
-  onChange: (result) async {
-    updateUI(result);
+import 'package:flutter/material.dart';
 
-    // EVICT runs on every data change!
-    await ditto.store.execute(
-      'EVICT FROM tasks WHERE completedAt < :threshold'
-      arguments: {'threshold': thirtyDaysAgo}
+// ✅ GOOD: Render a car even when some fields are null (possible husk document).
+class CarTile extends StatelessWidget {
+  const CarTile({super.key, required this.car});
+
+  final Map<String, dynamic> car;
+
+  @override
+  Widget build(BuildContext context) {
+    final make = car['make'] as String?;
+    final year = car['year'] as int?;
+    final color = car['color'] as String?;
+    return ListTile(
+      title: Text(make ?? 'Unknown make'),
+      subtitle: Text('${year ?? '-'} · ${color ?? '-'}'),
     );
   }
-);
-```
-
-### Solution: Throttle EVICT Operations
-
-```dart
-// ✅ GOOD: EVICT with periodic throttling
-class EvictionManager {
-  DateTime? _lastEviction;
-  static const _evictionInterval = Duration(minutes: 5);
-
-  Future<void> evictIfNeeded(Ditto ditto) async {
-    final now = DateTime.now();
-
-    if (_lastEviction == null ||
-        now.difference(_lastEviction!) > _evictionInterval) {
-      await ditto.store.execute(
-        'EVICT FROM tasks WHERE completedAt < :threshold'
-        arguments: {
-          'threshold': DateTime.now()
-            .subtract(Duration(days: 30))
-            .toIso8601String()
-        }
-      );
-      _lastEviction = now;
-    }
-  }
-}
-
-// Use in observer
-ditto.store.registerObserver(
-  'SELECT * FROM tasks'
-  onChange: (result) async {
-    updateUI(result);
-    await evictionManager.evictIfNeeded(ditto);  // Throttled
-  }
-);
-```
-
-### Recommended Intervals
-
-| Use Case | Interval | Reason |
-|----------|----------|--------|
-| **High-traffic apps** | 5-10 minutes | Reduce overhead |
-| **Background sync** | 1-5 minutes | More frequent cleanup |
-| **Low-traffic apps** | 10-30 minutes | Less frequent data changes |
-| **Manual trigger** | User-initiated | Explicit control |
-
-### Alternative Patterns
-
-**Option 2: Scheduled Background Task** (Recommended for mobile):
-```dart
-// Run EVICT in background task (e.g., WorkManager, BackgroundFetch)
-void scheduleEviction() {
-  Workmanager().registerPeriodicTask(
-    'eviction-task'
-    'evictionTask'
-    frequency: Duration(hours: 1),  // Platform-specific minimum
-  );
-}
-
-void evictionTask() async {
-  final ditto = await Ditto.open(store);
-  await ditto.store.execute(
-    'EVICT FROM tasks WHERE completedAt < :threshold'
-    arguments: {'threshold': thirtyDaysAgo}
-  );
 }
 ```
 
-**Option 3: App Lifecycle Trigger**:
-```dart
-// EVICT on app background/resume
-@override
-void didChangeAppLifecycleState(AppLifecycleState state) {
-  if (state == AppLifecycleState.paused) {
-    evictionManager.evictIfNeeded(ditto);
-  }
-}
-```
-
-- `../SKILL.md` Pattern 2: EVICT Without Subscription Cancellation
-- 
+Guide: [Husk documents](../../../../guides/best-practices/ditto.md#husk-documents)
 
 ---
 
-### 6. Opposite Query Pattern for EVICT (Priority: HIGH)
+## Deleting on the Ditto Server
 
-**Problem**: EVICT queries should be the logical opposite of subscription queries. If subscription query is complex, EVICT query must match to avoid re-syncing evicted documents.
+`DELETE` statements sent through the Ditto Server HTTP API run as a single atomic operation. Delete in batches of 30,000 documents or fewer to avoid slowing down sync for connected devices:
 
-**Detection**:
-```dart
-// Subscription: Get active tasks
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM tasks WHERE status = :status AND priority >= :priority'
-  arguments: {'status': 'active', 'priority': 5}
-);
-
-// ❌ BAD: EVICT query doesn't match subscription logic
-await ditto.store.execute(
-  'EVICT FROM tasks WHERE status != :status'
-  arguments: {'status': 'active'}
-);
-// Problem: Evicts tasks with priority < 5 that should be synced!
+```sql
+DELETE FROM orders WHERE status = 'archived' LIMIT 30000
 ```
 
-### Solution: Match EVICT to Subscription
+Cleanup statements typically sent to the Ditto Server in a server-driven retention setup (see [examples/ttl-eviction-ditto-server.dart](../examples/ttl-eviction-ditto-server.dart)):
 
-```dart
-// ✅ GOOD: EVICT is logical opposite of subscription
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM tasks WHERE status = :status AND priority >= :priority'
-  arguments: {'status': 'active', 'priority': 5}
-);
+```sql
+-- Mark documents that devices no longer need; devices evict flagged documents
+UPDATE orders SET evictionFlag = true WHERE createdAt < :cutoff
 
-// EVICT: Opposite condition
-await ditto.store.execute(
-  'EVICT FROM tasks WHERE status != :status OR priority < :priority'
-  arguments: {'status': 'active', 'priority': 5}
-);
-// Correctly evicts tasks not matching subscription
+-- Variant A soft-delete cleanup: permanently remove soft-deleted records after the retention period
+DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000
 ```
 
-### Complex Query Examples
+- Repeat a batch until no documents are affected.
+- There is no `DROP COLLECTION` statement. `DELETE FROM orders` without a `WHERE` clause deletes every document, but the collection remains.
+- See the Ditto Server HTTP API documentation for the endpoint and authentication.
 
-**Subscription with multiple conditions**:
-```dart
-// Subscription
-'SELECT * FROM orders WHERE (status = :status1 OR status = :status2) AND userId = :userId'
-
-// Matching EVICT
-'EVICT FROM orders WHERE (status != :status1 AND status != :status2) OR userId != :userId'
-```
-
-**Subscription with date range**:
-```dart
-// Subscription
-'SELECT * FROM events WHERE timestamp >= :startDate AND timestamp <= :endDate'
-
-// Matching EVICT
-'EVICT FROM events WHERE timestamp < :startDate OR timestamp > :endDate'
-```
-
-### Why This Matters
-
-If EVICT query is broader than subscription:
-- ✅ Safe - Evicts only unsubscribed documents
-- ⚠️ May leave some documents in store
-
-If EVICT query is narrower than subscription:
-- ❌ Dangerous - Re-syncs evicted documents
-- ❌ Wastes bandwidth and storage
-
-- `../SKILL.md` Pattern 2: EVICT Without Subscription Cancellation
-- 
+Guide: [Deleting on the Ditto Server](../../../../guides/best-practices/ditto.md#deleting-on-the-ditto-server)
 
 ---
 
-### 7. Top-Level Subscription Declaration (Priority: HIGH)
+## Cleaning Up Soft-Deleted Documents
 
-**Problem**: Creating subscriptions inside observer callbacks causes subscription churn (repeated cancel/recreate), wasting resources.
+How soft-deleted documents are eventually removed depends on the subscription design (both keep flagged documents inside the subscription until every device has received the flag):
 
-**Detection**:
-```dart
-// ❌ BAD: Subscription inside observer
-ditto.store.registerObserver(
-  'SELECT * FROM users WHERE _id = :userId'
-  arguments: {'userId': currentUserId}
-  onChange: (result) async {
-    final user = result.items.first.value;
+| | Variant A: whole-collection subscription | Variant B: retention-window subscription |
+|---|---|---|
+| Subscription | `SELECT * FROM orders WHERE storeId = :storeId` (includes soft-deleted documents) | `... WHERE storeId = :storeId AND (coalesce(isDeleted, false) = false OR deletedAt >= :cutoff)` |
+| Cleanup | A `DELETE` after the retention period, on the Ditto Server or by another authorized peer, that syncs to every device | Each device evicts the complement of its subscription; the record stays on the Ditto Server until it is deleted there |
+| Device-side `EVICT` | ❌ Evicted documents still match the subscription and sync back | ✅ Evicted documents are outside the subscription |
 
-    // Subscription recreated on every observer callback!
-    final tasksSub = ditto.sync.registerSubscription(
-      'SELECT * FROM tasks WHERE userId = :userId'
-      arguments: {'userId': user['_id']}
-    );
-  }
-);
+Variant A cleanup (run once flagged documents are no longer edited, to avoid husk documents):
+
+```sql
+DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000
 ```
 
-### Solution: Declare Subscriptions at Top Level
+Variant B device-side cleanup, the complement of the retention-window subscription:
 
-```dart
-// ✅ GOOD: Subscriptions declared once
-class TasksManager {
-  DittoSyncSubscription? _userSubscription;
-  DittoSyncSubscription? _tasksSubscription;
-  DittoStoreObserver? _observer;
-
-  void initialize(String userId) {
-    // Create subscriptions once
-    _userSubscription = ditto.sync.registerSubscription(
-      'SELECT * FROM users WHERE _id = :userId'
-      arguments: {'userId': userId}
-    );
-
-    _tasksSubscription = ditto.sync.registerSubscription(
-      'SELECT * FROM tasks WHERE userId = :userId'
-      arguments: {'userId': userId}
-    );
-
-    // Observer only updates UI
-    _observer = ditto.store.registerObserver(
-      'SELECT * FROM tasks WHERE userId = :userId'
-      arguments: {'userId': userId}
-      onChange: (result) {
-        updateUI(result);  // No subscription logic here
-      }
-    );
-  }
-
-  void dispose() {
-    _userSubscription?.cancel();
-    _tasksSubscription?.cancel();
-    _observer?.cancel();
-  }
-}
+```sql
+EVICT FROM orders WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff
 ```
 
-### When Subscription Changes Are Needed
+In Variant B, cancel the old subscription before evicting, use the same cutoff value for the eviction and the new subscription, and choose a retention window longer than the longest expected offline period. See [examples/soft-delete-relay.dart](../examples/soft-delete-relay.dart).
 
-**Dynamic subscriptions** (user changes filters):
-```dart
-// ✅ ACCEPTABLE: Recreate subscription when filter changes
-void updateFilter(String newStatus) {
-  _subscription?.cancel();  // Cancel old subscription
-  _subscription = ditto.sync.registerSubscription(
-    'SELECT * FROM tasks WHERE status = :status'
-    arguments: {'status': newStatus}
-  );
-}
-```
-
-### Trade-offs
-
-| Approach | Subscription Churn | Code Complexity | Use Case |
-|----------|-------------------|-----------------|----------|
-| Top-level (static) | ✅ None | ✅ Simple | Fixed queries |
-| Top-level (dynamic) | ⚠️ On filter change | ⚠️ Moderate | User-driven filters |
-| Inside observer | ❌ High | ❌ Complex | ❌ Avoid |
-
-- `../../query-sync/SKILL.md` Pattern 3: Uncanceled Subscriptions
-- 
+Guide: [Soft delete, subscriptions, and cleanup](../../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup)
 
 ---
 
-### 8. Batch Deletion with LIMIT (Priority: MEDIUM)
+## Switching Partitions (Store Switch)
 
-**Problem**: Deleting thousands of documents in a single query can block the main thread and cause UI freezes.
-
-**Detection**:
-```dart
-// ❌ BAD: Delete all at once (could be 10,000+ documents)
-await ditto.store.execute(
-  'DELETE FROM logs WHERE timestamp < :threshold'
-  arguments: {'threshold': thirtyDaysAgo}
-);
-// Blocks UI for seconds if dataset is large
-```
-
-### Solution: Batch Deletion with LIMIT
+Changing the set of data a device needs (a different store or tenant) is a legitimate reason to change subscriptions. Cancel first, evict the old partition, then subscribe to the new one:
 
 ```dart
-// ✅ GOOD: Batch deletion with LIMIT
-Future<void> batchDelete(Ditto ditto, String threshold) async {
-  const batchSize = 100;
-  var deletedCount = 0;
+import 'package:ditto_live/ditto_live.dart';
 
-  do {
-    final result = await ditto.store.execute(
-      'DELETE FROM logs WHERE timestamp < :threshold LIMIT :limit'
-      arguments: {'threshold': threshold, 'limit': batchSize}
-    );
-
-    deletedCount = result.mutatedDocumentIDs.length;
-
-    // Yield to UI thread between batches
-    await Future.delayed(Duration(milliseconds: 10));
-  } while (deletedCount == batchSize);
-}
-```
-
-### Batch Size Recommendations
-
-| Document Complexity | Batch Size | Reason |
-|--------------------|-----------|--------|
-| **Simple documents** (<10 fields) | 100-500 | Fast per-doc deletion |
-| **Complex documents** (>10 fields) | 50-100 | More processing per doc |
-| **Very large documents** (>100 KB) | 10-50 | Significant I/O per doc |
-
-### Alternative Patterns
-
-**Option 2: Background Task** (Recommended for large datasets):
-```dart
-// Run batch deletion in background isolate (Flutter)
-Future<void> deleteLargeDataset() async {
-  await compute(_batchDeleteIsolate, {
-    'threshold': thirtyDaysAgo
-    'batchSize': 100
-  });
-}
-
-void _batchDeleteIsolate(Map<String, dynamic> params) async {
-  // Perform batch deletion without blocking main thread
-  final ditto = await Ditto.open(store);
-  await batchDelete(ditto, params['threshold']);
-}
-```
-
-**Option 3: Progress Reporting**:
-```dart
-Stream<int> batchDeleteWithProgress(Ditto ditto, String threshold) async* {
-  const batchSize = 100;
-  var totalDeleted = 0;
-
-  while (true) {
-    final result = await ditto.store.execute(
-      'DELETE FROM logs WHERE timestamp < :threshold LIMIT :limit'
-      arguments: {'threshold': threshold, 'limit': batchSize}
-    );
-
-    final deletedCount = result.mutatedDocumentIDs.length;
-    totalDeleted += deletedCount;
-
-    yield totalDeleted;  // Emit progress
-
-    if (deletedCount < batchSize) break;
-    await Future.delayed(Duration(milliseconds: 10));
-  }
-}
-
-// Usage
-await for (final count in batchDeleteWithProgress(ditto, threshold)) {
-  updateProgressUI(count);
-}
-```
-
-- 
-
----
-
-### 9. Big Peer TTL Management (Priority: MEDIUM)
-
-**Problem**: Big Peer stores all documents by default. Setting TTL policies ensures automatic cleanup without manual EVICT.
-
-**Background**: Big Peer is Ditto's cloud-based peer that synchronizes data across devices. Unlike mobile peers with limited storage, Big Peer has abundant storage but still benefits from TTL policies for data hygiene.
-
-### Solution: Configure Big Peer TTL
-
-**Via Ditto Portal**:
-1. Navigate to your app in Ditto Portal
-2. Go to Collections → Select collection
-3. Configure TTL policy:
-   - **Field**: `deletedAt` (or `completedAt`, `expiresAt`)
-   - **Duration**: Time after field value (e.g., 30 days)
-   - **Action**: DELETE (removes document permanently)
-
-**Example TTL Policies**:
-
-| Use Case | Field | Duration | Reason |
-|----------|-------|----------|--------|
-| **Soft-deleted tasks** | `deletedAt` | 30 days | Grace period for recovery |
-| **Completed orders** | `completedAt` | 90 days | Regulatory compliance |
-| **Temporary sessions** | `expiresAt` | 1 day | Short-lived data |
-| **Log entries** | `timestamp` | 7 days | Recent logs only |
-
-### How TTL Works
-
-**Client-side**:
-```dart
-// Mark document for TTL deletion
-await ditto.store.execute(
-  'UPDATE tasks SET deletedAt = :timestamp WHERE _id = :id'
-  arguments: {
-    'id': taskId
-    'timestamp': DateTime.now().toIso8601String()
-  }
-);
-// Big Peer deletes after TTL expires
-```
-
-**Big Peer behavior**:
-- Checks TTL policies periodically (typically every few minutes)
-- Deletes documents when `field + duration < now`
-- Deletion syncs to all peers via tombstone mechanism
-
-### Benefits
-
-- ✅ Automatic cleanup (no manual EVICT scripts)
-- ✅ Consistent across all peers
-- ✅ Reduces Big Peer storage costs
-- ✅ Enforces data retention policies
-
-### Limitations
-
-- ⚠️ TTL configured via Portal (not programmatically)
-- ⚠️ Minimum duration is typically 1 hour
-- ⚠️ Deletion is asynchronous (not immediate)
-
-- Ditto Portal documentation: [portal.ditto.live](https://portal.ditto.live)
-- `../SKILL.md` Pattern 1: DELETE Without Tombstone TTL Strategy
-
----
-
-### 10. Time-Based Eviction Patterns (Priority: MEDIUM)
-
-**Problem**: Storing unbounded historical data causes storage bloat. Time-based eviction maintains a rolling window of recent data.
-
-### Solution Options
-
-#### Option 1: EVICT with Date Threshold (Recommended)
-
-```dart
-// ✅ GOOD: EVICT documents older than 30 days
-Future<void> evictOldDocuments(Ditto ditto) async {
-  final threshold = DateTime.now()
-    .subtract(Duration(days: 30))
-    .toIso8601String();
-
-  await ditto.store.execute(
-    'EVICT FROM events WHERE timestamp < :threshold'
-    arguments: {'threshold': threshold}
-  );
-}
-
-// Run periodically (e.g., daily)
-Timer.periodic(Duration(days: 1), (_) => evictOldDocuments(ditto));
-```
-
-#### Option 2: EVICT with Record Count Limit
-
-```dart
-// ✅ GOOD: Keep only latest 1000 records per user
-Future<void> evictExcessRecords(Ditto ditto, String userId) async {
-  // Query to get timestamp of 1000th record
-  final threshold = await ditto.store.execute(
-    '''
-    SELECT timestamp FROM events
-    WHERE userId = :userId
-    ORDER BY timestamp DESC
-    LIMIT 1 OFFSET 999
-    '''
-    arguments: {'userId': userId}
-  );
-
-  if (threshold.items.isEmpty) return;  // Less than 1000 records
-
-  final cutoffTime = threshold.items.first.value['timestamp'];
-
-  // Evict records older than cutoff
-  await ditto.store.execute(
-    '''
-    EVICT FROM events
-    WHERE userId = :userId AND timestamp < :cutoff
-    '''
-    arguments: {'userId': userId, 'cutoff': cutoffTime}
-  );
-}
-```
-
-#### Option 3: Hybrid Approach (Date + Count)
-
-```dart
-// ✅ BEST: Keep latest 1000 OR last 30 days (whichever is more)
-Future<void> evictWithHybridPolicy(Ditto ditto, String userId) async {
-  final dateThreshold = DateTime.now()
-    .subtract(Duration(days: 30))
-    .toIso8601String();
-
-  // Get 1000th record timestamp
-  final countResult = await ditto.store.execute(
-    '''
-    SELECT timestamp FROM events
-    WHERE userId = :userId
-    ORDER BY timestamp DESC
-    LIMIT 1 OFFSET 999
-    '''
-    arguments: {'userId': userId}
-  );
-
-  String evictThreshold;
-
-  if (countResult.items.isEmpty) {
-    // Less than 1000 records, use date only
-    evictThreshold = dateThreshold;
-  } else {
-    final countCutoff = countResult.items.first.value['timestamp'] as String;
-    // Use whichever is older (keeps more data)
-    evictThreshold = countCutoff.compareTo(dateThreshold) < 0
-      ? countCutoff
-      : dateThreshold;
+// ✅ GOOD: Cancel, evict the old store's data, subscribe to the new store.
+Future<List<SyncSubscription>> switchStore(
+  Ditto ditto,
+  List<SyncSubscription> currentSubscriptions,
+  String newStoreId,
+) async {
+  for (final subscription in currentSubscriptions) {
+    subscription.cancel();
   }
 
   await ditto.store.execute(
-    '''
-    EVICT FROM events
-    WHERE userId = :userId AND timestamp < :threshold
-    '''
-    arguments: {'userId': userId, 'threshold': evictThreshold}
+    'EVICT FROM orders WHERE storeId != :storeId',
+    arguments: {'storeId': newStoreId},
   );
+
+  return [
+    ditto.sync.registerSubscription(
+      'SELECT * FROM orders WHERE storeId = :storeId',
+      arguments: {'storeId': newStoreId},
+    ),
+  ];
 }
 ```
 
-### Use Case Recommendations
+Documents that were in flight when the subscriptions were cancelled can still arrive shortly afterwards. Run the same eviction once more after a short delay; see [examples/evict-subscription-management-good.dart](../examples/evict-subscription-management-good.dart).
 
-| Use Case | Pattern | Threshold | Reason |
-|----------|---------|-----------|--------|
-| **Chat messages** | Date-based | 90 days | Users expect recent history |
-| **Activity logs** | Date-based | 30 days | Audit requirements |
-| **Analytics events** | Count-based | Latest 10K | Fixed storage budget |
-| **Feed items** | Hybrid | 1000 or 7 days | Balance recency and quantity |
+Switch partitions only when the needed data really changes. Search boxes, tabs, filters, and sort orders should change local observers, not subscriptions (avoid changing subscriptions more often than about every 15 minutes).
 
-### Scheduling Strategies
-
-**Daily cleanup** (Recommended):
-```dart
-Timer.periodic(Duration(days: 1), (_) => evictOldDocuments(ditto));
-```
-
-**On app background**:
-```dart
-@override
-void didChangeAppLifecycleState(AppLifecycleState state) {
-  if (state == AppLifecycleState.paused) {
-    evictOldDocuments(ditto);
-  }
-}
-```
-
-**Manual trigger** (Settings screen):
-```dart
-ElevatedButton(
-  onPressed: () => evictOldDocuments(ditto)
-  child: Text('Clear Old Data')
-);
-```
-
-- Pattern 5: EVICT Frequency Limits
-- 
+Guide: [Cancelling subscriptions and local data](../../../../guides/best-practices/ditto.md#cancelling-subscriptions-and-local-data), [Subscription Lifecycle](../../../../guides/best-practices/ditto.md#subscription-lifecycle)
 
 ---
 
-## Further Reading
+## Eviction Scheduling
 
-- **SKILL.md**: Critical patterns (Tier 1)
-- **Main Guide**: `.claude/guides/best-practices/ditto.md`
-- **Related Skills**:
-  - `query-sync/SKILL.md`: Subscription management
-  - `data-modeling/SKILL.md`: Document lifecycle design
+- Evict on a regular schedule, but no more than about once per day, during periods of minimal disruption such as after hours.
+- (SDK 5.1+) Ditto writes a warning-level log entry when post-eviction session cleanup runs too frequently within a sliding window. Treat it as a sign to evict less often.
+- Local `DELETE` and `EVICT` execution is fast, but the sync cost of each eviction on connected peers still applies.
+- `EVICT` supports `LIMIT` and `RETURNING`, so a large cleanup can be split into short transactions (see [SKILL.md pattern 7](../SKILL.md#7-evict-on-a-schedule-in-batches-priority-high)). One cleanup run is still one eviction event for connected peers.
+- **Advanced:** `DISABLE_REPLICATION_GC_ON_EVICT` (default `false`) stops each eviction from triggering immediate per-peer replication metadata cleanup; periodic background garbage collection still runs. Leave it at the default unless profiling shows eviction-time write latency.
+
+Guide: [Eviction frequency](../../../../guides/best-practices/ditto.md#eviction-frequency)
+
+---
+
+## Monitoring Storage
+
+`system:system_info` reports storage usage and document counts for the local device. Values are collected periodically and can lag behind recent writes. Each key can appear more than once with different timestamps; read the newest row.
+
+```sql
+SELECT key, value FROM system:system_info WHERE key LIKE 'fs_usage%'
+```
+
+Keys include `fs_usage_total`, `fs_usage_store`, `fs_usage_replication`, `fs_usage_attachment`, `fs_usage_auth`, `fs_device_available`, `fs_device_total` (namespace `core`), and `collection_num_docs[<collection>]` (namespace `store`).
+
+```dart
+import 'package:ditto_live/ditto_live.dart';
+
+// ✅ GOOD: Read the latest storage snapshot on demand.
+Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    "SELECT key, value, timestamp FROM system:system_info "
+    "WHERE key LIKE 'fs_%' OR key LIKE 'collection_num_docs%' "
+    "ORDER BY timestamp ASC",
+  );
+  final snapshot = <String, Object?>{};
+  for (final item in result.items) {
+    // Later rows overwrite earlier ones, so the newest value wins.
+    snapshot[item.value['key'] as String] = item.value['value'];
+  }
+  return snapshot;
+}
+```
+
+**❌ DON'T** register a long-lived observer on `system:system_info`: such observers run every 500 ms regardless of whether anything changed.
+
+Guide: [Monitoring Storage](../../../../guides/best-practices/ditto.md#monitoring-storage)

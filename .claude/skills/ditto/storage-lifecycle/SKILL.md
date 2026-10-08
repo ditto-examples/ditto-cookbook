@@ -1,514 +1,504 @@
 ---
 name: storage-lifecycle
 description: |
-  Validates Ditto data deletion strategies, EVICT operations, and storage optimization.
+  Validates Ditto deletion strategies (DELETE, soft delete, EVICT), tombstone TTL settings, and local storage management for Ditto SDK 5.1.
 
   CRITICAL ISSUES PREVENTED:
-  - Zombie data resurrection from expired tombstone TTL
-  - Resync loops from EVICT without subscription cancellation
-  - Husked documents (concurrent DELETE/UPDATE)
-  - Performance degradation from improper EVICT frequency
-  - Data loss from tombstone sharing limitations
+  - Deleted data resurrected by devices that stay offline longer than the tombstone TTL (7 days by default)
+  - Edge tombstone TTL configured above the Ditto Server TTL
+  - Evicted documents syncing straight back because a subscription still matches them
+  - DELETE/EVICT with USE IDS and no WHERE clause silently removing nothing (SDK 5.1.0)
+  - Soft-delete filters (isDeleted != true) that hide documents where the flag is missing or null
+  - Husk documents caused by DELETE racing a concurrent UPDATE
+  - Evicting too often and overloading connected peers with resyncs
 
   TRIGGERS:
-  - Performing DELETE operations
-  - Implementing EVICT for local storage cleanup
-  - Designing data retention or TTL policies
-  - Managing subscription lifecycle around EVICT
-  - Filtering logically deleted data in queries
-  - Handling husked document edge cases
+  - Writing DELETE or EVICT statements
+  - Implementing soft delete (isDeleted / deletedAt flags) and filtering deleted documents
+  - Designing retention policies, time-based or flag-based eviction
+  - Changing subscriptions around eviction (store switch, retention window)
+  - Configuring TOMBSTONE_TTL_HOURS or other tombstone/reaping system parameters
+  - Monitoring local storage usage
 
-  PLATFORMS: Flutter (Dart), JavaScript, Swift, Kotlin (cross-platform storage rules)
+  PLATFORMS: Flutter (Dart) primary; the DQL rules apply to all SDKs (JavaScript, Swift, Kotlin)
 ---
 
 # Ditto Storage Lifecycle Management
 
+Actionable patterns for removing data and managing local storage with Ditto SDK 5.1. The authoritative explanation is the guide section [Deletion and Storage Management](../../../guides/best-practices/ditto.md#deletion-and-storage-management).
+
 ## Table of Contents
 
-- [Purpose](#purpose)
 - [When This Skill Applies](#when-this-skill-applies)
 - [Platform Detection](#platform-detection)
-- [SDK Version Compatibility](#sdk-version-compatibility)
-- [Common Workflows](#common-workflows)
+- [Choosing a Removal Strategy](#choosing-a-removal-strategy)
 - [Critical Patterns](#critical-patterns)
-  - [1. DELETE Without Tombstone TTL Strategy](#1-delete-without-tombstone-ttl-strategy-priority-critical)
-  - [2. EVICT Without Subscription Cancellation](#2-evict-without-subscription-cancellation-priority-critical)
-  - [3. Soft-Delete Pattern](#3-soft-delete-pattern-priority-critical)
-  - [4. Husked Document Filtering](#4-husked-document-filtering-priority-high)
-  - [5. EVICT Frequency Limits](#5-evict-frequency-limits-priority-high)
-  - [6. Opposite Query Pattern for EVICT](#6-opposite-query-pattern-for-evict-priority-high)
-  - [7. Top-Level Subscription Declaration](#7-top-level-subscription-declaration-priority-high)
-  - [8. Batch Deletion with LIMIT](#8-batch-deletion-with-limit-priority-medium)
-  - [9. Big Peer TTL Management](#9-big-peer-ttl-management-priority-medium)
-  - [10. Time-Based Eviction Patterns](#10-time-based-eviction-patterns-priority-medium)
+  - [1. Target DELETE and EVICT with WHERE](#1-target-delete-and-evict-with-where-priority-critical)
+  - [2. Respect the Tombstone TTL](#2-respect-the-tombstone-ttl-priority-critical)
+  - [3. Filter Soft-Deleted Documents with coalesce](#3-filter-soft-deleted-documents-with-coalesce-priority-critical)
+  - [4. Keep Soft-Deleted Documents in Subscriptions](#4-keep-soft-deleted-documents-in-subscriptions-priority-critical)
+  - [5. Evict Only Outside Every Active Subscription](#5-evict-only-outside-every-active-subscription-priority-critical)
+  - [6. Avoid Husk Documents](#6-avoid-husk-documents-priority-high)
+  - [7. Evict on a Schedule, in Batches](#7-evict-on-a-schedule-in-batches-priority-high)
 - [Quick Reference Checklist](#quick-reference-checklist)
 - [See Also](#see-also)
 
 ---
 
-## Purpose
-
-This Skill ensures proper data lifecycle management in Ditto's distributed environment. It prevents critical issues like zombie data resurrection from expired tombstones, EVICT-induced resync loops, and husked documents from concurrent DELETE/UPDATE operations.
-
-**Critical issues prevented**:
-- Zombie data from expired tombstone TTL
-- Resync loops from EVICT without subscription cancellation
-- Husked documents from concurrent DELETE/UPDATE
-- Performance degradation from improper EVICT frequency
-- Data loss from tombstone sharing limitations
-
 ## When This Skill Applies
 
-Use this Skill when:
-- Performing DELETE operations on collections
-- Implementing EVICT for local storage cleanup
-- Designing data retention policies or TTL strategies
-- Managing subscription lifecycle around EVICT operations
-- Handling tombstone TTL configuration (Cloud or Edge)
-- Filtering logically deleted data in queries and observers
-- Implementing time-based data expiration
-- Testing deletion scenarios or zombie data prevention
+- A statement contains `DELETE FROM` or `EVICT FROM`
+- Code sets or filters a deletion flag (`isDeleted`, `deletedAt`, `evictionFlag`)
+- Code cancels or re-registers subscriptions to free storage (store switch, retention window)
+- Code reads or changes `TOMBSTONE_TTL_HOURS`, `TOMBSTONE_TTL_ENABLED`, `DAYS_BETWEEN_REAPING`, or `DISABLE_REPLICATION_GC_ON_EVICT`
+- Code reads storage metrics from `system:system_info`
 
 ## Platform Detection
 
-**Automatic Detection**:
-1. **Flutter/Dart**: `*.dart` files with `import 'package:ditto/ditto.dart'`
-2. **JavaScript**: `*.js`, `*.ts` files with `import { Ditto } from '@dittolive/ditto'`
-3. **Swift**: `*.swift` files with `import DittoSwift`
-4. **Kotlin**: `*.kt` files with `import live.ditto.*`
+| Platform | Indicator |
+|---|---|
+| Flutter (Dart) | `import 'package:ditto_live/ditto_live.dart';` |
+| JavaScript / TypeScript | `from '@dittolive/ditto'` |
+| Swift | `import DittoSwift` |
+| Kotlin | `import com.ditto.kotlin.*` |
 
-**Platform-Specific**: Cross-platform (same storage rules apply to all SDKs)
-
----
-
-## SDK Version Compatibility
-
-This section consolidates all version-specific information referenced throughout this Skill.
-
-### All Platforms
-
-- **Storage Lifecycle Rules**: Universal across all platforms and SDK versions
-  - DELETE creates tombstones with TTL (default: Cloud 30 days, Edge/Big Peer 1 hour)
-  - EVICT removes local documents without creating tombstones
-  - Husked documents occur from concurrent DELETE/UPDATE operations
-  - Logical deletion (isDeleted flag) available in all versions
-
-- **SDK 4.11+**
-  - **DQL_STRICT_MODE default true** (affects CRDT type inference)
-  - Soft-delete fields in nested objects may require MAP definitions
-  - See data-modeling skill Pattern 1.5 for collection definition patterns
-
-- **All SDK Versions**
-  - DELETE, EVICT operations available
-  - Tombstone TTL configuration (Cloud only, via Ditto Portal)
-  - EVICT frequency recommendation: Max once per day
-  - Subscription cancellation required before EVICT to prevent resync loops
-
-**Throughout this Skill**: Storage lifecycle patterns are consistent across all SDK versions and platforms. No breaking changes or version-specific behaviors. SDK 4.11+ strict mode primarily affects data modeling, not deletion/EVICT operations.
+The DQL statements and storage rules below are the same on every platform. Code samples use Dart.
 
 ---
 
-## Common Workflows
+## Choosing a Removal Strategy
 
-### Workflow 1: Implementing Safe Data Deletion
+| Requirement | `DELETE` | Soft delete | `EVICT` |
+|---|---|---|---|
+| Remove data for every peer | ✅ (tombstone) | ✅ (flag, then cleanup) | ❌ (local only) |
+| Safe when devices stay offline longer than the tombstone TTL (7 days by default) | ❌ (data can be resurrected) | ✅ | ✅ (other peers are unaffected) |
+| Safe with concurrent updates on other devices | ❌ (husk documents) | ✅ | ✅ |
+| Can be undone | ❌ | ✅ | ✅ (data syncs back if a subscription matches it again) |
+| Frees local storage | ✅ (values immediately; tombstones after reaping) | ❌ (until cleanup) | ✅ (immediately) |
+| Extra query complexity | None | Every query filters the flag | Subscription and eviction scopes must be complementary |
 
-Copy this checklist and check off items as you complete them:
+Typical choices (from the guide):
 
-```
-Safe Deletion Progress:
-- [ ] Step 1: Decide deletion strategy (physical DELETE vs logical deletion)
-- [ ] Step 2: If DELETE: Configure tombstone TTL (Cloud only)
-- [ ] Step 3: If DELETE: Plan for devices offline > TTL duration
-- [ ] Step 4: Implement deletion logic
-- [ ] Step 5: Test with offline/online scenarios
-```
+- **Data owned by one user and rarely edited concurrently**, in a deployment where devices sync regularly: `DELETE`.
+- **Shared business records** (orders, tasks, inventory) or long offline periods: soft delete, with cleanup by a synced `DELETE` (Variant A) or device-side `EVICT` (Variant B); see [pattern 4](#4-keep-soft-deleted-documents-in-subscriptions-priority-critical).
+- **Storage management on edge devices**: `EVICT` with complementary subscriptions.
 
-**Step 1: Choose deletion strategy**
+In deployments with a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typically on the Ditto Server) and `EVICT` to manage storage on edge devices. If you plan to use `DELETE` in a deployment with Small Peers only, contact Ditto support to review the design.
 
-```dart
-// Option A: Soft-Delete Pattern (deletion propagation via UPDATE + flag)
-await ditto.store.execute(
-  'UPDATE tasks SET isDeleted = true, deletedAt = :now WHERE _id = :id'
-  arguments: {'id': taskId, 'now': DateTime.now().toIso8601String()}
-);
-
-// Option B: DELETE with Tombstones (deletion propagation via built-in operation)
-await ditto.store.execute(
-  'DELETE FROM tasks WHERE _id = :id'
-  arguments: {'id': taskId}
-);
-```
-
-**Step 2: Tombstone TTL configuration** (Cloud deployments only)
-
-- Default: 30 days (Cloud), 1 hour (Edge/Big Peer)
-- Configure via Ditto Portal for Cloud deployments
-- Consider device offline duration in your use case
-
-**Step 3: Handle zombie data prevention**
-
-```dart
-// Query excludes soft-deleted items
-final result = await ditto.store.execute(
-  'SELECT * FROM tasks WHERE isDeleted != true OR isDeleted IS NULL'
-);
-```
-
----
-
-### Workflow 2: Implementing EVICT Safely
-
-```
-EVICT Implementation Progress:
-- [ ] Step 1: Cancel relevant subscriptions
-- [ ] Step 2: Query documents to EVICT (use opposite WHERE clause)
-- [ ] Step 3: Execute EVICT operation
-- [ ] Step 4: Reinstate subscriptions if needed
-- [ ] Step 5: Monitor EVICT frequency (max once/day)
-```
-
-**Critical**: EVICT without canceling subscriptions causes immediate resync loops.
-
-See Pattern 2 below for complete implementation details.
+Guide: [Choosing DELETE, Soft Delete, or EVICT](../../../guides/best-practices/ditto.md#choosing-delete-soft-delete-or-evict)
 
 ---
 
 ## Critical Patterns
 
-### 1. DELETE Without Tombstone TTL Strategy (Priority: CRITICAL)
+### 1. Target DELETE and EVICT with WHERE (Priority: CRITICAL)
 
-**Platform**: All platforms
+**Problem**: `DELETE` and `EVICT` with `USE IDS` and no `WHERE` clause complete without an error but remove nothing.
 
-**Problem**: Using DELETE without understanding tombstone TTL can cause "zombie data" - deleted documents reappearing when long-offline devices reconnect after tombstone expiration.
-
-**How Tombstones Work**:
-- DELETE creates compressed tombstones (document ID + deletion timestamp)
-- Tombstones propagate to peers so they know documents were deleted
-- **Cloud TTL**: 30 days (fixed, not configurable)
-- **Edge SDK TTL**: Configurable (default: 7 days)
-- **CRITICAL**: Tombstones only shared with devices that saw the document before deletion
-
-**Detection**:
-```dart
-// RED FLAGS
-await ditto.store.execute('DELETE FROM orders WHERE _id = :id', ...);
-// No documentation of TTL awareness
-// No consideration of offline device duration
-
-await ditto.store.execute('DELETE FROM logs WHERE createdAt < :date', ...);
-// Batch deletion without LIMIT for 50,000+ documents
-```
+> **Note (SDK 5.1.0):** `DELETE` and `EVICT` statements that use `USE IDS` without a `WHERE` clause remove nothing. Use `WHERE _id IN :ids` instead; it is planned as an ID scan, so it is just as efficient.
 
 **✅ DO**:
-```dart
-// Document TTL strategy and ensure devices connect within window
-// Cloud: 30 days, Edge: configurable (default 7 days)
-
-// For temporary data with known lifecycle
-final expiryDate = DateTime.now()
-    .subtract(const Duration(days: 30))
-    .toIso8601String();
-await ditto.store.execute(
-  'DELETE FROM temporary_data WHERE createdAt < :expiryDate'
-  arguments: {'expiryDate': expiryDate}
-);
-// Note: Tombstone TTL must exceed maximum expected offline duration
-
-// Batch deletion with LIMIT for performance (50,000+ documents)
-await ditto.store.execute(
-  'DELETE FROM logs WHERE createdAt < :cutoffDate LIMIT 30000'
-  arguments: {'cutoffDate': cutoffDate}
-);
-
-// Document your TTL strategy in code comments
-// "All devices expected to connect within 7 days for fleet management"
-```
+- Target documents with `WHERE _id = :id` or `WHERE _id IN :ids`.
+- Add `RETURNING` (SDK 5.1+) when you need the removed content (undo banner, audit record). It is the only way to read a document after `DELETE`, because the tombstone keeps no values.
 
 **❌ DON'T**:
+- Write `DELETE FROM orders USE IDS LIST :ids` or `EVICT FROM orders USE IDS 'a'`.
+- Use `DELETE` to free space on one device; it removes the data for every peer.
+
 ```dart
-// Delete without TTL awareness
-await ditto.store.execute('DELETE FROM orders WHERE status = :status'
-  arguments: {'status': 'completed'});
-// Risk: Device offline > 30 days will reintroduce completed orders
+// ✅ GOOD: Delete by ID and capture what was removed (SDK 5.1+).
+Future<List<Map<String, dynamic>>> deleteOrders(
+  Ditto ditto,
+  List<String> orderIds,
+) async {
+  final result = await ditto.store.execute(
+    'DELETE FROM orders WHERE _id IN :ids RETURNING _id, status, total',
+    arguments: {'ids': orderIds},
+  );
+  // With RETURNING, each item holds the document as it was before deletion.
+  // mutatedDocumentIDs() is still populated.
+  return result.items.map((item) => item.value).toList();
+}
 
-// Batch delete 50,000+ documents without LIMIT
-await ditto.store.execute('DELETE FROM logs WHERE createdAt < :date'
-  arguments: {'date': oldDate});
-// Performance impact: Use LIMIT 30000
-
-// Set Edge SDK TTL larger than Cloud TTL (30 days)
-// Edge devices may hold tombstones longer than Cloud expects
-```
-
-**Why**: If a device reconnects after tombstone TTL expires, its data will be treated as new inserts, causing deleted data to reappear. Tombstones only propagate to devices that have seen the document, so new devices encountering old documents will reintroduce them.
-
-**Zombie Data Scenario**:
-1. Device A DELETEs document (tombstone created)
-2. Tombstone TTL expires after 30 days
-3. Device B (offline for 35 days) reconnects with old document
-4. Device B's document treated as new insert (no tombstone exists)
-5. Deleted document reappears across mesh (zombie data)
-
-**See**:  for safer alternative
-
----
-
-### 2. EVICT Without Subscription Cancellation (Priority: CRITICAL)
-
-**Platform**: All platforms
-
-**Problem**: Executing EVICT while subscriptions are active creates resync loops - Ditto immediately re-syncs evicted documents because active subscriptions request them.
-
-**EVICT vs DELETE**:
-- **DELETE**: Soft-delete (creates tombstone, syncs to peers, keeps data locally)
-- **EVICT**: Hard-delete (removes data from local disk, local-only, no tombstone)
-
-**Detection**:
-```dart
-// RED FLAGS
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders WHERE isDeleted != true'
-);
-
-// EVICT without canceling subscription first
-await ditto.store.execute(
-  'EVICT FROM orders WHERE isDeleted = true AND deletedAt < :oldDate'
-  arguments: {'oldDate': oldDate}
-);
-// Active subscription immediately re-syncs evicted documents!
-```
-
-**✅ DO**:
-```dart
-// Cancel → EVICT → Recreate pattern
-class OrderService {
-  Subscription? _activeOrdersSubscription;
-
-  Future<void> performDailyEviction() async {
-    final cutoffDate = DateTime.now()
-        .subtract(const Duration(days: 90))
-        .toIso8601String();
-
-    // Step 1: Cancel affected subscription
-    _activeOrdersSubscription?.cancel();
-
-    // Step 2: EVICT old deleted documents (local cleanup)
-    await ditto.store.execute(
-      'EVICT FROM orders WHERE isDeleted = true AND deletedAt < :cutoffDate'
-      arguments: {'cutoffDate': cutoffDate}
-    );
-
-    // Step 3: Recreate subscription with updated query
-    _activeOrdersSubscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE isDeleted != true AND createdAt > :cutoffDate'
-      arguments: {'cutoffDate': cutoffDate}
-    );
-  }
-
-  void dispose() => _activeOrdersSubscription?.cancel();
+// ❌ BAD: Completes without an error, but deletes nothing in SDK 5.1.0.
+Future<void> deleteOrdersWithUseIds(Ditto ditto, List<String> orderIds) async {
+  await ditto.store.execute(
+    'DELETE FROM orders USE IDS LIST :ids',
+    arguments: {'ids': orderIds},
+  );
 }
 ```
 
-**❌ DON'T**:
-```dart
-// EVICT without subscription management
-await ditto.store.execute('EVICT FROM orders WHERE isDeleted = true');
-// Active subscription re-syncs evicted data immediately
+`RETURNING` also accepts aggregates, which is convenient for counting:
 
-// Local-scope subscription declarations
-void someFunction() {
-  final subscription = ditto.sync.registerSubscription('SELECT * FROM orders');
-  // Can't cancel before EVICT - no reference outside function scope
-}
+```sql
+DELETE FROM orders WHERE status = 'cancelled' AND createdAt < :cutoff RETURNING COUNT(*) AS removed
 ```
 
-**Why**: EVICT removes data locally but doesn't notify peers. Active subscriptions continue requesting evicted documents from connected peers, causing immediate re-sync and defeating the purpose of eviction. Always cancel subscriptions before EVICT.
-
-**Resync Loop**:
-1. Subscription active: `SELECT * FROM orders`
-2. EVICT executes: removes orders locally
-3. Ditto sees subscription still active
-4. Ditto requests matching documents from peers
-5. Peers send documents back
-6. Evicted documents reappear (wasted bandwidth/storage)
-
-**See**: [examples/evict-subscription-management-good.dart](examples/evict-subscription-management-good.dart)
+Guide: [DELETE and Tombstones](../../../guides/best-practices/ditto.md#delete-and-tombstones), [RETURNING (SDK 5.1+)](../../../guides/best-practices/ditto.md#returning-sdk-51)
 
 ---
 
-### 3. Soft-Delete Pattern (Priority: CRITICAL)
+### 2. Respect the Tombstone TTL (Priority: CRITICAL)
 
-**Platform**: All platforms
+**Problem**: `DELETE` leaves a tombstone (document ID, metadata such as the deletion time, and the field names; no values). Each device reaps expired tombstones periodically. A device that stays offline longer than the TTL can reconnect after every other peer has reaped the tombstone and share its old copy again ("zombie data").
 
-**Problem**: In distributed databases, deleting on one device doesn't automatically remove data from others. **Soft-Delete** is a developer-implemented deletion propagation pattern using UPDATE operations with flags, while **DELETE** uses built-in Tombstones. **Multi-Hop Relay Constraint**: When using Soft-Delete, subscriptions must NOT filter deletion flags, or deleted documents won't propagate through intermediate peers.
+Defaults:
 
-**When Soft-Delete Pattern is Appropriate**:
-- Applications with long-offline devices (> Tombstone TTL) - flags persist indefinitely
-- Documents that may be updated concurrently while deleted (prevents CRDT conflicts/husked documents)
-- Multi-hop relay scenarios where reliable propagation is critical (no TTL dependency)
-- Need predictable deletion propagation without Tombstone TTL concerns
+| System parameter | Default | Meaning |
+|---|---|---|
+| `TOMBSTONE_TTL_ENABLED` | `true` | Expired tombstones are removed automatically |
+| `TOMBSTONE_TTL_HOURS` | `168` (7 days) | Age after which a tombstone expires on this device |
+| `DAYS_BETWEEN_REAPING` | `1` | Days between reaping runs |
+| `TOMBSTONE_REAP_BATCH_SIZE` (SDK 5.1+) | `10000` | Expired tombstones are removed in bounded batches |
 
-**Detection**:
-```dart
-// RED FLAGS when using Soft-Delete
-// Missing deletion flag in queries
-final result = await ditto.store.execute('SELECT * FROM orders WHERE status = :status'
-  arguments: {'status': 'active'});
-// Will include soft-deleted documents if flag not checked
-
-// Filtering deletion flag in subscription (breaks multi-hop relay!)
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders WHERE isDeleted != true'
-);
-// Problem: Deleted documents won't propagate through relay peers
+```sql
+SHOW ALL LIKE '%tombstone%'
 ```
 
 **✅ DO**:
-```dart
-// 1. Mark as deleted (not actual deletion)
-final deletedAt = DateTime.now().toIso8601String();
-await ditto.store.execute(
-  'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :orderId'
-  arguments: {'orderId': orderId, 'deletedAt': deletedAt}
-);
-
-// Alternative naming: isArchived, deletedFlag, archivedAt (choose one, be consistent)
-
-// 2. Filter in execute() queries for app logic
-final result = await ditto.store.execute(
-  'SELECT * FROM orders WHERE isDeleted != true AND status = :status'
-  arguments: {'status': 'active'}
-);
-final activeOrders = result.items.map((item) => item.value).toList();
-
-// 3. Subscribe to ALL documents (CRITICAL for multi-hop relay)
-// ⚠️ DO NOT filter isDeleted in subscription - breaks relay propagation
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders',  // No isDeleted filter - enables proper relay
-);
-
-// 4. Observer filters deleted items for UI display
-// (but subscription above has no filter for proper relay)
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders WHERE isDeleted != true ORDER BY createdAt DESC'
-  onChange: (result, signalNext) {
-    updateUI(result.items);
-    WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-  }
-);
-
-// 5. Periodically evict old deleted documents (local cleanup)
-// Cancel subscription first (see Pattern 2)
-final oldDate = DateTime.now()
-    .subtract(const Duration(days: 90))
-    .toIso8601String();
-await ditto.store.execute(
-  'EVICT FROM orders WHERE isDeleted = true AND deletedAt < :oldDate'
-  arguments: {'oldDate': oldDate}
-);
-```
+- Make sure every device connects within the tombstone TTL, or use a soft delete for that data.
+- If devices can legitimately stay offline longer than 7 days, raise `TOMBSTONE_TTL_HOURS` on the device, staying at or below the Ditto Server TTL.
+- Apply `ALTER SYSTEM` settings after every `Ditto.open` and before `ditto.sync.start()`; they are not persisted.
 
 **❌ DON'T**:
+- Configure the Edge TTL above the Ditto Server TTL. The Ditto Server always syncs documents, so tombstones that outlive its copy are sent back to it repeatedly. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
+- Choose a very short TTL; the tombstone can expire before it reaches the other peers.
+- Look for a tombstone-lifetime method on the SDK: the TTL is a system parameter, set with `ALTER SYSTEM`.
+
 ```dart
-// ❌ BAD: Filtering deletion flag in subscription (breaks multi-hop relay!)
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders WHERE isDeleted != true',  // BREAKS RELAY!
-);
-// Problem: Deleted documents won't propagate to indirectly connected peers
-
-// Forget to filter in observers/execute() queries
-final result = await ditto.store.execute(
-  'SELECT * FROM orders WHERE status = :status', // Missing isDeleted filter!
-  arguments: {'status': 'active'}
-);
-// Includes soft-deleted documents in app logic
-
-// Use inconsistent field names
-await ditto.store.execute('UPDATE orders SET isDeleted = true WHERE _id = :id1', ...);
-await ditto.store.execute('UPDATE products SET deletedFlag = true WHERE _id = :id2', ...);
-// Inconsistent naming makes queries error-prone
-
-// Skip EVICT for local cleanup
-// Soft-deleted documents accumulate, wasting storage
+// ✅ GOOD: Keep tombstones for 14 days on this device (must not exceed the
+// Ditto Server TTL). Call after every Ditto.open() and before sync.start().
+Future<void> applyTombstoneSettings(Ditto ditto) async {
+  await ditto.store.execute('ALTER SYSTEM SET TOMBSTONE_TTL_HOURS = 336');
+}
 ```
 
-**Why**: Soft-Delete is a **deletion propagation mechanism** that uses UPDATE operations to propagate deletion flags through the mesh network. This prevents zombie data (no TTL dependency - flags persist until EVICT) and prevents husked documents (UPDATE operations merge cleanly without CRDT conflicts). **Critical pattern**: Subscriptions must include ALL documents (even deleted) for multi-hop relay to work. Only filter in observers (for UI) and execute() queries (for app logic). If subscriptions filter deletion flags, intermediate peers won't relay deleted documents to other peers, causing inconsistent state across the mesh network.
+The TTL is measured from the deleting device's clock, so inaccurate clocks make tombstones expire earlier or later than expected. Scheduling reaping during off-hours (`ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING`, `REAPER_PREFERRED_HOUR`) requires environment variables set before Ditto starts and is not supported on WASM-based platforms; contact Ditto support before relying on it.
 
-**Comparison**:
-
-| Aspect | Soft-Delete Pattern | DELETE (Tombstones) |
-|--------|---------------------|---------------------|
-| Zombie Data Risk | ✅ None (no TTL dependency) | ⚠️ Yes (if device offline > TTL) |
-| Husked Documents | ✅ Prevented (UPDATE operations) | ⚠️ Possible (concurrent DELETE + UPDATE) |
-| Code Complexity | ⚠️ Higher (filter everywhere) | ✅ Lower (automatic) |
-| Query Performance | ⚠️ Slightly slower (until EVICT) | ✅ Faster (smaller dataset) |
-| Cleanup | ⚠️ Manual (periodic EVICT) | ✅ Automatic (tombstone TTL) |
-
-**See**: 
+Guide: [Tombstone TTL and reaping](../../../guides/best-practices/ditto.md#tombstone-ttl-and-reaping), [System Parameters Reference](../../../guides/best-practices/ditto.md#system-parameters-reference)
 
 ---
 
+### 3. Filter Soft-Deleted Documents with coalesce (Priority: CRITICAL)
 
+**Problem**: In DQL, a comparison with a missing or `null` field never passes a `WHERE` clause. `isDeleted != true` and `NOT isDeleted` silently drop every document that has no `isDeleted` field.
 
-This section contains only the most critical (Tier 1) patterns that prevent data loss and synchronization issues. For additional patterns, see:
-- **[reference/deletion-patterns.md](reference/deletion-patterns.md)**: HIGH and MEDIUM priority patterns for husked documents, EVICT optimization, batch deletion, TTL management, and time-based eviction
+Which documents each filter matches, when `isDeleted` is `true`, `false`, `null`, or missing:
+
+| Filter | Matches |
+|---|---|
+| `isDeleted != true` | `false` only |
+| `NOT isDeleted` | `false` only |
+| `isDeleted = false` | `false` only |
+| `coalesce(isDeleted, false) = false` | `false`, `null`, missing |
+
+**✅ DO**:
+- Set both `isDeleted = true` and `deletedAt` (UTC ISO-8601 with a zone designator).
+- Write `isDeleted: false` when you create documents.
+- Filter with `coalesce(isDeleted, false) = false`.
+- Restore with `SET isDeleted = false UNSET deletedAt`.
+
+**❌ DON'T**:
+- Filter with `isDeleted != true` or `NOT isDeleted`.
+
+```dart
+// ✅ GOOD: Create, soft delete, restore, and query helpers.
+Future<void> createOrder(Ditto ditto, String orderId, String status) async {
+  await ditto.store.execute(
+    'INSERT INTO orders DOCUMENTS (:order)',
+    arguments: {
+      'order': {
+        '_id': orderId,
+        'status': status,
+        'isDeleted': false,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      },
+    },
+  );
+}
+
+Future<void> softDeleteOrder(Ditto ditto, String orderId) async {
+  await ditto.store.execute(
+    'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
+    arguments: {
+      'id': orderId,
+      'deletedAt': DateTime.now().toUtc().toIso8601String(),
+    },
+  );
+}
+
+Future<void> restoreOrder(Ditto ditto, String orderId) async {
+  await ditto.store.execute(
+    'UPDATE orders SET isDeleted = false UNSET deletedAt WHERE _id = :id',
+    arguments: {'id': orderId},
+  );
+}
+
+Future<List<Map<String, dynamic>>> activeOrders(Ditto ditto, String status) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders '
+    'WHERE status = :status AND coalesce(isDeleted, false) = false '
+    'ORDER BY createdAt DESC',
+    arguments: {'status': status},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+```
+
+**Indexes**: `coalesce(isDeleted, false) = false` alone cannot use an index on `isDeleted` (collection scan). Index-friendly options:
+
+| Approach | Plan |
+|---|---|
+| `status = :status AND coalesce(isDeleted, false) = false` with an index that starts with `status` | Index scan on `status`; `coalesce` applied as a filter |
+| `isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false` with an index on `isDeleted` | Index scan (same documents as the `coalesce` form) |
+| `isDeleted = false` with an index on `isDeleted`, when every document is guaranteed to have the field | Index scan |
+
+```sql
+SELECT * FROM orders
+WHERE isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false
+```
+
+Confirm the plan with `ADVISE` or `EXPLAIN`.
+
+Guide: [Soft Delete](../../../guides/best-practices/ditto.md#soft-delete), [Indexing soft-delete filters](../../../guides/best-practices/ditto.md#indexing-soft-delete-filters), [MISSING and NULL](../../../guides/best-practices/ditto.md#missing-and-null)
 
 ---
 
-### Deletion Strategy
-- [ ] Choose deletion propagation mechanism: Soft-Delete (UPDATE + flag) or DELETE (Tombstones)
-- [ ] If using DELETE: Understand Tombstone TTL implications (Cloud: 30 days fixed, Edge: configurable)
-- [ ] If using DELETE: Document TTL strategy and ensure devices sync within TTL window
-- [ ] If using Soft-Delete: Understand this is developer-implemented pattern, not Ditto API feature
-- [ ] Use LIMIT for batch deletions (50,000+ documents)
+### 4. Keep Soft-Deleted Documents in Subscriptions (Priority: CRITICAL)
 
-### EVICT Management
-- [ ] Cancel affected subscriptions before EVICT
-- [ ] Recreate subscriptions after EVICT with updated query
-- [ ] Use opposite queries for subscription vs eviction
-- [ ] Limit EVICT frequency to once per day maximum
-- [ ] Schedule EVICT during low-usage periods
-- [ ] Declare subscriptions at top-level scope (class-level)
+**Problem**: The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. Devices that already have the document keep it (cancelling or narrowing a subscription never deletes local data), and under the subscription model a device that does not have the flag can miss it and keep showing the document as active.
 
-### Soft-Delete Pattern
-- [ ] Use consistent field name (`isDeleted`, `isArchived`, etc.)
-- [ ] **CRITICAL**: Subscriptions must include ALL documents (no deletion filter) for multi-hop relay
-- [ ] Filter deleted documents in observers (for UI display)
-- [ ] Filter deleted documents in execute() queries (for app logic)
-- [ ] Periodically EVICT old soft-deleted documents
-- [ ] Cancel subscriptions before EVICT of soft-deleted data
+**✅ DO**:
+- Keep soft-deleted documents inside the subscription at least until every device has received the flag.
+- Hide them in local queries and observers with `coalesce(isDeleted, false) = false`.
+- Choose one of the two subscription designs below and clean up accordingly.
 
-### Husked Documents
-- [ ] Filter husked documents with `IS NOT NULL` checks for required fields
-- [ ] Validate documents have required fields before processing
-- [ ] Prefer Soft-Delete to avoid husking entirely
-- [ ] Don't use DELETE for documents with concurrent UPDATE risk
+**❌ DON'T**:
+- Subscribe with `WHERE coalesce(isDeleted, false) = false` (or any filter on the flag) alone.
+- Evict old soft-deleted documents on a device while a subscription still matches them (Variant A); they sync back.
 
-### Storage Optimization
-- [ ] Implement time-based eviction matching business requirements
-- [ ] Use Big Peer management for centralized eviction control (if using Cloud)
-- [ ] Never set Edge SDK TTL larger than Cloud TTL (30 days)
+| | Variant A: whole-collection subscription | Variant B: retention-window subscription |
+|---|---|---|
+| Subscription | Every document of the collection (or of the device's partition, such as one store), including soft-deleted ones | Active documents plus documents deleted within a retention window |
+| Cleanup | A `DELETE` after the retention period, executed on the Ditto Server or by another authorized peer, that syncs to every device | Each device evicts documents deleted before the cutoff; the record stays on the Ditto Server until it is deleted there |
+| Device-side `EVICT` of old soft-deleted documents | ❌ They still match the subscription and sync back | ✅ They are outside the subscription |
+| Subscription changes | None | Re-registered when the cutoff moves (for example once a day) |
+| Trade-offs | Simplest design. Soft-deleted documents use storage on every device until the `DELETE` runs, and the `DELETE` is subject to the tombstone rules | More moving parts. A device that stays offline longer than the retention window can miss the flag, so choose a window longer than the longest expected offline period |
+
+```dart
+// ✅ GOOD (Variant A): The subscription (owned by a long-lived service such as
+// OrderSync) includes soft-deleted orders; local queries hide them.
+SyncSubscription subscribeToStoreOrders(Ditto ditto, String storeId) {
+  return ditto.sync.registerSubscription(
+    'SELECT * FROM orders WHERE storeId = :storeId',
+    arguments: {'storeId': storeId},
+  );
+}
+
+// ❌ BAD: The document leaves the subscription as soon as it is flagged,
+// so devices that do not have the flag yet can miss it.
+SyncSubscription subscribeToActiveOrdersOnly(Ditto ditto) {
+  return ditto.sync.registerSubscription(
+    'SELECT * FROM orders WHERE coalesce(isDeleted, false) = false',
+  );
+}
+```
+
+Variant A cleanup runs on the Ditto Server (for example through its HTTP API) once the retention period has passed and flagged documents are no longer edited:
+
+```sql
+DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000
+```
+
+Variant B subscribes with `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff` and evicts exactly the complement (`isDeleted = true AND deletedAt < :cutoff`), cancelling the old subscription first and re-registering it with the moved cutoff. Move the cutoff only when you run cleanup, not on every screen change. The full service class is in [examples/soft-delete-relay.dart](examples/soft-delete-relay.dart).
+
+Observers use the `changes` stream pattern (register without `onChange`, listen to `changes`, cancel both in `dispose()`); see [Store Observers in Flutter](../../../guides/best-practices/ditto.md#store-observers-in-flutter).
+
+Guide: [Soft delete, subscriptions, and cleanup](../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup), [Multi-hop relay](../../../guides/best-practices/ditto.md#multi-hop-relay)
+
+---
+
+### 5. Evict Only Outside Every Active Subscription (Priority: CRITICAL)
+
+**Problem**: `EVICT` removes documents from the local store only; no tombstone is created and other peers keep them. If an active subscription on this device still matches an evicted document, connected peers notice it is missing and sync it back, which can become a loop of evicting and re-syncing.
+
+**✅ DO**:
+- Cancel or narrow the affected subscriptions **before** evicting.
+- Make the eviction query the exact complement of the remaining subscription (same cutoff value, `>=` in the subscription and `<` in the eviction).
+- Keep subscription references in an app-level or feature-level service so you can cancel them.
+- For a large boundary change (for example a store switch), consider running the same `EVICT` again after a short delay for documents that were in flight.
+
+**❌ DON'T**:
+- Evict and then register a subscription that matches the evicted documents again (for example `SELECT * FROM orders`).
+- Evict documents that an active subscription still covers.
+
+```dart
+// ✅ GOOD: Keep the last 7 days of orders on this device.
+class OrderRetention {
+  OrderRetention(this.ditto);
+
+  final Ditto ditto;
+  static const retention = Duration(days: 7);
+  SyncSubscription? _subscription;
+
+  String _cutoff() =>
+      DateTime.now().toUtc().subtract(retention).toIso8601String();
+
+  /// Call once at startup (before ditto.sync.start()).
+  void start() {
+    _subscription = _subscribeFrom(_cutoff());
+  }
+
+  /// Call on a schedule, for example once a day.
+  Future<int> evictExpired() async {
+    final cutoff = _cutoff();
+
+    // 1. Stop asking peers for the documents that are about to be evicted.
+    _subscription?.cancel();
+
+    // 2. Evict exactly the complement of the new subscription.
+    final result = await ditto.store.execute(
+      'EVICT FROM orders WHERE createdAt < :cutoff',
+      arguments: {'cutoff': cutoff},
+    );
+
+    // 3. Subscribe again with the moved boundary.
+    _subscription = _subscribeFrom(cutoff);
+    return result.mutatedDocumentIDs().length;
+  }
+
+  SyncSubscription _subscribeFrom(String cutoff) =>
+      ditto.sync.registerSubscription(
+        'SELECT * FROM orders WHERE createdAt >= :cutoff',
+        arguments: {'cutoff': cutoff},
+      );
+
+  void dispose() => _subscription?.cancel();
+}
+
+// ❌ BAD: The new subscription matches the evicted documents again,
+// so connected peers sync them straight back.
+Future<SyncSubscription> evictAndResubscribeEverything(
+  Ditto ditto,
+  SyncSubscription subscription,
+  String cutoff,
+) async {
+  subscription.cancel();
+  await ditto.store.execute(
+    'EVICT FROM orders WHERE createdAt < :cutoff',
+    arguments: {'cutoff': cutoff},
+  );
+  return ditto.sync.registerSubscription('SELECT * FROM orders');
+}
+```
+
+**Flag-based eviction**: when a central component (typically the Ditto Server, which can make sure documents have synced first) sets `evictionFlag = true`, devices subscribe with `coalesce(evictionFlag, false) = false` and evict `evictionFlag = true`. The subscription never matches flagged documents, so it does not need to be cancelled before each eviction. See [examples/flag-based-eviction.dart](examples/flag-based-eviction.dart) and [examples/ttl-eviction-ditto-server.dart](examples/ttl-eviction-ditto-server.dart).
+
+Guide: [EVICT](../../../guides/best-practices/ditto.md#evict), [Time-based eviction](../../../guides/best-practices/ditto.md#time-based-eviction), [Flag-based eviction](../../../guides/best-practices/ditto.md#flag-based-eviction), [Cancelling subscriptions and local data](../../../guides/best-practices/ditto.md#cancelling-subscriptions-and-local-data)
+
+---
+
+### 6. Avoid Husk Documents (Priority: HIGH)
+
+**Problem**: When one device deletes a document while another concurrently updates it, the add-wins merge produces a *husk document*: fields written by the update keep their new values, all other fields are `null`, and the document is **not** deleted.
+
+**✅ DO**:
+- Use a soft delete for data that may be edited concurrently.
+- Manage edge storage with `EVICT` and perform permanent deletion on the Ditto Server.
+- Coordinate workflows so the same document is not deleted and updated at the same time.
+- Make the UI tolerate documents whose fields are `null` if husks are possible.
+
+**❌ DON'T**:
+- Use `DELETE` for shared records that other devices edit.
+
+Details and a null-tolerant rendering example: [reference/deletion-patterns.md](reference/deletion-patterns.md#husk-documents). Guide: [Husk documents](../../../guides/best-practices/ditto.md#husk-documents)
+
+---
+
+### 7. Evict on a Schedule, in Batches (Priority: HIGH)
+
+**Problem**: Each eviction triggers a resync with every connected peer. Frequent evictions cost network traffic and processing on those peers. (SDK 5.1+) Ditto writes a warning-level log entry when post-eviction session cleanup runs too frequently.
+
+**✅ DO**:
+- Evict on a regular schedule, no more than about once per day, at a quiet time.
+- Split a large cleanup with `LIMIT` and stop when `RETURNING COUNT(*)` reports zero.
+- Treat the eviction-frequency warning as a sign to evict less often.
+
+**❌ DON'T**:
+- Evict on every screen change or app resume.
+- Change `DISABLE_REPLICATION_GC_ON_EVICT` (default `false`) unless profiling shows eviction-time write latency.
+
+```dart
+// ✅ GOOD: Evict in batches of 1,000 until nothing is left to evict.
+Future<int> evictInBatches(Ditto ditto, String cutoff) async {
+  var total = 0;
+  while (true) {
+    final result = await ditto.store.execute(
+      'EVICT FROM orders WHERE createdAt < :cutoff LIMIT 1000 '
+      'RETURNING COUNT(*) AS evicted',
+      arguments: {'cutoff': cutoff},
+    );
+    final evicted = result.items.first.value['evicted'] as int;
+    total += evicted;
+    if (evicted == 0) return total;
+  }
+}
+```
+
+Batching keeps write transactions short; one cleanup run is still one eviction event for connected peers.
+
+Guide: [Batching evictions](../../../guides/best-practices/ditto.md#batching-evictions), [Eviction frequency](../../../guides/best-practices/ditto.md#eviction-frequency)
+
+---
+
+## Quick Reference Checklist
+
+### DELETE
+- [ ] Targets documents with `WHERE _id = :id` / `WHERE _id IN :ids`, never `USE IDS` without `WHERE`
+- [ ] Uses `RETURNING` (SDK 5.1+) when the removed content is needed
+- [ ] Not used for shared records edited concurrently (husk documents)
+- [ ] Every device connects within the tombstone TTL (7 days by default), or the data uses soft delete
+- [ ] `TOMBSTONE_TTL_HOURS` on devices never exceeds the Ditto Server TTL; applied after every `Ditto.open`
+- [ ] Large deletions on the Ditto Server run in batches of 30,000 documents or fewer
+
+### Soft Delete
+- [ ] Sets `isDeleted` and `deletedAt` (UTC, with zone); new documents get `isDeleted: false`
+- [ ] Filters with `coalesce(isDeleted, false) = false` (or the index-friendly `IS MISSING OR IS NULL OR = false` form)
+- [ ] Subscriptions keep flagged documents (Variant A: whole collection or partition; Variant B: retention window)
+- [ ] Old flagged documents are cleaned up (Variant A: synced `DELETE`; Variant B: device-side `EVICT` of the complement)
+
+### EVICT
+- [ ] Affected subscriptions are cancelled or narrowed before evicting
+- [ ] Eviction query is the exact complement of the remaining subscriptions
+- [ ] No re-subscription that matches the evicted documents
+- [ ] Runs on a schedule, at most about once per day; large runs use `LIMIT`
+- [ ] Subscription references are kept in a long-lived service
+
+### Monitoring
+- [ ] Storage read from `system:system_info` with `execute` on demand, not with a long-lived observer
 
 ---
 
 ## See Also
 
 ### Main Guide
-- Data Deletion Strategies: [.claude/guides/best-practices/ditto.md lines 780-1008](../../guides/best-practices/ditto.md)
-- Device Storage Management: [.claude/guides/best-practices/ditto.md lines 3002-3218](../../guides/best-practices/ditto.md)
-- Husked Documents: [.claude/guides/best-practices/ditto.md lines 942-1006](../../guides/best-practices/ditto.md)
+- [Deletion and Storage Management](../../../guides/best-practices/ditto.md#deletion-and-storage-management)
+- [Subscription Lifecycle](../../../guides/best-practices/ditto.md#subscription-lifecycle)
+- [Monitoring Storage](../../../guides/best-practices/ditto.md#monitoring-storage)
+- [Applying System Parameters](../../../guides/best-practices/ditto.md#applying-system-parameters)
 
 ### Other Skills
-- [query-sync](../query-sync/SKILL.md) - Subscription lifecycle management
-- [data-modeling](../data-modeling/SKILL.md) - Logical deletion field design
+- [query-sync](../query-sync/SKILL.md) - Subscription scope and lifecycle
+- [data-modeling](../data-modeling/SKILL.md) - Deletion flag field design
 
 ### Examples
--  - Safe deletion with flags
-- [examples/evict-subscription-management-good.dart](examples/evict-subscription-management-good.dart) - Cancel → EVICT → recreate pattern
-- [examples/ttl-eviction-big-peer.dart](examples/ttl-eviction-big-peer.dart) - Centralized eviction control
-- [examples/ttl-eviction-small-peer.dart](examples/ttl-eviction-small-peer.dart) - Device-local eviction
-- [examples/flag-based-eviction.dart](examples/flag-based-eviction.dart) - Opposite query pattern
+- [examples/soft-delete-relay.dart](examples/soft-delete-relay.dart) - Soft delete helpers, Variant A and Variant B subscriptions, observer filtering
+- [examples/evict-subscription-management-good.dart](examples/evict-subscription-management-good.dart) - Complementary subscription and eviction, store switch
+- [examples/evict-subscription-management-bad.dart](examples/evict-subscription-management-bad.dart) - Eviction anti-patterns
+- [examples/ttl-eviction-small-peer.dart](examples/ttl-eviction-small-peer.dart) - Device-local time-based retention with batching
+- [examples/ttl-eviction-ditto-server.dart](examples/ttl-eviction-ditto-server.dart) - Server-driven flagging and device eviction
+- [examples/flag-based-eviction.dart](examples/flag-based-eviction.dart) - Flag-based eviction without subscription churn
 
 ### Reference
-- [Ditto Delete Documentation](https://docs.ditto.live/sdk/latest/crud/delete)
-- [Ditto Device Storage Management](https://docs.ditto.live/sdk/latest/sync/device-storage-management)
+- [reference/deletion-patterns.md](reference/deletion-patterns.md) - Husk documents, Ditto Server deletion, eviction scheduling, storage monitoring

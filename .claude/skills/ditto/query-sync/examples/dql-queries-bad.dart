@@ -1,306 +1,166 @@
-// SDK Version: 4.12+
-// Platform: Flutter
-// Last Updated: 2025-12-19
+// DQL read anti-patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
 //
-// Example: DQL Query Anti-Patterns
-// This file demonstrates DEPRECATED and problematic query patterns to AVOID
+// Every function below compiles and runs, but returns wrong results, is
+// unsafe, or wastes resources. The corrected versions are in
+// dql-queries-good.dart.
+//
+// Statements that fail outright are described in comments only:
+// - Inline object literal with unquoted keys in INSERT
+//   (INSERT INTO orders DOCUMENTS ({_id: 'a'})): "Cannot convert to a literal".
+// - GROUP BY or HAVING that references a projection alias: rejected with
+//   "... must depend only on group keys or aggregates".
+// - JOIN whose inner join key has no index (and is not _id): rejected with
+//   "Joining to ... disallowed without appropriate index support".
+// - SELECT *, total * 2 AS doubled: unqualified * with other projections is
+//   rejected; write SELECT orders.*, ... instead.
+// - Unqualified field that exists on both sides of a JOIN (SELECT name ...):
+//   "Ambiguous reference to field: name". Qualify fields with their alias.
+// - USE IDS with the IDs wrapped in parentheses is rejected; use
+//   USE IDS 'a', 'b' or USE IDS LIST :ids.
 
-import 'package:ditto/ditto.dart';
+import 'package:ditto_live/ditto_live.dart';
 
-/// Anti-Pattern 1: NOT APPLICABLE TO FLUTTER
-///
-/// ❌ The legacy builder API (collection, find, exec) NEVER existed in Flutter SDK
-/// This example is only relevant for JavaScript, Swift, and Kotlin platforms
-///
-/// For reference, here's what the legacy API looks like in non-Flutter platforms:
-///
-/// // JavaScript/Swift/Kotlin DEPRECATED (SDK 4.12+, removed in v5):
-/// // const orders = await ditto.store
-/// //   .collection('orders')
-/// //   .find("status == 'active'")
-/// //   .exec();
-///
-/// Flutter SDK has ALWAYS used the DQL string-based API:
-Future<void> queryActiveOrders_Correct(Ditto ditto) async {
-  // ✅ CORRECT: Use DQL string-based API (always been the Flutter way)
+/// ❌ BAD: String interpolation. Injection risk, broken quoting for input that
+/// contains quotes or backslashes, and no statement reuse.
+Future<void> findOrdersUnsafe(Ditto ditto, String customerId) async {
+  await ditto.store.execute(
+    "SELECT * FROM orders WHERE customerId = '$customerId'",
+  );
+}
+
+/// ❌ BAD: IN (:statuses) wraps the array in a one-element list, so no
+/// document matches. Use IN :statuses.
+Future<List<Map<String, dynamic>>> findByStatusesWrong(
+  Ditto ditto,
+  List<String> statuses,
+) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders WHERE status IN (:statuses)',
+    arguments: {'statuses': statuses},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ❌ BAD: ANY ... SATISFIES over a parameter in WHERE returns no rows in
+/// SDK 5.1.0. Use status IN :statuses.
+Future<List<Map<String, dynamic>>> findByStatusesWithAny(
+  Ditto ditto,
+  List<String> statuses,
+) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders WHERE ANY s IN :statuses SATISFIES s = status END', // lint-ignore
+    arguments: {'statuses': statuses},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ❌ BAD: Unquoted keys in a SELECT object literal produce no error, but the
+/// object is returned as {} (the key is evaluated as a field reference).
+Future<Map<String, dynamic>> unquotedKeysInSelect(Ditto ditto) async {
+  final result = await ditto.store.execute('SELECT {a: 1} AS o FROM system:dual');
+  return result.items.first.value; // {o: {}}
+}
+
+/// ❌ BAD: This filter drops documents where isDeleted is null or missing.
+/// Use coalesce(isDeleted, false) = false.
+Future<List<Map<String, dynamic>>> activeTasksWrong(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM tasks WHERE isDeleted != true ORDER BY createdAt', // lint-ignore
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ❌ BAD: The null check is also true for a missing field, so this does not
+/// test existence. Use IS NOT MISSING (plus the null check if null values
+/// must be excluded as well).
+Future<List<Map<String, dynamic>>> assignedTasksWrong(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM tasks WHERE assignee IS NOT NULL ORDER BY _id', // lint-ignore
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ❌ BAD: LIMIT without ORDER BY. The page contents are not well defined.
+Future<List<Map<String, dynamic>>> firstOrdersUnordered(Ditto ditto) async {
+  final result = await ditto.store.execute('SELECT * FROM orders LIMIT 20');
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ❌ BAD: Expecting matching documents first. In ascending order false sorts
+/// before true, so urgent tasks come last. Use DESC or an explicit CASE.
+Future<List<Map<String, dynamic>>> urgentFirstWrong(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    "SELECT * FROM tasks ORDER BY priority = 'urgent', dueAt",
+  );
+  return result.items.map((item) => item.value).toList();
+}
+
+/// ❌ BAD: Loading every document to count or test existence in Dart.
+/// Use SELECT COUNT(*) ... or SELECT _id ... LIMIT 1.
+Future<int> countOpenOrdersWrong(Ditto ditto) async {
   final result = await ditto.store.execute(
     'SELECT * FROM orders WHERE status = :status',
-    arguments: {'status': 'active'},
+    arguments: {'status': 'open'},
   );
-
-  final orders = result.items.map((item) => item.value).toList();
+  return result.items.length;
 }
 
-/// Anti-Pattern 2: Query without parameterization (SQL injection risk)
-///
-/// ❌ BAD: String concatenation in queries
-Future<void> queryUserByName_Unsafe(Ditto ditto, String userName) async {
-  // DANGER: Potential injection vulnerability
-  final result = await ditto.store.execute(
-    'SELECT * FROM users WHERE name = "$userName"',
-  );
-
-  // If userName contains: " OR 1=1 --
-  // This could expose all users!
-}
-
-/// ✅ GOOD: Use parameterized queries
-Future<void> queryUserByName_Safe(Ditto ditto, String userName) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM users WHERE name = :name',
-    arguments: {'name': userName},
-  );
-
-  final users = result.items.map((item) => item.value).toList();
-}
-
-/// Anti-Pattern 3: SELECT * when only few fields needed
-///
-/// ❌ BAD: Fetching unnecessary data
-Future<void> getProductNames_Wasteful(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM products', // Fetches all fields
-  );
-
-  // Only using name and price, but retrieved everything
-  final names = result.items.map((item) {
-    return item.value['name'];
-  }).toList();
-}
-
-/// ✅ GOOD: Select only needed fields
-Future<void> getProductNames_Efficient(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT name, price FROM products', // Only fetch what we need
-  );
-
-  final products = result.items.map((item) => item.value).toList();
-}
-
-/// Anti-Pattern 4: Broad query without WHERE clause
-///
-/// ❌ BAD: No filtering, wastes bandwidth and processing
-Future<void> getAllProducts_Wasteful(Ditto ditto) async {
-  // Fetches ALL products, even inactive/deleted ones
-  final result = await ditto.store.execute(
-    'SELECT * FROM products',
-  );
-
-  // Then filters in application code
-  final activeProducts = result.items
+/// ❌ BAD: Filtering in Dart instead of WHERE materializes the whole collection.
+Future<List<Map<String, dynamic>>> openOrdersFilteredInDart(Ditto ditto) async {
+  final result = await ditto.store.execute('SELECT * FROM orders');
+  return result.items
       .map((item) => item.value)
-      .where((product) => product['isActive'] == true)
+      .where((order) => order['status'] == 'open')
       .toList();
 }
 
-/// ✅ GOOD: Filter in the query
-Future<void> getActiveProducts_Efficient(Ditto ditto) async {
-  // Only fetch active products
-  final result = await ditto.store.execute(
-    'SELECT * FROM products WHERE isActive = true',
-  );
-
-  final activeProducts = result.items.map((item) => item.value).toList();
-}
-
-/// Anti-Pattern 5: Not handling empty results
-///
-/// ❌ BAD: Assumes results exist
-Future<String> getFirstProductName_Unsafe(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT name FROM products LIMIT 1',
-  );
-
-  // CRASH RISK: What if no products exist?
-  return result.items.first.value['name'] as String;
-}
-
-/// ✅ GOOD: Handle empty results
-Future<String?> getFirstProductName_Safe(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT name FROM products LIMIT 1',
-  );
-
-  if (result.items.isEmpty) return null;
-
-  return result.items.first.value['name'] as String?;
-}
-
-/// Anti-Pattern 6: Performing heavy processing on query results
-///
-/// ❌ BAD: Complex processing while holding QueryResultItems
-Future<void> processProducts_Inefficient(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM products',
-  );
-
-  // Heavy processing while holding QueryResultItems (inefficient)
-  for (final item in result.items) {
-    final product = item.value; // Still holding item reference
-
-    // Expensive operations
-    await performComplexCalculation(product);
-    await saveToExternalSystem(product);
-  }
-}
-
-/// ✅ GOOD: Extract data first, then process
-Future<void> processProducts_Efficient(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM products',
-  );
-
-  // Extract data immediately
-  final products = result.items.map((item) => item.value).toList();
-  // QueryResultItems are now released
-
-  // Process extracted data
-  for (final product in products) {
-    await performComplexCalculation(product);
-    await saveToExternalSystem(product);
-  }
-}
-
-/// Anti-Pattern 7: Using wrong UPDATE syntax
-///
-/// ❌ BAD: Trying to use SET with nested syntax
-Future<void> updateNestedField_Wrong(Ditto ditto, String orderId) async {
-  // This syntax doesn't work as expected
-  await ditto.store.execute(
-    '''
-    UPDATE orders
-    SET shipping = { city: :city }
-    WHERE _id = :id
-    ''',
-    arguments: {
-      'id': orderId,
-      'city': 'Tokyo',
-    },
-  );
-}
-
-/// ✅ GOOD: Use bracket notation for nested updates
-Future<void> updateNestedField_Correct(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    '''
-    UPDATE orders
-    SET shipping.city = :city
-    WHERE _id = :id
-    ''',
-    arguments: {
-      'id': orderId,
-      'city': 'Tokyo',
-    },
-  );
-}
-
-/// Anti-Pattern 8: EVICT without canceling subscription
-///
-/// ❌ BAD: EVICT while subscription is active
-Future<void> cleanupOldData_Problematic(Ditto ditto, DateTime beforeDate) async {
-  // PROBLEM: If subscription is still active, data will be re-synced immediately!
-  await ditto.store.execute(
-    '''
-    EVICT FROM orders
-    WHERE completedAt < :beforeDate
-    ''',
-    arguments: {
-      'beforeDate': beforeDate.toIso8601String(),
-    },
-  );
-
-  // Result: Wasted bandwidth, re-syncing data we just evicted
-}
-
-/// ✅ GOOD: Cancel subscription first, then EVICT
-Future<void> cleanupOldData_Correct(
+/// ❌ BAD: One query per ID (N+1). Use WHERE _id IN :ids.
+Future<List<Map<String, dynamic>>> loadOrdersOneByOne(
   Ditto ditto,
-  Subscription subscription,
-  DateTime beforeDate,
+  List<String> ids,
 ) async {
-  // Step 1: Cancel subscription to prevent re-sync
-  subscription.cancel();
-
-  // Step 2: Now safe to EVICT
-  await ditto.store.execute(
-    '''
-    EVICT FROM orders
-    WHERE completedAt < :beforeDate
-    ''',
-    arguments: {
-      'beforeDate': beforeDate.toIso8601String(),
-    },
-  );
-}
-
-/// Anti-Pattern 9: Not using ORDER BY with LIMIT
-///
-/// ❌ BAD: Unpredictable results with LIMIT
-Future<void> getRecentOrders_Unpredictable(Ditto ditto) async {
-  // Which 10 orders? Results are non-deterministic
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders LIMIT 10',
-  );
-
-  final orders = result.items.map((item) => item.value).toList();
-}
-
-/// ✅ GOOD: Always use ORDER BY with LIMIT
-Future<void> getRecentOrders_Predictable(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    '''
-    SELECT * FROM orders
-    ORDER BY createdAt DESC
-    LIMIT 10
-    ''',
-  );
-
-  final orders = result.items.map((item) => item.value).toList();
-}
-
-/// Anti-Pattern 10: Trying to use JOINs
-///
-/// ❌ BAD: Ditto DQL does not support JOINs
-Future<void> getOrdersWithCustomers_Wrong(Ditto ditto) async {
-  // This will FAIL - JOINs are not supported
-  // final result = await ditto.store.execute(
-  //   '''
-  //   SELECT * FROM orders
-  //   JOIN customers ON orders.customerId = customers._id
-  //   ''',
-  // );
-}
-
-/// ✅ GOOD: Denormalize data or use multiple queries
-Future<void> getOrdersWithCustomers_Correct(Ditto ditto) async {
-  // Option 1: Denormalize (embed customer data in order)
-  final result = await ditto.store.execute(
-    '''
-    SELECT * FROM orders
-    WHERE customerName = :name
-    ''',
-    arguments: {'name': 'John Doe'},
-  );
-
-  // Option 2: Multiple queries (if needed)
-  final ordersResult = await ditto.store.execute('SELECT * FROM orders');
-  final orders = ordersResult.items.map((item) => item.value).toList();
-
-  for (final order in orders) {
-    final customerId = order['customerId'];
-    final customerResult = await ditto.store.execute(
-      'SELECT * FROM customers WHERE _id = :id',
-      arguments: {'id': customerId},
+  final orders = <Map<String, dynamic>>[];
+  for (final id in ids) {
+    final result = await ditto.store.execute(
+      'SELECT * FROM orders WHERE _id = :id',
+      arguments: {'id': id},
     );
-    // Process customer data...
+    orders.addAll(result.items.map((item) => item.value));
   }
+  return orders;
 }
 
-// Mock functions for examples
-Future<void> performComplexCalculation(Map<String, dynamic> product) async {
-  await Future.delayed(Duration(milliseconds: 100));
+/// ❌ BAD: USE IDS with an array parameter treats the whole array as a single
+/// ID and returns nothing. Use USE IDS LIST :ids or WHERE _id IN :ids.
+Future<List<Map<String, dynamic>>> useIdsWithArray(
+  Ditto ditto,
+  List<String> ids,
+) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders USE IDS :orderIds',
+    arguments: {'orderIds': ids},
+  );
+  return result.items.map((item) => item.value).toList();
 }
 
-Future<void> saveToExternalSystem(Map<String, dynamic> product) async {
-  await Future.delayed(Duration(milliseconds: 50));
+/// ❌ BAD: COUNT(field) skips false values, so this does not count documents
+/// that have the field. SUM over zero rows returns MISSING, so 'revenue' is
+/// absent from the row. Use COUNT(isPaid IS NOT MISSING) and
+/// ifmissing(SUM(total), 0).
+Future<Map<String, dynamic>> paymentStatsWrong(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT COUNT(isPaid) AS withFlag, SUM(total) AS revenue '
+    'FROM orders WHERE customerId = :customerId',
+    arguments: {'customerId': 'customer-without-orders'},
+  );
+  return result.items.first.value;
+}
+
+/// ❌ BAD: DISTINCT together with _id. Every document is already unique, so
+/// DISTINCT only keeps every row in memory.
+Future<List<Map<String, dynamic>>> distinctWithId(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT DISTINCT _id, status FROM orders',
+  );
+  return result.items.map((item) => item.value).toList();
 }

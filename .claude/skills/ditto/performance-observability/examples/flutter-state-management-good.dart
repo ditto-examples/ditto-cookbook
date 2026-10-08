@@ -1,623 +1,229 @@
-// SDK Version: All
+// SDK Version: Ditto SDK 5.1.0 (ditto_live 5.1.0)
 // Platform: Flutter
-// Last Updated: 2025-12-19
+// Last Updated: 2026-10-08
 //
 // ============================================================================
-// Flutter State Management with Ditto Observers (Correct Patterns)
+// State Management with Ditto Observers (Correct Patterns)
 // ============================================================================
 //
-// This example demonstrates proper state management patterns for Ditto observers
-// in Flutter, using Riverpod for granular rebuilds and optimal performance.
+// Guide sections (.claude/guides/best-practices/ditto.md):
+// - #store-observers-in-flutter
+// - #observer-lifecycle-and-cleanup
+// - #partial-ui-updates
+// - #working-with-query-results
+//
+// This example uses only the Flutter SDK (ChangeNotifier, ValueNotifier) so it
+// works with any state management approach. The same rules apply to Riverpod,
+// Bloc, or Provider: one provider or controller owns each observer, consumes
+// its `changes` stream exactly once, and cancels the stream subscription and
+// the observer in its dispose hook (for example, ref.onDispose in Riverpod).
 //
 // PATTERNS DEMONSTRATED:
-// 1. ✅ Riverpod providers for Ditto observers
-// 2. ✅ Granular widget rebuilds (not full screen setState)
-// 3. ✅ Family providers for per-item updates
-// 4. ✅ signalNext() with WidgetsBinding.addPostFrameCallback
-// 5. ✅ Proper subscription lifecycle management
-// 6. ✅ Observer cleanup on dispose
-// 7. ✅ Scoped state updates
-//
-// WHY RIVERPOD:
-// - Granular rebuilds (only affected widgets)
-// - No full-screen setState() performance issues
-// - Automatic disposal and lifecycle management
-// - Clean separation of business logic and UI
-//
-// ALTERNATIVE: ValueListenableBuilder, DittoDiffer (see partial-ui-updates.dart)
+// 1. ✅ A controller that owns one observer and cancels it in dispose()
+// 2. ✅ Immutable model objects (with ==) instead of QueryResult objects
+// 3. ✅ Separate observers for separate screen regions (badge vs list)
+// 4. ✅ Scoped rebuilds with ListenableBuilder / ValueListenableBuilder
+// 5. ✅ Subscription at feature scope, observers at screen scope
 //
 // ============================================================================
 
+import 'dart:async';
+
+import 'package:ditto_live/ditto_live.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:ditto/ditto.dart';
 
 // ============================================================================
-// PATTERN 1: Riverpod Providers for Ditto Observers
+// Model
 // ============================================================================
 
-/// ✅ GOOD: Ditto instance provider
-final dittoProvider = Provider<Ditto>((ref) {
-  // Initialize Ditto (assume already initialized)
-  throw UnimplementedError('Provide initialized Ditto instance');
-});
+/// Immutable order model. `item.value` creates a new Map for every result, and
+/// two maps with identical contents are never `==`, so compare models instead.
+@immutable
+class Order {
+  const Order({required this.id, required this.status, required this.total});
 
-/// ✅ GOOD: Todo list observer with StateNotifier
-class TodoListNotifier extends StateNotifier<List<Map<String, dynamic>>> {
-  final Ditto ditto;
-  DittoSyncSubscription? _subscription;
-  DittoStoreObserver? _observer;
+  factory Order.fromValue(Map<String, dynamic> value) => Order(
+        id: value['_id'] as String,
+        status: value['status'] as String? ?? 'unknown',
+        total: (value['total'] as num?)?.toDouble() ?? 0,
+      );
 
-  TodoListNotifier(this.ditto) : super([]) {
-    _initialize();
+  final String id;
+  final String status;
+  final double total;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Order && other.id == id && other.status == status && other.total == total;
+
+  @override
+  int get hashCode => Object.hash(id, status, total);
+}
+
+bool _sameOrders(List<Order> a, List<Order> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+// ============================================================================
+// PATTERN 1 + 2: A controller that owns one observer
+// ============================================================================
+
+/// ✅ GOOD: Owns exactly one observer, listens to `changes` once, exposes
+/// plain model objects, and notifies only when the visible data changed.
+class OrdersController extends ChangeNotifier {
+  OrdersController(Ditto ditto, {required String status}) {
+    _observer = ditto.store.registerObserver(
+      'SELECT _id, status, total FROM orders WHERE status = :status '
+      'ORDER BY createdAt DESC, _id LIMIT 200',
+      arguments: {'status': status},
+    );
+    _changes = _observer.changes.listen((result) {
+      final next = result.items.map((item) => Order.fromValue(item.value)).toList();
+      if (_sameOrders(next, _orders)) return; // Skip rebuilds for identical data.
+      _orders = next;
+      notifyListeners();
+    });
   }
 
-  void _initialize() {
-    print('📋 Initializing todo list observer...');
+  late final StoreObserver _observer;
+  late final StreamSubscription<QueryResult> _changes;
+  List<Order> _orders = const [];
 
-    // Create subscription
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM todos WHERE isCompleted != true ORDER BY createdAt DESC',
-    );
-
-    // Create observer with signalNext
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM todos WHERE isCompleted != true ORDER BY createdAt DESC',
-      onChange: (result, signalNext) {
-        // ✅ Extract data (lightweight operation)
-        final todos = result.items.map((item) => item.value).toList();
-
-        // ✅ Update state (only this provider notifies listeners)
-        state = todos;
-
-        // ✅ Signal next after UI update
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          signalNext();
-        });
-
-        print('  ✅ Todos updated: ${todos.length} items');
-      },
-    );
-
-    print('✅ Todo list observer initialized');
-  }
+  List<Order> get orders => _orders;
 
   @override
   void dispose() {
-    print('🧹 Cleaning up todo list observer...');
-    _observer?.cancel();
-    _subscription?.cancel();
+    unawaited(_changes.cancel());
+    _observer.cancel(); // Cancelling the stream does not cancel a StoreObserver.
     super.dispose();
   }
 }
 
-/// ✅ Provider for todo list
-final todoListProvider = StateNotifierProvider<TodoListNotifier, List<Map<String, dynamic>>>((ref) {
-  final ditto = ref.watch(dittoProvider);
-  return TodoListNotifier(ditto);
-});
-
-// ============================================================================
-// PATTERN 2: Granular Widget Rebuilds
-// ============================================================================
-
-/// ✅ GOOD: Only todo list widget rebuilds (not entire screen)
-class TodoListWidget extends ConsumerWidget {
-  const TodoListWidget({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // ✅ Only this widget rebuilds when todos change
-    final todos = ref.watch(todoListProvider);
-
-    print('🔄 TodoListWidget rebuilding (${todos.length} todos)');
-
-    return ListView.builder(
-      itemCount: todos.length,
-      itemBuilder: (context, index) {
-        final todo = todos[index];
-        return TodoItemWidget(todoId: todo['_id'] as String);
-      },
+/// ✅ GOOD: A separate, tiny observer for a summary value. COUNT(*) instead of
+/// loading the list just to read `.length`.
+class OpenOrderCount {
+  OpenOrderCount(Ditto ditto) {
+    _observer = ditto.store.registerObserver(
+      'SELECT COUNT(*) AS n FROM orders WHERE status = :status',
+      arguments: {'status': 'open'},
     );
+    _changes = _observer.changes.listen((result) {
+      final n = result.items.isEmpty ? 0 : result.items.first.value['n'];
+      count.value = n is int ? n : 0; // ValueNotifier notifies only on change.
+    });
+  }
+
+  final ValueNotifier<int> count = ValueNotifier<int>(0);
+  late final StoreObserver _observer;
+  late final StreamSubscription<QueryResult> _changes;
+
+  void dispose() {
+    unawaited(_changes.cancel());
+    _observer.cancel();
+    count.dispose();
   }
 }
 
-/// ✅ Screen widget does NOT rebuild when todos change
-class TodoScreenGood extends StatelessWidget {
-  const TodoScreenGood({Key? key}) : super(key: key);
+// ============================================================================
+// PATTERN 3 + 4: Scoped rebuilds
+// ============================================================================
+
+/// ✅ GOOD: The screen itself observes nothing. The badge and the list each
+/// rebuild independently when their own data changes.
+class OrdersScreen extends StatefulWidget {
+  const OrdersScreen({super.key, required this.ditto});
+
+  final Ditto ditto;
+
+  @override
+  State<OrdersScreen> createState() => _OrdersScreenState();
+}
+
+class _OrdersScreenState extends State<OrdersScreen> {
+  late final OrdersController _orders;
+  late final OpenOrderCount _openCount;
+
+  @override
+  void initState() {
+    super.initState();
+    // Observers follow screen scope: created here, released in dispose().
+    _orders = OrdersController(widget.ditto, status: 'open');
+    _openCount = OpenOrderCount(widget.ditto);
+  }
+
+  @override
+  void dispose() {
+    _orders.dispose();
+    _openCount.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    print('🏗️ TodoScreenGood building (one-time)');
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Todos'),
-        // ✅ Stats widget rebuilds independently
-        actions: const [TodoStatsWidget()],
+        title: ValueListenableBuilder<int>(
+          valueListenable: _openCount.count,
+          builder: (context, count, _) => Text('Open orders ($count)'),
+        ),
       ),
-      body: const TodoListWidget(), // ✅ Only this rebuilds on data change
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Add todo logic
+      body: ListenableBuilder(
+        listenable: _orders,
+        builder: (context, _) {
+          final orders = _orders.orders;
+          return ListView.builder(
+            itemCount: orders.length,
+            itemBuilder: (context, index) {
+              final order = orders[index];
+              // ValueKey keeps row state attached to the right document.
+              return OrderTile(key: ValueKey(order.id), order: order);
+            },
+          );
         },
-        child: const Icon(Icons.add),
       ),
     );
   }
 }
 
-// ============================================================================
-// PATTERN 3: Family Providers for Per-Item Updates
-// ============================================================================
+class OrderTile extends StatelessWidget {
+  const OrderTile({super.key, required this.order});
 
-/// ✅ GOOD: Individual todo observer (only rebuilds affected item)
-class TodoItemNotifier extends StateNotifier<Map<String, dynamic>?> {
-  final Ditto ditto;
-  final String todoId;
-  DittoStoreObserver? _observer;
-
-  TodoItemNotifier(this.ditto, this.todoId) : super(null) {
-    _initialize();
-  }
-
-  void _initialize() {
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM todos WHERE _id = :id',
-      arguments: {'id': todoId},
-      onChange: (result, signalNext) {
-        if (result.items.isNotEmpty) {
-          state = result.items.first.value;
-        } else {
-          state = null;
-        }
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          signalNext();
-        });
-      },
-    );
-  }
-
-  Future<void> toggleComplete() async {
-    if (state == null) return;
-
-    final isCompleted = state!['isCompleted'] as bool? ?? false;
-
-    await ditto.store.execute(
-      'UPDATE todos SET isCompleted = :completed WHERE _id = :id',
-      arguments: {'id': todoId, 'completed': !isCompleted},
-    );
-
-    print('✅ Todo $todoId: isCompleted = ${!isCompleted}');
-  }
+  final Order order;
 
   @override
-  void dispose() {
-    _observer?.cancel();
-    super.dispose();
-  }
-}
-
-/// ✅ Family provider for individual todo items
-final todoItemProvider = StateNotifierProvider.family<TodoItemNotifier, Map<String, dynamic>?, String>(
-  (ref, todoId) {
-    final ditto = ref.watch(dittoProvider);
-    return TodoItemNotifier(ditto, todoId);
-  },
-);
-
-/// ✅ GOOD: Individual todo item widget (rebuilds independently)
-class TodoItemWidget extends ConsumerWidget {
-  final String todoId;
-
-  const TodoItemWidget({required this.todoId, Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // ✅ Only THIS item rebuilds when its data changes
-    final todo = ref.watch(todoItemProvider(todoId));
-
-    if (todo == null) {
-      return const SizedBox.shrink();
-    }
-
-    final title = todo['title'] as String;
-    final isCompleted = todo['isCompleted'] as bool? ?? false;
-
-    print('🔄 TodoItem $todoId rebuilding');
-
+  Widget build(BuildContext context) {
     return ListTile(
-      title: Text(
-        title,
-        style: isCompleted
-            ? const TextStyle(decoration: TextDecoration.lineThrough)
-            : null,
-      ),
-      leading: Checkbox(
-        value: isCompleted,
-        onChanged: (_) {
-          ref.read(todoItemProvider(todoId).notifier).toggleComplete();
-        },
-      ),
+      title: Text(order.id),
+      subtitle: Text('${order.status} - ${order.total.toStringAsFixed(2)}'),
     );
   }
 }
 
 // ============================================================================
-// PATTERN 4: Statistics Widget with Separate Observer
+// PATTERN 5: Subscription at feature scope
 // ============================================================================
 
-/// ✅ GOOD: Stats observer (rebuilds only stats widget)
-class TodoStatsNotifier extends StateNotifier<TodoStats> {
-  final Ditto ditto;
-  DittoStoreObserver? _observer;
+/// ✅ GOOD: Subscriptions live longer than screens. Observers never sync data;
+/// the subscription decides what reaches this device.
+class OrdersFeature {
+  OrdersFeature(this._ditto);
 
-  TodoStatsNotifier(this.ditto) : super(TodoStats(total: 0, completed: 0)) {
-    _initialize();
-  }
+  final Ditto _ditto;
+  SyncSubscription? _subscription;
 
-  void _initialize() {
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT COUNT(*) as total, SUM(CASE WHEN isCompleted = true THEN 1 ELSE 0 END) as completed FROM todos',
-      onChange: (result, signalNext) {
-        if (result.items.isNotEmpty) {
-          final doc = result.items.first.value;
-          state = TodoStats(
-            total: doc['total'] as int? ?? 0,
-            completed: doc['completed'] as int? ?? 0,
-          );
-        }
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          signalNext();
-        });
-      },
+  void start() {
+    _subscription ??= _ditto.sync.registerSubscription(
+      'SELECT * FROM orders WHERE status = :status',
+      arguments: {'status': 'open'},
     );
   }
 
-  @override
-  void dispose() {
-    _observer?.cancel();
-    super.dispose();
-  }
-}
-
-class TodoStats {
-  final int total;
-  final int completed;
-
-  TodoStats({required this.total, required this.completed});
-
-  int get remaining => total - completed;
-}
-
-final todoStatsProvider = StateNotifierProvider<TodoStatsNotifier, TodoStats>((ref) {
-  final ditto = ref.watch(dittoProvider);
-  return TodoStatsNotifier(ditto);
-});
-
-/// ✅ GOOD: Stats widget rebuilds independently of todo list
-class TodoStatsWidget extends ConsumerWidget {
-  const TodoStatsWidget({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final stats = ref.watch(todoStatsProvider);
-
-    print('🔄 TodoStatsWidget rebuilding');
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Center(
-        child: Text(
-          '${stats.remaining}/${stats.total}',
-          style: const TextStyle(fontSize: 16),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// PATTERN 5: Filtered List with Separate Provider
-// ============================================================================
-
-/// ✅ GOOD: Completed todos observer (separate from active todos)
-class CompletedTodosNotifier extends StateNotifier<List<Map<String, dynamic>>> {
-  final Ditto ditto;
-  DittoSyncSubscription? _subscription;
-  DittoStoreObserver? _observer;
-
-  CompletedTodosNotifier(this.ditto) : super([]) {
-    _initialize();
-  }
-
-  void _initialize() {
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM todos WHERE isCompleted = true ORDER BY completedAt DESC',
-    );
-
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM todos WHERE isCompleted = true ORDER BY completedAt DESC',
-      onChange: (result, signalNext) {
-        state = result.items.map((item) => item.value).toList();
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          signalNext();
-        });
-
-        print('  ✅ Completed todos updated: ${state.length} items');
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    _observer?.cancel();
+  void stop() {
     _subscription?.cancel();
-    super.dispose();
+    _subscription = null;
   }
-}
-
-final completedTodosProvider = StateNotifierProvider<CompletedTodosNotifier, List<Map<String, dynamic>>>((ref) {
-  final ditto = ref.watch(dittoProvider);
-  return CompletedTodosNotifier(ditto);
-});
-
-/// ✅ GOOD: Tabbed interface with independent observers
-class TodoTabsScreen extends StatelessWidget {
-  const TodoTabsScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Todos'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Active'),
-              Tab(text: 'Completed'),
-            ],
-          ),
-        ),
-        body: const TabBarView(
-          children: [
-            TodoListWidget(), // ✅ Only active todos observer
-            CompletedTodosListWidget(), // ✅ Only completed todos observer
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class CompletedTodosListWidget extends ConsumerWidget {
-  const CompletedTodosListWidget({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final todos = ref.watch(completedTodosProvider);
-
-    return ListView.builder(
-      itemCount: todos.length,
-      itemBuilder: (context, index) {
-        final todo = todos[index];
-        return ListTile(
-          title: Text(
-            todo['title'] as String,
-            style: const TextStyle(decoration: TextDecoration.lineThrough),
-          ),
-          trailing: const Icon(Icons.check_circle, color: Colors.green),
-        );
-      },
-    );
-  }
-}
-
-// ============================================================================
-// PATTERN 6: Search/Filter with Reactive Provider
-// ============================================================================
-
-/// ✅ GOOD: Search query provider (triggers observer updates)
-final searchQueryProvider = StateProvider<String>((ref) => '');
-
-/// ✅ GOOD: Filtered todos based on search
-class FilteredTodosNotifier extends StateNotifier<List<Map<String, dynamic>>> {
-  final Ditto ditto;
-  final Ref ref;
-  DittoStoreObserver? _observer;
-
-  FilteredTodosNotifier(this.ditto, this.ref) : super([]) {
-    // Listen to search query changes
-    ref.listen<String>(searchQueryProvider, (previous, next) {
-      _updateObserver(next);
-    });
-
-    _updateObserver('');
-  }
-
-  void _updateObserver(String searchQuery) {
-    _observer?.cancel();
-
-    if (searchQuery.isEmpty) {
-      // No filter
-      _observer = ditto.store.registerObserverWithSignalNext(
-        'SELECT * FROM todos WHERE isCompleted != true ORDER BY createdAt DESC',
-        onChange: _handleChange,
-      );
-    } else {
-      // Filter by search query
-      _observer = ditto.store.registerObserverWithSignalNext(
-        'SELECT * FROM todos WHERE isCompleted != true AND title LIKE :query ORDER BY createdAt DESC',
-        arguments: {'query': '%$searchQuery%'},
-        onChange: _handleChange,
-      );
-    }
-
-    print('🔍 Observer updated with search: "$searchQuery"');
-  }
-
-  void _handleChange(QueryResult result, void Function() signalNext) {
-    state = result.items.map((item) => item.value).toList();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      signalNext();
-    });
-  }
-
-  @override
-  void dispose() {
-    _observer?.cancel();
-    super.dispose();
-  }
-}
-
-final filteredTodosProvider = StateNotifierProvider<FilteredTodosNotifier, List<Map<String, dynamic>>>((ref) {
-  final ditto = ref.watch(dittoProvider);
-  return FilteredTodosNotifier(ditto, ref);
-});
-
-/// ✅ GOOD: Search screen with reactive filtering
-class TodoSearchScreen extends ConsumerWidget {
-  const TodoSearchScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final todos = ref.watch(filteredTodosProvider);
-    final searchQuery = ref.watch(searchQueryProvider);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          decoration: const InputDecoration(
-            hintText: 'Search todos...',
-            border: InputBorder.none,
-          ),
-          onChanged: (value) {
-            // ✅ Update search query (triggers observer update)
-            ref.read(searchQueryProvider.notifier).state = value;
-          },
-        ),
-      ),
-      body: ListView.builder(
-        itemCount: todos.length,
-        itemBuilder: (context, index) {
-          final todo = todos[index];
-          return ListTile(
-            title: Text(todo['title'] as String),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// PATTERN 7: Complex Screen with Multiple Independent Observers
-// ============================================================================
-
-/// ✅ GOOD: Dashboard with multiple independent data sources
-class DashboardScreen extends ConsumerWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    print('🏗️ DashboardScreen building (one-time)');
-
-    // ✅ Each widget has its own observer and rebuilds independently
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        actions: const [TodoStatsWidget()],
-      ),
-      body: Column(
-        children: [
-          // ✅ Recent todos section (independent observer)
-          const Expanded(
-            flex: 2,
-            child: Card(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Recent Todos', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                  Expanded(child: TodoListWidget()),
-                ],
-              ),
-            ),
-          ),
-          // ✅ Completed todos section (independent observer)
-          const Expanded(
-            flex: 1,
-            child: Card(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Completed', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                  Expanded(child: CompletedTodosListWidget()),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// Complete Example: Production App Structure
-// ============================================================================
-
-/// ✅ Production-ready app with proper state management
-class TodoApp extends StatelessWidget {
-  const TodoApp({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return ProviderScope(
-      child: MaterialApp(
-        title: 'Ditto Todos',
-        theme: ThemeData(primarySwatch: Colors.blue),
-        home: const TodoTabsScreen(),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// Best Practices Summary
-// ============================================================================
-
-void printBestPractices() {
-  print('✅ Riverpod State Management Best Practices:');
-  print('');
-  print('DO:');
-  print('  ✓ Use StateNotifierProvider for Ditto observers');
-  print('  ✓ Granular providers (per-list, per-item, per-stat)');
-  print('  ✓ signalNext() with WidgetsBinding.addPostFrameCallback');
-  print('  ✓ Cancel observers in dispose()');
-  print('  ✓ Extract lightweight data in onChange callback');
-  print('  ✓ Use family providers for per-item observers');
-  print('  ✓ Separate subscriptions and observers per provider');
-  print('');
-  print('DON\'T:');
-  print('  ✗ setState() on entire screen');
-  print('  ✗ Single provider for all data');
-  print('  ✗ Heavy processing in onChange callback');
-  print('  ✗ Forget to cancel observers');
-  print('  ✗ Retain QueryResultItem references');
-  print('');
-  print('BENEFITS:');
-  print('  • Only affected widgets rebuild');
-  print('  • 10-100x better performance vs full screen setState');
-  print('  • Clean separation of concerns');
-  print('  • Automatic disposal and lifecycle management');
-  print('  • Scalable to complex UIs');
 }

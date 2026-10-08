@@ -1,42 +1,48 @@
 ---
 name: performance-observability
 description: |
-  Validates Ditto observer performance patterns, UI optimization, and logging configuration.
+  Validates Ditto SDK 5.1 store observer performance, Flutter UI update patterns,
+  index and query performance, unnecessary writes, and logging configuration.
 
   CRITICAL ISSUES PREVENTED:
-  - Full-screen rebuilds in observer callbacks (Flutter)
-  - Missing signalNext() calls blocking further updates (non-Flutter)
-  - Heavy processing in observer callbacks blocking UI
-  - Unnecessary delta sync from unchanged value updates
-  - Missing startup diagnostics from late log level configuration
-  - Observer backpressure buildup causing memory issues
-  - Aggregate function memory impact (unbounded COUNT, SUM)
+  - Unbounded memory growth from observers registered with onChange whose changes stream is never consumed (Flutter, SDK 5.1.0)
+  - Leaked observers and stream subscriptions (missing cancel() in dispose)
+  - Slow or async work in registerObserver listeners without backpressure
+  - Observers that stop updating because signalNext() is never called
+  - Full-screen rebuilds from one broad observer at the root of a screen
+  - Redundant writes (DO UPDATE re-upserts, whole-document rewrites) that mark documents mutated and fire observers
+  - Collection scans from missing or unusable indexes, and strict mode disabling index scans
+  - DittoLogger used before Ditto.init(), and log forwarding lost after ditto.close()
 
   TRIGGERS:
-  - Implementing observer callbacks (registerObserver*)
-  - Optimizing UI performance and widget rebuilds (Flutter)
-  - Configuring logging with DittoLogger
-  - Managing subscription scope and query optimization
-  - Handling backpressure with signalNext() (non-Flutter)
-  - Preventing unnecessary sync traffic and delta generation
+  - Registering store observers (registerObserver, registerObserverV2, registerObserverWithSignalNext)
+  - Building Flutter widgets or state controllers that display Ditto query results
+  - Using Differ, AnimatedList, or StreamBuilder with observer results
+  - Writing upserts or updates that run repeatedly (imports, refreshes, form saves)
+  - Creating indexes, or using ADVISE, EXPLAIN, or PROFILE
+  - Configuring DittoLogger, exporting logs, or querying system: virtual collections
 
-  PLATFORMS: Flutter (Dart - UI patterns), JavaScript, Swift, Kotlin (observer + logging)
+  PLATFORMS: Flutter (Dart, primary); JavaScript, Swift, Kotlin (observer backpressure differences only)
 ---
 
 # Ditto Performance and Observability
+
+Actionable patterns extracted from the Ditto best practices guide for **Ditto SDK 5.1.0**. The guide is the source of truth; every section below links to it.
 
 ## Table of Contents
 
 - [Purpose](#purpose)
 - [When This Skill Applies](#when-this-skill-applies)
-- [Platform Detection](#platform-detection)
-- [SDK Version Compatibility](#sdk-version-compatibility)
-- [Common Workflows](#common-workflows)
 - [Critical Patterns](#critical-patterns)
-  - [1. Full Screen setState() in Observer](#1-full-screen-setstate-in-observer-critical---flutter)
-  - [2. Missing signalNext() Call](#2-missing-signalnext-call-critical---non-flutter-sdks-only)
-  - [3. Heavy Processing in Observer Callbacks](#3-heavy-processing-in-observer-callbacks-high)
-  - [4. Aggregate Function Memory Impact](#4-aggregate-function-memory-impact-critical)
+  - [1. Consume Observer Results Through the changes Stream](#1-consume-observer-results-through-the-changes-stream-critical)
+  - [2. Observer Lifecycle and Cleanup](#2-observer-lifecycle-and-cleanup-critical)
+  - [3. Keep registerObserver Listeners Fast](#3-keep-registerobserver-listeners-fast-high)
+  - [4. Backpressure for Slow or Async Work](#4-backpressure-for-slow-or-async-work-high)
+  - [5. Partial UI Updates](#5-partial-ui-updates-high)
+  - [6. Avoid Unnecessary Writes](#6-avoid-unnecessary-writes-high)
+  - [7. Create the Indexes Your Queries Need](#7-create-the-indexes-your-queries-need-high)
+  - [8. Configure Logging Before Opening Ditto](#8-configure-logging-before-opening-ditto-high)
+- [Common Workflows](#common-workflows)
 - [Quick Reference Checklist](#quick-reference-checklist)
 - [See Also](#see-also)
 
@@ -44,650 +50,450 @@ description: |
 
 ## Purpose
 
-This Skill ensures optimal performance and observability in Ditto applications. It prevents common performance pitfalls like full-screen rebuilds in observer callbacks, unnecessary sync deltas from unchanged value updates, and missing startup diagnostics from improper logging configuration.
+This skill keeps Ditto apps responsive and diagnosable. It covers how observers deliver results and how to consume them safely, how to keep widget rebuilds narrow, how to avoid writes that change nothing, how the query planner uses indexes, and how to configure logging and on-device diagnostics. Detailed rules (index usage table, EXPLAIN and PROFILE output, query scope, system parameters) are in [reference/optimization-patterns.md](reference/optimization-patterns.md).
 
-**Critical issues prevented**:
-- Full-screen rebuilds in observer callbacks (Flutter)
-- Missing signalNext() calls blocking further updates
-- Heavy processing in observer callbacks blocking UI
-- Unnecessary delta sync from unchanged value updates
-- Missing startup diagnostics from late log level configuration
-- Broad subscription scope wasting bandwidth
-- Observer backpressure buildup causing memory issues
+Labels: **(SDK 5.1+)** marks features introduced in 5.1. **(Experimental)** marks APIs annotated `@experimental` that may change (`registerObserverV2`, `registerObserverWithSignalNext`, `StoreObserverV2`, `Store.experimentalSkipExecuteIsolateOffload`). **Note (SDK 5.1.0)** marks behavior that silently produces wrong results, crashes, or deadlocks, together with the safe pattern.
 
 ## When This Skill Applies
 
-Use this Skill when:
-- Implementing observer callbacks with `registerObserver*()`
-- Optimizing UI performance and widget rebuilds (Flutter)
-- Configuring logging with `DittoLogger`
-- Managing subscription scope and query optimization
-- Handling backpressure in observers with `signalNext()`
-- Preventing unnecessary sync traffic and delta generation
-- Debugging performance issues or sync overhead
-- Implementing state management with Ditto data
-
-## Platform Detection
-
-**Automatic Detection**:
-1. **Flutter/Dart**: `*.dart` files with `import 'package:ditto/ditto.dart'` → Full UI optimization patterns
-2. **JavaScript**: `*.js`, `*.ts` files with `import { Ditto } from '@dittolive/ditto'` → Observer + logging patterns
-3. **Swift**: `*.swift` files with `import DittoSwift'` → Observer + logging patterns
-4. **Kotlin**: `*.kt` files with `import live.ditto.*` → Observer + logging patterns
-
-**Platform-Specific**:
-- **Flutter**: Full UI optimization patterns (setState, Riverpod, WidgetsBinding)
-- **All platforms**: Observer patterns, logging, sync optimization
-
----
-
-## SDK Version Compatibility
-
-This section consolidates all version-specific information referenced throughout this Skill.
-
-### Observer Patterns
-
-**Flutter SDK**:
-- **v4.x** (current stable)
-  - `registerObserver` only (no `signalNext` support)
-  - Stream-based API via `observer.changes` (recommended)
-  - `onChange` callback API available
-  - WidgetsBinding.addPostFrameCallback() for UI updates
-
-- **v5.0+** (upcoming)
-  - `registerObserverWithSignalNext` support added
-  - All v4.x patterns continue to work
-
-**Non-Flutter SDKs**:
-- **All versions**: `registerObserverWithSignalNext` recommended
-  - Backpressure control via `signalNext()` callback
-  - Call `signalNext()` after processing each update
-  - Missing `signalNext()` call blocks further updates
-
-### Performance Features
-
-**SDK 4.12+**:
-- `DO UPDATE_LOCAL_DIFF` available for efficient updates
-- Only changed fields create sync deltas (vs full document replacement)
-- Recommended for frequent field updates
-
-**All SDK Versions**:
-- Log level configuration: Must be set before Ditto init
-- Observer callback performance: Keep lightweight (all platforms)
-- Aggregate functions (COUNT, SUM, AVG): Memory impact considerations
-- DISTINCT operator: Memory overhead for large result sets
-
-**Throughout this Skill**: Observer patterns differ between Flutter (Stream-based, v4.x) and non-Flutter (signalNext-based). Performance optimizations are universal.
-
----
-
-## Common Workflows
-
-### Workflow 1: Optimizing Observer Performance (Flutter)
-
-```
-Flutter Observer Optimization:
-- [ ] Step 1: Use partial UI updates (not full screen setState())
-- [ ] Step 2: Keep observer callbacks lightweight
-- [ ] Step 3: Use WidgetsBinding.addPostFrameCallback() for setState()
-- [ ] Step 4: Consider state management (Riverpod/Provider)
-- [ ] Step 5: Profile UI performance
-```
-
-```dart
-// ✅ GOOD: Partial UI update with Riverpod
-final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final observer = ditto.store.registerObserver(
-    'SELECT * FROM orders WHERE status = :status',
-    arguments: {'status': 'pending'},
-  );
-
-  return observer.changes.map((result) =>
-    result.items.map((item) => item.value).toList()
-  );
-});
-
-// Widget automatically rebuilds only when data changes
-class OrdersList extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final orders = ref.watch(ordersProvider);
-    return orders.when(
-      data: (data) => ListView.builder(...),
-      loading: () => CircularProgressIndicator(),
-      error: (err, stack) => Text('Error: $err'),
-    );
-  }
-}
-```
-
----
-
-### Workflow 2: Configuring Logging for Debugging
-
-```
-Logging Configuration:
-- [ ] Step 1: Set log level BEFORE Ditto.open()
-- [ ] Step 2: Choose appropriate level (debug, info, warning, error)
-- [ ] Step 3: Enable rotating log files (optional)
-- [ ] Step 4: Test with verbose logging
-- [ ] Step 5: Reduce to warning/error for production
-```
-
-```dart
-// CRITICAL: Set log level BEFORE Ditto.open()
-DittoLogger.minimumLogLevel = DittoLogLevel.debug;
-
-// Optional: Enable file logging
-DittoLogger.enabled = true;
-DittoLogger.setLogFileURL('/path/to/logs');
-
-final ditto = await Ditto.open(identity);
-```
+- Code calls `registerObserver`, `registerObserverV2`, or `registerObserverWithSignalNext`
+- A widget, controller, or provider owns an observer or calls `setState` from observer results
+- Code writes with `ON ID CONFLICT DO UPDATE`, or reads a document and writes it back
+- Code runs `CREATE INDEX`, `ADVISE`, `EXPLAIN`, or `PROFILE`, or a query is slow
+- Code touches `DittoLogger`, `exportLogs`, or `system:` virtual collections
 
 ---
 
 ## Critical Patterns
 
-This section contains only the most critical (Tier 1) patterns that prevent performance issues and memory problems. For additional optimization patterns, see:
-- **[reference/optimization-patterns.md](reference/optimization-patterns.md)**: Additional HIGH/MEDIUM/LOW priority patterns (delta creation, DO UPDATE_LOCAL_DIFF, log configuration, subscription scope, backpressure, UI updates, DISTINCT, OFFSET, operator performance)
+### 1. Consume Observer Results Through the changes Stream (CRITICAL)
 
-### 1. Full Screen setState() in Observer (CRITICAL - Flutter)
+**Guide**: [Store Observers in Flutter](../../../guides/best-practices/ditto.md#store-observers-in-flutter)
 
-**Platform**: Flutter/Dart only
+Register the observer **without** `onChange`, consume `changes` with one `StreamSubscription`, and cancel both in `dispose()`.
 
-**Problem**: Calling `setState()` on the entire screen in observer callbacks causes all widgets to rebuild, even those unaffected by data changes. This leads to poor performance, visual glitches, and battery drain.
+> **Note (SDK 5.1.0):** When an observer is registered with `onChange`, every result is **also** queued in its `changes` stream. If nothing listens to `changes`, those queued results stay in memory for the lifetime of the observer, so memory use grows with every update. The same applies to `registerObserverV2` with `onChange` only. If you need `onChange`, also drain the stream, for example with `observer.changes.listen((_) {})`.
 
-**Detection**:
+**Detection** (red flags):
+- `registerObserver(..., onChange: ...)` or `registerObserverV2(..., onChange: ...)` with no `.changes.listen` / `await for` on the same observer
+- `QueryResult` or `QueryResultItem` objects stored in state or caches
+- Queries without `ORDER BY` whose result order is shown in a list
+
 ```dart
-// RED FLAGS (Flutter)
-class OrderListScreen extends StatefulWidget {
+// ✅ GOOD: The recommended observer pattern for widgets.
+class OrdersList extends StatefulWidget {
+  const OrdersList({super.key, required this.ditto});
+  final Ditto ditto;
   @override
-  State<OrderListScreen> createState() => _OrderListScreenState();
+  State<OrdersList> createState() => _OrdersListState();
 }
 
-class _OrderListScreenState extends State<OrderListScreen> {
-  List<Map<String, dynamic>> orders = [];
-  late DittoStoreObserver observer;
+class _OrdersListState extends State<OrdersList> {
+  late final StoreObserver _observer;
+  late final StreamSubscription<QueryResult> _changes;
+  List<Map<String, dynamic>> _orders = const [];
 
   @override
   void initState() {
     super.initState();
-    // ⚠️ Note: This uses registerObserverWithSignalNext (NOT available in Flutter SDK v4.x)
-    // Flutter SDK v4.x must use registerObserver or observer.changes Stream API
-    observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders',
-      onChange: (result, signalNext) {
-        setState(() {
-          orders = result.items.map((item) => item.value).toList();
-        });
-        // Entire screen rebuilds when ANY order changes!
-        WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-      },
-      arguments: {},
+    _observer = widget.ditto.store.registerObserver(
+      "SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC",
+      arguments: {'status': 'open'},
     );
+    _changes = _observer.changes.listen((result) {
+      setState(() {
+        // Copy plain values; do not keep QueryResult objects in state.
+        _orders = result.items.map((item) => item.value).toList();
+      });
+    });
   }
 
   @override
-  Widget build(BuildContext context) {
-    // Full screen rebuild every time
-    return Scaffold(
-      appBar: AppBar(title: Text('Orders (${orders.length})')),
-      body: ListView.builder(
-        itemCount: orders.length,
-        itemBuilder: (context, index) {
-          final order = orders[index];
-          return OrderCard(order: order); // All cards rebuild!
-        },
-      ),
-    );
+  void dispose() {
+    _changes.cancel();
+    _observer.cancel();
+    super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        children: [for (final o in _orders) ListTile(title: Text('${o['_id']}'))],
+      );
 }
 ```
 
-**✅ DO (Flutter - State Management)**:
 ```dart
-// Use Riverpod for granular widget rebuilds
-final dittoProvider = Provider<Ditto>((ref) => throw UnimplementedError());
-
-// Provider for orders data with observer (Flutter SDK v4.x)
-final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final ditto = ref.watch(dittoProvider);
-
-  final observer = ditto.store.registerObserver(
+// ❌ BAD: onChange only; the unconsumed changes stream keeps every result in memory (SDK 5.1.0).
+StoreObserver observeOrdersWithCallbackOnly(Ditto ditto, void Function(int) onCount) {
+  return ditto.store.registerObserver(
     'SELECT * FROM orders ORDER BY createdAt DESC',
-    arguments: {},
+    onChange: (result) => onCount(result.items.length),
   );
-
-  ref.onDispose(() {
-    observer.cancel();
-  });
-
-  return observer.changes.map((result) {
-    return result.items.map((item) => item.value).toList();
-  });
-});
-
-// Provider for single order (granular selection)
-final orderProvider = Provider.family<Map<String, dynamic>?, String>((ref, orderId) {
-  final ordersAsync = ref.watch(ordersProvider);
-  return ordersAsync.when(
-    data: (orders) => orders.firstWhereOrNull((o) => o['_id'] == orderId),
-    loading: () => null,
-    error: (_, __) => null,
-  );
-});
-
-// Screen widget (minimal rebuilds)
-class OrderListScreen extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ordersAsync = ref.watch(ordersProvider);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: ordersAsync.when(
-          data: (orders) => Text('Orders (${orders.length})'),
-          loading: () => Text('Orders'),
-          error: (_, __) => Text('Orders (Error)'),
-        ),
-      ),
-      body: ordersAsync.when(
-        data: (orders) => ListView.builder(
-          itemCount: orders.length,
-          itemBuilder: (context, index) {
-            final orderId = orders[index]['_id'] as String;
-            // Only rebuilds if THIS order's data changes
-            return OrderCard(orderId: orderId);
-          },
-        ),
-        loading: () => Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(child: Text('Error: $error')),
-      ),
-    );
-  }
-}
-
-// Individual card widget (rebuilds only when its order changes)
-class OrderCard extends ConsumerWidget {
-  final String orderId;
-
-  const OrderCard({required this.orderId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final order = ref.watch(orderProvider(orderId));
-    if (order == null) return SizedBox.shrink();
-
-    return Card(
-      child: ListTile(
-        title: Text('Order #${order['orderNumber']}'),
-        subtitle: Text('Status: ${order['status']}'),
-      ),
-    );
-  }
 }
 ```
 
-**❌ DON'T (Flutter)**:
-```dart
-// setState() on entire screen
-setState(() {
-  orders = result.items.map((item) => item.value).toList();
-});
-// All widgets rebuild unnecessarily
+**✅ DO:**
+- Add `ORDER BY` whenever result order matters (use `_id` as a tie-breaker); without it the order of observer results is not guaranteed ([Stable Ordering](../../../guides/best-practices/ditto.md#stable-ordering))
+- Copy values out of the result (`item.value` or your own model objects) ([Working with Query Results](../../../guides/best-practices/ditto.md#working-with-query-results))
 
-// No scoped rebuilds
-@override
-Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: AppBar(...), // Rebuilds
-    body: ListView.builder(...), // Rebuilds
-  );
-  // Entire widget tree rebuilds on every data change
-}
-```
+**❌ DON'T:**
+- Pass `onChange` and leave `changes` unconsumed
+- Listen to `changes` twice; it is a single-subscription stream
 
-**Why**: `setState()` on the root widget rebuilds the entire widget tree. When a single order changes, all 1000+ orders rebuild unnecessarily. State management (Riverpod, ValueListenableBuilder) enables granular rebuilds - only affected widgets update.
-
-**Performance Comparison** (1000 orders, single order changes):
-
-| Approach | Widgets Rebuilt | Performance |
-|----------|----------------|-------------|
-| ❌ setState() entire screen | ~1003 | High (full refresh) |
-| ✅ Riverpod granular | 1 | Minimal (optimal) |
-
-**See**: [examples/flutter-state-management-good.dart](examples/flutter-state-management-good.dart)
+**See**: [examples/flutter-observer-performance.dart](examples/flutter-observer-performance.dart)
 
 ---
 
-### 2. Missing signalNext() Call (Priority: CRITICAL - Non-Flutter SDKs Only)
+### 2. Observer Lifecycle and Cleanup (CRITICAL)
 
-**Platform**: Swift, JavaScript, Kotlin (NOT applicable to Flutter SDK v4.x)
+**Guide**: [Observer Lifecycle and Cleanup](../../../guides/best-practices/ditto.md#observer-lifecycle-and-cleanup), [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
 
-**⚠️ Flutter SDK Exception:**
-Flutter SDK v4.14.0 and earlier do not support `registerObserverWithSignalNext` or `signalNext` parameter. This pattern applies only to non-Flutter SDKs (Swift, JS, Kotlin). Flutter SDK v5.0 will add `signalNext` support.
+| Behavior (`registerObserver`) | What to do |
+|---|---|
+| Without `onChange`, the query starts when `changes` is first listened to | Listen right after registering |
+| `changes` is single-subscription; a second `listen()` throws `StateError`, even after the first subscription was cancelled | Hand the stream to exactly one listener or `StreamBuilder`, and keep that `StreamBuilder` mounted |
+| Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` as well |
+| `observer.cancel()` closes `changes` | A pending `await for` loop ends |
+| `await ditto.close()` does not close the `changes` stream of a `StoreObserver` | Cancel stream subscriptions and observers before closing |
+| Cancelling the stream subscription of a `StoreObserverV2` also cancels the observer | Still call `cancel()` in your cleanup path for clarity |
 
-For Flutter SDK v4.x:
-- Use `registerObserver` (no `signalNext` parameter)
-- Keep callbacks lightweight to avoid performance issues
-- No manual backpressure control available
+**✅ DO:**
+- Register observers in `initState()` or in a service or controller, never in `build()`
+- Cancel the stream subscription **and** the observer in `dispose()`
+- Let observers follow screen scope; keep subscriptions at app or feature scope
 
-**Problem**: Not calling `signalNext()` after processing observer updates prevents observer from receiving further updates. Observer stops after first callback.
+**❌ DON'T:**
+- Create an observer per list item; observe the list once and pass values down
+- Rely on `ditto.close()` to end an `await for` loop over `registerObserver` results
 
-**Detection**:
+**See**: [examples/flutter-state-management-good.dart](examples/flutter-state-management-good.dart), [examples/flutter-state-management-bad.dart](examples/flutter-state-management-bad.dart)
+
+---
+
+### 3. Keep registerObserver Listeners Fast (HIGH)
+
+**Guide**: [Keep Observer Callbacks Fast](../../../guides/best-practices/ditto.md#keep-observer-callbacks-fast)
+
+`registerObserver` has no backpressure. Ditto coalesces rapid changes, but it never waits for your code. Pausing the `changes` stream of a `StoreObserver` does not slow Ditto down; results queue up in the stream instead.
+
+**Detection**: an `async` listener on `StoreObserver.changes` that `await`s network calls, file I/O, or database writes; a listener that writes to the collection it observes without a guard.
+
+**✅ DO:**
+- Keep the listener synchronous and short: copy values, map them to model objects, call `setState`
+- Move expensive computation off the UI isolate (for example, Flutter's `compute()` on plain values copied out of the result)
+- Throttle UI updates for very busy collections if the user cannot perceive every intermediate state
+- Use the backpressure APIs (pattern 4) when each update triggers slow or asynchronous work
+
+**❌ DON'T:**
+- `await` slow work inside a `registerObserver` listener; the next results keep arriving while you wait
+- Write to the same collection from inside its observer without a guard; each write triggers the observer again
+
+**See**: [examples/flutter-observer-performance.dart](examples/flutter-observer-performance.dart) (patterns 3 and 4, anti-patterns)
+
+---
+
+### 4. Backpressure for Slow or Async Work (HIGH)
+
+**Guide**: [Backpressure (SDK 5.1+)](../../../guides/best-practices/ditto.md#backpressure-sdk-51), [Choosing an Observer API](../../../guides/best-practices/ditto.md#choosing-an-observer-api)
+
+Two experimental Flutter APIs (SDK 5.1+) return a `StoreObserverV2`. While your code is busy, Ditto holds back further updates and later delivers the latest state, so intermediate results are merged instead of queued.
+
+| Situation | API |
+|---|---|
+| Updating widgets from a query result | `registerObserver` + `changes` (stable, default) |
+| Slow or `async` work per update that fits a loop | `registerObserverV2` + `await for` **(Experimental)** |
+| The work for an update finishes elsewhere (after an animation or an external callback) | `registerObserverWithSignalNext` **(Experimental)** |
+
 ```dart
-// RED FLAGS
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders',
-  onChange: (result, signalNext) {
-    final orders = result.items.map((item) => item.value).toList();
-    updateUI(orders);
-    // Missing signalNext() - observer stops receiving updates!
-  },
-);
-```
-
-**✅ DO (Flutter SDK v4.x - No signalNext Available)**:
-```dart
-// Flutter SDK v4.14.0: Use registerObserver (no signalNext)
-final observer = ditto.store.registerObserver(
-  'SELECT * FROM orders WHERE status = :status',
-  onChange: (result) {
-    // No signalNext parameter in Flutter SDK v4.x
-    final orders = result.items.map((item) => item.value).toList();
-    updateUI(orders);
-    // Note: No backpressure control - keep callbacks lightweight
-  },
-  arguments: {'status': 'active'},
-);
-
-// Flutter SDK v5.0+: Will support registerObserverWithSignalNext
-```
-
-**✅ DO (Non-Flutter SDKs - Swift, JS, Kotlin)**:
-```dart
-// Non-Flutter: Use registerObserverWithSignalNext
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders',
-  onChange: (result, signalNext) {
-    const orders = result.items.map(item => item.value);
-    updateUI(orders);
-    signalNext(); // Ready for next update
-  },
-);
-```
-
-**❌ DON'T**:
-```dart
-// Never call signalNext()
-onChange: (result, signalNext) {
-  updateUI(result.items);
-  // Observer blocked after first callback
+// ✅ GOOD: registerObserverV2 (Experimental) with await for: one update at a time.
+Future<void> exportOpenOrders(
+  Ditto ditto,
+  Future<void> Function(List<Map<String, dynamic>> orders) export,
+) async {
+  final observer = ditto.store.registerObserverV2(
+    'SELECT * FROM orders WHERE status = :status ORDER BY createdAt',
+    arguments: {'status': 'open'},
+  );
+  // await for pauses the stream while the body runs; Ditto holds back the next update.
+  await for (final result in observer.changes) {
+    await export(result.items.map((item) => item.value).toList());
+  }
+  // The loop ends when observer.cancel() is called elsewhere.
 }
+```
 
-// Call signalNext() before processing completes
-onChange: (result, signalNext) {
-  signalNext(); // Too early!
-  updateUI(result.items); // UI update after signal
-}
+`registerObserverWithSignalNext` delivers one result and then waits for `signalNext()`. **If you never call it, the observer stops delivering updates.** Call it in `finally` so an error does not stall the observer, and do not pause or resume the `changes` stream of such an observer.
 
-// Call signalNext() inside async operation without await
-onChange: (result, signalNext) {
-  processDataAsync(result.items); // Async, no await
-  signalNext(); // Called before async completes
+```dart
+// ✅ GOOD: registerObserverWithSignalNext (Experimental): always signal, even after an error.
+StreamSubscription<QueryResult> uploadWithSignalNext(
+  StoreObserverV2 observer,
+  Future<void> Function(List<Map<String, dynamic>> orders) upload,
+) {
+  return observer.changes.listen((result) async {
+    try {
+      await upload(result.items.map((item) => item.value).toList());
+    } catch (error) {
+      showError(error);
+    } finally {
+      observer.signalNext();
+    }
+  });
 }
 ```
 
-**Why**: `registerObserverWithSignalNext` implements backpressure control. Observer waits for `signalNext()` before delivering next update. Not calling it stops observer. Call after processing completes (Flutter: after render cycle).
+Facts to keep in mind:
+- `signalNext()` has no effect on observers registered with `registerObserverV2`.
+- Results passed to `onChange` of either API are also queued in `changes`; pattern 1 applies.
+- The experimental APIs may change in a future release; `registerObserver` remains the default for UI code.
 
-**Backpressure Flow**:
-1. Observer delivers update (first callback)
-2. App processes data, updates UI
-3. App calls `signalNext()` when ready
-4. Observer delivers next update (second callback)
-5. Repeat
+**Other platforms** ([Backpressure on Other Platforms](../../../guides/best-practices/ditto.md#backpressure-on-other-platforms)): do not port Flutter code one-to-one. JavaScript `registerObserver` signals automatically when the handler returns and does not await an `async` handler (use `registerObserverWithSignalNext` for async work). Swift signals when the handler returns, with `handlerWithSignalNext:` for manual control. Kotlin has no `signalNext`; a suspending handler or a `Flow` (with `.conflate()` for slow collectors) provides backpressure.
 
 **See**: [examples/observer-backpressure.dart](examples/observer-backpressure.dart)
 
 ---
 
-### 3. Heavy Processing in Observer Callbacks (Priority: HIGH)
+### 5. Partial UI Updates (HIGH)
 
-**Platform**: All platforms
+**Guide**: [Partial UI Updates](../../../guides/best-practices/ditto.md#partial-ui-updates), [Diffing Results](../../../guides/best-practices/ditto.md#diffing-results)
 
-**Problem**: Heavy processing (complex computations, network calls, file I/O) in observer callbacks blocks the observer thread, preventing `signalNext()` from being called promptly.
+An observer delivers a new result for **any** change that affects its query. A `setState` at the top of a large screen rebuilds the whole screen, which can drop frames and lose scroll position or input focus.
 
-**Detection**:
-```dart
-// RED FLAGS
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders',
-  onChange: (result, signalNext) {
-    final orders = result.items.map((item) => item.value).toList();
+**Detection**: one observer of a whole collection in the root widget; app bar, filters, and list rebuilt together; a badge that loads the full list to show `.length`.
 
-    // Heavy computation blocks callback
-    for (final order in orders) {
-      final analysis = performExpensiveAnalysis(order); // BLOCKS!
-      final report = generateDetailedReport(order); // BLOCKS!
-      sendToAnalyticsService(report); // Network call BLOCKS!
-    }
+**✅ DO:**
+- Give each screen region its own small observer and widget
+- Use `ListView.builder` with a `ValueKey(_id)` per row
+- Use aggregate queries for summary widgets (`COUNT(*)` for a badge)
+- With state management libraries (Riverpod, Bloc, Provider), let one provider or controller own each observer and cancel it in the dispose hook; `changes` can be listened to only once
+- Map results to immutable model classes that implement `==` if you rely on equality to skip rebuilds; `item.value` creates a new `Map` for every result, and two maps with identical contents are never `==`
+- Use `Differ` only where you need to know what changed (for example `AnimatedList`); a `ListView.builder` with keys does not need it
 
-    signalNext(); // Only called after all heavy processing
-  },
-);
-```
+**❌ DON'T:**
+- Observe a whole collection in the root widget and rebuild the entire screen on every change
+- Diff large or unbounded result sets; `Differ` keeps the previous result in memory and diffing is expensive (keep diffed queries bounded with `LIMIT`)
 
-**✅ DO**:
-```dart
-// Lightweight callback, heavy processing offloaded
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders',
-  onChange: (result, signalNext) {
-    // Extract data immediately (lightweight)
-    final orders = result.items.map((item) => item.value).toList();
+`Differ` facts: `diff()` takes a `List<QueryResultItem>` (pass `result.items.toList()`); the first call reports every item as an insertion; `deletions` index the **old** list, `insertions` and `updates` index the **new** list; it does not give you the old items, so keep previous values yourself.
 
-    // Update UI immediately (lightweight)
-    updateUI(orders);
-
-    // Offload heavy processing to background async task
-    _processOrdersAsync(orders); // Non-blocking
-
-    // Signal readiness for next update immediately
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      signalNext();
-    });
-  },
-);
-
-// Heavy processing runs independently
-Future<void> _processOrdersAsync(List<Map<String, dynamic>> orders) async {
-  // These operations run in parallel, don't block observer
-  await Future.wait(orders.map((order) async {
-    final analysis = await performExpensiveAnalysis(order);
-    final report = await generateDetailedReport(order);
-    await sendToAnalyticsService(report);
-  }));
-}
-```
-
-**❌ DON'T**:
-```dart
-// Heavy sync operations in callback
-onChange: (result, signalNext) {
-  final orders = result.items.map((item) => item.value).toList();
-
-  for (var order in orders) {
-    complexCalculation(order); // Blocks
-    networkCall(order); // Blocks
-    fileIO(order); // Blocks
-  }
-
-  signalNext(); // Delayed by heavy processing
-}
-
-// Await heavy async in callback
-onChange: (result, signalNext) async {
-  final orders = result.items.map((item) => item.value).toList();
-  await Future.delayed(Duration(seconds: 5)); // Blocks callback
-  signalNext();
-}
-```
-
-**Why**: Observer callbacks should be lightweight (extract data, update UI). Heavy processing blocks `signalNext()`, preventing observer from delivering next update. Offload heavy work to async operations outside callback.
-
-**Guidelines**:
-- Extract data: ✅ Lightweight
-- Update UI: ✅ Lightweight
-- Complex computation: ❌ Offload
-- Network calls: ❌ Offload
-- File I/O: ❌ Offload
-
-**See**: [examples/observer-backpressure.dart](examples/observer-backpressure.dart), [reference/optimization-patterns.md](reference/optimization-patterns.md) for additional patterns
+**See**: [examples/partial-ui-updates.dart](examples/partial-ui-updates.dart)
 
 ---
 
-### 4. Aggregate Function Memory Impact (CRITICAL)
+### 6. Avoid Unnecessary Writes (HIGH)
 
-**Problem**: Aggregate functions (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`) buffer all matching documents in memory before returning results. Unbounded aggregates can crash mobile devices.
+**Guide**: [ON ID CONFLICT](../../../guides/best-practices/ditto.md#on-id-conflict), [Prefer field-level updates over whole-document rewrites](../../../guides/best-practices/ditto.md#prefer-field-level-updates-over-whole-document-rewrites), [Assigning an object merges it](../../../guides/best-practices/ditto.md#assigning-an-object-merges-it)
 
-**Detection**:
+| Write | Effect when values are unchanged |
+|---|---|
+| `ON ID CONFLICT DO UPDATE` | Every supplied field is written again; the document is reported as mutated and observers fire |
+| `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` | Only fields whose values differ are written; no-op when nothing changed |
+| `UPDATE ... SET f = <current value>` | Still recorded as a mutation, appears in `mutatedDocumentIDs()`, fires observers |
+
+**Detection**: periodic re-imports with `DO UPDATE`; read-modify-write of a whole document; `UPDATE` without a condition that skips documents already in the target state.
+
 ```dart
-// RED FLAGS
-// No WHERE filter - buffers all documents
-await ditto.store.execute('SELECT COUNT(*) FROM orders');
+// ✅ GOOD: Re-upserting unchanged data is a no-op.
+Future<bool> upsertProduct(Ditto ditto, Map<String, dynamic> product) async {
+  final result = await ditto.store.execute(
+    'INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
+    arguments: {'product': product},
+  );
+  return result.mutatedDocumentIDs().isNotEmpty; // Empty when nothing changed.
+}
 
-// Aggregate in high-frequency observer
-final observer = ditto.store.registerObserver(
-  'SELECT COUNT(*) AS total FROM orders', // Buffers all on each update
-  onChange: (result) {
-    updateTotalCount(result.items.first.value['total']);
-  },
-);
+// ✅ GOOD: Field-level update that skips documents already in the target state.
+Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
+  final result = await ditto.store.execute(
+    'UPDATE orders SET status = :status '
+    'WHERE _id = :id AND coalesce(status, :none) != :status',
+    arguments: {'id': orderId, 'status': status, 'none': ''},
+  );
+  return result.mutatedDocumentIDs().isNotEmpty;
+}
 ```
 
-**✅ DO**:
-```dart
-// ✅ GOOD: Filtered aggregate
-final result = await ditto.store.execute(
-  '''SELECT COUNT(*) AS count, AVG(total) AS avg
-     FROM orders
-     WHERE status = :status AND createdAt >= :cutoff''',
-  arguments: {
-    'status': 'active',
-    'cutoff': DateTime.now().subtract(Duration(days: 30)).toIso8601String(),
-  },
-);
+**✅ DO:**
+- Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports
+- Use `UPDATE ... SET` for the fields that changed; update nested fields individually (`SET address.city = :city`)
+- Use `coalesce` in the skip condition so documents with a missing or `null` field stay eligible
 
-// ✅ GOOD: GROUP BY in observer (bounded result)
-final observer = ditto.store.registerObserver(
-  '''SELECT status, COUNT(*) AS count
-     FROM orders
-     WHERE createdAt >= :cutoff
-     GROUP BY status''',
-  onChange: (result) {
-    // Result set bounded by unique statuses (typically small)
-    updateStats(result.items);
-  },
-  arguments: {
-    'cutoff': DateTime.now().subtract(Duration(days: 7)).toIso8601String(),
-  },
-);
+**❌ DON'T:**
+- Read a document, modify it in Dart, and write the whole map back with `DO UPDATE`
+- Expect `DO UPDATE` or `SET obj = {...}` to replace an object; with the default strict mode they merge, and fields not supplied remain (remove keys with `UNSET`)
 
-// ✅ BETTER: Use LIMIT 1 for existence checks
-final hasActive = (await ditto.store.execute(
-  'SELECT _id FROM orders WHERE status = :status LIMIT 1',
-  arguments: {'status': 'active'},
-)).items.isNotEmpty;
+**Why**: Ditto syncs changes at field level. Rewriting a whole document makes the change larger, and an unchanged field written by this device can win a merge against a real concurrent change made on another device.
+
+**See**: [examples/unnecessary-deltas-good.dart](examples/unnecessary-deltas-good.dart), [examples/unnecessary-deltas-bad.dart](examples/unnecessary-deltas-bad.dart)
+
+---
+
+### 7. Create the Indexes Your Queries Need (HIGH)
+
+**Guide**: [Indexing and Query Performance](../../../guides/best-practices/ditto.md#indexing-and-query-performance), [Index Usage Rules](../../../guides/best-practices/ditto.md#index-usage-rules), [ADVISE (SDK 5.1+)](../../../guides/best-practices/ditto.md#advise-sdk-51), [EXPLAIN and PROFILE](../../../guides/best-practices/ditto.md#explain-and-profile)
+
+Indexes are local to each device and persist across restarts. They are used by `execute` and store observers (not by subscriptions), and in-memory stores (Flutter Web) do not support them.
+
+```sql
+-- Composite index (SDK 5.1+): equality field first, then the range or sort field
+CREATE INDEX IF NOT EXISTS idx_orders_customer_createdAt ON orders (customerId, createdAt DESC)
+
+-- Index-friendly: equality on the leading key, range and sort on the second key
+SELECT * FROM orders WHERE customerId = :customerId AND createdAt >= :since ORDER BY createdAt DESC
 ```
 
-**Why**: Aggregates create a "dam" in the pipeline—all matching documents buffer in memory before results return. For 100k+ documents, this causes crashes on mobile. `LIMIT 1` returns immediately after first match with minimal memory.
+Key usage rules (full table in [reference/optimization-patterns.md](reference/optimization-patterns.md#index-usage-rules)):
+- Index scans: `=`, `IN :values`, ranges, prefix `LIKE 'abc%'` (literal or parameter), `!=`, `IS MISSING`
+- **Collection scans**: any function applied to the field (`lower(name) = ...`, `starts_with(...)`, `coalesce(isDeleted, false) = false`), element lookups (`array_contains(tags, 'x')`), and `OR` when any branch is not indexed
+- Match the sort direction of a composite index to avoid an extra sort step
+- With `DQL_STRICT_MODE` set to `true`, the 5.1.0 planner does **not** use index scans at all; keep the default (`false`) if you rely on indexes
+- Keep each field's type consistent; mixed types can produce incorrect or mis-ordered index results
 
-**Memory Impact**:
-- `COUNT(*)` on 100k orders: ~10-50MB buffered depending on document size
-- `LIMIT 1` existence check: Minimal memory, returns after first match
-- `GROUP BY`: Result bounded by unique group values (typically small)
+**✅ DO:**
+- Create indexes at startup with `CREATE INDEX IF NOT EXISTS`, after `Ditto.open` and before queries and observers start
+- Run `ADVISE` (SDK 5.1+) for important queries during development and copy the suggested statements into startup code
+- Use `EXPLAIN` to check the access path and `PROFILE` to measure
 
-**See**: `.claude/guides/best-practices/ditto.md (lines 655-691: Aggregate Functions)`, `.claude/skills/ditto/query-sync/SKILL.md#11-unbounded-aggregates-priority-critical`
+**❌ DON'T:**
+- Use `EXPLAIN` to measure performance; it never runs the query
+- Run `ADVISE AND PROVISION` from production code paths; it creates indexes as a side effect
+- Index every field "just in case"; every index costs write time and storage
+- Expect `IF NOT EXISTS` to update an index definition; it checks only the name
 
+```dart
+// ✅ GOOD: Development-only helper that prints index suggestions (SDK 5.1+).
+Future<void> printOrderIndexAdvice(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'ADVISE SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC',
+    arguments: {'status': 'open'},
+  );
+  final advice = result.items.first.value['advice'] as Map<String, dynamic>;
+  final suggested = (advice['suggestedIndexes'] as List<dynamic>?) ?? const [];
+  if (suggested.isEmpty) debugPrint('No suggestions: ${advice['outcome']}');
+  for (final index in suggested) {
+    debugPrint('${(index as Map<String, dynamic>)['statement']}');
+  }
+}
+```
+
+**See**: [examples/indexing-query-performance.dart](examples/indexing-query-performance.dart)
+
+---
+
+### 8. Configure Logging Before Opening Ditto (HIGH)
+
+**Guide**: [Logging](../../../guides/best-practices/ditto.md#logging), [Ditto.open, Ditto.openSync, and Ditto.init](../../../guides/best-practices/ditto.md#dittoopen-dittoopensync-and-dittoinit)
+
+Every `DittoLogger` member throws `Ditto not initialized` until the SDK is initialized. Call `await Ditto.init()` first, then configure `DittoLogger`, then `Ditto.open`, so startup is logged with your settings.
+
+```dart
+import 'package:flutter/foundation.dart';
+
+// ✅ GOOD: Call before Ditto.open().
+Future<void> configureDittoLogging() async {
+  await Ditto.init(); // DittoLogger throws until Ditto is initialized.
+  DittoLogger.isEnabled = true;
+  DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;
+}
+```
+
+| Fact | Consequence |
+|---|---|
+| `LogLevel`: `error`, `warning`, `info`, `debug`, `verbose`; default `info` | Set the level explicitly: `warning` in production, `debug` while debugging |
+| `LogLevel.verbose` can significantly slow down replication | Use it only for short, targeted investigations |
+| `ditto.close()` resets `DittoLogger.customLogCallback` to `null` | Set the callback again after every reopen |
+| On-disk logs always include debug-level entries, independent of `minimumLogLevel` | A `warning` console level in production does not reduce what support can retrieve |
+| `DittoLogger.exportLogs(path)` writes gzip-compressed JSON Lines and returns the byte count; the file must not exist and its directory must exist | Use a fresh, timestamped `.jsonl.gz` path |
+
+**❌ DON'T:**
+- Set `DittoLogger` properties before `Ditto.init()` (or `Ditto.open`) has completed
+- Leave `LogLevel.verbose` enabled in production
+- Register long-lived observers on `system:system_info` or `system:data_sync_info`; query them with `execute` when needed ([System Virtual Collections](../../../guides/best-practices/ditto.md#system-virtual-collections))
+- Change the `ROTATING_LOG_FILE_*` parameters unless Ditto support advises otherwise
+
+**See**: [examples/logging-configuration-good.dart](examples/logging-configuration-good.dart), [examples/logging-configuration-bad.dart](examples/logging-configuration-bad.dart)
+
+---
+
+## Common Workflows
+
+### Workflow 1: Adding a Screen That Shows Live Data
+
+```
+- [ ] Subscription exists at app or feature scope (observers do not sync data)
+- [ ] Observer registered in initState() without onChange, with ORDER BY
+- [ ] changes consumed by exactly one listener or StreamBuilder
+- [ ] Values copied into plain maps or model objects
+- [ ] Each region (badge, list, detail) has its own narrow observer
+- [ ] Stream subscription and observer cancelled in dispose()
+- [ ] Indexes for the observer's WHERE/ORDER BY created at startup
+```
+
+### Workflow 2: Investigating a Slow Query
+
+```
+- [ ] EXPLAIN: look for scan instead of indexScan on large collections
+- [ ] Check the index usage rules (functions on fields, OR branches, strict mode)
+- [ ] ADVISE (SDK 5.1+) for suggested indexes; add them to startup code
+- [ ] PROFILE: compare documentsIn and documentsOut of filter steps
+- [ ] Narrow the query: WHERE, projection, ORDER BY ... LIMIT
+- [ ] During development, lower DQL_SLOW_REQUEST_WARN_SECONDS (SDK 5.1+) after every open
+```
 
 ---
 
 ## Quick Reference Checklist
 
-### Observer Performance (Flutter)
-- [ ] Use state management (Riverpod) not setState() on entire screen
-- [ ] Implement granular widget rebuilds (family providers, selectors)
-- [ ] Use ValueListenableBuilder for simpler scoped rebuilds
-- [ ] Use DittoDiffer with ValueKey for efficient list updates
-- [ ] Avoid full screen rebuilds in observer callbacks
+### Observers
+- [ ] No `onChange` without consuming `changes` (Note (SDK 5.1.0))
+- [ ] `ORDER BY` on every observer whose order is displayed
+- [ ] Observers registered outside `build()`, one per region, not per item
+- [ ] `StreamSubscription.cancel()` and `observer.cancel()` in `dispose()`
+- [ ] No slow `await` inside `registerObserver` listeners
+- [ ] `registerObserverV2` / `registerObserverWithSignalNext` labeled **(Experimental)**; `signalNext()` in `finally`
+- [ ] Observer result sets bounded with `WHERE` and `LIMIT`; `Differ` only on bounded results
 
-### Observer Performance (All Platforms)
-- [ ] **Non-Flutter SDKs**: Prefer `registerObserverWithSignalNext` (better backpressure control)
-- [ ] **Non-Flutter SDKs**: Always call `signalNext()` after processing observer updates
-- [ ] **Flutter SDK v4.x**: Use `registerObserver` (only option until v5.0, no backpressure control)
-- [ ] **Flutter SDK v5.0+**: Will support `registerObserverWithSignalNext`
-- [ ] Extract data immediately from QueryResultItems (lightweight operation)
-- [ ] Offload heavy processing to async operations outside callback
-- [ ] Keep observer callbacks lightweight (< 16ms for Flutter)
-- [ ] **Legacy observeLocal Migration**: See [Replacing observeLocal](../../guides/best-practices/ditto.md#replacing-legacy-observelocal-with-store-observers-sdk-412) for Differ pattern (non-Flutter SDKs)
+### Writes
+- [ ] `DO UPDATE_LOCAL_DIFF` for upserts and re-imports
+- [ ] Field-level `UPDATE` instead of whole-document rewrites
+- [ ] Skip conditions use `coalesce` for missing or `null` fields
 
-### Sync Optimization
-- [ ] Check value before UPDATE to avoid unnecessary deltas
-- [ ] Use DO UPDATE_LOCAL_DIFF (SDK 4.12+) for upsert operations
-- [ ] Use field-level UPDATE instead of document replacement
-- [ ] Balance subscription scope (not too broad, not too narrow)
-- [ ] Filter in observers, subscribe broadly (for multi-hop relay)
+### Queries and Indexes
+- [ ] `CREATE INDEX IF NOT EXISTS` at startup (not on Flutter Web)
+- [ ] Composite indexes: equality fields first, matching sort direction
+- [ ] No functions applied to indexed fields in `WHERE`
+- [ ] Strict mode left at `false` when relying on indexes
+- [ ] One `IN :ids` query instead of one query per ID
+- [ ] Constant query strings with parameters
 
-### Memory Management (Query Performance)
-- [ ] Not using `DISTINCT` with `_id` field (redundant, wastes memory)
-- [ ] Using `DISTINCT` only on small, filtered result sets
-- [ ] Filtering with `WHERE` before aggregate functions (reduces memory buffer)
-- [ ] Not using unbounded aggregates (can crash on 100k+ documents)
-- [ ] Using `GROUP BY` in observers to reduce result set size
-- [ ] Using `LIMIT 1` for existence checks (not `COUNT(*)`)
-- [ ] Avoiding large `OFFSET` values (> 1000) - use cursor-based pagination
-- [ ] Not using aggregates in high-frequency observers without filters
-
-### Logging Configuration
-- [ ] Set log level BEFORE Ditto.open() to capture startup diagnostics
-- [ ] Use different log levels for development vs production
-- [ ] Configure rotating log files to prevent unbounded growth
-- [ ] Use descriptive log levels (debug: development, warning: production)
-- [ ] Monitor log file sizes in long-running apps
-
-### Backpressure Management (Non-Flutter SDKs Only)
-- [ ] **Non-Flutter SDKs**: Call signalNext() promptly to prevent callback queue buildup
-- [ ] **Flutter SDK v4.x**: No backpressure control (signalNext unavailable until v5.0)
-- [ ] Don't block observer callbacks with heavy processing
-- [ ] Offload heavy operations to background async tasks
+### Logging
+- [ ] `await Ditto.init()` before `DittoLogger`
+- [ ] `LogLevel.warning` in production, no `verbose`
+- [ ] `customLogCallback` set again after reopening
+- [ ] Log export path is new and its directory exists
 
 ---
 
 ## See Also
 
 ### Main Guide
-- Observer Patterns: [.claude/guides/best-practices/ditto.md lines 1639-1848](../../guides/best-practices/ditto.md)
-- Partial UI Updates: [.claude/guides/best-practices/ditto.md lines 1851-2217](../../guides/best-practices/ditto.md)
-- Performance Best Practices: [.claude/guides/best-practices/ditto.md lines 2332-2511](../../guides/best-practices/ditto.md)
-- Unnecessary Deltas: [.claude/guides/best-practices/ditto.md lines 1103-1129](../../guides/best-practices/ditto.md)
+- [Observing Changes](../../../guides/best-practices/ditto.md#observing-changes)
+- [Indexing and Query Performance](../../../guides/best-practices/ditto.md#indexing-and-query-performance)
+- [Logging and Observability](../../../guides/best-practices/ditto.md#logging-and-observability)
+- [INSERT and Conflict Handling](../../../guides/best-practices/ditto.md#insert-and-conflict-handling)
+- [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
 
 ### Other Skills
-- [query-sync](../query-sync/SKILL.md) - Observer selection and subscription patterns
-- [data-modeling](../data-modeling/SKILL.md) - Field-level updates to minimize deltas
-- [storage-lifecycle](../storage-lifecycle/SKILL.md) - Performance impact of storage management
+- [query-sync](../query-sync/SKILL.md): subscriptions and query patterns
+- [Flutter performance best practices](https://docs.flutter.dev/perf/best-practices) (external)
+- [data-modeling](../data-modeling/SKILL.md): field-level updates and CRDT merge behavior
+- [storage-lifecycle](../storage-lifecycle/SKILL.md): deletion, eviction, and storage
 
 ### Examples
-- [examples/flutter-state-management-good.dart](examples/flutter-state-management-good.dart) - Riverpod granular rebuilds
-- [examples/flutter-state-management-bad.dart](examples/flutter-state-management-bad.dart) - Full screen setState anti-patterns
-- [examples/unnecessary-deltas-good.dart](examples/unnecessary-deltas-good.dart) - Value checks and DO UPDATE_LOCAL_DIFF
-- [examples/unnecessary-deltas-bad.dart](examples/unnecessary-deltas-bad.dart) - Delta generation anti-patterns
-- [examples/logging-configuration-good.dart](examples/logging-configuration-good.dart) - Proper logging setup
-- [examples/logging-configuration-bad.dart](examples/logging-configuration-bad.dart) - Logging anti-patterns
-- [examples/observer-backpressure.dart](examples/observer-backpressure.dart) - Backpressure control and signalNext timing
-- [examples/partial-ui-updates.dart](examples/partial-ui-updates.dart) - DittoDiffer and ValueKey usage
-
-### Reference
-- [Flutter Performance Best Practices](https://docs.flutter.dev/perf/best-practices)
-- [Riverpod Documentation](https://riverpod.dev/docs/concepts/reading)
-- [Ditto Read Documentation](https://docs.ditto.live/sdk/latest/crud/read)
+- [examples/flutter-observer-performance.dart](examples/flutter-observer-performance.dart): recommended observer pattern, StreamBuilder variant, fast listeners
+- [examples/observer-backpressure.dart](examples/observer-backpressure.dart): `registerObserverV2` and `registerObserverWithSignalNext` (Experimental)
+- [examples/flutter-state-management-good.dart](examples/flutter-state-management-good.dart): controller-owned observers and scoped rebuilds
+- [examples/flutter-state-management-bad.dart](examples/flutter-state-management-bad.dart): state management anti-patterns
+- [examples/partial-ui-updates.dart](examples/partial-ui-updates.dart): per-region observers, `ValueKey`, `Differ` with `AnimatedList`
+- [examples/unnecessary-deltas-good.dart](examples/unnecessary-deltas-good.dart) / [examples/unnecessary-deltas-bad.dart](examples/unnecessary-deltas-bad.dart): avoiding redundant writes
+- [examples/indexing-query-performance.dart](examples/indexing-query-performance.dart): startup indexes, ADVISE, EXPLAIN, PROFILE
+- [examples/logging-configuration-good.dart](examples/logging-configuration-good.dart) / [examples/logging-configuration-bad.dart](examples/logging-configuration-bad.dart): logging setup and export

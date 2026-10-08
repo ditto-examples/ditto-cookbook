@@ -1,396 +1,146 @@
 # Data Modeling Common Patterns
 
-This reference contains HIGH priority patterns for CRDT-safe data modeling in Ditto. These patterns address frequent scenarios that affect 20-50% of users.
+Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`. The source of truth is the [Data Modeling](../../../../guides/best-practices/ditto.md#data-modeling) section of the guide.
 
 ## Table of Contents
 
-- [Pattern 1: Field-Level Updates vs Document Replacement](#pattern-1-field-level-updates-vs-document-replacement)
-- [Pattern 2: Event History with Separate Documents](#pattern-2-event-history-with-separate-documents)
-- [Pattern 3: Document Size and Relationship Modeling](#pattern-3-document-size-and-relationship-modeling)
+- [Pattern 1: Field-Level Updates and Upserts](#pattern-1-field-level-updates-and-upserts)
+- [Pattern 2: Event History and Audit Logs](#pattern-2-event-history-and-audit-logs)
+- [Pattern 3: Document Structure](#pattern-3-document-structure)
+- [Pattern 4: Keeping Documents Small](#pattern-4-keeping-documents-small)
 
 ---
 
-## Pattern 1: Field-Level Updates vs Document Replacement
+## Pattern 1: Field-Level Updates and Upserts
 
-**Priority**: HIGH
+Write only what changed. A field-level `UPDATE` touches only the named fields, so concurrent edits to other fields survive.
 
-**Problem**: Full document replacement with `INSERT ... ON ID CONFLICT DO UPDATE` treats ALL fields as updated (even unchanged ones), causing unnecessary sync traffic. Even updating a field with the same value creates a delta and syncs to other peers.
+| Conflict policy | When the `_id` exists locally |
+|---|---|
+| `FAIL` (default) | The statement fails |
+| `DO NOTHING` | Existing document unchanged; use for "create if absent" |
+| `DO UPDATE` | Supplied fields are written and merged, **even identical values**: the document is reported as mutated and observers fire |
+| `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; a no-op when nothing changed |
 
-**Detection**:
-```dart
-// CRITICAL: Replacing entire document
-final order = await fetchOrder(orderId);
-await ditto.store.execute(
-  'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE',
-  arguments: {
-    'order': {
-      ...order,
-      'status': 'completed',  // Only this changed
-      // But ALL fields sync as deltas!
-    },
-  },
-);
-```
-
-### Solution Patterns
-
-#### Option 1: Field-Level UPDATE (Best for single field changes)
+No `INSERT` policy deletes fields: use `UNSET`.
 
 ```dart
-// ✅ GOOD: Field-level update (only changed fields sync)
-await ditto.store.execute(
-  '''
-  UPDATE orders
-  SET status = :status, completedAt = :completedAt
-  WHERE _id = :orderId
-  ''',
-  arguments: {
-    'orderId': orderId,
-    'status': 'completed',
-    'completedAt': DateTime.now().toIso8601String(),
-  },
-);
-// Only 'status' and 'completedAt' sync as deltas
-```
-
-#### Option 2: DO UPDATE_LOCAL_DIFF (Best for upserts with many fields)
-
-```dart
-// ✅ BETTER: DO UPDATE_LOCAL_DIFF only syncs changed fields (SDK 4.12+)
-await ditto.store.execute(
-  '''
-  INSERT INTO orders DOCUMENTS (:order)
-  ON ID CONFLICT DO UPDATE_LOCAL_DIFF
-  ''',
-  arguments: {
-    'order': {
-      '_id': 'order_123',
-      'status': 'completed',        // Changed - will sync
-      'customerId': 'customer_456', // Unchanged - won't sync
-      'items': {...},               // Unchanged - won't sync
-      'completedAt': DateTime.now().toIso8601String(), // Changed - will sync
-    },
-  },
-);
-// Automatically compares values, only syncs what changed
-```
-
-#### Option 3: Check Before Updating (Best for avoiding unnecessary deltas)
-
-```dart
-// ✅ BEST: Check if value actually changed
-final orderResult = await ditto.store.execute(
-  'SELECT status FROM orders WHERE _id = :orderId',
-  arguments: {'orderId': orderId},
-);
-
-final currentStatus = orderResult.items.first.value['status'];
-final newStatus = 'completed';
-
-if (currentStatus != newStatus) {
-  // Only update if value changed
+// ✅ GOOD: Only status changes.
+Future<void> markReady(Ditto ditto, String orderId) async {
   await ditto.store.execute(
-    'UPDATE orders SET status = :status WHERE _id = :orderId',
-    arguments: {'orderId': orderId, 'status': newStatus},
+    'UPDATE orders SET status = :status, updatedAt = :updatedAt WHERE _id = :id',
+    arguments: {
+      'id': orderId,
+      'status': 'ready',
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    },
   );
 }
+
+// ✅ GOOD: Writing a full document from local state: only differing fields
+// are written, and an unchanged document is a no-op.
+Future<bool> saveOrder(Ditto ditto, Map<String, dynamic> order) async {
+  final result = await ditto.store.execute(
+    'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
+    arguments: {'order': order},
+  );
+  return result.mutatedDocumentIDs().isNotEmpty;
+}
 ```
 
-### Why This Matters
+**❌ DON'T:**
+- Save a stale in-memory copy with `DO UPDATE`: every supplied field gets a new timestamp and can override a concurrent change from another device.
+- Use `DO UPDATE` for periodic re-upserts of unchanged data (for example, refreshing reference data from a backend).
+- Expect `DO UPDATE` to replace a document or an object: it merges.
 
-Field-level updates only sync changed fields. Full document replacement increments CRDT counters for ALL fields, even unchanged ones.
-
-**⚠️ CRITICAL**: Even updating with the same value is treated as a delta and synced to all peers.
-
-### Anti-Patterns
-
-```dart
-// ❌ BAD: Full document replacement
-final order = await fetchOrder(orderId);
-await ditto.store.execute(
-  'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE',
-  arguments: {'order': {...order, 'status': 'completed'}},
-);
-// ALL fields sync, wasting bandwidth
-
-// ❌ BAD: Updating with same value
-await ditto.store.execute(
-  'UPDATE orders SET status = :status WHERE _id = :orderId',
-  arguments: {'orderId': orderId, 'status': 'pending'},
-);
-// If status was already 'pending', this still creates and syncs a delta!
-```
-
-### Conflict Resolution Options
-
-| Option | Behavior | When to Use |
-|--------|----------|-------------|
-| `DO UPDATE` | Updates all fields, syncs all as deltas | Never (use UPDATE_LOCAL_DIFF instead) |
-| `DO UPDATE_LOCAL_DIFF` (SDK 4.12+) | Only updates/syncs changed fields | Upsert operations with many unchanged fields |
-| `DO NOTHING` | Ignores conflict, keeps existing document | Write-once, read-many data |
-| `FAIL` | Throws error on conflict (default) | Explicit conflict handling needed |
-
-**See Also**:
-- `../examples/field-level-updates.dart`
-- SKILL.md Pattern 2.5: DO NOT Store Calculated Fields
+Guide: [INSERT and Conflict Handling](../../../../guides/best-practices/ditto.md#insert-and-conflict-handling), [Local write semantics you must know](../../../../guides/best-practices/ditto.md#local-write-semantics-you-must-know). Example: [field-level-updates.dart](../examples/field-level-updates.dart).
 
 ---
 
-## Pattern 2: Event History with Separate Documents
+## Pattern 2: Event History and Audit Logs
 
-**Priority**: HIGH
+When every change matters, record each change as a new fact instead of overwriting one field.
 
-**Problem**: Arrays are REGISTER types with last-write-wins. Even "append-only" array operations lose data when multiple devices append concurrently.
+| | Audit-log map | Event documents | Current state + history |
+|---|---|---|---|
+| Shape | `statusLog: {"<UTC ms timestamp>": "shipped"}` in the record | One document per event, UUID `_id` | Bounded current-state document plus append-only history collection |
+| Size | Grows the parent | Parent unaffected | Current state bounded; history grows |
+| Atomic with the parent | Yes (one document) | No (use a transaction) | Yes, with a transaction |
+| Readable without the parent | No | Yes | Yes |
+| Best for | Status and workflow history of one record | Unbounded logs, analytics, compliance trails | Live dashboards plus history |
 
-**Detection**:
-```dart
-// CRITICAL: Appending to array for event history
-await ditto.store.execute(
-  '''
-  UPDATE orders
-  SET statusHistory = statusHistory || [:entry]
-  WHERE _id = :orderId
-  ''',
-  arguments: {
-    'orderId': orderId,
-    'entry': {'status': 'shipped', 'timestamp': DateTime.now().toIso8601String()},
-  },
-);
-// Concurrent appends from Device A and Device B → one is lost!
+**✅ DO:**
+- Key audit-log entries by millisecond-precision ISO-8601 UTC timestamps, and append them with a partial-document upsert (`ON ID CONFLICT DO UPDATE_LOCAL_DIFF`).
+- Derive the current state when reading: latest timestamp, **most advanced state** (progressions that must not regress), earliest occurrence, or custom rules.
+- Plan cleanup of event collections from the start with `EVICT`, using a subscription scope that is the complement of the eviction query.
+
+**❌ DON'T:**
+- Append events to an array: arrays are registers, so concurrent appends lose events.
+- Rely on one overwritten `status` field when history matters: a late write from an offline device can move the record backwards.
+
+```sql
+SELECT * FROM orderEvents
+WHERE orderId = :orderId
+ORDER BY occurredAt ASC, _id ASC
 ```
 
-### Solution: Separate INSERT Documents
+A variant uses the status as the key and the timestamp as the value; it records whether and when a state happened, but keeps only the latest time for a state entered more than once.
 
-```dart
-// ✅ GOOD: Insert event as separate document (recommended for audit logs)
-await ditto.store.execute(
-  'INSERT INTO order_history DOCUMENTS (:historyDoc)',
-  arguments: {
-    'historyDoc': {
-      '_id': '${orderId}_${DateTime.now().millisecondsSinceEpoch}',
-      'orderId': orderId,
-      'status': 'shipped',
-      'timestamp': DateTime.now().toIso8601String(),
-      'userId': currentUserId,
-    },
-  },
-);
-
-// Query history for an order
-final historyResult = await ditto.store.execute(
-  '''
-  SELECT * FROM order_history
-  WHERE orderId = :orderId
-  ORDER BY timestamp ASC
-  ''',
-  arguments: {'orderId': orderId},
-);
-
-final history = historyResult.items.map((item) => item.value).toList();
-```
-
-### Why Separate Documents?
-
-Separate documents (INSERT) guarantee preservation of all events. Arrays risk data loss in concurrent scenarios. Separate documents are better for audit logs where completeness is critical.
-
-### Anti-Pattern
-
-```dart
-// ❌ BAD: Array with append operations
-{
-  "_id": "order_123",
-  "statusHistory": [
-    {"status": "pending", "timestamp": "2025-01-15T10:00:00Z"},
-    {"status": "processing", "timestamp": "2025-01-15T11:00:00Z"}
-  ]
-}
-
-// Concurrent appends:
-// Device A: Append "shipped" → array = [pending, processing, shipped]
-// Device B: Append "canceled" → array = [pending, processing, canceled]
-// After sync: One append is lost! ❌
-```
-
-### Trade-offs
-
-| Approach | Event Preservation | Query Convenience | Document Count |
-|----------|-------------------|-------------------|----------------|
-| **Separate documents (INSERT)** | ✅ Guaranteed | ✅ Easy filtering/sorting | ⚠️ Higher count |
-| **Arrays** | ❌ Risk of loss | ⚠️ Requires extraction | ✅ Fewer docs |
-
-**See Also**:
-- `../examples/event-history-good.dart`
-- `../examples/event-history-bad.dart`
+Guide: [Event History and Audit Logs](../../../../guides/best-practices/ditto.md#event-history-and-audit-logs), [EVICT](../../../../guides/best-practices/ditto.md#evict). Examples: [event-history.dart](../examples/event-history.dart), [two-collection-pattern.dart](../examples/two-collection-pattern.dart).
 
 ---
 
-## Pattern 3: Document Size and Relationship Modeling
+## Pattern 3: Document Structure
 
-**Priority**: HIGH
+### Flat or Nested
 
-**Problem**: Documents exceeding 5 MB will not sync. Documents over 250 KB trigger warnings and perform poorly (Bluetooth LE replication maxes at ~20 KB/second, so a 250 KB document takes 10+ seconds).
+- **Group related fields in an object** when they belong together but may be edited separately (`customer.name`, `customer.phone`). Each nested field merges independently, and nesting has no special performance cost.
+- **Keep fields at the top level** when that reads better; nested paths such as `customer.phone` are indexable too.
+- **Use a REGISTER object** only when the parts must never mix (for example, a GPS `position`), declared in every statement.
+- **Avoid unbounded growth** inside one document: a map that keeps receiving entries belongs in its own collection.
 
-**Detection**:
-```dart
-// CRITICAL: Unbounded embedded growth
-{
-  "_id": "person_123",
-  "name": "Alice",
-  "cars": [
-    {
-      "make": "Toyota",
-      "maintenance": [  // Can grow to hundreds of entries!
-        {"date": "2025-01-15", "type": "oil_change", "cost": 45.00},
-        {"date": "2025-02-20", "type": "tire_rotation", "cost": 35.00},
-        // ... hundreds more - document becomes too large!
-      ],
-      "photos": ["base64_encoded_large_image..."]  // Large binary data!
-    }
-  ]
-}
-// Problems: Too large, slow to sync, difficult to update concurrently
-```
+### Exclude Transient and Unnecessary Fields
 
-### Decision Guide
+Every stored field costs storage and memory on every device that holds the document and adds to initial replication and merge cost.
 
-#### Embed When:
-- Data retrieved/updated together as a unit (avoids sequential queries)
-- Small to medium size (under 250 KB combined)
-- Relatively stable relationship (doesn't grow unbounded)
+**❌ DON'T store in synced documents:** UI state (`isExpanded`, scroll positions), temporary flags (`isSaving`, `uploadProgress`), device-local data (file paths, cache locations), or derived values (totals, averages, "days until").
 
-```dart
-// ✅ GOOD: Embedded data retrieved together (single query)
-{
-  "_id": "order_123",
-  "customerId": "cust_456",
-  "shippingAddress": {  // Retrieved with order, small and stable
-    "street": "123 Main St",
-    "city": "Springfield",
-    "zip": "12345"
-  },
-  "items": {  // Limited number of items per order
-    "prod_1": {"quantity": 2, "price": 10.00},
-    "prod_2": {"quantity": 1, "price": 25.00}
-  },
-  "total": 45.00
-}
-```
+**✅ DO:** keep UI and device-local state in widget state or local preferences, and initialize flags you will filter on (`isDeleted: false`), or filter with `coalesce(isDeleted, false) = false`. A missing field is `MISSING`, not `false`.
 
-#### Use Flat Models When:
-- Data grows unbounded over time (exceeds 250 KB limit)
-- Data accessed independently (no need to retrieve together)
-- Frequent concurrent modifications
+### Field Names
 
-```dart
-// ✅ GOOD: Flat model for unbounded data
-// maintenance_logs collection (grows unbounded)
-{
-  "_id": "log_456",
-  "carId": "car_123",  // Foreign key
-  "date": "2025-01-15",
-  "type": "oil_change",
-  "cost": 45.00
-}
+- Use one convention (camelCase in the guide).
+- Quote field names that collide with DQL keywords or contain special characters with backticks (`` `value` ``).
+- Never name a collection `collection`; it is a DQL keyword.
 
-// cars collection (bounded size)
-{
-  "_id": "car_123",
-  "ownerId": "person_123",
-  "make": "Toyota",
-  "model": "Camry",
-  "year": 2020
-}
-
-// Query: 2 sequential queries needed
-// But avoids document size limit and enables independent updates
-```
-
-### Large Binary Data: Use ATTACHMENT Type
-
-```dart
-// ✅ GOOD: Large files as ATTACHMENTs
-{
-  "_id": "car_123",
-  "make": "Toyota",
-  "photo": {
-    "type": "ATTACHMENT",
-    "token": "ditto_attachment_abc123..."  // Reference to attachment
-  }
-}
-// Large binary data stored separately, lazy-loaded on demand
-```
-
-### Anti-Patterns
-
-```dart
-// ❌ BAD: Unbounded embedded array
-{
-  "_id": "person_123",
-  "cars": [
-    {"maintenance": [...hundreds of entries...]}  // Exceeds size limit!
-  ]
-}
-
-// ❌ BAD: Large binary data in document
-{
-  "_id": "car_123",
-  "photo": "data:image/png;base64,iVBORw0KGgoAAAA..."  // Huge string!
-}
-```
-
-### Key Considerations
-
-- **Embed benefits**: Single-query access (critical with no JOIN support), simpler code
-- **Flat benefits**: Independent sync, concurrent edits without conflicts, parallel sync efficiency
-- **Choose based on**: Access patterns, growth potential, document size limits, concurrent edit likelihood
-
-### Size Limits Reference
-
-| Size Threshold | Impact |
-|----------------|--------|
-| **< 250 KB** | ✅ Optimal performance |
-| **250 KB - 5 MB** | ⚠️ Warning threshold, slow sync especially over Bluetooth |
-| **> 5 MB** | ❌ Hard limit, will not sync |
-
-**Why**: Ditto has hard 5 MB limit and soft 250 KB warning. Embedded data is faster to query (single query vs sequential queries) but can exceed size limits. Choose based on access patterns and growth potential.
-
-**See Also**:
-- `../examples/document-size-optimization.dart`
-- `reference/merge-scenarios.md`
-- `../SKILL.md` Pattern 2: Denormalization for Query Performance
-- `transactions-attachments/SKILL.md` for ATTACHMENT handling
+Guide: [Document Structure](../../../../guides/best-practices/ditto.md#document-structure), [MISSING and NULL](../../../../guides/best-practices/ditto.md#missing-and-null).
 
 ---
 
-## Pattern 4: PN_INCREMENT vs COUNTER Type Comparison
+## Pattern 4: Keeping Documents Small
 
-**Priority**: HIGH (Reference for counter implementation)
+| Threshold | Default | System parameter | Behavior |
+|---|---|---|---|
+| Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | Write succeeds; a warning is logged |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` / `UPDATE` fails; the stored document is unchanged |
 
-Quick reference for choosing between PN_INCREMENT (legacy) and COUNTER type (SDK 4.14.0+):
+Size is the serialized size on disk, including CRDT metadata and the tombstones of earlier writes. It affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes about 10 seconds to replicate the first time.
 
-| Feature | PN_INCREMENT | COUNTER Type (SDK 4.14.0+) |
-|---------|--------------|---------------------------|
-| **SDK Version** | All versions | SDK 4.14.0+ |
-| **Syntax** | `PN_INCREMENT BY 1.0` | `INCREMENT BY 1` |
-| **Set Value** | Not supported | `RESTART WITH 100` |
-| **Reset to Zero** | Not supported | `RESTART` |
-| **Explicit Type** | No (inferred) | Yes (declared in collection) |
-| **Use Case** | Backward compatibility | New projects on 4.14.0+ |
-| **CRDT Type** | Legacy PN_COUNTER | Native COUNTER |
-| **Recommended** | Existing projects | ✅ New implementations |
-| **Operations** | Increment/Decrement only | Increment/Decrement/Restart |
-| **Declaration** | None required | `UPDATE COLLECTION x (field COUNTER)` |
+| Cause of growth | Fix |
+|---|---|
+| A nested map that keeps receiving entries | Move entries to their own collection with a parent reference (`orderId`) |
+| Binary data in a field | Store it as an `ATTACHMENT` |
+| One document holding data for many users or locations | Split by owner or location (often simplifies permissions too) |
+| Status history | A bounded audit-log map, or an event collection (see [Event History and Audit Logs](#pattern-2-event-history-and-audit-logs)) |
 
-**Migration Note**: Existing projects using `PN_INCREMENT` should continue using it for backward compatibility. New projects on SDK 4.14.0+ should use `COUNTER` type for explicit type declaration and additional operations. Contact Ditto support before migrating existing counters from PN_INCREMENT to COUNTER type.
+Estimate the size of a value with `object_size()`; it is approximate and excludes CRDT metadata, so leave headroom:
 
-**See Also**:
-- [../examples/counter-patterns.dart](../examples/counter-patterns.dart) for comprehensive examples
-- `../SKILL.md` Pattern 4: Counter Patterns
+```sql
+SELECT _id, object_size(o) AS approxBytes
+FROM orders AS o
+WHERE _id = :id
+```
 
----
+**❌ DON'T:** embed base64-encoded files, append to a nested map forever, or raise the hard limit to make a large document fit. If you change either limit, change it on every peer in the same release.
 
-## Further Reading
-
-- **SKILL.md**: Critical patterns (Tier 1)
-- **advanced-patterns.md**: Complex scenarios (Tier 3)
-- **Main Guide**: `.claude/guides/best-practices/ditto.md`
+Guide: [Document Size Limits](../../../../guides/best-practices/ditto.md#document-size-limits), [Attachments](../../../../guides/best-practices/ditto.md#attachments). Example: [document-size.dart](../examples/document-size.dart).

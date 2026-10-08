@@ -1,628 +1,317 @@
-# Performance Optimization Patterns
+# Performance and Observability Reference (SDK 5.1.0)
 
-This reference contains HIGH and MEDIUM priority patterns for Ditto performance optimization. These patterns address common performance issues and optimization techniques.
+Detailed rules behind the [performance-observability skill](../SKILL.md). Everything here is extracted from the Ditto best practices guide (`.claude/guides/best-practices/ditto.md`); follow the links for full explanations and example output.
 
 ## Table of Contents
 
-- [Pattern 1: Unnecessary Delta Creation](#pattern-1-unnecessary-delta-creation)
-- [Pattern 2: DO UPDATE vs DO UPDATE_LOCAL_DIFF](#pattern-2-do-update-vs-do-update_local_diff)
-- [Pattern 3: Log Level Configuration](#pattern-3-log-level-configuration)
-- [Pattern 4: Broad Subscription Scope](#pattern-4-broad-subscription-scope)
-- [Pattern 5: Observer Backpressure Buildup](#pattern-5-observer-backpressure-buildup)
-- [Pattern 6: Partial UI Update Patterns (Flutter)](#pattern-6-partial-ui-update-patterns-flutter)
-- [Pattern 7: Rotating Log File Configuration](#pattern-7-rotating-log-file-configuration)
-- [Pattern 8: DISTINCT Memory Impact](#pattern-8-distinct-memory-impact)
-- [Pattern 9: Large OFFSET Performance](#pattern-9-large-offset-performance)
-- [Pattern 10: Operator Performance in Observers](#pattern-10-operator-performance-in-observers)
+- [Observer Behavior](#observer-behavior)
+- [Index Usage Rules](#index-usage-rules)
+- [Composite Indexes and Covering Scans](#composite-indexes-and-covering-scans)
+- [ADVISE](#advise)
+- [EXPLAIN and PROFILE](#explain-and-profile)
+- [Query Scope](#query-scope)
+- [Long-Running Requests and Execution Model](#long-running-requests-and-execution-model)
+- [Avoiding Unnecessary Writes](#avoiding-unnecessary-writes)
+- [Logging Details](#logging-details)
+- [System Virtual Collections](#system-virtual-collections)
+- [System Parameters for Diagnostics](#system-parameters-for-diagnostics)
 
 ---
 
-## Pattern 1: Unnecessary Delta Creation
+## Observer Behavior
 
-**Priority**: HIGH
+**Guide**: [Observing Changes](../../../../guides/best-practices/ditto.md#observing-changes)
 
-**Problem**: Updating a field with the same value still creates and syncs a delta to all peers, wasting bandwidth and processing.
+| API (Flutter) | Status | Returns | Backpressure |
+|---|---|---|---|
+| `registerObserver` | Stable | `StoreObserver` | None |
+| `registerObserverV2` | **(Experimental)** (SDK 5.1+) | `StoreObserverV2` | Automatic: follows pause/resume of `changes` |
+| `registerObserverWithSignalNext` | **(Experimental)** (SDK 5.1+) | `StoreObserverV2` | Manual: call `signalNext()` |
 
-**Detection**:
-```dart
-// Unnecessary update (value unchanged)
-await ditto.store.execute(
-  'UPDATE orders SET status = :status WHERE _id = :id'
-  arguments: {'id': orderId, 'status': 'pending'}
-);
-// If status was already 'pending', this still syncs a delta!
-```
+All three accept only `SELECT` queries and take parameters through `arguments:`. Observers never cause data to sync; pair them with a subscription.
 
-### Solution: Check Before Updating
+Behavior:
+- `registerObserver` coalesces rapid changes but never waits for your code.
+- With `onChange`, events emitted before the first listener attaches are buffered; listen right after registering.
+- `registerObserverV2`: while the stream is paused, Ditto stops delivering after the update that arrived at the pause; on resume, that update and the latest state are delivered. Leaving an `await for` loop cancels the subscription and the observer.
+- `registerObserverWithSignalNext`: one result, then nothing until `signalNext()`. Do not pause or resume its stream (the SDK logs a warning).
+- `Differ` keeps the previous result in memory, and diffing is computationally expensive; debounce updates for large or busy result sets and keep diffed queries bounded (for example, with `LIMIT`). `Differ` only accepts items produced by Ditto (test doubles throw an `ArgumentError`).
 
-```dart
-// ✅ GOOD: Check if value changed
-final currentDoc = await ditto.store.execute(
-  'SELECT status FROM orders WHERE _id = :id'
-  arguments: {'id': orderId}
-);
+Other platforms ([Backpressure on Other Platforms](../../../../guides/best-practices/ditto.md#backpressure-on-other-platforms)):
 
-final currentStatus = currentDoc.items.first.value['status'];
-final newStatus = 'completed';
-
-if (currentStatus != newStatus) {
-  await ditto.store.execute(
-    'UPDATE orders SET status = :status WHERE _id = :id'
-    arguments: {'id': orderId, 'status': newStatus}
-  );
-}
-```
-
-### Why This Matters
-
-Every UPDATE operation increments CRDT counters, even if the value doesn't change. This generates deltas that sync across all peers.
-
-### Benefits
-
-- ✅ Reduces unnecessary network traffic
-- ✅ Minimizes delta generation and storage
-- ✅ Improves battery life on mobile devices
-- ✅ Reduces server-side processing overhead
-
-- `../SKILL.md` Pattern 4: Unnecessary Delta Creation
-- `../../data-modeling/reference/common-patterns.md` Field-Level Updates
+| Platform | Default observer | Backpressure |
+|---|---|---|
+| JavaScript | `registerObserver(query, handler, args)` signals when the handler **returns**; an `async` handler is not awaited | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` |
+| Swift | `registerObserver(query:arguments:deliverOn:handler:)`, main queue by default | `handlerWithSignalNext:`; pass `deliverOn:` to move heavy work off the main queue |
+| Kotlin | `registerObserver(query, args) { result -> }` (suspending) or `observe(...)` returning a `Flow` | No `signalNext`; suspending handlers, `collect(...)`, or `.conflate()`; release with `close()` |
 
 ---
 
-## Pattern 2: DO UPDATE vs DO UPDATE_LOCAL_DIFF
+## Index Usage Rules
 
-**Priority**: HIGH (SDK 4.12+)
+**Guide**: [Index Usage Rules](../../../../guides/best-practices/ditto.md#index-usage-rules)
 
-**Problem**: `DO UPDATE` syncs ALL fields as deltas, even unchanged ones. `DO UPDATE_LOCAL_DIFF` only syncs fields that actually changed.
+The planner chooses indexes by rules, not by statistics. `EXPLAIN` shows these plans:
 
-**Detection**:
-```dart
-// ❌ BAD: DO UPDATE syncs all fields
-await ditto.store.execute(
-  '''
-  INSERT INTO orders DOCUMENTS (:order)
-  ON ID CONFLICT DO UPDATE
-  '''
-  arguments: {
-    'order': {
-      '_id': 'order_123'
-      'status': 'completed',        // Changed
-      'customerId': 'cust_456',     // Unchanged - but still syncs!
-      'items': {...},               // Unchanged - but still syncs!
-    }
-  }
-);
+| Predicate | Plan | Notes |
+|---|---|---|
+| `status = :status` | Index scan | |
+| `status IN :statuses` (array parameter) | Index scan, one span per value | Write `IN :statuses`, not `IN (:statuses)` |
+| `total > 100`, `total >= :min AND total < :max` | Index range scan | |
+| `name LIKE 'abc%'` | Index range scan | Case-sensitive prefix without a leading wildcard; works with a literal or a parameter |
+| `starts_with(name, 'abc')` | Collection scan | Use `LIKE 'abc%'` |
+| `lower(name) = 'abc'`, any function on the field | Collection scan | Functions on the value side are fine |
+| `status != 'open'`, `NOT (status = 'open')` | Index scan over two ranges | |
+| `flag IS MISSING` | Index scan | SDK indexes include documents without the field |
+| `coalesce(isDeleted, false) = false` | Collection scan | Combine with an indexed predicate, or use `isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false` |
+| `_id = :id`, `_id IN :ids`, `USE IDS` | ID scan | No index needed |
+| `a = 1 OR b = 2` (both indexed) | Union scan | |
+| `a = 1 OR b = 2` (`b` not indexed) | **Collection scan** | Every `OR` branch must be indexable |
+| `a = 1 AND b = 2` (separate indexes) | Intersect scan | A composite index on `(a, b)` is generally better |
+| `address.city = 'Tokyo'` (index on `address.city`) | Index scan | Index the full path you filter on |
+| `tags = ['x', 'y']` (index on `tags`) | Index scan | Whole-value match only |
+| `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan | Element lookups cannot use an index |
+| `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan | Does not read documents |
+
+Constraints ([Creating Indexes](../../../../guides/best-practices/ditto.md#creating-indexes), [Strict Mode and Data Types](../../../../guides/best-practices/ditto.md#strict-mode-and-data-types)):
+- Expression, partial, and functional indexes are not supported.
+- `IF NOT EXISTS` checks only the index **name**; to change a definition, create it under a new name or drop and recreate it.
+- `DROP INDEX` requires `ON <collection>`.
+- With `DQL_STRICT_MODE` set to `true`, the SDK 5.1.0 planner uses no index scans; every query falls back to a collection scan.
+- Only the most recently written data type of a field is indexed; mixed types can produce incorrect or mis-ordered results, so keep each field's type consistent.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_orders_city ON orders (address.city)
+
+DROP INDEX IF EXISTS idx_orders_city ON orders
+
+SELECT * FROM system:indexes WHERE collection = :collection
 ```
-
-### Solution: Use DO UPDATE_LOCAL_DIFF
-
-```dart
-// ✅ GOOD: DO UPDATE_LOCAL_DIFF only syncs changed fields (SDK 4.12+)
-await ditto.store.execute(
-  '''
-  INSERT INTO orders DOCUMENTS (:order)
-  ON ID CONFLICT DO UPDATE_LOCAL_DIFF
-  '''
-  arguments: {
-    'order': {
-      '_id': 'order_123'
-      'status': 'completed',        // Changed - will sync
-      'customerId': 'cust_456',     // Unchanged - won't sync
-      'items': {...},               // Unchanged - won't sync
-    }
-  }
-);
-```
-
-### Why UPDATE_LOCAL_DIFF?
-
-- ✅ Automatically compares values before creating deltas
-- ✅ Only syncs fields that actually changed
-- ✅ Ideal for upsert operations with many unchanged fields
-- ✅ Reduces bandwidth and delta storage
-
-**When to Use**:
-- Upsert operations where most fields don't change
-- Periodic background sync of large documents
-- State reconciliation from external sources
-
-- `../../data-modeling/reference/common-patterns.md` Pattern 1: Field-Level Updates
 
 ---
 
-## Pattern 3: Log Level Configuration
+## Composite Indexes and Covering Scans
 
-**Priority**: HIGH
+**Guide**: [Composite Indexes and Key Order (SDK 5.1+)](../../../../guides/best-practices/ditto.md#composite-indexes-and-key-order-sdk-51), [Covering Scans](../../../../guides/best-practices/ditto.md#covering-scans)
 
-**Problem**: Setting log level after `Ditto()` initialization misses critical startup diagnostics.
+- Put **equality** fields first, then the **range** or **sort** field.
+- Match the **sort direction**: with an index on `(status, total DESC)`, `WHERE status = 'open' ORDER BY total DESC` uses the index without a separate sort, while `ORDER BY total ASC` needs an extra sort step.
+- Queries that do not constrain the leading field benefit less.
+- When a query projects only indexed fields (plus `_id`), `EXPLAIN` shows `"covering": true` and no `fetch` step.
 
-**Detection**:
-```dart
-// ❌ BAD: Log level set after init
-final ditto = await Ditto.open(store);
-await ditto.startSync();
-DittoLogger.minimumLogLevel = DittoLogLevel.debug;  // Too late!
+```sql
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)
+
+-- Answered from idx_orders_status alone (covering scan)
+SELECT _id, status FROM orders WHERE status = :status
 ```
-
-### Solution: Set Log Level Before Init
-
-```dart
-// ✅ GOOD: Log level before init
-DittoLogger.minimumLogLevel = DittoLogLevel.debug;  // First!
-final ditto = await Ditto.open(store);
-await ditto.startSync();
-```
-
-### Why This Matters
-
-Ditto performs initialization work (auth, transport setup, mesh discovery) before `Ditto.open()` returns. Setting log level after init misses these critical logs.
-
-### Recommended Log Levels
-
-**Development**:
-- `DittoLogLevel.debug` - Full diagnostics
-
-**Staging**:
-- `DittoLogLevel.info` - Key operations only
-
-**Production**:
-- `DittoLogLevel.warning` - Errors and warnings only
-
-- `../SKILL.md` Pattern 6: Log Level Configuration
-- Pattern 7: Rotating Log File Configuration
 
 ---
 
-## Pattern 4: Broad Subscription Scope
+## ADVISE
 
-**Priority**: MEDIUM
+**Guide**: [ADVISE (SDK 5.1+)](../../../../guides/best-practices/ditto.md#advise-sdk-51)
 
-**Problem**: Subscriptions without WHERE clauses sync ALL documents in a collection, wasting bandwidth and storage.
+- `ADVISE <statement>` plans but does not execute; available on Small Peers for `SELECT`, `UPDATE`, `DELETE`, `EVICT`, and `INSERT ... SELECT`.
+- The result row has `advice.suggestedIndexes` (each with `collection`, `reason`, `statement`), `advice.existingIndexes` when related indexes exist, and `advice.outcome` when there is nothing to suggest (for example `optimal indexes already exist` or `no advice available for statement`).
+- `ADVISE AND PROVISION` also creates the suggested indexes (`createdIndexes`, `failedIndexes`). Keep it out of production code paths.
 
-**Detection**:
-```dart
-// ❌ BAD: No WHERE clause (syncs all orders)
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders'
-);
+```sql
+ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false ORDER BY createdAt DESC
 ```
-
-### Solution: Use Specific WHERE Clauses
-
-```dart
-// ✅ GOOD: Specific WHERE clause
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders WHERE status = :status'
-  arguments: {'status': 'pending'}
-);
-```
-
-### Why Narrow Subscriptions?
-
-- ✅ Reduces initial sync time
-- ✅ Minimizes storage requirements
-- ✅ Improves query performance (smaller working set)
-- ✅ Reduces ongoing sync traffic
-
-### Common Patterns
-
-**User-Specific Data**:
-```dart
-'SELECT * FROM orders WHERE userId = :userId'
-```
-
-**Date-Based Data**:
-```dart
-'SELECT * FROM events WHERE timestamp >= :startDate'
-```
-
-**Status-Based Data**:
-```dart
-'SELECT * FROM tasks WHERE completed = false'
-```
-
-- `../../query-sync/SKILL.md` Pattern 5: Broad Subscriptions
-- `../../query-sync/reference/query-optimization.md`
 
 ---
 
-## Pattern 5: Observer Backpressure Buildup
+## EXPLAIN and PROFILE
 
-**Priority**: MEDIUM (Non-Flutter SDKs)
+**Guide**: [EXPLAIN and PROFILE](../../../../guides/best-practices/ditto.md#explain-and-profile)
 
-**Problem**: Not calling `signalNext()` blocks observer updates, causing backpressure buildup and memory issues.
+| | `EXPLAIN` | `PROFILE` |
+|---|---|---|
+| Executes the statement | No (parse and plan only) | Yes |
+| Returns | The query plan | The normal results plus one `~request_profile` row (for mutations, the profile row is the only row) |
+| Use it to | Check access paths and indexes | Measure time and document counts per step |
+| Statements | Any DQL statement | `SELECT` and mutations (`INSERT`, `UPDATE`, `DELETE`, `EVICT`); mutations are executed |
 
-**Detection**:
-```dart
-// ❌ BAD: Missing signalNext()
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders'
-  (result, signalNext) {
-    updateUI(result);
-    // Missing signalNext() - blocks further updates!
-  }
-);
+| Operator | Meaning |
+|---|---|
+| `scan` | Collection scan; a warning sign on large collections |
+| `indexScan` | Reads an index (`desc.index`, `spans`, `covering`) |
+| `idScan` | Direct lookup by `_id` |
+| `unionScan` / `intersectScan` | Combines index scans for `OR` / `AND` |
+| `countScan` | `COUNT(*)` without reading documents |
+| `fetch` | Loads documents found by a scan |
+| `filter` | Applies the full `WHERE` condition |
+| `sort` / `limit` / `projection` | Ordering, row limit, `SELECT` list |
+| `nlJoin` | Nested-loop JOIN (SDK 5.1+) |
+
+In a `PROFILE` row, each operator has `#stats` (`documentsIn`, `documentsOut`, `phaseTimes`), and `times` holds `elapsed`, `parse`, and `plan`. Look for:
+- A `filter` whose `documentsIn` is much larger than its `documentsOut` (an index usually helps)
+- A `scan` or `fetch` with a high document count on a large collection
+- `sort` or grouping steps on large inputs (they collect all input first, which costs memory)
+
+```sql
+EXPLAIN SELECT * FROM orders WHERE status = 'open'
+
+PROFILE SELECT * FROM orders WHERE total = 5
 ```
 
-### Solution: Always Call signalNext()
+Directives ([Directives](../../../../guides/best-practices/ditto.md#directives)) override the planner for one statement; use them only after `EXPLAIN` and `PROFILE` show the planner's choice is wrong. `USE INDEX 'name'` is silently ignored if no index with that name exists, and `USE INDEX ''` requests a collection scan. Do not put directives in subscription queries; indexes and directives only affect local query execution.
 
-```dart
-// ✅ GOOD: signalNext() after render
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders'
-  (result, signalNext) {
-    updateUI(result);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      signalNext();  // After frame rendered
-    });
-  }
-);
+```sql
+SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 ```
-
-### Why signalNext() is Critical
-
-- Controls backpressure in observer pipeline
-- Without it, Ditto queues updates in memory
-- Can cause out-of-memory errors on high-frequency updates
-- Flutter SDK v4.x doesn't have `signalNext` (automatic backpressure)
-
-### Timing Best Practices
-
-**After UI Render** (Recommended):
-```dart
-WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-```
-
-**Immediate** (Use with caution):
-```dart
-signalNext();  // Can cause frame drops if updates are rapid
-```
-
-**Debounced** (Advanced):
-```dart
-Timer(Duration(milliseconds: 16), signalNext);  // ~60fps
-```
-
-- `../SKILL.md` Pattern 2: Missing signalNext() Call
-- 
 
 ---
 
-## Pattern 6: Partial UI Update Patterns (Flutter)
+## Query Scope
 
-**Priority**: MEDIUM (Flutter-specific)
+**Guide**: [Query Scope and Execution](../../../../guides/best-practices/ditto.md#query-scope-and-execution), [Large results](../../../../guides/best-practices/ditto.md#large-results)
 
-**Problem**: Full-screen `setState()` in observer callbacks causes unnecessary widget rebuilds.
+**✅ DO:**
+- Filter in `WHERE`, not in Dart
+- Project only the fields you need (subscriptions still sync whole documents and accept only `SELECT *`)
+- Use `ORDER BY ... LIMIT` for local queries and observers that need the first rows
+- Keep query strings constant and pass values as parameters (prepared statements are cached)
+- Prefer keyset pagination (`WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize`) over large `OFFSET` values, which re-read and skip earlier rows
+- Use `DISTINCT` only on a few low-cardinality fields; it keeps every distinct row in memory
+- Count with `COUNT(*)` and check existence with `LIMIT 1`
 
-**Detection**:
-```dart
-// ❌ BAD: Full-screen setState
-class OrdersScreen extends StatefulWidget {
-  @override
-  State<OrdersScreen> createState() => _OrdersScreenState();
-}
+**❌ DON'T:**
+- Observe an entire large collection and filter or paginate in Dart
+- Run one query per ID when `WHERE _id IN :ids` returns the same data
+- Use `DISTINCT` with `_id` or `*`
 
-class _OrdersScreenState extends State<OrdersScreen> {
-  void _setupObserver() {
-    _observer = ditto.store.registerObserver(
-      'SELECT * FROM orders'
-      onChange: (result) {
-        setState(() {  // Rebuilds ENTIRE screen!
-          _orders = result.items.map((item) => item.value).toList();
-        });
-      }
-    );
-  }
-}
+```sql
+SELECT _id, title, createdAt FROM tasks WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize
+
+SELECT DISTINCT status FROM orders ORDER BY status
+
+SELECT * FROM orders WHERE _id IN :ids
 ```
 
-### Solution Options
-
-#### Option 1: Targeted setState (Simple)
-
-```dart
-// ✅ BETTER: setState only in data-owning widget
-class OrdersScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        OrdersListWidget(),  // Only this rebuilds
-        StaticHeader(),      // Not rebuilt
-        StaticFooter(),      // Not rebuilt
-      ]
-    );
-  }
-}
-
-class OrdersListWidget extends StatefulWidget {
-  @override
-  State<OrdersListWidget> createState() => _OrdersListWidgetState();
-}
-
-class _OrdersListWidgetState extends State<OrdersListWidget> {
-  void _setupObserver() {
-    _observer = ditto.store.registerObserver(
-      'SELECT * FROM orders'
-      onChange: (result) {
-        setState(() {  // Only rebuilds OrdersListWidget
-          _orders = result.items.map((item) => item.value).toList();
-        });
-      }
-    );
-  }
-}
-```
-
-#### Option 2: State Management (Riverpod - Recommended)
-
-```dart
-// ✅ BEST: Riverpod for granular updates
-final ordersProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final controller = StreamController<List<Map<String, dynamic>>>();
-
-  final observer = ditto.store.registerObserver(
-    'SELECT * FROM orders'
-    onChange: (result) {
-      final orders = result.items.map((item) => item.value).toList();
-      controller.add(orders);
-    }
-  );
-
-  ref.onDispose(() {
-    observer.cancel();
-    controller.close();
-  });
-
-  return controller.stream;
-});
-
-// In widget - only OrdersList rebuilds when data changes
-class OrdersScreen extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ordersAsync = ref.watch(ordersProvider);
-
-    return Column(
-      children: [
-        ordersAsync.when(
-          data: (orders) => OrdersList(orders: orders)
-          loading: () => CircularProgressIndicator()
-          error: (err, stack) => Text('Error: $err')
-        )
-        StaticHeader(),   // Never rebuilds
-        StaticFooter(),   // Never rebuilds
-      ]
-    );
-  }
-}
-```
-
-### Benefits of Targeted Updates
-
-- ✅ Reduces unnecessary widget rebuilds
-- ✅ Improves frame rate and responsiveness
-- ✅ Better battery life
-- ✅ Cleaner separation of concerns
-
-- `../SKILL.md` Pattern 1: Full Screen setState
-- 
+**Counting** ([Counting Documents](../../../../guides/best-practices/ditto.md#counting-documents)): a full-collection `COUNT(*)` is answered by a count scan (SDK 5.1+) without reading documents. Ditto's 5.1 benchmark reported about 167x faster full-collection counts and about 4.4x faster filtered counts, comparing median runtimes of SDK 5.0.3 and a 5.1.0 preview build on a single Android device (Orion O6) with one retail dataset of about 93,000 documents; results depend on device, data shape, indexes, and query mix. A filtered count still evaluates the filter, so index the filtered fields.
 
 ---
 
-## Pattern 7: Rotating Log File Configuration
+## Long-Running Requests and Execution Model
 
-**Priority**: LOW
+**Guide**: [Long-Running Requests (SDK 5.1+)](../../../../guides/best-practices/ditto.md#long-running-requests-sdk-51), [Flutter Execution Model](../../../../guides/best-practices/ditto.md#flutter-execution-model)
 
-**Problem**: Default file logging can consume unlimited disk space over time.
+| Parameter | Default | Effect |
+|---|---|---|
+| `DQL_SLOW_REQUEST_WARN_SECONDS` (SDK 5.1+) | `60` | Logs a warning with request details once a request runs this long, repeated at the same interval; `0` disables |
+| `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` (disabled) | Cancels longer requests with a timeout error (cooperative cancellation) |
 
-### Solution: Configure Rotating Logs
+```sql
+ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS TO 10
 
-```dart
-// ✅ GOOD: Rotating log files (5 files × 5 MB each = 25 MB max)
-DittoLogger.setLogFileURL('/path/to/logs/ditto.log');
-DittoLogger.minimumLogLevel = DittoLogLevel.info;
+ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS TO 30
 ```
 
-### Configuration Options
+System parameters are not persisted: apply them after every `Ditto.open`, before `ditto.sync.start()`. Before enabling a timeout in production, handle the resulting error for every query.
 
-**File Location**:
-- iOS: `FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first`
-- Android: `context.filesDir`
-- Desktop: User-specific app data directory
-
-**Rotation Strategy**:
-- Ditto automatically rotates logs
-- Default: 5 files, 5 MB each
-- Cannot be customized via public API
-
-**Production Best Practices**:
-- Use `DittoLogLevel.warning` or `info` in production
-- Monitor disk usage with platform tools
-- Implement external log aggregation for analytics
-
-- Pattern 3: Log Level Configuration
-- `.claude/guides/best-practices/ditto.md` Logging Best Practices
+On native platforms, `ditto.store.execute` runs on a long-lived worker isolate per `Ditto` instance, so a slow query does not block the UI isolate. `Store.experimentalSkipExecuteIsolateOffload` **(Experimental)** runs `execute` inline on the calling isolate; any slow query then blocks that isolate (usually the UI). Use it only after measuring a real throughput problem with many very small queries.
 
 ---
 
-## Pattern 8: DISTINCT Memory Impact
+## Avoiding Unnecessary Writes
 
-**Priority**: HIGH
+**Guide**: [ON ID CONFLICT](../../../../guides/best-practices/ditto.md#on-id-conflict), [UPDATE](../../../../guides/best-practices/ditto.md#update), [Prefer field-level updates](../../../../guides/best-practices/ditto.md#prefer-field-level-updates)
 
-**Problem**: `DISTINCT` maintains in-memory hash table of unique values, causing memory issues on large result sets.
+| Policy | When the `_id` already exists locally |
+|---|---|
+| `FAIL` (default) | The statement fails |
+| `DO NOTHING` | Existing document unchanged; no error |
+| `DO UPDATE` | Supplied fields are written (merged; fields not supplied remain). Identical values are still written, the document is reported as mutated, and observers fire |
+| `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; no-op when nothing changed |
 
-**Detection**:
-```dart
-// ⚠️ CAUTION: DISTINCT on large dataset
-final result = await ditto.store.execute(
-  'SELECT DISTINCT customerId FROM orders'
-);
-// Memory usage: O(unique customerIds)
+With the default strict mode (`DQL_STRICT_MODE = false`), object fields are CRDT maps:
+
+| Starting `address` | Statement | Result |
+|---|---|---|
+| `{"city": "Oslo", "zip": "0150"}` | `SET address = :a` with `{"country": "NO"}` | `{"city": "Oslo", "zip": "0150", "country": "NO"}` |
+| `{"city": "Oslo", "zip": "0150"}` | `SET address = {}` | Unchanged |
+| `{"city": "Oslo", "zip": "0150"}` | `UNSET address.zip` | `{"city": "Oslo"}` |
+| `{"city": "Oslo", "zip": "0150"}` | `UNSET address`, then `SET address = :a` with `{"city": "Bergen"}` (inside one transaction) | `{"city": "Bergen"}` |
+
+```sql
+INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
+
+UPDATE orders SET status = :status WHERE _id = :id AND coalesce(status, :none) != :status
+
+UPDATE orders UNSET discountCode, pricing.discount WHERE _id = :id
 ```
 
-### Solution: Use DISTINCT Sparingly
-
-```dart
-// ✅ BETTER: Limit DISTINCT scope
-final result = await ditto.store.execute(
-  '''
-  SELECT DISTINCT customerId FROM orders
-  WHERE createdAt >= :recentDate
-  LIMIT 100
-  '''
-  arguments: {'recentDate': recentTimestamp}
-);
-```
-
-### Memory Impact
-
-| Result Set Size | DISTINCT Overhead |
-|----------------|-------------------|
-| < 1,000 unique values | ✅ Negligible |
-| 1,000 - 10,000 | ⚠️ Moderate (monitor) |
-| > 10,000 | ❌ High (avoid if possible) |
-
-### Alternatives to DISTINCT
-
-**Option 1: Client-Side Deduplication**:
-```dart
-final result = await ditto.store.execute('SELECT customerId FROM orders');
-final uniqueIds = result.items.map((item) => item.value['customerId']).toSet();
-```
-
-**Option 2: Normalized Data Model**:
-```dart
-// Separate collection for unique customers
-'SELECT * FROM customers'
-```
-
-- `../SKILL.md` Pattern 11: DISTINCT Memory Impact
-- `../../query-sync/reference/query-optimization.md`
+An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and fires observers. Skip such writes with a `WHERE` condition (with `coalesce` so missing or `null` values stay eligible) or use `DO UPDATE_LOCAL_DIFF`.
 
 ---
 
-## Pattern 9: Large OFFSET Performance
+## Logging Details
 
-**Priority**: MEDIUM
+**Guide**: [Logging](../../../../guides/best-practices/ditto.md#logging)
 
-**Problem**: Large OFFSET values force Ditto to scan and discard many documents, causing performance degradation.
+| `LogLevel` | Typical use |
+|---|---|
+| `error` | Failures that need attention |
+| `warning` | Unexpected situations Ditto handled (recommended for production) |
+| `info` | High-level lifecycle events (default) |
+| `debug` | Detailed diagnostics (recommended while debugging) |
+| `verbose` | Very detailed tracing; can slow down replication |
 
-**Detection**:
-```dart
-// ❌ BAD: Large OFFSET (scans 10,000 documents)
-final result = await ditto.store.execute(
-  'SELECT * FROM orders ORDER BY createdAt DESC LIMIT 20 OFFSET 10000'
-);
-```
-
-### Solution: Cursor-Based Pagination
-
-```dart
-// ✅ GOOD: Cursor-based pagination
-var lastTimestamp = DateTime.now().toIso8601String();
-
-// First page
-var result = await ditto.store.execute(
-  '''
-  SELECT * FROM orders
-  WHERE createdAt < :cursor
-  ORDER BY createdAt DESC
-  LIMIT 20
-  '''
-  arguments: {'cursor': lastTimestamp}
-);
-
-// Next page (use last item's timestamp as cursor)
-if (result.items.isNotEmpty) {
-  lastTimestamp = result.items.last.value['createdAt'];
-  result = await ditto.store.execute(
-    '''
-    SELECT * FROM orders
-    WHERE createdAt < :cursor
-    ORDER BY createdAt DESC
-    LIMIT 20
-    '''
-    arguments: {'cursor': lastTimestamp}
-  );
-}
-```
-
-### Performance Comparison
-
-| Pagination Method | Performance | Memory |
-|-------------------|-------------|--------|
-| OFFSET 10000 | ❌ Scans 10,000 rows | ❌ High |
-| Cursor-based | ✅ Direct seek | ✅ Constant |
-
-- `../SKILL.md` Pattern 13: Large OFFSET Performance
-- `../../query-sync/reference/query-optimization.md` Pagination Patterns
+- `DittoLogger` members throw until the SDK is initialized; call `await Ditto.init()` before configuring logging, then `Ditto.open`.
+- `isEnabled` and `minimumLogLevel` control console and callback output, not the on-disk logs.
+- `customLogCallback` receives every event that passes `minimumLogLevel`; keep it fast. `ditto.close()` resets it to `null`.
+- `DittoLogger.isDevtoolsLoggingEnabled = true` also sends Ditto logs to Flutter DevTools.
+- On-disk logs (debug level and above) are kept in the persistence directory of the most recently created `Ditto` instance, up to 15 MB with a maximum age of 15 days by default. They rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`); leave them at their defaults unless Ditto support advises otherwise.
+- Retrieve on-disk logs from the Ditto Portal device dashboard or with `DittoLogger.exportLogs(path)` (gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count).
+- Support bundles (SDK 5.1+) requested through the Ditto Portal include `config_snapshot.json` with the effective configuration and SDK version.
 
 ---
 
-## Pattern 10: Operator Performance in Observers
+## System Virtual Collections
 
-**Priority**: MEDIUM
+**Guide**: [System Virtual Collections](../../../../guides/best-practices/ditto.md#system-virtual-collections), [Request Diagnostics](../../../../guides/best-practices/ditto.md#request-diagnostics)
 
-**Problem**: Complex DQL operators in observer queries can cause performance issues on frequent updates.
+Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` or `system:data_sync_info` (such observers fire every 500 ms regardless of whether anything changed).
 
-### Expensive Operators
+| Collection | Purpose |
+|---|---|
+| `system:system_info` | Key/value rows: SDK version, database ID, storage usage, subscriptions, log settings, non-default parameters |
+| `system:indexes` | Indexes on this device |
+| `system:data_sync_info` | One row per sync connection |
+| `system:active_requests` | DQL requests executing now |
+| `system:request_history` | Recently completed requests matching the history qualifiers (in memory) |
+| `system:shared_statements` | Prepared-statement cache with execution statistics |
+| `system:metrics` | SDK metrics; disabled by default |
 
-**Type Checking** (SDK 4.x+):
-```dart
-// ⚠️ EXPENSIVE: Type checking on every update
-'SELECT * FROM orders WHERE is_number(priority) AND priority > 5'
+```sql
+SELECT key, value FROM system:system_info WHERE namespace = 'logs'
+
+SELECT key, value FROM system:system_info WHERE key LIKE 'non_default_system_parameter%'
+
+SELECT _id, text, state, times FROM system:active_requests
 ```
-
-**String Operations**:
-```dart
-// ⚠️ EXPENSIVE: LIKE with leading wildcard
-'SELECT * FROM users WHERE email LIKE :pattern'  // '%@example.com'
-```
-
-**JSON Path Traversal**:
-```dart
-// ⚠️ EXPENSIVE: Deep nested access
-'SELECT * FROM orders WHERE items.product_123.options.color = :color'
-```
-
-### Optimization Strategies
-
-**Option 1: Pre-validate Data**:
-```dart
-// ✅ Validate at insert time, remove type checks from queries
-if (orderData['priority'] is! int) {
-  throw ArgumentError('priority must be integer');
-}
-```
-
-**Option 2: Denormalize for Query Performance**:
-```dart
-// ✅ Store commonly queried fields at top level
-{
-  "_id": "order_123"
-  "email": "user@example.com",           // Top-level (fast)
-  "emailDomain": "example.com",          // Pre-computed (fast)
-  "customerDetails": {                    // Nested (slow to query)
-    "email": "user@example.com"
-  }
-}
-```
-
-**Option 3: Index Design** (Future SDK feature):
-- Currently Ditto doesn't support custom indexes
-- Design schema to optimize common query patterns
-
-- `../SKILL.md` Pattern 14: Operator Performance
-- `../../data-modeling/SKILL.md` Pattern 2: Denormalization
-- `../../query-sync/reference/query-optimization.md`
 
 ---
 
-## Further Reading
+## System Parameters for Diagnostics
 
-- **SKILL.md**: Critical patterns (Tier 1)
-- **Main Guide**: `.claude/guides/best-practices/ditto.md`
-- **Related Skills**:
-  - `query-sync/SKILL.md`: Query optimization, subscription scope
-  - `data-modeling/SKILL.md`: Denormalization for query performance
+**Guide**: [System Parameters Reference](../../../../guides/best-practices/ditto.md#system-parameters-reference)
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `DQL_STRICT_MODE` | `false` | When `true`, the 5.1.0 planner uses no index scans |
+| `DQL_SLOW_REQUEST_WARN_SECONDS` (SDK 5.1+) | `60` | Slow-request warning threshold; `0` disables |
+| `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` | Request timeout; `0` disables |
+| `DQL_REQUEST_HISTORY_SIZE` | `4096` | Entries kept in `system:request_history` |
+| `DQL_DEFAULT_DIRECTIVES` | `{}` | Default directives for every statement |
+| `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables `system:metrics` |
+
+```sql
+SHOW ALL LIKE 'dql_slow%'
+
+ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
+```
+
+Settings are not persisted; apply them after every `Ditto.open`, before `ditto.sync.start()` ([Applying System Parameters](../../../../guides/best-practices/ditto.md#applying-system-parameters)).

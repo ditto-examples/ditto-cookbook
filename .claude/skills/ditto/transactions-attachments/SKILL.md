@@ -1,49 +1,49 @@
 ---
 name: transactions-attachments
 description: |
-  Validates Ditto transaction usage and attachment operations.
+  Validates Ditto SDK 5.1 transaction usage and attachment handling.
 
   CRITICAL ISSUES PREVENTED:
-  - Flutter transaction close() management (must await before closing Ditto)
-  - Nested transaction deadlocks (all platforms)
-  - Attachment auto-sync assumptions (attachments don't sync automatically)
-  - Attachment immutability violations (cannot modify existing attachments)
-  - Large binary data stored inline (should use ATTACHMENT type)
-  - Missing attachment metadata (filename, size, type)
+  - Calling ditto.store.execute inside a transaction (throws in Flutter, can deadlock in JavaScript, Swift, and Kotlin)
+  - Nested read-write transactions (deadlock on every platform; Flutter has no guard)
+  - Network calls, dialogs, or timers inside a transaction (block all other writes)
+  - Closing Ditto while transactions are still running (close() does not wait)
+  - Assuming subscriptions download attachment blobs (only tokens sync)
+  - Eager or duplicate attachment fetches, fetchers that are never stopped, and fetches without a timeout
+  - Trying to modify an attachment in place (attachments are immutable)
+  - Binary data stored inside documents instead of as attachments
 
   TRIGGERS:
-  - Using ditto.store.transaction()
-  - Closing Ditto instance in Flutter (must track pending transactions)
-  - Implementing atomic multi-step operations
-  - Storing or fetching attachments (newAttachment(), fetchAttachment())
-  - Handling large binary files (photos, documents, videos)
-  - Creating or replacing attachment metadata
+  - Using ditto.store.transaction(), Transaction, tx.execute, TransactionCompletionAction
+  - Implementing atomic multi-document changes or read-check-write logic
+  - Shutting down a Ditto instance that may have transactions in flight
+  - Calling newAttachment(), fetchAttachment(), AttachmentFetcher, AttachmentMetadata
+  - Declaring ATTACHMENT fields in INSERT or UPDATE statements
+  - Displaying photos, PDFs, signatures, or other binary files from Ditto documents
 
-  PLATFORMS: Flutter (Dart - limited transaction support), JavaScript, Swift, Kotlin
+  PLATFORMS: Flutter (primary), JavaScript, Swift, Kotlin
 ---
 
-# Ditto Transactions and Attachments
+# Ditto Transactions and Attachments (SDK 5.1)
 
 ## Table of Contents
 
 - [Purpose](#purpose)
 - [When This Skill Applies](#when-this-skill-applies)
-- [Platform Detection](#platform-detection)
-- [SDK Version Compatibility](#sdk-version-compatibility)
-- [Common Workflows](#common-workflows)
-- [Critical Patterns](#critical-patterns)
-  - [1. Flutter Transaction Close Management](#1-flutter-transaction-close-management-priority-critical---flutter-only)
-  - [2. Nested Read-Write Transaction Deadlock](#2-nested-read-write-transaction-deadlock-priority-critical---all-platforms)
-  - [3. Attachment Auto-Sync Assumption](#3-attachment-auto-sync-assumption-priority-critical)
-  - [4. Attachment Immutability Violation](#4-attachment-immutability-violation-priority-high)
-  - [5. Missing Attachment Metadata](#5-missing-attachment-metadata-priority-high)
-  - [6. Inline Binary Data Storage](#6-inline-binary-data-storage-priority-high)
-  - [7. Attachment Fetcher Cancellation](#7-attachment-fetcher-cancellation-priority-high)
-  - [8. Thumbnail-First Pattern](#8-thumbnail-first-pattern-for-large-files-priority-medium)
-  - [9. Transaction Duration Violations](#9-transaction-duration-violations-priority-medium---non-flutter)
-  - [10. Attachment Fetch Timeout Handling](#10-attachment-fetch-timeout-handling-priority-medium)
-  - [11. Attachment Availability Constraints](#11-attachment-availability-constraints-priority-medium)
-  - [12. Garbage Collection Awareness](#12-garbage-collection-awareness-priority-low)
+- [Key Facts](#key-facts)
+- [Transaction Patterns](#transaction-patterns)
+  - [1. Use tx.execute Only, and Never Nest](#1-use-txexecute-only-and-never-nest-priority-critical)
+  - [2. Keep Transactions Short](#2-keep-transactions-short-priority-critical)
+  - [3. End a Transaction Deliberately](#3-end-a-transaction-deliberately-priority-high)
+  - [4. Await Pending Transactions Before close()](#4-await-pending-transactions-before-close-priority-high)
+  - [5. Keep Transacted Documents in One Subscription Scope](#5-keep-transacted-documents-in-one-subscription-scope-priority-medium)
+- [Attachment Patterns](#attachment-patterns)
+  - [6. Create Attachments and Declare ATTACHMENT Fields](#6-create-attachments-and-declare-attachment-fields-priority-critical)
+  - [7. Fetch Explicitly, Lazily, and Cancellably](#7-fetch-explicitly-lazily-and-cancellably-priority-critical)
+  - [8. Implement Your Own Timeout](#8-implement-your-own-timeout-priority-high)
+  - [9. Replace, Never Modify](#9-replace-never-modify-priority-high)
+  - [10. Thumbnail Pattern](#10-thumbnail-pattern-priority-medium)
+  - [11. Plan for Availability and Size](#11-plan-for-availability-and-size-priority-medium)
 - [Quick Reference Checklist](#quick-reference-checklist)
 - [See Also](#see-also)
 
@@ -51,529 +51,428 @@ description: |
 
 ## Purpose
 
-This Skill ensures correct usage of Ditto's transaction API and attachment system across platforms. It prevents critical platform-specific bugs like Flutter transaction close() management and nested transaction deadlocks, while enforcing best practices for binary data handling.
-
-**Critical issues prevented**:
-- Flutter transaction close() management (must await all transactions before closing Ditto instance)
-- Nested transaction deadlocks (all platforms)
-- Attachment auto-sync assumptions (attachments don't sync automatically)
-- Attachment immutability violations (trying to modify existing attachments)
-- Large binary data stored inline (should use ATTACHMENT type)
-- Missing attachment metadata (filename, size, type)
+This Skill applies the [Transactions](../../../guides/best-practices/ditto.md#transactions) and [Attachments](../../../guides/best-practices/ditto.md#attachments) sections of the Ditto best-practices guide. The guide is the source of truth; this Skill extracts the actionable patterns. Examples are Flutter (`ditto_live` 5.1.0) unless stated otherwise. For JavaScript, Swift, and Kotlin signatures, see [reference/platform-specific.md](reference/platform-specific.md).
 
 ## When This Skill Applies
 
-Use this Skill when:
-- Using `ditto.store.transaction()` (all platforms)
-- Closing Ditto instance in Flutter (must track and await pending transactions)
-- Implementing atomic multi-step operations
-- Storing or fetching attachments (`newAttachment()`, `fetchAttachment()`)
-- Handling large binary files (photos, documents, videos, media)
-- Creating or updating attachment metadata
-- Replacing existing attachments
-- Implementing thumbnail patterns for large files
+- Code calls `ditto.store.transaction(...)` or uses a `Transaction` object
+- Several documents must change together, or a write depends on a read
+- App shutdown code calls `ditto.close()`
+- Code calls `newAttachment` or `fetchAttachment`, or declares `ATTACHMENT` fields
+- UI shows images or files that are stored in Ditto
 
-## Platform Detection
+## Key Facts
 
-**Automatic Detection**:
-1. **Flutter/Dart**: `*.dart` files with `import 'package:ditto/ditto.dart'` → "Transaction API available with close() limitation"
-2. **JavaScript**: `*.js`, `*.ts` files with `import { Ditto } from '@dittolive/ditto'` → Full transaction support
-3. **Swift**: `*.swift` files with `import DittoSwift` → Full transaction support
-4. **Kotlin**: `*.kt` files with `import live.ditto.*` → Full transaction support
-
-**Platform-Specific Warnings**:
-- **Flutter**: Transaction API available, but must manually await all transactions before calling `ditto.close()`
-- **All platforms**: Transaction rules, deadlock prevention, read-only mode
-- **All platforms**: Attachment patterns (lazy-loading, metadata, immutability)
+| Topic | Flutter 5.1.0 behavior |
+|---|---|
+| Transaction API | `ditto.store.transaction((tx) async {...}, isReadOnly: false, hint: 'name')` returns `Future<T>` |
+| Inside the callback | Use only `tx.execute(...)`. `ditto.store.execute(...)` throws a `DittoException` |
+| Commit / rollback | Throwing rolls back and rethrows; returning `TransactionCompletionAction.rollback` rolls back; anything else commits |
+| Concurrency | One read-write transaction at a time; read-only transactions run concurrently |
+| `ditto.close()` | Does not wait for in-flight transactions |
+| Create an attachment | `await ditto.store.newAttachment(pathOrBytes, AttachmentMetadata({...}))` |
+| Store it | `INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)` |
+| Fetch it | `ditto.store.fetchAttachment(token, (event) {...})` returns an `AttachmentFetcher`; cancel with `stop()` |
+| Sync | Subscriptions sync the token only; blobs move only when a device fetches them |
 
 ---
 
-## SDK Version Compatibility
+## Transaction Patterns
 
-This section consolidates all version-specific information referenced throughout this Skill.
+A transaction runs several DQL statements against the local store atomically. It does not lock anything on other peers. A single `INSERT`, `UPDATE`, or `DELETE` is already atomic, so do not wrap it in a transaction. Guide: [Using store.transaction](../../../guides/best-practices/ditto.md#using-storetransaction).
 
-### Transactions
+### 1. Use tx.execute Only, and Never Nest (Priority: CRITICAL)
 
-**Flutter SDK**:
-- Transaction API available in all versions
-- **Critical limitation**: Must manually track and await all pending transactions before calling `ditto.close()`
-- No automatic transaction tracking or cleanup
-- Transaction timeouts not enforced (unlike non-Flutter SDKs)
-
-**Non-Flutter SDKs**:
-- Full transaction support with automatic timeout enforcement
-- Transaction duration limit: Keep transactions short (avoid long-running operations)
-- Nested read-write transactions cause deadlocks (all versions)
-
-### Attachments
-
-**All Platforms and SDK Versions**:
-- Attachment operations available: `newAttachment()`, `fetchAttachment()`
-- Attachments do NOT sync automatically (must be explicitly fetched)
-- Attachments are immutable (cannot modify existing attachments)
-- Lazy-loading pattern required for large files
-- Metadata storage (filename, size, mimeType) recommended
-- Thumbnail-first pattern for large files (all versions)
-- Garbage collection after 24 hours of no references (all versions)
-
-**Throughout this Skill**: Attachment patterns are universal. Transaction behavior differs between Flutter (manual tracking) and non-Flutter (automatic timeout).
-
----
-
-## Common Workflows
-
-### Workflow 1: Using Transactions Safely (Flutter)
-
-**Flutter-specific** - Manual transaction tracking required:
-
-```
-Transaction Progress (Flutter):
-- [ ] Step 1: Create list to track pending transactions
-- [ ] Step 2: Store Future<void> for each transaction
-- [ ] Step 3: Perform atomic operations inside transaction
-- [ ] Step 4: Await all pending transactions before ditto.close()
-```
+**Problem**: Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one deadlocks on every platform, because only one read-write transaction runs at a time; Flutter has no guard against it. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences).
 
 ```dart
-class MyDittoService {
-  final List<Future<void>> _pendingTransactions = [];
-
-  Future<void> updateOrderAtomically(String orderId) async {
-    final txFuture = ditto.store.transaction((tx) async {
-      // Atomic operations
-      await tx.execute('UPDATE orders SET status = :status WHERE _id = :id'
-        arguments: {'status': 'shipped', 'id': orderId});
-      await tx.execute('UPDATE inventory SET stock = stock - 1 WHERE productId = :pid'
-        arguments: {'pid': 'prod_123'});
-    });
-
-    _pendingTransactions.add(txFuture);
-    await txFuture;
-    _pendingTransactions.remove(txFuture);
-  }
-
-  Future<void> cleanup() async {
-    await Future.wait(_pendingTransactions);  // CRITICAL
-    await ditto.close();
-  }
-}
-```
-
----
-
-### Workflow 2: Storing and Fetching Attachments
-
-```
-Attachment Workflow:
-- [ ] Step 1: Create attachment from file/data
-- [ ] Step 2: Store attachment metadata in document
-- [ ] Step 3: Create document with attachment token
-- [ ] Step 4: Fetch attachment when needed (lazy-loading)
-- [ ] Step 5: Handle fetch completion/errors
-```
-
-```dart
-// Step 1-3: Store attachment
-final file = File('/path/to/photo.jpg');
-final attachment = await ditto.store.newAttachment(
-  file.path
-  metadata: {'filename': 'photo.jpg', 'mimeType': 'image/jpeg'}
-);
-
-await ditto.store.execute(
-  'INSERT INTO photos DOCUMENTS (:doc)'
-  arguments: {
-    'doc': {
-      '_id': 'photo_123'
-      'image': attachment.token,  // Attachment token
-      'filename': 'photo.jpg'
-      'size': file.lengthSync()
-    }
-  }
-);
-
-// Step 4-5: Fetch attachment (lazy-loading)
-final fetcher = ditto.store.fetchAttachment(
-  attachmentToken
-  onFetchEvent: (event) {
-    if (event is DittoAttachmentFetchEventCompleted) {
-      // Attachment ready at event.attachment.path
-    }
-  }
-);
-```
-
----
-
-## Critical Patterns
-
-### 1. Flutter Transaction Close Management (Priority: CRITICAL - Flutter Only)
-
-**Platform**: Flutter/Dart only
-
-**Problem**: The Flutter SDK supports `ditto.store.transaction()` but does not wait for pending transactions to complete when closing the Ditto instance. You must manually track and await all transactions before calling `ditto.close()`, or transactions may be incomplete.
-
-**Detection**:
-```dart
-// RED FLAGS (Flutter only)
-// Starting transaction without tracking
-unawaited(ditto.store.transaction((tx) async {
-  await tx.execute('UPDATE orders SET status = :status ...', ...);
-}));
-
-// Closing Ditto immediately without awaiting pending transactions
-await ditto.close(); // WRONG! Transaction may be incomplete
-```
-
-**✅ DO (Flutter - Track Pending Transactions)**:
-```dart
-// Track pending transactions with DittoManager
-class DittoManager {
-  final Ditto ditto;
-  final Set<Future<void>> _pendingTransactions = {};
-
-  DittoManager(this.ditto);
-
-  Future<void> executeTransaction(
-    Future<void> Function(DittoTransaction) block, {
-    String? hint
-    bool isReadOnly = false
-  }) async {
-    final transactionFuture = ditto.store.transaction(
-      hint: hint
-      isReadOnly: isReadOnly
-      block
+// ✅ GOOD: Close an order and create its invoice atomically, using only tx.
+Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId) async {
+  await ditto.store.transaction(hint: 'closeOrderWithInvoice', (tx) async {
+    final result = await tx.execute(
+      'SELECT * FROM orders WHERE _id = :id',
+      arguments: {'id': orderId},
     );
-
-    _pendingTransactions.add(transactionFuture);
-
-    try {
-      await transactionFuture;
-    } finally {
-      _pendingTransactions.remove(transactionFuture);
+    if (result.items.isEmpty) {
+      throw StateError('Order $orderId not found'); // Throwing rolls back.
     }
-  }
-
-  Future<void> close() async {
-    // ✅ CRITICAL: Wait for all transactions before closing
-    await Future.wait(_pendingTransactions);
-    await ditto.close();
-  }
-}
-
-// Usage
-final dittoManager = DittoManager(ditto);
-
-await dittoManager.executeTransaction(
-  (tx) async {
-    final orderResult = await tx.execute(
-      'SELECT * FROM orders WHERE _id = :orderId'
-      arguments: {'orderId': orderId}
-    );
-
-    if (orderResult.items.isEmpty) {
-      throw Exception('Order not found');
-    }
-
-    final order = orderResult.items.first.value;
-
+    final order = result.items.first.value;
     await tx.execute(
-      'UPDATE orders SET status = :status WHERE _id = :orderId'
-      arguments: {'orderId': orderId, 'status': 'shipped'}
+      'INSERT INTO invoices DOCUMENTS (:invoice)',
+      arguments: {
+        'invoice': {
+          '_id': invoiceId,
+          'orderId': orderId,
+          'total': order['total'],
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
+        },
+      },
     );
-
     await tx.execute(
-      'UPDATE inventory APPLY quantity PN_INCREMENT BY -1.0 WHERE _id = :itemId'
-      arguments: {'itemId': order['itemId']}
+      'UPDATE orders SET status = :status, invoiceId = :invoiceId WHERE _id = :id',
+      arguments: {'id': orderId, 'status': 'closed', 'invoiceId': invoiceId},
     );
-  }
-  hint: 'process-order'
-);
-
-// Safe close - awaits all transactions
-await dittoManager.close();
-```
-
-**❌ DON'T (Flutter)**:
-```dart
-// Close without awaiting transactions
-Future<void> cleanup() async {
-  // Start transaction without tracking
-  unawaited(ditto.store.transaction((tx) async {
-    await tx.execute('UPDATE ...');
-  }));
-
-  // Close immediately - transaction may be incomplete!
-  await ditto.close(); // WRONG!
-}
-
-// Use transaction without tracking in production
-await ditto.store.transaction((tx) async {
-  await tx.execute('UPDATE ...');
-});
-// If app closes before completion, transaction may be incomplete
-```
-
-**Why**: Flutter SDK supports transactions but does not wait for them to complete when closing. Closing Ditto without awaiting pending transactions can result in incomplete operations, data loss, or corruption. You must manually track pending transactions and await them before closing.
-
-**See**: [examples/flutter-transaction-close-management.dart](examples/flutter-transaction-close-management.dart)
-
----
-
-### 2. Nested Read-Write Transaction Deadlock (Priority: CRITICAL - All Platforms)
-
-**Platform**: All platforms (Flutter, JavaScript, Swift, Kotlin)
-
-**Problem**: Nesting read-write transactions creates permanent deadlock where inner transaction waits for outer, outer waits for inner. Only one read-write transaction executes at a time.
-
-**Detection**:
-```javascript
-// RED FLAGS (all platforms)
-await ditto.store.transaction(async (outerTx) => {
-  await outerTx.execute('UPDATE orders SET status = $args.status ...', ...);
-
-  // DEADLOCK: Nested transaction waits for outer
-  await ditto.store.transaction(async (innerTx) => {
-    await innerTx.execute('UPDATE inventory ...', ...);
   });
-  // Outer transaction waits for inner, inner waits for outer = deadlock
-});
-```
-
-**✅ DO (All Platforms)**:
-```javascript
-// Single transaction for related operations
-await ditto.store.transaction({ hint: 'process-order' }, async (tx) => {
-  // All statements see the same data snapshot
-  const orderResult = await tx.execute(
-    'SELECT * FROM orders WHERE _id = $args.orderId'
-    { args: { orderId: 'order_123' } }
-  );
-
-  if (orderResult.items.length === 0) {
-    throw new Error('Order not found');
-  }
-
-  const order = orderResult.items[0].value;
-
-  // Update order status
-  await tx.execute(
-    'UPDATE orders SET status = $args.status WHERE _id = $args.orderId'
-    { args: { orderId: 'order_123', status: 'shipped' } }
-  );
-
-  // Decrement inventory
-  await tx.execute(
-    'UPDATE inventory APPLY quantity PN_INCREMENT BY -1.0 WHERE _id = $args.itemId'
-    { args: { itemId: order.itemId } }
-  );
-
-  return; // Automatic commit
-});
-
-// Separate transactions if independence needed
-await ditto.store.transaction({ hint: 'update-order' }, async (tx) => {
-  await tx.execute('UPDATE orders ...', ...);
-});
-
-await ditto.store.transaction({ hint: 'update-inventory' }, async (tx) => {
-  await tx.execute('UPDATE inventory ...', ...);
-});
-```
-
-**❌ DON'T (All Platforms)**:
-```javascript
-// Nested read-write transactions (DEADLOCK!)
-await ditto.store.transaction(async (outerTx) => {
-  await ditto.store.transaction(async (innerTx) => {
-    // Permanent deadlock
-  });
-});
-
-// Using ditto.store instead of tx inside transaction
-await ditto.store.transaction(async (tx) => {
-  await ditto.store.execute('UPDATE orders ...', ...); // WRONG - bypasses transaction
-  await tx.execute('UPDATE inventory ...', ...);
-});
-
-// Long-running transactions blocking others
-await ditto.store.transaction(async (tx) => {
-  await tx.execute('UPDATE orders ...', ...);
-  await heavyComputation(); // Blocks other read-write transactions!
-  await tx.execute('UPDATE inventory ...', ...);
-});
-```
-
-**Why**: Only one read-write transaction executes at a time in Ditto. Nesting creates circular dependency: outer waits for inner to complete, inner waits for outer's lock to release. Keep transactions fast, don't nest, use transaction object (`tx`) not `ditto.store`.
-
-**Transaction Duration Warnings**: Ditto logs warnings after 10 seconds, escalating every 5 seconds.
-
-**See**: [examples/transaction-good.js](examples/transaction-good.js), [examples/transaction-bad.js](examples/transaction-bad.js)
-
----
-
-### 3. Attachment Auto-Sync Assumption (Priority: CRITICAL)
-
-**Platform**: All platforms
-
-**Problem**: Attachments do NOT sync automatically with subscriptions. Explicit `fetchAttachment()` calls are required after querying documents.
-
-**How Attachments Work**:
-- Documents contain attachment tokens (references)
-- Tokens sync with subscriptions
-- **Blob data does NOT sync automatically**
-- Must explicitly call `fetchAttachment(token)` to get blob
-
-**Detection**:
-```dart
-// RED FLAGS
-final result = await ditto.store.execute('SELECT * FROM products WHERE _id = :id'
-  arguments: {'id': productId});
-
-final product = result.items.first.value;
-final attachmentToken = product['imageAttachment'];
-
-// Attempting to use token directly
-displayImage(attachmentToken); // WRONG - token is not image data!
-
-// Assuming subscription fetches blobs
-final subscription = ditto.sync.registerSubscription('SELECT * FROM products');
-// Only tokens sync, not blob data
-```
-
-**✅ DO**:
-```dart
-// Query document to get attachment token
-final result = await ditto.store.execute(
-  'SELECT * FROM products WHERE _id = :id'
-  arguments: {'id': productId}
-);
-
-if (result.items.isNotEmpty) {
-  final product = result.items.first.value;
-  final attachmentToken = product['imageAttachment'];
-  final metadata = product['imageMetadata'];
-
-  if (attachmentToken != null) {
-    try {
-      // Explicitly fetch attachment blob
-      final attachment = await ditto.store.fetchAttachment(attachmentToken);
-      displayImage(attachment.data, metadata);
-    } catch (e) {
-      // Handle fetch failure (network error, missing blob, etc.)
-      showError('Failed to load image: $e');
-    }
-  }
 }
-
-// Alternative: Stream-based fetching with progress
-final fetcher = ditto.store.fetchAttachment(attachmentToken, (event) {
-  if (event is AttachmentFetchEventProgress) {
-    updateProgress(event.downloadedBytes, event.totalBytes);
-  } else if (event is AttachmentFetchEventCompleted) {
-    displayImage(event.attachment.data);
-  } else if (event is AttachmentFetchEventDeleted) {
-    showError('Attachment deleted during fetch');
-  }
-});
 ```
 
 **❌ DON'T**:
+- Call `ditto.store.execute(...)` inside the callback
+- Call `ditto.store.transaction(...)` (read-write) inside another read-write transaction, directly or through a helper method
+- Store the `Transaction` object or use it after the callback returns (Flutter throws a `DittoException`)
+
+**See**: [examples/transaction-good.dart](examples/transaction-good.dart), [examples/transaction-bad.dart](examples/transaction-bad.dart), [examples/transaction-good.js](examples/transaction-good.js), [examples/transaction-bad.js](examples/transaction-bad.js)
+
+---
+
+### 2. Keep Transactions Short (Priority: CRITICAL)
+
+**Problem**: While a read-write transaction runs, every other read-write transaction waits, and so does a plain `store.execute` write issued meanwhile. Network calls, dialogs, user input, or timers inside the callback block all writes. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Concurrency and Duration](../../../guides/best-practices/ditto.md#concurrency-and-duration).
+
 ```dart
-// Assume subscription fetches blobs automatically
-final subscription = ditto.sync.registerSubscription('SELECT * FROM products');
-// Only tokens sync!
-
-// Display token directly
-final token = product['imageAttachment'];
-displayImage(token); // Token is not image data
-
-// No error handling for fetch failures
-final attachment = await ditto.store.fetchAttachment(token);
-displayImage(attachment.data); // May throw if network fails
+// ✅ GOOD: Do the I/O first, then record the outcome in one short transaction.
+Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() chargeCard) async {
+  await chargeCard(); // Outside the transaction.
+  await ditto.store.transaction(hint: 'recordPayment', (tx) async {
+    await tx.execute(
+      'UPDATE orders SET status = :status, paidAt = :paidAt WHERE _id = :id',
+      arguments: {
+        'id': orderId,
+        'status': 'paid',
+        'paidAt': DateTime.now().toUtc().toIso8601String(),
+      },
+    );
+    await tx.execute(
+      'INSERT INTO payments DOCUMENTS (:payment)',
+      arguments: {
+        'payment': {'_id': 'payment-$orderId', 'orderId': orderId},
+      },
+    );
+  });
+}
 ```
 
-**Why**: Attachments use separate blob sync protocol from document sync. Automatic syncing would waste bandwidth for large files users may not need. Lazy-loading gives apps control over when to fetch blobs.
+**✅ DO**:
+- Read, decide, write, return
+- Prepare network responses, files, user input, and attachments (`newAttachment`) **before** the transaction
+- Give every transaction a `hint`: after 10 seconds Ditto logs warnings that include it, every 5 seconds (thresholds: system parameters `TRANSACTION_DURATION_BEFORE_LOGGING_MS` and `TRANSACTION_TRACE_INTERVAL_MS`)
+- Use `isReadOnly: true` for transactions that only read; a mutating statement inside one throws
 
-**Attachment Architecture**:
-- **Metadata**: Stored with document (filename, size, type, description)
-- **Blob Data**: Stored externally, fetched on demand
-- **Tokens**: References to blobs, sync with documents
-
-**See**: [examples/attachment-lazy-loading-good.dart](examples/attachment-lazy-loading-good.dart)
-
----
-
-
-
-This section contains only the most critical (Tier 1) patterns that prevent data loss, deadlocks, and synchronization issues. For additional patterns, see:
-- **[reference/platform-specific.md](reference/platform-specific.md)**: HIGH, MEDIUM, and LOW priority patterns for attachment immutability, metadata handling, binary data storage, fetcher management, thumbnails, transaction duration, timeouts, availability, and garbage collection
+**❌ DON'T**:
+- `await` network calls, dialogs, or timers inside the callback
+- Read `commitID` inside the transaction to track sync status; it is only assigned after the commit
 
 ---
 
-### Transactions (Non-Flutter Only)
-- [ ] Never nest read-write transactions (causes deadlock)
-- [ ] Use transaction object (`tx`) not `ditto.store` inside transaction
-- [ ] Keep transaction blocks fast (< 100ms ideal, < 1s acceptable)
-- [ ] Move heavy computation outside transaction blocks
-- [ ] Use read-only transactions when mutation not needed
-- [ ] Provide descriptive hint parameters for debugging
+### 3. End a Transaction Deliberately (Priority: HIGH)
 
-### Flutter Alternatives (Flutter Only)
-- [ ] Use sequential DQL statements (no transaction API)
-- [ ] Handle errors without automatic rollback
-- [ ] Use status flags to track multi-step operations
-- [ ] Consider logical deletion for safer data management
+| Callback outcome | Result |
+|---|---|
+| Returns `TransactionCompletionAction.commit` | Committed; `transaction()` returns `TransactionCompletionAction.commit` |
+| Returns `TransactionCompletionAction.rollback` | Rolled back; no changes are applied |
+| Returns any other value (including nothing) | Committed; `transaction()` returns that value |
+| Throws | Rolled back; the error is rethrown to the caller |
+| A statement fails but the callback catches the error | The transaction **continues**; the remaining changes are committed unless you roll back |
 
-### Attachment Operations (All Platforms)
-- [ ] Call `fetchAttachment()` explicitly (attachments don't auto-sync)
-- [ ] Store metadata with attachments (filename, size, type)
-- [ ] Create new attachment for updates (attachments immutable)
-- [ ] Replace token in document using UPDATE
-- [ ] Use ATTACHMENT type for binary data > 250 KB
-- [ ] Keep fetcher references until completion or cancellation
-- [ ] Implement timeout wrappers for fetch operations
+```dart
+// ✅ GOOD: Explicit rollback without throwing.
+Future<bool> shipOrder(Ditto ditto, String orderId) async {
+  final action = await ditto.store.transaction(hint: 'shipOrder', (tx) async {
+    final result = await tx.execute(
+      'SELECT * FROM orders WHERE _id = :id AND status = :status',
+      arguments: {'id': orderId, 'status': 'paid'},
+    );
+    if (result.items.isEmpty) return TransactionCompletionAction.rollback;
+    await tx.execute(
+      'UPDATE orders SET status = :status WHERE _id = :id',
+      arguments: {'id': orderId, 'status': 'shipped'},
+    );
+    return TransactionCompletionAction.commit;
+  });
+  return action == TransactionCompletionAction.commit;
+}
+```
 
-### Large File Handling (All Platforms)
-- [ ] Use thumbnail-first pattern for photos/videos
-- [ ] Auto-fetch small attachments (< 100 KB)
-- [ ] User-initiated fetch for full resolution
-- [ ] Show attachment availability status in UI
-- [ ] Implement retry logic for failed fetches
+**❌ DON'T**: Catch an error from `tx.execute` and carry on without deciding. If the remaining work must not commit, rethrow or return `TransactionCompletionAction.rollback`.
 
-### Attachment Lifecycle (All Platforms)
-- [ ] Store token in document to prevent GC
-- [ ] Understand 10-minute GC cadence
-- [ ] Delete source files after creating attachments (optional)
-- [ ] Check attachment availability before fetch
-- [ ] Handle fetch failures gracefully (network errors, missing blob)
+---
+
+### 4. Await Pending Transactions Before close() (Priority: HIGH)
+
+**Problem**: `ditto.close()` in Flutter does not wait for in-flight transactions; calls that are still running fail. Track pending transactions and await them before closing. Guide: [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown).
+
+```dart
+// ✅ GOOD: Track in-flight transactions so shutdown can wait for them.
+class TransactionTracker {
+  final _pending = <Future<Object?>>{};
+
+  Future<T> run<T>(Ditto ditto, String hint, Future<T> Function(Transaction tx) work) {
+    final future = ditto.store.transaction(hint: hint, work);
+    _pending.add(future);
+    return future.whenComplete(() => _pending.remove(future));
+  }
+
+  Future<void> closeWhenIdle(Ditto ditto) async {
+    // Errors are reported to the callers of run(); ignore them here.
+    await Future.wait(_pending.map((f) => f.catchError((Object _) => null)));
+    await ditto.close();
+  }
+}
+```
+
+---
+
+### 5. Keep Transacted Documents in One Subscription Scope (Priority: MEDIUM)
+
+Atomicity is guaranteed on the device that commits. Ditto's [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes two limits for replication: a peer whose subscriptions cover only part of a transaction's documents receives only that part, and a relay can forward only what it has. Keep documents that change together in the same subscription scope (for example, both carry the same `storeId`), and give relay devices subscriptions that cover what the devices behind them need. Guide: [Transactions and Sync](../../../guides/best-practices/ditto.md#transactions-and-sync).
+
+---
+
+## Attachment Patterns
+
+An attachment has two parts: the **token** (`{id, len, metadata}`), stored in a document field and synced like other data, and the **blob**, stored outside the document database and transferred only when a device calls `fetchAttachment`. The `id` is a hash of the contents, so identical blobs are stored once. Guide: [Attachment Architecture](../../../guides/best-practices/ditto.md#attachment-architecture).
+
+### 6. Create Attachments and Declare ATTACHMENT Fields (Priority: CRITICAL)
+
+```dart
+// ✅ GOOD: Create the attachment, then insert it with a declared ATTACHMENT field.
+Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
+  // The file is copied into Ditto's blob store.
+  final attachment = await ditto.store.newAttachment(
+    filePath,
+    AttachmentMetadata({'name': 'receipt.jpg', 'mimeType': 'image/jpeg'}), // String values only.
+  );
+  await ditto.store.execute(
+    'INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)',
+    arguments: {
+      'photo': {
+        '_id': photoId,
+        'image': attachment,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      },
+    },
+  );
+}
+```
+
+**✅ DO**:
+- Pass a file path (`String`) or bytes (`Uint8List`) to `newAttachment`; on the web only bytes work (paths throw). Relative paths resolve from the Ditto persistence directory.
+- Declare the field (`COLLECTION photos (image ATTACHMENT)`); the `COLLECTION` keyword is required when you declare types. With the default `DQL_STRICT_MODE = false`, an attachment inserted without the declaration is still stored as an attachment, but strict mode requires the declaration and hides undeclared ATTACHMENT fields from queries ([Strict Mode](../../../guides/best-practices/ditto.md#strict-mode)). Declaring works in both modes.
+- Pass the `Attachment` object inside a parameter; never build tokens by hand
+- Create the attachment **before** starting a transaction that stores it
+
+**❌ DON'T**:
+- Store base64-encoded files in regular fields; they count toward the document size limit and are re-sent with the document
+- Put non-string values into `AttachmentMetadata`
+- Delete the original file before `newAttachment` completes (afterwards, the copy in Ditto's store is what matters)
+
+Guide: [Creating and Inserting Attachments](../../../guides/best-practices/ditto.md#creating-and-inserting-attachments).
+
+---
+
+### 7. Fetch Explicitly, Lazily, and Cancellably (Priority: CRITICAL)
+
+**Problem**: Subscriptions never download blobs; a token is not image data. Fetching every attachment as soon as a document syncs wastes bandwidth and storage. Guide: [Fetching Attachments](../../../guides/best-practices/ditto.md#fetching-attachments).
+
+| Event | Delivered | Contents |
+|---|---|---|
+| `AttachmentFetchEventProgress` | Zero or more times | `downloadedBytes`, `totalBytes` |
+| `AttachmentFetchEventCompleted` | At most once | `attachment` (read bytes with `await attachment.data`) |
+| `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched |
+
+`AttachmentFetcher`: `stop()` cancels an in-flight fetch (not needed after completion); `isStopped`; `attachment` is a `Future<Attachment?>` that never completes after `stop()`, so do not await it once you have stopped the fetcher. `ditto.store.attachmentFetchers` lists active fetchers. Attachments already in the local blob store complete right away, typically without progress events.
+
+```dart
+// ✅ GOOD: One fetcher per token, owned by the code that displays it.
+class PhotoLoader {
+  PhotoLoader(this.ditto);
+
+  final Ditto ditto;
+  AttachmentFetcher? _fetcher;
+
+  void load(Map<String, dynamic> token, void Function(List<int> bytes) onLoaded) {
+    _fetcher?.stop();
+    _fetcher = ditto.store.fetchAttachment(token, (event) async {
+      switch (event) {
+        case AttachmentFetchEventCompleted(:final attachment):
+          onLoaded(await attachment.data);
+        case AttachmentFetchEventDeleted():
+          debugPrint('Attachment was deleted during the fetch');
+        default: // AttachmentFetchEvent is not sealed; progress events land here.
+          break;
+      }
+    });
+  }
+
+  void dispose() => _fetcher?.stop(); // Cancel if the screen goes away first.
+}
+```
+
+**✅ DO**:
+- Fetch when the widget that shows the attachment is built (for example, a row of `ListView.builder`)
+- Keep the `AttachmentFetcher` until the fetch completes; call `stop()` when the user navigates away first
+- Show `len` and metadata from the token before the download starts
+- Add a `default` branch to `switch` statements on `AttachmentFetchEvent`
+
+**❌ DON'T**:
+- Fetch every attachment of every document as soon as it syncs
+- Start a new fetch for the same token on every rebuild or observer update
+
+**See**: [examples/attachment-lazy-loading-good.dart](examples/attachment-lazy-loading-good.dart), [examples/attachment-lazy-loading-bad.dart](examples/attachment-lazy-loading-bad.dart)
+
+---
+
+### 8. Implement Your Own Timeout (Priority: HIGH)
+
+**Problem**: Ditto has no fetch timeout and no "not available" event. While no reachable peer can deliver the blob, the fetch simply makes no progress.
+
+**✅ DO**: Restart a timer on every progress event. When it fires, stop the fetcher and offer a retry. Use a longer stall timeout for larger files.
+
+**❌ DON'T**: Treat a fetch that has not made progress as an error immediately; peers that have the blob may connect later. Do not wrap `fetcher.attachment` in `Future.timeout` and then call `stop()`: the future never completes after `stop()`.
+
+**See**: [examples/attachment-fetch-timeout.dart](examples/attachment-fetch-timeout.dart)
+
+---
+
+### 9. Replace, Never Modify (Priority: HIGH)
+
+Attachment contents never change. To "edit" a file, create a new attachment and replace the token. Attachments cannot be deleted directly: remove the token (`UNSET` or a new token) or evict the document. On Small Peers, blobs that are no longer referenced are garbage-collected automatically every 10 minutes; garbage collection runs only on Small Peers, not on Ditto Server. Guide: [Attachments Are Immutable](../../../guides/best-practices/ditto.md#attachments-are-immutable).
+
+```dart
+// ✅ GOOD: Replace the attachment by updating the token field.
+Future<void> replacePhoto(Ditto ditto, String photoId, String newFilePath) async {
+  final attachment = await ditto.store.newAttachment(
+    newFilePath,
+    AttachmentMetadata({'name': 'receipt-v2.jpg', 'mimeType': 'image/jpeg'}),
+  );
+  await ditto.store.execute(
+    'UPDATE COLLECTION photos (image ATTACHMENT) SET image = :image WHERE _id = :id',
+    arguments: {'id': photoId, 'image': attachment},
+  );
+}
+```
+
+**❌ DON'T**: Overwrite the source file and expect the attachment to change (the file was copied into Ditto's store), or keep many old tokens in history documents unless you need them (every referenced blob stays on the device).
+
+**See**: [examples/attachment-immutability.dart](examples/attachment-immutability.dart)
+
+---
+
+### 10. Thumbnail Pattern (Priority: MEDIUM)
+
+Store a small preview next to the full-size attachment. List rows fetch only thumbnails; the full-size blob is fetched when the user opens the item. Guide: [Thumbnail Pattern](../../../guides/best-practices/ditto.md#thumbnail-pattern).
+
+| Preview option | Pros | Cons |
+|---|---|---|
+| Small attachment (downscaled JPEG) | Keeps documents small; fetched only where shown | Needs an explicit fetch |
+| Tiny inline value (for example, base64) | Arrives with the document | Counts toward the 256 KiB soft limit and is re-sent with the document |
+
+```dart
+import 'dart:typed_data';
+
+// ✅ GOOD: Insert a thumbnail and a full-size attachment together.
+Future<void> savePhotoWithThumbnail(
+  Ditto ditto, {
+  required String photoId,
+  required Uint8List thumbnailBytes, // Downscaled by your app beforehand.
+  required String fullSizePath,
+}) async {
+  final thumbnail = await ditto.store.newAttachment(
+    thumbnailBytes,
+    AttachmentMetadata({'kind': 'thumbnail', 'mimeType': 'image/jpeg'}),
+  );
+  final fullSize = await ditto.store.newAttachment(
+    fullSizePath,
+    AttachmentMetadata({'kind': 'full', 'mimeType': 'image/jpeg'}),
+  );
+  await ditto.store.execute(
+    'INSERT INTO COLLECTION photos (thumbnail ATTACHMENT, image ATTACHMENT) DOCUMENTS (:photo)',
+    arguments: {
+      'photo': {
+        '_id': photoId,
+        'thumbnail': thumbnail,
+        'image': fullSize,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      },
+    },
+  );
+}
+```
+
+**See**: [examples/thumbnail-pattern.dart](examples/thumbnail-pattern.dart)
+
+---
+
+### 11. Plan for Availability and Size (Priority: MEDIUM)
+
+An attachment can be fetched only while a peer that **holds the blob** is reachable. A blob exists on a device only if that device created or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) describes that a blob created while a Small Peer is not connected to Ditto Server spreads through the mesh only as other peers explicitly fetch it, so Ditto Server can end up with the token but not the blob. An interrupted transfer resumes from where it stopped. Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available, make sure a well-connected device or Ditto Server fetches it. Guide: [Availability](../../../guides/best-practices/ditto.md#availability), [Size Guidance](../../../guides/best-practices/ditto.md#size-guidance).
+
+**✅ DO**:
+- Show a placeholder with metadata while the blob is unavailable
+- Let hub devices, or a backend connected to Ditto Server, fetch attachments that many devices need
+- Compress and downscale media before `newAttachment`
+- Consider the slowest transport (Bluetooth LE is much slower than Wi-Fi) when deciding what to fetch automatically
+
+**❌ DON'T**:
+- Assume that receiving a document means its attachment can be downloaded right away
+- Fetch large attachments automatically on devices that may be connected only over Bluetooth LE
+- Look for attachment progress in `system:data_sync_info`; it is reported only through fetch events
+
+There is no fixed maximum attachment size in the SDK; device storage and bandwidth are the practical limits. Blob storage does not count toward the per-device key-value storage guidance (about 2 GB); uploads through the HTTP API have a separate 1 MB request body limit. Documents have a 256 KiB soft limit (warning) and a 5 MiB hard limit (writes that exceed it fail) ([Document Size Limits](../../../guides/best-practices/ditto.md#document-size-limits)).
+
+---
+
+## Quick Reference Checklist
+
+### Transactions
+- [ ] Used only for multi-statement work that must be atomic (not for a single statement)
+- [ ] Only `tx.execute` inside the callback; no `ditto.store.execute`
+- [ ] No read-write transaction started inside another one
+- [ ] No network calls, dialogs, user input, or timers inside the callback
+- [ ] Every transaction has a `hint`; read-only work uses `isReadOnly: true`
+- [ ] Rollback is explicit: throw or return `TransactionCompletionAction.rollback`; caught errors do not roll back
+- [ ] The `Transaction` object is never stored or used after the callback returns
+- [ ] Pending transactions are awaited before `ditto.close()`
+- [ ] Documents changed together share a subscription scope
+
+### Attachments
+- [ ] Binary data is stored as attachments, not inside documents
+- [ ] `newAttachment(pathOrBytes, AttachmentMetadata({...}))` with string metadata values only
+- [ ] Attachment fields are declared: `INSERT INTO COLLECTION c (field ATTACHMENT) ...`
+- [ ] Attachments are created before the transaction that stores them
+- [ ] `fetchAttachment` is called explicitly and lazily, once per token
+- [ ] Fetchers are stopped when the UI goes away; `fetcher.attachment` is never awaited after `stop()`
+- [ ] A stall timer (reset on progress) and a retry action handle unavailable blobs
+- [ ] `switch` on `AttachmentFetchEvent` has a `default` branch
+- [ ] Updates create a new attachment and replace the token; removal uses `UNSET`
+- [ ] Lists fetch thumbnails; full-size files are fetched on demand
 
 ---
 
 ## See Also
 
 ### Main Guide
-- Attachments: [.claude/guides/best-practices/ditto.md lines 2514-2850](../../guides/best-practices/ditto.md)
-- Transactions: [.claude/guides/best-practices/ditto.md lines 2851-3000](../../guides/best-practices/ditto.md)
-- Thumbnail Pattern: [.claude/guides/best-practices/ditto.md lines 2652-2753](../../guides/best-practices/ditto.md)
-- Flutter Limitation: [.claude/guides/best-practices/ditto.md lines 2857-2860, 2948-2983](../../guides/best-practices/ditto.md)
-
-### Other Skills
-- [query-sync](../query-sync/SKILL.md) - Subscription and observer patterns
-- [storage-lifecycle](../storage-lifecycle/SKILL.md) - Attachment garbage collection
-- [data-modeling](../data-modeling/SKILL.md) - ATTACHMENT type in document schema
+- [Transactions](../../../guides/best-practices/ditto.md#transactions)
+- [Transactions on Other Platforms](../../../guides/best-practices/ditto.md#transactions-on-other-platforms)
+- [Attachments](../../../guides/best-practices/ditto.md#attachments)
+- [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
+- [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences)
 
 ### Examples
--  - Flutter alternative pattern
-- [examples/transaction-good.js](examples/transaction-good.js) - Proper transaction usage (non-Flutter)
-- [examples/transaction-bad.js](examples/transaction-bad.js) - Transaction anti-patterns (non-Flutter)
-- [examples/attachment-lazy-loading-good.dart](examples/attachment-lazy-loading-good.dart) - Lazy-loading pattern
-- [examples/attachment-lazy-loading-bad.dart](examples/attachment-lazy-loading-bad.dart) - Attachment anti-patterns
-- [examples/thumbnail-pattern.dart](examples/thumbnail-pattern.dart) - Thumbnail-first pattern
-- [examples/attachment-fetch-timeout.dart](examples/attachment-fetch-timeout.dart) - Timeout handling
-- [examples/attachment-immutability.dart](examples/attachment-immutability.dart) - Attachment updates
+- [examples/transaction-good.dart](examples/transaction-good.dart) - Atomic changes, rollback, read-only snapshots, shutdown tracking
+- [examples/transaction-bad.dart](examples/transaction-bad.dart) - `store.execute` inside, nesting, I/O inside, leaked `Transaction`
+- [examples/transaction-good.js](examples/transaction-good.js) - JavaScript 5.1 transaction patterns
+- [examples/transaction-bad.js](examples/transaction-bad.js) - JavaScript anti-patterns (can deadlock instead of throwing)
+- [examples/attachment-lazy-loading-good.dart](examples/attachment-lazy-loading-good.dart) - Lazy, cancellable image widget in a list
+- [examples/attachment-lazy-loading-bad.dart](examples/attachment-lazy-loading-bad.dart) - Eager, duplicate, and leaked fetches
+- [examples/attachment-fetch-timeout.dart](examples/attachment-fetch-timeout.dart) - Stall timeout and retry
+- [examples/attachment-immutability.dart](examples/attachment-immutability.dart) - Replacing and removing attachments
+- [examples/thumbnail-pattern.dart](examples/thumbnail-pattern.dart) - Thumbnail plus full-size attachment
 
 ### Reference
-- [Ditto Attachments Documentation](https://docs.ditto.live/sdk/latest/attachments)
-- [Ditto Transactions Documentation](https://docs.ditto.live/sdk/latest/crud/transactions)
-- [Photo Sharing Guide](https://docs.ditto.live/guides/photo-sharing)
+- [reference/platform-specific.md](reference/platform-specific.md) - JavaScript, Swift, and Kotlin 5.1 APIs
+
+### Other Skills
+- [query-sync](../query-sync/SKILL.md) - Subscriptions and store observers
+- [storage-lifecycle](../storage-lifecycle/SKILL.md) - EVICT and storage management
+- [data-modeling](../data-modeling/SKILL.md) - CRDT types, strict mode, document size

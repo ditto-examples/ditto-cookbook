@@ -1,514 +1,233 @@
-// SDK Version: All
-// Platform: Flutter
-// Last Updated: 2025-12-19
+// Ditto SDK 5.1 (JavaScript, @dittolive/ditto 5.1.0): Transaction patterns
 //
-// ============================================================================
-// Transactions: Correct Usage (Non-Flutter Platforms)
-// ============================================================================
+// Guide: .claude/guides/best-practices/ditto.md#transactions-on-other-platforms
 //
-// This example demonstrates proper transaction usage in Ditto SDK for
-// non-Flutter platforms (JavaScript, Swift, Kotlin).
+// API (from the 5.1.0 type definitions):
+//   ditto.store.transaction(async (tx) => { ... }, { isReadOnly, hint })
+//   - tx.execute(query, args) inside the scope; never ditto.store.execute
+//   - return 'commit' or 'rollback' to choose explicitly; any other value
+//     (including undefined) commits and is returned by transaction()
+//   - throwing rolls back and rethrows the error to the caller
 //
 // PATTERNS DEMONSTRATED:
-// 1. ✅ Basic transaction usage
-// 2. ✅ Read-only transactions
-// 3. ✅ Transaction with hint parameter
-// 4. ✅ Proper error handling
-// 5. ✅ Atomic multi-step operations
-// 6. ✅ Transaction best practices
-//
-// CRITICAL: Use `tx` parameter for all queries inside transaction!
-//
-// TRANSACTION RULES:
-// - Always use tx.execute(), NOT ditto.store.execute()
-// - Keep transactions short (< 1 second)
-// - Avoid nested transactions (deadlock risk)
-// - Use hint parameter for collections
-// - Read-only when possible (better performance)
-//
-// PLATFORM SUPPORT:
-// - JavaScript: ✅ Supported
-// - Swift: ✅ Supported
-// - Kotlin: ✅ Supported
-// - Flutter: ❌ NOT supported (use sequential operations)
-//
-// ============================================================================
+// 1. ✅ Atomic multi-document change that uses only tx.execute
+// 2. ✅ Explicit rollback with 'rollback'
+// 3. ✅ Read-only transaction returning a typed value
+// 4. ✅ I/O before the transaction, short transaction afterwards
+// 5. ✅ Handling a failed statement deliberately
+// 6. ✅ Awaiting in-flight transactions before ditto.close()
 
-const { Ditto } = require('@dittolive/ditto')
+import { DittoError } from '@dittolive/ditto'
+
+/** @typedef {import('@dittolive/ditto').Ditto} Ditto */
+/** @typedef {import('@dittolive/ditto').Transaction} Transaction */
 
 // ============================================================================
-// PATTERN 1: Basic Transaction Usage
+// PATTERN 1: Atomic multi-document change
 // ============================================================================
 
 /**
- * ✅ GOOD: Basic transaction for multi-step operation
+ * ✅ GOOD: Close an order and create its invoice atomically.
+ *
+ * @param {Ditto} ditto
+ * @param {string} orderId
+ * @param {string} invoiceId
  */
-async function processOrderWithTransaction(ditto, orderId, customerId, productId, quantity) {
-  console.log('📦 Processing order with transaction:', orderId)
-
-  await ditto.store.transaction(async (tx) => {
-    // Step 1: Check inventory (using tx, not ditto.store)
-    const inventoryResult = await tx.execute(
-      'SELECT stockQuantity FROM products WHERE _id = :productId',
-      { productId }
-    )
-
-    if (inventoryResult.items.length === 0) {
-      throw new Error('Product not found')
-    }
-
-    const currentStock = inventoryResult.items[0].value.stockQuantity
-
-    if (currentStock < quantity) {
-      throw new Error(`Insufficient stock: ${currentStock} < ${quantity}`)
-    }
-
-    // Step 2: Deduct inventory
-    await tx.execute(
-      `UPDATE products
-       APPLY stockQuantity PN_INCREMENT BY :change
-       WHERE _id = :productId`,
-      { productId, change: -quantity }
-    )
-    console.log('  ✅ Inventory deducted')
-
-    // Step 3: Create order
-    await tx.execute(
-      `INSERT INTO orders (
-        _id, customerId, productId, quantity, status, createdAt
-      )
-      VALUES (:orderId, :customerId, :productId, :quantity, :status, :createdAt)`,
-      {
-        orderId,
-        customerId,
-        productId,
-        quantity,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      }
-    )
-    console.log('  ✅ Order created')
-
-    // ✅ BENEFIT: All steps atomic
-    // If any step fails, ALL changes rolled back automatically
-  })
-
-  console.log('✅ Order processed atomically')
-}
-
-// ============================================================================
-// PATTERN 2: Read-Only Transactions
-// ============================================================================
-
-/**
- * ✅ GOOD: Read-only transaction for consistent multi-query reads
- */
-async function getOrderDetailsWithTransaction(ditto, orderId) {
-  console.log('📊 Fetching order details (read-only transaction):', orderId)
-
-  const orderDetails = await ditto.store.transaction(async (tx) => {
-    // Query 1: Get order
-    const orderResult = await tx.execute(
-      'SELECT * FROM orders WHERE _id = :orderId',
-      { orderId }
-    )
-
-    if (orderResult.items.length === 0) {
-      throw new Error('Order not found')
-    }
-
-    const order = orderResult.items[0].value
-
-    // Query 2: Get customer
-    const customerResult = await tx.execute(
-      'SELECT * FROM customers WHERE _id = :customerId',
-      { customerId: order.customerId }
-    )
-
-    const customer = customerResult.items[0]?.value
-
-    // Query 3: Get product
-    const productResult = await tx.execute(
-      'SELECT * FROM products WHERE _id = :productId',
-      { productId: order.productId }
-    )
-
-    const product = productResult.items[0]?.value
-
-    // ✅ BENEFIT: All reads see consistent snapshot
-    // No other transaction can modify data between queries
-    return {
-      order,
-      customer,
-      product
-    }
-  })
-
-  console.log('✅ Order details fetched atomically')
-  return orderDetails
-}
-
-// ============================================================================
-// PATTERN 3: Transaction with Hint Parameter
-// ============================================================================
-
-/**
- * ✅ GOOD: Use hint parameter for better performance
- */
-async function transferFundsWithHint(ditto, fromAccountId, toAccountId, amount) {
-  console.log('💰 Transferring funds:', { fromAccountId, toAccountId, amount })
-
-  // ✅ Hint tells Ditto which collections will be accessed
+export async function closeOrderWithInvoice(ditto, orderId, invoiceId) {
   await ditto.store.transaction(
     async (tx) => {
-      // Debit source account
-      await tx.execute(
-        `UPDATE accounts
-         APPLY balance PN_INCREMENT BY :change
-         WHERE _id = :accountId`,
-        { accountId: fromAccountId, change: -amount }
-      )
+      const result = await tx.execute('SELECT * FROM orders WHERE _id = :id', {
+        id: orderId,
+      })
+      if (result.items.length === 0) {
+        throw new Error(`Order ${orderId} not found`) // Throwing rolls back.
+      }
+      const order = result.items[0].value
 
-      // Credit destination account
+      await tx.execute('INSERT INTO invoices DOCUMENTS (:invoice)', {
+        invoice: {
+          _id: invoiceId,
+          orderId,
+          total: order.total,
+          createdAt: new Date().toISOString(), // UTC with a Z suffix.
+        },
+      })
       await tx.execute(
-        `UPDATE accounts
-         APPLY balance PN_INCREMENT BY :change
-         WHERE _id = :accountId`,
-        { accountId: toAccountId, change: amount }
+        'UPDATE orders SET status = :status, invoiceId = :invoiceId WHERE _id = :id',
+        { id: orderId, status: 'closed', invoiceId },
       )
-
-      console.log('  ✅ Funds transferred atomically')
     },
-    ['accounts'] // ✅ Hint: Only 'accounts' collection accessed
+    { hint: 'closeOrderWithInvoice' },
   )
-
-  console.log('✅ Transfer completed')
 }
 
 // ============================================================================
-// PATTERN 4: Proper Error Handling
+// PATTERN 2: Explicit rollback without throwing
 // ============================================================================
 
 /**
- * ✅ GOOD: Transaction with comprehensive error handling
+ * ✅ GOOD: Returns true when the order was shipped.
+ *
+ * @param {Ditto} ditto
+ * @param {string} orderId
+ * @returns {Promise<boolean>}
  */
-async function processPaymentWithErrorHandling(ditto, paymentId, accountId, amount) {
-  console.log('💳 Processing payment:', paymentId)
-
-  try {
-    await ditto.store.transaction(async (tx) => {
-      // Check account balance
-      const accountResult = await tx.execute(
-        'SELECT balance FROM accounts WHERE _id = :accountId',
-        { accountId }
-      )
-
-      if (accountResult.items.length === 0) {
-        throw new Error('Account not found')
-      }
-
-      const balance = accountResult.items[0].value.balance
-
-      if (balance < amount) {
-        throw new Error(`Insufficient funds: ${balance} < ${amount}`)
-      }
-
-      // Deduct payment
-      await tx.execute(
-        `UPDATE accounts
-         APPLY balance PN_INCREMENT BY :change
-         WHERE _id = :accountId`,
-        { accountId, change: -amount }
-      )
-
-      // Create payment record
-      await tx.execute(
-        `INSERT INTO payments (
-          _id, accountId, amount, status, createdAt
-        )
-        VALUES (:paymentId, :accountId, :amount, :status, :createdAt)`,
-        {
-          paymentId,
-          accountId,
-          amount,
-          status: 'completed',
-          createdAt: new Date().toISOString()
-        }
-      )
-
-      console.log('  ✅ Payment processed')
-    }, ['accounts', 'payments'])
-
-    console.log('✅ Payment transaction completed')
-    return { success: true, paymentId }
-
-  } catch (error) {
-    console.error('❌ Payment transaction failed:', error.message)
-
-    // ✅ BENEFIT: Automatic rollback on error
-    // Account balance not deducted
-    // Payment record not created
-    // Database remains consistent
-
-    return { success: false, error: error.message }
-  }
-}
-
-// ============================================================================
-// PATTERN 5: Atomic Counter Update
-// ============================================================================
-
-/**
- * ✅ GOOD: Atomic counter increment with transaction
- */
-async function incrementViewCount(ditto, postId) {
-  await ditto.store.transaction(
+export async function shipOrder(ditto, orderId) {
+  const action = await ditto.store.transaction(
     async (tx) => {
-      // Read current count
       const result = await tx.execute(
-        'SELECT viewCount FROM posts WHERE _id = :postId',
-        { postId }
+        'SELECT * FROM orders WHERE _id = :id AND status = :status',
+        { id: orderId, status: 'paid' },
       )
-
-      const currentCount = result.items[0]?.value.viewCount || 0
-
-      // Increment
-      await tx.execute(
-        `UPDATE posts
-         SET viewCount = :newCount
-         WHERE _id = :postId`,
-        { postId, newCount: currentCount + 1 }
-      )
-
-      console.log(`  ✅ View count: ${currentCount} → ${currentCount + 1}`)
+      if (result.items.length === 0) {
+        return 'rollback' // Nothing to ship; no changes are applied.
+      }
+      await tx.execute('UPDATE orders SET status = :status WHERE _id = :id', {
+        id: orderId,
+        status: 'shipped',
+      })
+      return 'commit'
     },
-    ['posts']
+    { hint: 'shipOrder' },
+  )
+  return action === 'commit'
+}
+
+// ============================================================================
+// PATTERN 3: Read-only transaction returning a value
+// ============================================================================
+
+/**
+ * ✅ GOOD: Both counts come from one consistent snapshot. Read-only
+ * transactions can run concurrently; a mutating statement inside one throws
+ * a DittoError with code 'store/transaction-read-only'.
+ *
+ * @param {Ditto} ditto
+ * @returns {Promise<{ open: number, closed: number }>}
+ */
+export function orderCounts(ditto) {
+  return ditto.store.transaction(
+    async (tx) => {
+      const open = await tx.execute(
+        'SELECT COUNT(*) AS n FROM orders WHERE status = :status',
+        { status: 'open' },
+      )
+      const closed = await tx.execute(
+        'SELECT COUNT(*) AS n FROM orders WHERE status = :status',
+        { status: 'closed' },
+      )
+      return { open: open.items[0].value.n, closed: closed.items[0].value.n }
+    },
+    { isReadOnly: true, hint: 'orderCounts' },
   )
 }
 
 // ============================================================================
-// PATTERN 6: Multiple Collection Updates
+// PATTERN 4: I/O first, then one short transaction
 // ============================================================================
 
 /**
- * ✅ GOOD: Transaction across multiple collections
+ * ✅ GOOD: Only one read-write transaction runs at a time, so the network
+ * call happens before the transaction starts.
+ *
+ * @param {Ditto} ditto
+ * @param {string} orderId
+ * @param {() => Promise<void>} chargeCard
  */
-async function completeOrderWithMultipleUpdates(ditto, orderId) {
-  console.log('📦 Completing order:', orderId)
+export async function checkout(ditto, orderId, chargeCard) {
+  await chargeCard() // Outside the transaction.
 
   await ditto.store.transaction(
     async (tx) => {
-      // Update order status
       await tx.execute(
-        `UPDATE orders
-         SET status = :status, completedAt = :timestamp
-         WHERE _id = :orderId`,
-        {
-          orderId,
-          status: 'completed',
-          timestamp: new Date().toISOString()
-        }
+        'UPDATE orders SET status = :status, paidAt = :paidAt WHERE _id = :id',
+        { id: orderId, status: 'paid', paidAt: new Date().toISOString() },
       )
-
-      // Create notification
-      await tx.execute(
-        `INSERT INTO notifications (
-          _id, userId, type, orderId, createdAt
-        )
-        VALUES (:notificationId, :userId, :type, :orderId, :createdAt)`,
-        {
-          notificationId: `notif_${Date.now()}`,
-          userId: 'user_123', // From order
-          type: 'order_completed',
-          orderId,
-          createdAt: new Date().toISOString()
-        }
-      )
-
-      // Log event
-      await tx.execute(
-        `INSERT INTO events (
-          _id, eventType, orderId, timestamp
-        )
-        VALUES (:eventId, :eventType, :orderId, :timestamp)`,
-        {
-          eventId: `event_${Date.now()}`,
-          eventType: 'order_completed',
-          orderId,
-          timestamp: new Date().toISOString()
-        }
-      )
-
-      console.log('  ✅ All updates completed atomically')
+      await tx.execute('INSERT INTO payments DOCUMENTS (:payment)', {
+        payment: { _id: `payment-${orderId}`, orderId },
+      })
     },
-    ['orders', 'notifications', 'events']
+    { hint: 'recordPayment' },
   )
-
-  console.log('✅ Order completion transaction finished')
 }
 
 // ============================================================================
-// PATTERN 7: Transaction with Conditional Logic
+// PATTERN 5: Handling a failed statement deliberately
 // ============================================================================
 
 /**
- * ✅ GOOD: Complex business logic in transaction
+ * ✅ GOOD: A caught error does NOT roll back the transaction. Decide what
+ * happens next: here the reservation is required, the audit entry optional.
+ *
+ * @param {Ditto} ditto
+ * @param {string} itemId
+ * @param {string} auditId
+ * @returns {Promise<boolean>}
  */
-async function applyDiscountIfEligible(ditto, orderId, discountCode) {
-  console.log('🎫 Applying discount:', { orderId, discountCode })
-
-  const result = await ditto.store.transaction(async (tx) => {
-    // Get order
-    const orderResult = await tx.execute(
-      'SELECT * FROM orders WHERE _id = :orderId',
-      { orderId }
-    )
-
-    if (orderResult.items.length === 0) {
-      throw new Error('Order not found')
-    }
-
-    const order = orderResult.items[0].value
-
-    // Get discount code
-    const discountResult = await tx.execute(
-      'SELECT * FROM discountCodes WHERE code = :code',
-      { code: discountCode }
-    )
-
-    if (discountResult.items.length === 0) {
-      throw new Error('Invalid discount code')
-    }
-
-    const discount = discountResult.items[0].value
-
-    // Check if code is active
-    if (!discount.isActive) {
-      throw new Error('Discount code expired')
-    }
-
-    // Check usage limit
-    if (discount.usageCount >= discount.maxUsage) {
-      throw new Error('Discount code usage limit reached')
-    }
-
-    // Apply discount
-    const discountAmount = order.total * discount.percentage
-    const newTotal = order.total - discountAmount
-
-    await tx.execute(
-      `UPDATE orders
-       SET total = :newTotal,
-           discountCode = :code,
-           discountAmount = :discountAmount
-       WHERE _id = :orderId`,
-      { orderId, newTotal, code: discountCode, discountAmount }
-    )
-
-    // Increment usage count
-    await tx.execute(
-      `UPDATE discountCodes
-       APPLY usageCount PN_INCREMENT BY 1.0
-       WHERE code = :code`,
-      { code: discountCode }
-    )
-
-    console.log(`  ✅ Discount applied: $${discountAmount.toFixed(2)}`)
-    return { success: true, discountAmount, newTotal }
-  }, ['orders', 'discountCodes'])
-
-  return result
-}
-
-// ============================================================================
-// PATTERN 8: Short Transaction Duration
-// ============================================================================
-
-/**
- * ✅ GOOD: Keep transaction short
- */
-async function updateUserPreferencesShort(ditto, userId, preferences) {
-  // ✅ Transaction completes quickly (< 1 second)
-  await ditto.store.transaction(
+export async function reserveItem(ditto, itemId, auditId) {
+  const action = await ditto.store.transaction(
     async (tx) => {
-      await tx.execute(
-        `UPDATE users
-         SET preferences = :preferences,
-             updatedAt = :timestamp
-         WHERE _id = :userId`,
-        {
-          userId,
-          preferences,
-          timestamp: new Date().toISOString()
-        }
-      )
+      try {
+        await tx.execute('UPDATE items SET reserved = true WHERE _id = :id', {
+          id: itemId,
+        })
+      } catch (error) {
+        console.warn('Reservation failed:', describe(error))
+        return 'rollback' // Required step failed.
+      }
+
+      try {
+        await tx.execute('INSERT INTO auditLog DOCUMENTS (:entry)', {
+          entry: { _id: auditId, itemId, action: 'reserve' },
+        })
+      } catch (error) {
+        console.warn('Audit entry skipped:', describe(error)) // Optional step.
+      }
+      return 'commit'
     },
-    ['users']
+    { hint: 'reserveItem' },
   )
+  return action === 'commit'
 }
 
 /**
- * ❌ BAD: Long transaction (avoid this)
+ * @param {unknown} error
+ * @returns {string}
  */
-async function updateUserPreferencesLongBad(ditto, userId, preferences) {
-  await ditto.store.transaction(async (tx) => {
-    // ❌ BAD: Heavy computation inside transaction
-    const computedPreferences = await heavyComputation(preferences) // Takes 5 seconds!
-
-    await tx.execute(
-      `UPDATE users
-       SET preferences = :preferences
-       WHERE _id = :userId`,
-      { userId, preferences: computedPreferences }
-    )
-  })
-
-  // 🚨 PROBLEM: Transaction holds locks for 5+ seconds
-  // Other transactions blocked
-  // Performance degradation
-}
-
-async function heavyComputation(data) {
-  // Simulated heavy work
-  await new Promise(resolve => setTimeout(resolve, 5000))
-  return data
+function describe(error) {
+  if (error instanceof DittoError) return `${error.code}: ${error.message}`
+  return String(error)
 }
 
 // ============================================================================
-// Best Practices Summary
+// PATTERN 6: Await in-flight transactions before closing
 // ============================================================================
 
-function printTransactionBestPractices() {
-  console.log('✅ Transaction Best Practices:')
-  console.log('')
-  console.log('DO:')
-  console.log('  ✓ Use tx.execute() inside transaction (not ditto.store.execute())')
-  console.log('  ✓ Keep transactions short (< 1 second)')
-  console.log('  ✓ Use hint parameter for collections')
-  console.log('  ✓ Use read-only transactions when possible')
-  console.log('  ✓ Handle errors with try-catch')
-  console.log('  ✓ Return values from transaction function')
-  console.log('')
-  console.log('DON\'T:')
-  console.log('  ✗ Nest transactions (deadlock risk)')
-  console.log('  ✗ Use ditto.store.execute() inside transaction')
-  console.log('  ✗ Run long operations inside transaction')
-  console.log('  ✗ Forget hint parameter for multi-collection access')
-  console.log('  ✗ Ignore transaction errors')
-}
+/**
+ * ✅ GOOD: Route transactions through a tracker so shutdown can wait for
+ * them before calling ditto.close().
+ */
+export class TransactionTracker {
+  /** @type {Set<Promise<unknown>>} */
+  #pending = new Set()
 
-// ============================================================================
-// Export functions
-// ============================================================================
+  /**
+   * @template T
+   * @param {Ditto} ditto
+   * @param {string} hint
+   * @param {(tx: Transaction) => Promise<T>} work
+   * @returns {Promise<T>}
+   */
+  run(ditto, hint, work) {
+    const promise = ditto.store.transaction(work, { hint })
+    this.#pending.add(promise)
+    return promise.finally(() => this.#pending.delete(promise))
+  }
 
-module.exports = {
-  processOrderWithTransaction,
-  getOrderDetailsWithTransaction,
-  transferFundsWithHint,
-  processPaymentWithErrorHandling,
-  incrementViewCount,
-  completeOrderWithMultipleUpdates,
-  applyDiscountIfEligible,
-  updateUserPreferencesShort,
-  printTransactionBestPractices
+  /** @param {Ditto} ditto */
+  async closeWhenIdle(ditto) {
+    // Errors are reported to the callers of run(); ignore them here.
+    await Promise.allSettled([...this.#pending])
+    await ditto.close()
+  }
 }

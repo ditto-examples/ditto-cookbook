@@ -1,713 +1,154 @@
-# DQL Query Optimization Guide
+# Query Optimization (SDK 5.1)
 
-This guide covers performance optimization techniques for Ditto Query Language (DQL) queries.
-
----
+How to keep local queries and observers fast. Extracted from the guide sections [Working with Query Results](../../../../guides/best-practices/ditto.md#working-with-query-results), [Reading Data with SELECT](../../../../guides/best-practices/ditto.md#reading-data-with-select), and [Indexing and Query Performance](../../../../guides/best-practices/ditto.md#indexing-and-query-performance). Index creation, `ADVISE`, `EXPLAIN`, and `PROFILE` are covered in the performance-observability skill.
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Query Performance Principles](#query-performance-principles)
-- [Index Strategies](#index-strategies)
-- [Aggregation Optimization](#aggregation-optimization)
-- [Pagination Patterns](#pagination-patterns)
-- [Subscription Optimization](#subscription-optimization)
-- [Observer Optimization](#observer-optimization)
-- [Query Pattern Anti-Patterns](#query-pattern-anti-patterns)
-- [Performance Monitoring](#performance-monitoring)
-- [Optimization Checklist](#optimization-checklist)
-- [Additional Resources](#additional-resources)
+- [Query Scope](#query-scope)
+- [Pagination](#pagination)
+- [Counting and Existence](#counting-and-existence)
+- [Batching Instead of N+1](#batching-instead-of-n1)
+- [Writing Index-Friendly Predicates](#writing-index-friendly-predicates)
+- [Composite Indexes and Covering Scans](#composite-indexes-and-covering-scans)
+- [JOIN Performance](#join-performance)
+- [Observers](#observers)
+- [Checklist](#checklist)
 
 ---
 
-## Overview
+## Query Scope
 
-DQL queries can range from milliseconds to seconds depending on:
-- **Dataset size**: Number of documents in collection
-- **Query complexity**: WHERE clauses, aggregations, sorting
-- **Index usage**: Whether Ditto can use indexes efficiently
-- **Data extraction**: How QueryResultItems are processed
+**✅ DO**:
+- **Filter narrowly** in `WHERE` instead of filtering in Dart.
+- **Project** only the fields you need (`SELECT _id, title, status ...`). This reduces decoding and memory and can enable covering scans. Subscriptions still sync whole documents.
+- **Keep statement text constant** and pass values as parameters, so the prepared plan is reused from the statement cache.
+- **Materialize once**: convert rows to maps or models in one pass and let the `QueryResult` go.
 
----
+**❌ DON'T**:
+- Load a whole collection and filter, sort, or paginate in Dart.
+- Use `DISTINCT` with `_id` or `*`.
 
-## Query Performance Principles
+## Pagination
 
-### 1. Use WHERE Clauses
+Always combine `LIMIT` with `ORDER BY`. Keyset pagination avoids re-reading skipped rows:
 
-**Bad Performance**:
 ```dart
-// Fetches ALL documents, filters in application
-final result = await ditto.store.execute('SELECT * FROM products');
-final activeProducts = result.items
-  .map((item) => item.value)
-  .where((p) => p['isActive'] == true)
-  .toList();
-```
-
-**Good Performance**:
-```dart
-// Filters in database, only fetches matching documents
-final result = await ditto.store.execute(
-  'SELECT * FROM products WHERE isActive = true'
-);
-final activeProducts = result.items.map((item) => item.value).toList();
-```
-
-**Why**: Database filtering is orders of magnitude faster than application filtering.
-
----
-
-### 2. Select Only Needed Fields
-
-**Bad Performance**:
-```dart
-// Fetches all fields, only uses name
-final result = await ditto.store.execute('SELECT * FROM products');
-final names = result.items.map((item) => item.value['name']).toList();
-```
-
-**Good Performance**:
-```dart
-// Only fetches name field
-final result = await ditto.store.execute('SELECT name FROM products');
-final names = result.items.map((item) => item.value['name']).toList();
-```
-
-**Why**: Reduces data transfer and memory usage, especially with large documents.
-
----
-
-### 3. Use Parameterized Queries
-
-**Bad Performance (and UNSAFE)**:
-```dart
-// Query must be re-parsed on every execution
-final status = 'active';
-final result = await ditto.store.execute(
-  'SELECT * FROM orders WHERE status = "$status"' // SQL injection risk!
-);
-```
-
-**Good Performance (and SAFE)**:
-```dart
-// Query plan cached, parameters substituted efficiently
-final result = await ditto.store.execute(
-  'SELECT * FROM orders WHERE status = :status',
-  arguments: {'status': 'active'},
-);
-```
-
-**Why**: Parameterized queries are cached and reused, avoiding re-parsing.
-
----
-
-### 4. Extract Data Immediately
-
-**Bad Performance**:
-```dart
-// Holds QueryResultItems for entire processing duration
-final result = await ditto.store.execute('SELECT * FROM orders');
-
-for (final item in result.items) {
-  await processOrder(item.value); // Slow async processing
-}
-```
-
-**Good Performance**:
-```dart
-// Extract data first, release QueryResultItems
-final result = await ditto.store.execute('SELECT * FROM orders');
-final orders = result.items.map((item) => item.value).toList();
-// QueryResultItems released here
-
-for (final order in orders) {
-  await processOrder(order); // Process plain data
-}
-```
-
-**Why**: QueryResultItems hold database cursors, releasing them frees resources.
-
----
-
-## Index Strategies
-
-### Ditto's Automatic Indexing
-
-Ditto automatically creates indexes for:
-- `_id` field (always indexed)
-- Fields used in `WHERE` clauses (over time, based on query patterns)
-
-**Note**: Explicit index creation is not currently supported. Ditto's query optimizer learns from usage.
-
-### Write Queries to Leverage Indexing
-
-**Good for Indexing**:
-```dart
-// Simple equality on single field - easily indexed
-await ditto.store.execute(
-  'SELECT * FROM orders WHERE status = :status',
-  arguments: {'status': 'pending'},
-);
-```
-
-**Less Optimal for Indexing**:
-```dart
-// Complex expressions harder to index
-await ditto.store.execute(
-  'SELECT * FROM orders WHERE totalAmount * 1.1 > :threshold',
-  arguments: {'threshold': 100},
-);
-```
-
-**Better**:
-```dart
-// Pre-calculate field values, index directly
-await ditto.store.execute(
-  '''
-  UPDATE orders
-  SET totalWithTax = totalAmount * 1.1
-  WHERE _id = :id
-  ''',
-  arguments: {'id': orderId},
-);
-
-// Now query indexed field
-await ditto.store.execute(
-  'SELECT * FROM orders WHERE totalWithTax > :threshold',
-  arguments: {'threshold': 100},
-);
-```
-
----
-
-## Aggregation Optimization
-
-### Use Aggregation Functions in Query
-
-**Bad Performance**:
-```dart
-// Fetches all documents, calculates in application
-final result = await ditto.store.execute('SELECT * FROM orders');
-final total = result.items
-  .map((item) => item.value['totalAmount'] as num)
-  .fold(0.0, (sum, amount) => sum + amount.toDouble());
-```
-
-**Good Performance**:
-```dart
-// Calculates in database
-final result = await ditto.store.execute(
-  'SELECT SUM(totalAmount) as total FROM orders'
-);
-
-final total = result.items.isNotEmpty
-  ? (result.items.first.value['total'] as num?)?.toDouble() ?? 0.0
-  : 0.0;
-```
-
-**Available Aggregation Functions**:
-- `COUNT(*)`: Count documents
-- `SUM(field)`: Sum numeric field
-- `AVG(field)`: Average numeric field
-- `MIN(field)`: Minimum value
-- `MAX(field)`: Maximum value
-
----
-
-## Pagination Patterns
-
-### Efficient Pagination with LIMIT/OFFSET
-
-**Pattern 1: Basic Pagination**:
-```dart
-Future<List<Map<String, dynamic>>> getProductsPage(
+// ✅ GOOD: Keyset pagination with a parameterized page size
+Future<List<Map<String, dynamic>>> nextPage(
   Ditto ditto,
-  int page,
-  int pageSize,
+  String afterCreatedAt,
 ) async {
-  final offset = page * pageSize;
-
   final result = await ditto.store.execute(
-    '''
-    SELECT * FROM products
-    WHERE isActive = true
-    ORDER BY name
-    LIMIT :limit OFFSET :offset
-    ''',
-    arguments: {
-      'limit': pageSize,
-      'offset': offset,
-    },
+    'SELECT _id, title, createdAt FROM tasks '
+    'WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize',
+    arguments: {'after': afterCreatedAt, 'pageSize': 50},
   );
-
   return result.items.map((item) => item.value).toList();
 }
 ```
 
-**Pattern 2: Cursor-Based Pagination (More Efficient)**:
+`LIMIT :pageSize OFFSET :offset` works, but every page re-reads and skips all earlier rows. Use a unique sort key or add a tie-breaker (`ORDER BY createdAt DESC, _id`) so pages are well defined.
+
+## Counting and Existence
+
+- Count with `SELECT COUNT(*) ...`, not by loading documents and calling `.length`.
+- A full-collection `COUNT(*)` is answered by a dedicated count scan (SDK 5.1+) without reading documents. A filtered `COUNT(*)` still evaluates the filter, so index the filtered fields.
+- Check existence with `SELECT _id ... LIMIT 1`.
+
+```sql
+SELECT COUNT(*) AS n FROM orders WHERE status = :status
+
+SELECT _id FROM orders WHERE status = :status LIMIT 1
+```
+
+## Batching Instead of N+1
+
 ```dart
-// First page
-Future<List<Map<String, dynamic>>> getFirstPage(
-  Ditto ditto,
-  int pageSize,
-) async {
+// ✅ GOOD: One query, planned as an ID scan
+Future<List<Map<String, dynamic>>> loadOrders(Ditto ditto, List<String> ids) async {
   final result = await ditto.store.execute(
-    '''
-    SELECT * FROM products
-    WHERE isActive = true
-    ORDER BY _id
-    LIMIT :limit
-    ''',
-    arguments: {'limit': pageSize},
+    'SELECT * FROM orders WHERE _id IN :ids',
+    arguments: {'ids': ids},
   );
-
-  return result.items.map((item) => item.value).toList();
-}
-
-// Subsequent pages
-Future<List<Map<String, dynamic>>> getNextPage(
-  Ditto ditto,
-  String lastId,
-  int pageSize,
-) async {
-  final result = await ditto.store.execute(
-    '''
-    SELECT * FROM products
-    WHERE isActive = true AND _id > :lastId
-    ORDER BY _id
-    LIMIT :limit
-    ''',
-    arguments: {
-      'lastId': lastId,
-      'limit': pageSize,
-    },
-  );
-
   return result.items.map((item) => item.value).toList();
 }
 ```
 
-**Why Cursor-Based is Better**:
-- No OFFSET calculation needed
-- Consistent performance regardless of page number
-- Works better with real-time data changes
+Running one `SELECT ... WHERE _id = :id` per ID in a loop does the same work many times.
 
----
+## Writing Index-Friendly Predicates
 
-## Subscription Optimization
+The planner chooses indexes by rules, not data statistics. `EXPLAIN` shows these plans:
 
-### 1. Narrow Subscription Scope
+| Predicate | Plan |
+|---|---|
+| `status = :status`, `status IN :statuses` | Index scan |
+| `total >= :min AND total < :max` | Index range scan |
+| `name LIKE 'abc%'` (case-sensitive prefix without a leading wildcard; literal or parameter) | Index range scan |
+| `starts_with(name, 'abc')` | Collection scan: use `LIKE 'abc%'` |
+| Any function applied to the field (`lower(name) = 'abc'`) | Collection scan (functions on the value side are fine) |
+| `status != 'open'` | Index scan over two ranges |
+| `flag IS MISSING` | Index scan |
+| `coalesce(isDeleted, false) = false` | Collection scan |
+| `_id = :id`, `_id IN :ids`, `USE IDS` | ID scan, no index needed |
+| `a = 1 OR b = 2` with both indexed | Union scan |
+| `a = 1 OR b = 2` with `b` not indexed | Collection scan: every `OR` branch must be indexable |
+| `a = 1 AND b = 2` with separate indexes | Intersect scan; a composite index on `(a, b)` is generally better |
+| `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan |
+| `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan |
 
-**Bad Performance**:
-```dart
-// Subscribes to ALL products, wastes bandwidth
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM products'
-);
+- Index the full nested path you filter on (`address.city`).
+- Keep each field's type consistent across documents; mixed types can make index results incorrect or mis-ordered.
+- With `DQL_STRICT_MODE = true`, the SDK 5.1.0 planner does not use index scans at all. Keep the default (`false`) if you rely on indexes.
+- In-memory stores (Flutter Web) do not support indexes.
+
+## Composite Indexes and Covering Scans
+
+Composite indexes (SDK 5.1+): put equality fields first and the range or sort field last, and match the sort direction.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_orders_customer_createdAt ON orders (customerId, createdAt DESC)
+
+-- ✅ GOOD: equality on the leading key, range and sort on the second key
+SELECT * FROM orders
+WHERE customerId = :customerId AND createdAt >= :since
+ORDER BY createdAt DESC
 ```
 
-**Good Performance**:
-```dart
-// Only subscribes to active products
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM products WHERE isActive = true'
-);
+When a query projects only indexed fields (plus `_id`), the planner answers it from the index without fetching documents (`"covering": true` in `EXPLAIN`):
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)
+
+SELECT _id, status FROM orders WHERE status = :status
 ```
 
-### 2. Use Field Selection in Subscriptions
-
-**Bad Performance**:
-```dart
-// Syncs entire documents, including large description field
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM products WHERE isActive = true'
-);
-```
-
-**Good Performance**:
-```dart
-// Only syncs essential fields
-final subscription = ditto.sync.registerSubscription(
-  'SELECT _id, name, price, imageUrl FROM products WHERE isActive = true'
-);
-```
-
-### 3. Cancel Unused Subscriptions
-
-**Bad Performance**:
-```dart
-// Old subscription continues syncing
-class FilterableProducts {
-  Subscription? _subscription;
-
-  void setCategory(String category) {
-    // Creates new subscription without canceling old one!
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM products WHERE category = :category',
-      arguments: {'category': category},
-    );
-  }
-}
-```
-
-**Good Performance**:
-```dart
-// Cancel old subscription before creating new one
-class FilterableProducts {
-  Subscription? _subscription;
-
-  void setCategory(String category) {
-    // Cancel old subscription first
-    _subscription?.cancel();
-
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM products WHERE category = :category',
-      arguments: {'category': category},
-    );
-  }
-
-  void dispose() {
-    _subscription?.cancel();
-  }
-}
-```
-
----
-
-## Observer Optimization
-
-### 1. Lightweight Observer Callbacks
-
-**Bad Performance**:
-```dart
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM products',
-  onChange: (result, signalNext) async {
-    final products = result.items.map((item) => item.value).toList();
-
-    // Heavy processing in callback - blocks observer!
-    for (final product in products) {
-      await heavyComputation(product);
-      await saveToDatabase(product);
-      await notifyExternalAPI(product);
-    }
-
-    signalNext();
-  },
-);
-```
-
-**Good Performance**:
-```dart
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM products',
-  onChange: (result, signalNext) {
-    final products = result.items.map((item) => item.value).toList();
-
-    // Lightweight: Just extract and signal
-    _updateProductCache(products);
-
-    // Heavy processing offloaded to separate async task
-    _processProductsAsync(products);
-
-    signalNext(); // Signal immediately
-  },
-);
-
-void _updateProductCache(List<Map<String, dynamic>> products) {
-  // Fast operation: update in-memory cache
-  _cache = products;
-}
-
-Future<void> _processProductsAsync(List<Map<String, dynamic>> products) async {
-  // Heavy processing outside observer callback
-  for (final product in products) {
-    await heavyComputation(product);
-  }
-}
-```
-
-### 2. Debounce Rapid Updates
-
-**Bad Performance**:
-```dart
-// Processes every update, even if updates come faster than processing
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM realtimeData',
-  onChange: (result, signalNext) async {
-    final data = result.items.map((item) => item.value).toList();
-
-    // Heavy processing on every callback
-    await processData(data);
-
-    signalNext();
-  },
-);
-```
-
-**Good Performance**:
-```dart
-// Debounce rapid updates
-DateTime? _lastProcessed;
-const _debounceDelay = Duration(milliseconds: 300);
-
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM realtimeData',
-  onChange: (result, signalNext) async {
-    final now = DateTime.now();
-
-    // Skip if too soon since last processing
-    if (_lastProcessed != null &&
-        now.difference(_lastProcessed!) < _debounceDelay) {
-      signalNext(); // Signal without processing
-      return;
-    }
-
-    final data = result.items.map((item) => item.value).toList();
-    await processData(data);
-
-    _lastProcessed = now;
-    signalNext();
-  },
-);
-```
-
-### 3. Partial UI Updates
-
-**Bad Performance**:
-```dart
-// Full widget rebuild on every change
-class ProductsList extends StatefulWidget {
-  // ...
-}
-
-class _ProductsListState extends State<ProductsList> {
-  List<Map<String, dynamic>> _products = [];
-
-  @override
-  void initState() {
-    super.initState();
-
-    _observer = widget.ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM products',
-      onChange: (result, signalNext) {
-        // Always triggers full rebuild
-        setState(() {
-          _products = result.items.map((item) => item.value).toList();
-        });
-
-        WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-      },
-    );
-  }
-
-  // ...
-}
-```
-
-**Good Performance**:
-```dart
-// Only rebuild when data actually changes
-class _ProductsListState extends State<ProductsList> {
-  final Map<String, Map<String, dynamic>> _productsById = {};
-
-  @override
-  void initState() {
-    super.initState();
-
-    _observer = widget.ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM products',
-      onChange: (result, signalNext) {
-        bool hasChanges = false;
-
-        for (final item in result.items) {
-          final product = item.value;
-          final id = product['_id'] as String;
-
-          if (!_productsById.containsKey(id) ||
-              _hasProductChanged(_productsById[id]!, product)) {
-            _productsById[id] = product;
-            hasChanges = true;
-          }
-        }
-
-        // Only rebuild if changes detected
-        if (hasChanges) {
-          setState(() {});
-        }
-
-        WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-      },
-    );
-  }
-
-  bool _hasProductChanged(Map<String, dynamic> old, Map<String, dynamic> new_) {
-    return old['name'] != new_['name'] ||
-           old['price'] != new_['price'] ||
-           old['isActive'] != new_['isActive'];
-  }
-
-  // ...
-}
-```
-
----
-
-## Query Pattern Anti-Patterns
-
-### Anti-Pattern 1: N+1 Query Problem
-
-**Bad Performance**:
-```dart
-// Fetches orders, then queries customer for each order
-final ordersResult = await ditto.store.execute('SELECT * FROM orders');
-final orders = ordersResult.items.map((item) => item.value).toList();
-
-for (final order in orders) {
-  // N queries for N orders!
-  final customerResult = await ditto.store.execute(
-    'SELECT * FROM customers WHERE _id = :id',
-    arguments: {'id': order['customerId']},
-  );
-
-  final customer = customerResult.items.firstOrNull?.value;
-  print('Order ${order['_id']} for ${customer?['name']}');
-}
-```
-
-**Good Performance**:
-```dart
-// Denormalize: Embed customer data in order document
-final ordersResult = await ditto.store.execute(
-  'SELECT * FROM orders'
-);
-
-// Order documents include embedded customer data:
-// {
-//   "_id": "order_123",
-//   "customerName": "John Doe",  // Denormalized
-//   "customerEmail": "john@example.com",  // Denormalized
-//   "totalAmount": 150.00
-// }
-
-final orders = ordersResult.items.map((item) => item.value).toList();
-
-for (final order in orders) {
-  print('Order ${order['_id']} for ${order['customerName']}');
-}
-```
-
-**Why**: Ditto does not support JOINs. Denormalize data to avoid multiple queries.
-
-### Anti-Pattern 2: Fetching Entire Collection for Existence Check
-
-**Bad Performance**:
-```dart
-// Fetches all products just to check if any exist
-final result = await ditto.store.execute(
-  'SELECT * FROM products WHERE sku = :sku',
-  arguments: {'sku': 'WIDGET-001'},
-);
-
-final exists = result.items.isNotEmpty;
-```
-
-**Good Performance**:
-```dart
-// Only fetch _id field, use LIMIT 1
-final result = await ditto.store.execute(
-  'SELECT _id FROM products WHERE sku = :sku LIMIT 1',
-  arguments: {'sku': 'WIDGET-001'},
-);
-
-final exists = result.items.isNotEmpty;
-```
-
-**Even Better**:
-```dart
-// Use COUNT
-final result = await ditto.store.execute(
-  'SELECT COUNT(*) as count FROM products WHERE sku = :sku',
-  arguments: {'sku': 'WIDGET-001'},
-);
-
-final count = result.items.isNotEmpty
-  ? result.items.first.value['count'] as int
-  : 0;
-
-final exists = count > 0;
-```
-
----
-
-## Performance Monitoring
-
-### Measure Query Execution Time
-
-```dart
-Future<void> measureQueryPerformance() async {
-  final stopwatch = Stopwatch()..start();
-
-  final result = await ditto.store.execute(
-    'SELECT * FROM products WHERE isActive = true'
-  );
-
-  stopwatch.stop();
-
-  print('Query executed in ${stopwatch.elapsedMilliseconds}ms');
-  print('Returned ${result.items.length} items');
-}
-```
-
-### Identify Slow Queries
-
-**Threshold-Based Logging**:
-```dart
-Future<QueryResult> executeWithLogging(
-  Ditto ditto,
-  String query, {
-  Map<String, dynamic>? arguments,
-}) async {
-  final stopwatch = Stopwatch()..start();
-
-  final result = await ditto.store.execute(query, arguments: arguments);
-
-  stopwatch.stop();
-
-  // Log slow queries (>100ms)
-  if (stopwatch.elapsedMilliseconds > 100) {
-    print('SLOW QUERY (${stopwatch.elapsedMilliseconds}ms): $query');
-    print('Arguments: $arguments');
-    print('Results: ${result.items.length} items');
-  }
-
-  return result;
-}
-```
-
----
-
-## Optimization Checklist
-
-- [ ] Use WHERE clauses to filter in database, not application
-- [ ] Select only needed fields with `SELECT field1, field2` instead of `SELECT *`
-- [ ] Use parameterized queries (`:param`) for caching and security
-- [ ] Extract QueryResultItems immediately to release cursors
-- [ ] Narrow subscription scope with specific WHERE clauses
-- [ ] Cancel unused subscriptions to reduce bandwidth
-- [ ] Keep observer callbacks lightweight
-- [ ] Debounce rapid updates in high-frequency observers
-- [ ] Use cursor-based pagination for large datasets
-- [ ] Denormalize data to avoid N+1 query problems
-- [ ] Use aggregation functions (COUNT, SUM, AVG) in database
-- [ ] Monitor query performance and identify slow queries
-- [ ] Test queries with realistic dataset sizes
-
----
-
-## Additional Resources
-
-- **DQL Syntax**: [Ditto DQL Documentation](https://docs.ditto.live/dql/)
-- **Query Examples**: See `examples/` directory
-- **Legacy API Migration**: `reference/legacy-api-migration.md`
-- **Main Best Practices**: `.claude/guides/best-practices/ditto.md`
+Create indexes once at startup with `CREATE INDEX IF NOT EXISTS`; indexes persist and are local to each device. See [Creating Indexes](../../../../guides/best-practices/ditto.md#creating-indexes) and [Index Usage Rules](../../../../guides/best-practices/ditto.md#index-usage-rules).
+
+## JOIN Performance
+
+- Index the join key of every inner collection, or join on `_id`.
+- Start from the most selective collection and filter it in `WHERE`, so fewer outer rows drive lookups.
+- Check the plan with `EXPLAIN` (a join appears as `nlJoin`) and run `ADVISE` before release.
+- Do not use `USE INDEX ''` on large collections: every outer row then scans the whole inner collection.
+
+## Observers
+
+- An observer re-runs its query and delivers the full result set on every relevant change. Keep observed queries filtered and bounded (`WHERE` + `ORDER BY` + `LIMIT`).
+- Prefer several narrow observers (one per screen region) over one observer of a whole collection.
+- Use `COUNT(*)` observers for badges; avoid expensive aggregates in observers that fire often.
+- Throttle UI updates for very busy collections, or use `registerObserverV2` (Experimental) with a slow consumer when only the latest state matters.
+- On native platforms `execute` runs on a worker isolate, so a slow query does not block the UI isolate. Leave `Store.experimentalSkipExecuteIsolateOffload` (Experimental) at its default unless you have measured a throughput problem with many very small queries.
+
+## Checklist
+
+- [ ] `WHERE` filters in DQL, not in Dart
+- [ ] Projections list only needed fields in `execute` and observers
+- [ ] Constant statement text with parameters
+- [ ] `ORDER BY` (+ `_id`) with every `LIMIT`; keyset pagination for long lists
+- [ ] `COUNT(*)` for counts, `LIMIT 1` for existence
+- [ ] `IN :ids` instead of per-ID loops
+- [ ] Predicates avoid functions on indexed fields; every `OR` branch indexable
+- [ ] Composite index key order: equality first, then range/sort, matching direction
+- [ ] JOIN inner keys indexed or joined on `_id`
+- [ ] Observers bounded with `WHERE` and `LIMIT`

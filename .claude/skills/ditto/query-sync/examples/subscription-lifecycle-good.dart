@@ -1,408 +1,210 @@
-// SDK Version: All
-// Platform: All
-// Last Updated: 2025-12-19
+// Recommended subscription patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
 //
-// Example: Subscription and Observer Lifecycle Best Practices
-// This file demonstrates proper lifecycle management to prevent memory leaks
+// Rules:
+// - A subscription query is SELECT * FROM <collection> [WHERE <condition>].
+//   Projections, DISTINCT, aggregates, JOIN, USE IDS, LIMIT and ORDER BY are
+//   rejected when registerSubscription is called.
+// - Subscriptions are long-lived (app or feature scope) and scoped by stable
+//   partition keys. Avoid changing subscriptions more often than about every
+//   15 minutes.
+// - Keep a reference to every SyncSubscription and cancel() it when its data is
+//   no longer relevant. Cancelling does not delete local data.
+// - UI filters, search, tabs, and sorting change local observers, not
+//   subscriptions.
 
-import 'package:ditto/ditto.dart';
-import 'package:flutter/widgets.dart';
+import 'dart:async';
 
-/// Example 1: Service-based lifecycle management
-///
-/// ✅ GOOD: Centralized subscription management with proper cleanup
-class OrdersService {
-  final Ditto ditto;
+import 'package:ditto_live/ditto_live.dart';
+import 'package:flutter/material.dart';
 
-  // Store references to cancel later
-  Subscription? _activeOrdersSubscription;
-  StoreObserver? _activeOrdersObserver;
+/// ✅ GOOD: A session-level service owns the long-lived subscriptions of one
+/// workspace (store). Create it after login; call leaveStore() on logout.
+class OrderSync {
+  OrderSync(this._ditto);
 
-  OrdersService(this.ditto);
+  final Ditto _ditto;
+  final List<SyncSubscription> _subscriptions = [];
+  String? _storeId;
 
-  /// Initialize subscriptions and observers
-  void initialize() {
-    // Step 1: Register subscription (mesh sync)
-    _activeOrdersSubscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
+  String? get storeId => _storeId;
 
-    // Step 2: Register observer (local data changes)
-    _activeOrdersObserver = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-      onChange: (result, signalNext) {
-        // Extract data immediately
-        final orders = result.items.map((item) => item.value).toList();
-
-        // Process orders
-        print('Active orders updated: ${orders.length}');
-
-        // Signal ready for next batch
-        signalNext();
-      },
-    );
+  /// Call once after login or when the user enters a store.
+  void enterStore(String storeId) {
+    if (_storeId == storeId) return; // Already subscribed: keep it stable.
+    leaveStore();
+    _storeId = storeId;
+    // Scope by a stable partition key; screens filter further locally.
+    // orderItems carries a copied storeId because subscriptions cannot join.
+    _subscriptions
+      ..add(_ditto.sync.registerSubscription(
+        'SELECT * FROM orders WHERE storeId = :storeId',
+        arguments: {'storeId': storeId},
+      ))
+      ..add(_ditto.sync.registerSubscription(
+        'SELECT * FROM orderItems WHERE storeId = :storeId',
+        arguments: {'storeId': storeId},
+      ))
+      // Small reference data may be subscribed to without a filter.
+      ..add(_ditto.sync.registerSubscription('SELECT * FROM productCategories'));
   }
 
-  /// Clean up resources
-  void dispose() {
-    // CRITICAL: Always cancel in reverse order
-    _activeOrdersObserver?.cancel();
-    _activeOrdersSubscription?.cancel();
+  /// Call on logout or when the user leaves the store.
+  void leaveStore() {
+    for (final subscription in _subscriptions) {
+      subscription.cancel(); // No-op if already cancelled or Ditto was closed.
+    }
+    _subscriptions.clear();
+    _storeId = null;
   }
 }
 
-/// Example 2: Flutter widget lifecycle integration
-///
-/// ✅ GOOD: Subscribe in initState, cancel in dispose
-class OrdersListWidget extends StatefulWidget {
-  final Ditto ditto;
+/// ✅ GOOD: Switching stores: cancel first, evict the old store's data from this
+/// device, then subscribe to the new store. Evicting documents that still match
+/// an active subscription is futile: peers send them back.
+Future<List<SyncSubscription>> switchStore(
+  Ditto ditto,
+  List<SyncSubscription> currentSubscriptions,
+  String newStoreId,
+) async {
+  for (final subscription in currentSubscriptions) {
+    subscription.cancel();
+  }
 
-  const OrdersListWidget({required this.ditto, Key? key}) : super(key: key);
+  await ditto.store.execute(
+    'EVICT FROM orders WHERE storeId != :storeId',
+    arguments: {'storeId': newStoreId},
+  );
+  await ditto.store.execute(
+    'EVICT FROM orderItems WHERE storeId != :storeId',
+    arguments: {'storeId': newStoreId},
+  );
+
+  return [
+    ditto.sync.registerSubscription(
+      'SELECT * FROM orders WHERE storeId = :storeId',
+      arguments: {'storeId': newStoreId},
+    ),
+    ditto.sync.registerSubscription(
+      'SELECT * FROM orderItems WHERE storeId = :storeId',
+      arguments: {'storeId': newStoreId},
+    ),
+  ];
+}
+
+/// ✅ GOOD (soft delete, Variant A): Soft-deleted documents stay in the
+/// subscription; local queries hide them with coalesce(isDeleted, false) = false.
+/// The deletion flag is a change every device must receive. Old flagged
+/// documents are removed by a synced DELETE (for example on the Ditto Server);
+/// for device-side EVICT, use a retention-window subscription (Variant B, see
+/// the storage-lifecycle skill).
+SyncSubscription subscribeToTeamTasks(Ditto ditto, String teamId) {
+  return ditto.sync.registerSubscription(
+    'SELECT * FROM tasks WHERE teamId = :teamId',
+    arguments: {'teamId': teamId},
+  );
+}
+
+/// ✅ GOOD: Subscriptions for a local JOIN: one per collection the join reads.
+List<SyncSubscription> subscribeForOrderList(Ditto ditto, String storeId) => [
+      ditto.sync.registerSubscription(
+        'SELECT * FROM orders WHERE storeId = :storeId',
+        arguments: {'storeId': storeId},
+      ),
+      ditto.sync.registerSubscription(
+        'SELECT * FROM customers WHERE storeId = :storeId',
+        arguments: {'storeId': storeId},
+      ),
+    ];
+
+/// ✅ GOOD: The subscription (owned by OrderSync) stays stable while the user
+/// switches status filters; only the local observer is replaced.
+class OrdersByStatus extends StatefulWidget {
+  const OrdersByStatus({
+    super.key,
+    required this.ditto,
+    required this.storeId,
+    required this.status,
+  });
+
+  final Ditto ditto;
+  final String storeId;
+  final String status;
 
   @override
-  State<OrdersListWidget> createState() => _OrdersListWidgetState();
+  State<OrdersByStatus> createState() => _OrdersByStatusState();
 }
 
-class _OrdersListWidgetState extends State<OrdersListWidget> {
-  late final Subscription _subscription;
-  late final StoreObserver _observer;
-  List<Map<String, dynamic>> _orders = [];
+class _OrdersByStatusState extends State<OrdersByStatus> {
+  StoreObserver? _observer;
+  StreamSubscription<QueryResult>? _changes;
+  List<Map<String, dynamic>> _orders = const [];
 
   @override
   void initState() {
     super.initState();
-    _setupDittoSync();
+    _observe();
   }
 
-  void _setupDittoSync() {
-    // Register subscription
-    _subscription = widget.ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'pending'},
+  @override
+  void didUpdateWidget(OrdersByStatus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.status != widget.status || oldWidget.storeId != widget.storeId) {
+      _stopObserving();
+      _observe(); // Replacing a local observer is cheap.
+    }
+  }
+
+  void _observe() {
+    final observer = widget.ditto.store.registerObserver(
+      'SELECT * FROM orders WHERE storeId = :storeId AND status = :status '
+      'ORDER BY createdAt DESC, _id',
+      arguments: {'storeId': widget.storeId, 'status': widget.status},
     );
+    _observer = observer;
+    _changes = observer.changes.listen((result) {
+      setState(() {
+        _orders = result.items.map((item) => item.value).toList();
+      });
+    });
+  }
 
-    // Register observer with backpressure control
-    _observer = widget.ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'pending'},
-      onChange: (result, signalNext) {
-        // Extract data immediately
-        final orders = result.items.map((item) => item.value).toList();
-
-        // Update state
-        setState(() {
-          _orders = orders;
-        });
-
-        // Signal after UI update completes
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          signalNext();
-        });
-      },
-    );
+  void _stopObserving() {
+    unawaited(_changes?.cancel());
+    _observer?.cancel();
   }
 
   @override
   void dispose() {
-    // CRITICAL: Cancel before dispose
-    _observer.cancel();
-    _subscription.cancel();
+    _stopObserving();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      itemCount: _orders.length,
-      itemBuilder: (context, index) {
-        final order = _orders[index];
-        return ListTile(
-          title: Text(order['customerName'] ?? 'Unknown'),
-          subtitle: Text('Total: \$${order['totalAmount']}'),
-        );
-      },
-    );
-  }
-}
-
-/// Example 3: Multiple subscriptions with coordinated lifecycle
-///
-/// ✅ GOOD: Manage multiple subscriptions together
-class DashboardService {
-  final Ditto ditto;
-
-  // Track all subscriptions and observers
-  final List<Subscription> _subscriptions = [];
-  final List<StoreObserver> _observers = [];
-
-  DashboardService(this.ditto);
-
-  void initialize() {
-    // Products subscription
-    _subscriptions.add(
-      ditto.sync.registerSubscription(
-        'SELECT * FROM products WHERE isActive = true',
-      ),
-    );
-
-    _observers.add(
-      ditto.store.registerObserverWithSignalNext(
-        'SELECT * FROM products WHERE isActive = true',
-        onChange: _handleProductsChange,
-      ),
-    );
-
-    // Orders subscription
-    _subscriptions.add(
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orders WHERE status IN (:statuses)',
-        arguments: {
-          'statuses': ['pending', 'processing'],
+  Widget build(BuildContext context) => ListView.builder(
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return ListTile(
+            key: ValueKey(order['_id']),
+            title: Text('${order['_id']}'),
+            subtitle: Text('${order['status']}'),
+          );
         },
-      ),
-    );
+      );
+}
 
-    _observers.add(
-      ditto.store.registerObserverWithSignalNext(
-        'SELECT * FROM orders WHERE status IN (:statuses)',
-        arguments: {
-          'statuses': ['pending', 'processing'],
-        },
-        onChange: _handleOrdersChange,
-      ),
-    );
-
-    // Analytics subscription
-    _subscriptions.add(
-      ditto.sync.registerSubscription(
-        'SELECT * FROM analytics WHERE date >= :date',
-        arguments: {
-          'date': DateTime.now().subtract(Duration(days: 7)).toIso8601String(),
-        },
-      ),
-    );
-
-    _observers.add(
-      ditto.store.registerObserverWithSignalNext(
-        'SELECT * FROM analytics WHERE date >= :date',
-        arguments: {
-          'date': DateTime.now().subtract(Duration(days: 7)).toIso8601String(),
-        },
-        onChange: _handleAnalyticsChange,
-      ),
-    );
-  }
-
-  void dispose() {
-    // Cancel all observers first
-    for (final observer in _observers) {
-      observer.cancel();
-    }
-    _observers.clear();
-
-    // Then cancel all subscriptions
-    for (final subscription in _subscriptions) {
-      subscription.cancel();
-    }
-    _subscriptions.clear();
-  }
-
-  void _handleProductsChange(QueryResult result, Function signalNext) {
-    final products = result.items.map((item) => item.value).toList();
-    print('Products updated: ${products.length}');
-    signalNext();
-  }
-
-  void _handleOrdersChange(QueryResult result, Function signalNext) {
-    final orders = result.items.map((item) => item.value).toList();
-    print('Orders updated: ${orders.length}');
-    signalNext();
-  }
-
-  void _handleAnalyticsChange(QueryResult result, Function signalNext) {
-    final analytics = result.items.map((item) => item.value).toList();
-    print('Analytics updated: ${analytics.length}');
-    signalNext();
+/// ✅ GOOD: Inspect active subscriptions for debugging only. Read queryString
+/// and isCancelled. Note (SDK 5.1.0): do not read queryArguments or
+/// queryArgumentsJsonString here; for subscriptions registered without
+/// arguments this can terminate the app. Keep your own references instead.
+void logActiveSubscriptions(Ditto ditto) {
+  for (final subscription in ditto.sync.subscriptions) {
+    debugPrint('subscription: ${subscription.queryString} '
+        'cancelled=${subscription.isCancelled}');
   }
 }
 
-/// Example 4: Dynamic subscription management (conditional subscriptions)
-///
-/// ✅ GOOD: Manage subscriptions that change based on application state
-class FilterableOrdersService {
-  final Ditto ditto;
-
-  Subscription? _currentSubscription;
-  StoreObserver? _currentObserver;
-  String? _currentFilter;
-
-  FilterableOrdersService(this.ditto);
-
-  /// Update filter and re-subscribe
-  void setFilter(String status) {
-    // If filter hasn't changed, don't re-subscribe
-    if (_currentFilter == status) return;
-
-    // Cancel existing subscription
-    _cancelCurrentSubscription();
-
-    // Register new subscription with new filter
-    _currentFilter = status;
-    _currentSubscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': status},
-    );
-
-    _currentObserver = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': status},
-      onChange: (result, signalNext) {
-        final orders = result.items.map((item) => item.value).toList();
-        print('Orders with status "$status": ${orders.length}');
-        signalNext();
-      },
-    );
-  }
-
-  void _cancelCurrentSubscription() {
-    _currentObserver?.cancel();
-    _currentSubscription?.cancel();
-    _currentObserver = null;
-    _currentSubscription = null;
-  }
-
-  void dispose() {
-    _cancelCurrentSubscription();
-    _currentFilter = null;
-  }
-}
-
-/// Example 5: One-time query (no subscription needed)
-///
-/// ✅ GOOD: Use execute() for one-time queries without subscription
-/// Only use subscriptions when you need continuous sync
-Future<List<Map<String, dynamic>>> getCompletedOrders(Ditto ditto) async {
-  // No subscription needed for one-time historical data
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE status = :status',
-    arguments: {'status': 'completed'},
-  );
-
-  // Extract and return
-  return result.items.map((item) => item.value).toList();
-}
-
-/// Example 6: Subscription with error handling
-///
-/// ✅ GOOD: Gracefully handle errors in observer callbacks
-class RobustOrdersService {
-  final Ditto ditto;
-
-  Subscription? _subscription;
-  StoreObserver? _observer;
-
-  RobustOrdersService(this.ditto);
-
-  void initialize() {
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
-
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-      onChange: (result, signalNext) {
-        try {
-          // Extract data
-          final orders = result.items.map((item) => item.value).toList();
-
-          // Process orders (might throw)
-          _processOrders(orders);
-
-          // Success: signal next
-          signalNext();
-        } catch (e, stackTrace) {
-          // Log error but still signal to prevent blocking
-          print('Error processing orders: $e');
-          print('Stack trace: $stackTrace');
-
-          // IMPORTANT: Still call signalNext() to prevent blocking
-          signalNext();
-        }
-      },
-    );
-  }
-
-  void _processOrders(List<Map<String, dynamic>> orders) {
-    // Processing logic that might throw
-    for (final order in orders) {
-      // Validate and process
-      if (order['totalAmount'] == null) {
-        throw Exception('Invalid order: missing totalAmount');
-      }
-    }
-  }
-
-  void dispose() {
-    _observer?.cancel();
-    _subscription?.cancel();
-  }
-}
-
-/// Example 7: Delayed subscription cancellation (graceful shutdown)
-///
-/// ✅ GOOD: Give pending operations time to complete
-class GracefulOrdersService {
-  final Ditto ditto;
-
-  Subscription? _subscription;
-  StoreObserver? _observer;
-  bool _isProcessing = false;
-
-  GracefulOrdersService(this.ditto);
-
-  void initialize() {
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
-
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-      onChange: (result, signalNext) async {
-        _isProcessing = true;
-
-        try {
-          final orders = result.items.map((item) => item.value).toList();
-
-          // Async processing
-          await _processOrdersAsync(orders);
-
-          signalNext();
-        } finally {
-          _isProcessing = false;
-        }
-      },
-    );
-  }
-
-  Future<void> _processOrdersAsync(List<Map<String, dynamic>> orders) async {
-    // Simulate async work
-    await Future.delayed(Duration(milliseconds: 100));
-  }
-
-  Future<void> dispose() async {
-    // Wait for processing to complete
-    while (_isProcessing) {
-      await Future.delayed(Duration(milliseconds: 50));
-    }
-
-    // Now safe to cancel
-    _observer?.cancel();
-    _subscription?.cancel();
-  }
-}
+/// ✅ GOOD: Pausing sync does not require cancelling subscriptions.
+/// stop() pauses them; start() resumes them.
+void pauseSync(Ditto ditto) => ditto.sync.stop();
+void resumeSync(Ditto ditto) => ditto.sync.start();

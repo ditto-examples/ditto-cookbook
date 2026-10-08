@@ -1,465 +1,242 @@
-// SDK Version: All
-// Platform: All
-// Last Updated: 2025-12-19
+// SDK Version: ditto_live 5.1.0
+// Platform: Flutter (the DQL applies to all SDKs)
+// Last Updated: 2026-10-08
 //
-// ============================================================================
-// Soft-Delete Pattern with Multi-Hop Relay Support
-// ============================================================================
+// Soft delete that propagates reliably through the mesh.
 //
-// This example demonstrates the CORRECT Soft-Delete pattern that supports
-// multi-hop relay in Ditto's mesh network.
+// Guide: .claude/guides/best-practices/ditto.md#soft-delete
+//        .claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup
 //
-// CRITICAL LEARNING: Subscriptions Must Include ALL Documents (Even Deleted)
-//
-// PATTERNS DEMONSTRATED:
-// 1. ✅ Correct Pattern: Broad subscription (no deletion filter)
-// 2. ✅ Observer filters deleted items for UI display
-// 3. ✅ execute() filters deleted items for app logic
-// 4. ❌ Incorrect Pattern: Filtered subscription (breaks relay)
-// 5. ✅ Multi-device simulation showing propagation
-// 6. ✅ Relay failure scenario demonstration
-//
-// WHY THIS MATTERS:
-// - Ditto peers can relay data through intermediate devices (multi-hop sync)
-// - If Device A's subscription filters `isDeleted = true`, it won't store deleted docs
-// - Device A cannot relay what it doesn't have to Device B
-// - Result: Device B never receives deletion updates (inconsistent state)
-//
-// KEY PRINCIPLE:
-// - Subscriptions declare data needs to the mesh network
-// - Observers control local UI display
-// - Keep them separate for Soft-Delete to work in multi-hop scenarios
-//
-// OFFICIAL QUOTE:
-// "we need to be careful to distinguish between the subscription and the store
-// query. The subscription must not have WHERE deleted or the soft-delete flag
-// will not be propagated to other clients. The queries used for observers +
-// execute commands MUST have the WHERE NOT deleted clause. This is definitely
-// a footgun that I imagine is a common issue hit with new users"
-//
-// ============================================================================
+// Key rules:
+// - Soft delete is an ordinary UPDATE, so it syncs like any other change and
+//   does not depend on the tombstone TTL.
+// - Filter with coalesce(isDeleted, false) = false. `isDeleted != true` and
+//   `NOT isDeleted` silently drop documents where the field is missing or null.
+// - Keep flagged documents in the subscription at least until every device
+//   (including relays) has received the flag. Two designs:
+//   Variant A: subscribe to the whole collection or partition; clean up with a
+//   DELETE on the Ditto Server (or another authorized peer) that syncs to
+//   every device. Device-side EVICT does not work here (documents sync back).
+//   Variant B: subscribe to active documents plus documents deleted within a
+//   retention window; each device evicts exactly the complement.
 
-import 'package:ditto/ditto.dart';
+import 'dart:async';
+
+import 'package:ditto_live/ditto_live.dart';
+import 'package:flutter/material.dart';
+
+String nowUtc() => DateTime.now().toUtc().toIso8601String();
 
 // ============================================================================
-// PATTERN 1: ✅ CORRECT - Broad Subscription with Filtered Observer
+// Writes
 // ============================================================================
 
-/// ✅ GOOD: Correct Soft-Delete pattern for multi-hop relay
-class CorrectSoftDeletePattern {
-  final Ditto ditto;
-  DittoSyncSubscription? subscription;
-  DittoStoreObserver? observer;
-
-  CorrectLogicalDeletionPattern(this.ditto);
-
-  Future<void> setupCorrectPattern() async {
-    print('✅ CORRECT PATTERN: Broad subscription + filtered observer\n');
-
-    // ✅ STEP 1: Subscribe to ALL tasks (including deleted)
-    // CRITICAL: No isDeleted filter in subscription
-    print('1️⃣ Setting up subscription (no deletion filter)...');
-    subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM tasks',  // No isDeleted filter - enables proper relay
-    );
-    print('   ✅ Subscription includes ALL documents (even isDeleted=true)\n');
-
-    // ✅ STEP 2: Observer filters deleted tasks for UI display
-    print('2️⃣ Setting up observer (with deletion filter for UI)...');
-    observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM tasks WHERE isDeleted != true ORDER BY createdAt DESC',
-      onChange: (result, signalNext) {
-        final activeTasks = result.items
-            .map((item) => item.value)
-            .toList();
-
-        print('   📊 Observer callback: ${activeTasks.length} active tasks');
-        print('   (Deleted tasks are filtered out for UI)\n');
-
-        // Update UI with active tasks only
-        // updateUI(activeTasks);
-
-        signalNext();
+/// ✅ GOOD: New documents start with isDeleted = false.
+Future<void> createOrder(Ditto ditto, String orderId, String status) async {
+  await ditto.store.execute(
+    'INSERT INTO orders DOCUMENTS (:order)',
+    arguments: {
+      'order': {
+        '_id': orderId,
+        'status': status,
+        'isDeleted': false,
+        'createdAt': nowUtc(),
       },
-    );
-    print('   ✅ Observer filters isDeleted=true for UI display\n');
-
-    print('✅ Pattern setup complete!\n');
-    print('📝 Summary:');
-    print('   - Subscription: SELECT * FROM tasks (no filter)');
-    print('   - Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   - Result: Deleted docs stored locally + relayed to peers\n');
-  }
-
-  Future<void> markTaskAsDeleted(String taskId) async {
-    print('🗑️ Marking task as deleted...\n');
-
-    final deletedAt = DateTime.now().toIso8601String();
-    await ditto.store.execute(
-      'UPDATE tasks SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
-      arguments: {'id': taskId, 'deletedAt': deletedAt},
-    );
-
-    print('   ✅ Task marked as deleted (isDeleted=true)');
-    print('   📦 Document stored locally (even though deleted)');
-    print('   🔄 Deletion will relay to other peers via subscription\n');
-  }
-
-  Future<void> queryActiveTasks() async {
-    print('📋 Querying active tasks for app logic...\n');
-
-    // ✅ execute() queries filter deleted tasks
-    final result = await ditto.store.execute(
-      'SELECT * FROM tasks WHERE isDeleted != true AND status = :status',
-      arguments: {'status': 'pending'},
-    );
-
-    final activeTasks = result.items.map((item) => item.value).toList();
-    print('   📊 Found ${activeTasks.length} active pending tasks');
-    print('   (Deleted tasks excluded from app logic)\n');
-  }
-
-  void cleanup() {
-    subscription?.cancel();
-    observer?.cancel();
-    print('🧹 Cleaned up subscription and observer\n');
-  }
-}
-
-// ============================================================================
-// PATTERN 2: ❌ INCORRECT - Filtered Subscription (Breaks Relay)
-// ============================================================================
-
-/// ❌ BAD: Incorrect pattern that breaks multi-hop relay
-class IncorrectLogicalDeletionPattern {
-  final Ditto ditto;
-  DittoSyncSubscription? subscription;
-  DittoStoreObserver? observer;
-
-  IncorrectLogicalDeletionPattern(this.ditto);
-
-  Future<void> setupIncorrectPattern() async {
-    print('❌ INCORRECT PATTERN: Filtered subscription (BREAKS RELAY!)\n');
-
-    // ❌ STEP 1: Subscribe with deletion filter (WRONG!)
-    print('1️⃣ Setting up subscription (with deletion filter - WRONG!)...');
-    subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM tasks WHERE isDeleted != true',  // BREAKS RELAY!
-    );
-    print('   ❌ Subscription filters isDeleted=true documents\n');
-    print('   ⚠️  Problem: Deleted docs not stored locally');
-    print('   ⚠️  Problem: Cannot relay deleted docs to other peers\n');
-
-    // STEP 2: Observer (same as correct pattern, but doesn't matter)
-    print('2️⃣ Setting up observer...');
-    observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM tasks WHERE isDeleted != true ORDER BY createdAt DESC',
-      onChange: (result, signalNext) {
-        final activeTasks = result.items
-            .map((item) => item.value)
-            .toList();
-
-        print('   📊 Observer callback: ${activeTasks.length} active tasks\n');
-
-        signalNext();
-      },
-    );
-
-    print('❌ Pattern setup complete (but BROKEN for multi-hop!)\n');
-    print('📝 Summary:');
-    print('   - Subscription: SELECT * FROM tasks WHERE isDeleted != true (WRONG!)');
-    print('   - Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   - Result: Deleted docs NOT stored → Cannot relay to peers!\n');
-  }
-
-  Future<void> markTaskAsDeleted(String taskId) async {
-    print('🗑️ Marking task as deleted...\n');
-
-    final deletedAt = DateTime.now().toIso8601String();
-    await ditto.store.execute(
-      'UPDATE tasks SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
-      arguments: {'id': taskId, 'deletedAt': deletedAt},
-    );
-
-    print('   ✅ Task marked as deleted (isDeleted=true)');
-    print('   ⚠️  Subscription no longer matches this document!');
-    print('   ⚠️  Document may not be stored or relayed properly');
-    print('   ❌ Other peers may never receive this deletion update\n');
-  }
-
-  void cleanup() {
-    subscription?.cancel();
-    observer?.cancel();
-    print('🧹 Cleaned up subscription and observer\n');
-  }
-}
-
-// ============================================================================
-// PATTERN 3: Multi-Device Relay Simulation
-// ============================================================================
-
-/// Simulates multi-hop relay scenario with 3 devices
-class MultiHopRelaySimulation {
-  late Ditto dittoA;
-  late Ditto dittoB;
-  late Ditto dittoC;
-
-  Future<void> demonstrateCorrectPattern() async {
-    print('═══════════════════════════════════════════════════════════════════');
-    print('SIMULATION: Correct Pattern with Multi-Hop Relay');
-    print('═══════════════════════════════════════════════════════════════════\n');
-
-    print('Network Topology: Device A ←→ Device B ←→ Device C');
-    print('(Device B acts as relay between A and C)\n');
-
-    print('📱 Device A (source): Creates and deletes tasks');
-    print('📱 Device B (relay): Relays data between A and C');
-    print('📱 Device C (destination): Receives all updates\n');
-
-    // Initialize devices (simplified - in real app, use proper initialization)
-    // dittoA = await Ditto.open(...);
-    // dittoB = await Ditto.open(...);
-    // dittoC = await Ditto.open(...);
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 1: All devices set up CORRECT subscriptions\n');
-
-    print('Device A: Subscription with NO deletion filter');
-    print('   SELECT * FROM tasks\n');
-
-    print('Device B: Subscription with NO deletion filter');
-    print('   SELECT * FROM tasks\n');
-
-    print('Device C: Subscription with NO deletion filter');
-    print('   SELECT * FROM tasks\n');
-
-    print('✅ All devices can receive AND relay ALL documents\n');
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 2: Device A creates a task\n');
-
-    print('Device A: INSERT task_1 (title="Buy groceries")');
-    print('   ✅ Task stored in Device A');
-    print('   🔄 Syncs to Device B');
-    print('   ✅ Task stored in Device B');
-    print('   🔄 Device B relays to Device C');
-    print('   ✅ Task stored in Device C\n');
-
-    print('Result: All devices have task_1 ✅\n');
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 3: Device A marks task as deleted\n');
-
-    print('Device A: UPDATE task_1 SET isDeleted=true');
-    print('   ✅ Deletion update stored in Device A (still matches subscription)');
-    print('   🔄 Syncs to Device B');
-    print('   ✅ Deletion update stored in Device B (still matches subscription)');
-    print('   🔄 Device B relays to Device C');
-    print('   ✅ Deletion update stored in Device C\n');
-
-    print('Result: All devices know task_1 is deleted ✅\n');
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 4: Observers on each device\n');
-
-    print('Device A Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   📊 Result: 0 tasks (task_1 filtered out)\n');
-
-    print('Device B Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   📊 Result: 0 tasks (task_1 filtered out)\n');
-
-    print('Device C Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   📊 Result: 0 tasks (task_1 filtered out)\n');
-
-    print('✅ All devices show consistent UI (no deleted tasks displayed)\n');
-
-    print('═══════════════════════════════════════════════════════════════════');
-    print('CONCLUSION: Correct pattern works perfectly! ✅');
-    print('═══════════════════════════════════════════════════════════════════\n');
-  }
-
-  Future<void> demonstrateIncorrectPattern() async {
-    print('═══════════════════════════════════════════════════════════════════');
-    print('SIMULATION: Incorrect Pattern with Multi-Hop Relay (BROKEN)');
-    print('═══════════════════════════════════════════════════════════════════\n');
-
-    print('Network Topology: Device A ←→ Device B ←→ Device C');
-    print('(Device B acts as relay between A and C)\n');
-
-    print('📱 Device A (source): Creates and deletes tasks');
-    print('📱 Device B (relay): Relays data between A and C');
-    print('📱 Device C (destination): Receives all updates\n');
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 1: All devices set up INCORRECT subscriptions\n');
-
-    print('Device A: Subscription WITH deletion filter (WRONG!)');
-    print('   SELECT * FROM tasks WHERE isDeleted != true\n');
-
-    print('Device B: Subscription WITH deletion filter (WRONG!)');
-    print('   SELECT * FROM tasks WHERE isDeleted != true\n');
-
-    print('Device C: Subscription WITH deletion filter (WRONG!)');
-    print('   SELECT * FROM tasks WHERE isDeleted != true\n');
-
-    print('⚠️  Problem: Devices won\'t store deleted documents\n');
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 2: Device A creates a task\n');
-
-    print('Device A: INSERT task_1 (title="Buy groceries")');
-    print('   ✅ Task stored in Device A');
-    print('   🔄 Syncs to Device B');
-    print('   ✅ Task stored in Device B');
-    print('   🔄 Device B relays to Device C');
-    print('   ✅ Task stored in Device C\n');
-
-    print('Result: All devices have task_1 ✅\n');
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 3: Device A marks task as deleted\n');
-
-    print('Device A: UPDATE task_1 SET isDeleted=true');
-    print('   ⚠️  Deletion update NO LONGER matches Device A\'s subscription!');
-    print('   ⚠️  Device A may not store the update properly');
-    print('   ❌ Deletion update NOT synced to Device B (doesn\'t match subscription)');
-    print('   ❌ Device B doesn\'t receive deletion update');
-    print('   ❌ Device B cannot relay what it doesn\'t have to Device C');
-    print('   ❌ Device C never receives deletion update\n');
-
-    print('Result: Inconsistent state across devices! ❌\n');
-
-    print('─────────────────────────────────────────────────────────────────\n');
-    print('STEP 4: Observers on each device\n');
-
-    print('Device A Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   📊 Result: 0 tasks (task_1 is deleted)\n');
-
-    print('Device B Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   📊 Result: 1 task (task_1 STILL ACTIVE!) ❌');
-    print('   ⚠️  Device B never received deletion update\n');
-
-    print('Device C Observer: SELECT * FROM tasks WHERE isDeleted != true');
-    print('   📊 Result: 1 task (task_1 STILL ACTIVE!) ❌');
-    print('   ⚠️  Device C never received deletion update\n');
-
-    print('❌ Devices show INCONSISTENT UI:');
-    print('   - Device A: 0 tasks (correct)');
-    print('   - Device B: 1 task (WRONG - shows deleted task)');
-    print('   - Device C: 1 task (WRONG - shows deleted task)\n');
-
-    print('═══════════════════════════════════════════════════════════════════');
-    print('CONCLUSION: Incorrect pattern causes data inconsistency! ❌');
-    print('═══════════════════════════════════════════════════════════════════\n');
-
-    print('🔧 FIX: Change subscriptions to include ALL documents:');
-    print('   SELECT * FROM tasks (no isDeleted filter)');
-    print('   Filter only in observers for UI display\n');
-  }
-}
-
-// ============================================================================
-// PATTERN 4: Comparison Table
-// ============================================================================
-
-class PatternComparison {
-  static void printComparison() {
-    print('═══════════════════════════════════════════════════════════════════');
-    print('COMPARISON: Correct vs Incorrect Soft-Delete Patterns');
-    print('═══════════════════════════════════════════════════════════════════\n');
-
-    print('┌─────────────────────────────────────────────────────────────────┐');
-    print('│ Component          │ Correct Pattern       │ Incorrect Pattern │');
-    print('├─────────────────────────────────────────────────────────────────┤');
-    print('│ Subscription       │ No deletion filter    │ With deletion     │');
-    print('│                    │ SELECT * FROM tasks   │ filter (WRONG!)   │');
-    print('│                    │                       │                   │');
-    print('│ Observer (UI)      │ With deletion filter  │ With deletion     │');
-    print('│                    │ WHERE isDeleted!=true │ filter            │');
-    print('│                    │                       │                   │');
-    print('│ execute() (logic)  │ With deletion filter  │ With deletion     │');
-    print('│                    │ WHERE isDeleted!=true │ filter            │');
-    print('│                    │                       │                   │');
-    print('│ Deleted docs       │ Stored locally ✅     │ Not stored ❌     │');
-    print('│ stored?            │                       │                   │');
-    print('│                    │                       │                   │');
-    print('│ Relay to peers?    │ Yes ✅                │ No ❌             │');
-    print('│                    │                       │                   │');
-    print('│ Multi-hop sync?    │ Works ✅              │ Broken ❌         │');
-    print('│                    │                       │                   │');
-    print('│ Data consistency?  │ Consistent ✅         │ Inconsistent ❌   │');
-    print('└─────────────────────────────────────────────────────────────────┘\n');
-
-    print('KEY TAKEAWAY:');
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    print('Subscriptions declare data needs to the mesh network.');
-    print('Filter deleted docs ONLY in observers (UI) and execute() (logic).');
-    print('NEVER filter deletion flags in subscriptions!\n');
-  }
-}
-
-// ============================================================================
-// Main Example
-// ============================================================================
-
-void main() async {
-  print('═══════════════════════════════════════════════════════════════════');
-  print('Soft-Delete Pattern with Multi-Hop Relay - Best Practices');
-  print('═══════════════════════════════════════════════════════════════════\n');
-
-  // Initialize Ditto (simplified)
-  final ditto = await Ditto.open(
-    identity: DittoIdentity.onlinePlayground(
-      appID: 'your-app-id',
-      token: 'your-token',
-    ),
-    persistenceDirectory: '/tmp/ditto',
+    },
   );
+}
 
-  print('PART 1: Correct Pattern Demonstration\n');
-  print('═══════════════════════════════════════════════════════════════════\n');
+/// ✅ GOOD: Set a flag and a UTC timestamp instead of deleting.
+Future<void> softDeleteOrder(Ditto ditto, String orderId) async {
+  await ditto.store.execute(
+    'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
+    arguments: {'id': orderId, 'deletedAt': nowUtc()},
+  );
+}
 
-  final correctPattern = CorrectLogicalDeletionPattern(ditto);
-  await correctPattern.setupCorrectPattern();
-  await correctPattern.markTaskAsDeleted('task_123');
-  await correctPattern.queryActiveTasks();
-  correctPattern.cleanup();
+/// ✅ GOOD: A soft delete can be undone.
+Future<void> restoreOrder(Ditto ditto, String orderId) async {
+  await ditto.store.execute(
+    'UPDATE orders SET isDeleted = false UNSET deletedAt WHERE _id = :id',
+    arguments: {'id': orderId},
+  );
+}
 
-  print('\n═══════════════════════════════════════════════════════════════════\n');
-  print('PART 2: Incorrect Pattern Demonstration\n');
-  print('═══════════════════════════════════════════════════════════════════\n');
+// ============================================================================
+// Reads
+// ============================================================================
 
-  final incorrectPattern = IncorrectLogicalDeletionPattern(ditto);
-  await incorrectPattern.setupIncorrectPattern();
-  await incorrectPattern.markTaskAsDeleted('task_456');
-  incorrectPattern.cleanup();
+/// ✅ GOOD: coalesce() treats missing and null as "not deleted".
+Future<List<Map<String, dynamic>>> activeOrders(Ditto ditto, String status) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders '
+    'WHERE status = :status AND coalesce(isDeleted, false) = false '
+    'ORDER BY createdAt DESC',
+    arguments: {'status': status},
+  );
+  return result.items.map((item) => item.value).toList();
+}
 
-  print('\n═══════════════════════════════════════════════════════════════════\n');
-  print('PART 3: Multi-Hop Relay Simulations\n');
-  print('═══════════════════════════════════════════════════════════════════\n');
+/// ✅ GOOD: Index-friendly equivalent of the coalesce() filter when an index
+/// on isDeleted exists. Returns the same documents.
+Future<List<Map<String, dynamic>>> activeOrdersIndexFriendly(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders '
+    'WHERE isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false',
+  );
+  return result.items.map((item) => item.value).toList();
+}
 
-  final simulation = MultiHopRelaySimulation();
-  await simulation.demonstrateCorrectPattern();
-  await Future.delayed(Duration(seconds: 2));
-  await simulation.demonstrateIncorrectPattern();
+/// ❌ BAD: Misses every document where isDeleted is missing or null
+/// (for example documents written before the flag was introduced).
+Future<List<Map<String, dynamic>>> activeOrdersWrongFilter(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders WHERE isDeleted != true',
+  );
+  return result.items.map((item) => item.value).toList();
+}
 
-  print('\n═══════════════════════════════════════════════════════════════════\n');
-  print('PART 4: Pattern Comparison\n');
-  print('═══════════════════════════════════════════════════════════════════\n');
+// ============================================================================
+// Variant A: whole-collection subscription, cleanup by a synced DELETE
+// ============================================================================
 
-  PatternComparison.printComparison();
+/// ✅ GOOD (Variant A): The subscription (owned by a long-lived service such as
+/// OrderSync) includes soft-deleted orders; local queries hide them. Cleanup is
+/// a DELETE executed on the Ditto Server after the retention period, for
+/// example `DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff
+/// LIMIT 30000`, which syncs to every device.
+SyncSubscription subscribeToStoreOrders(Ditto ditto, String storeId) {
+  return ditto.sync.registerSubscription(
+    'SELECT * FROM orders WHERE storeId = :storeId',
+    arguments: {'storeId': storeId},
+  );
+}
 
-  // Cleanup
-  await ditto.close();
+// ============================================================================
+// Variant B: retention-window subscription, cleanup by device-side EVICT
+// ============================================================================
 
-  print('═══════════════════════════════════════════════════════════════════');
-  print('KEY TAKEAWAYS:');
-  print('═══════════════════════════════════════════════════════════════════');
-  print('1. ✅ Subscriptions: NO deletion flag filter (enables relay)');
-  print('2. ✅ Observers: YES deletion flag filter (UI display)');
-  print('3. ✅ execute(): YES deletion flag filter (app logic)');
-  print('4. ⚠️  Common mistake: Filtering isDeleted in subscription');
-  print('5. ❌ Result: Deleted docs don\'t propagate through mesh');
-  print('6. ✅ Fix: Subscribe broadly, filter only in observers/queries');
-  print('═══════════════════════════════════════════════════════════════════\n');
+/// ✅ GOOD (Variant B): A long-lived service keeps active orders and orders
+/// deleted within the retention window, and evicts older deleted orders.
+class OrderSoftDeleteRetention {
+  OrderSoftDeleteRetention(this.ditto, this.storeId);
+
+  final Ditto ditto;
+  final String storeId;
+
+  /// Longer than the longest time a device is expected to stay offline.
+  static const retention = Duration(days: 30);
+
+  SyncSubscription? _subscription;
+
+  String _cutoff() =>
+      DateTime.now().toUtc().subtract(retention).toIso8601String();
+
+  /// Call once at startup (before ditto.sync.start()).
+  void start() {
+    _subscription = _subscribe(_cutoff());
+  }
+
+  /// Call on a schedule, at most about once a day. The cutoff moves only here,
+  /// never on screen changes.
+  Future<int> evictExpired() async {
+    final cutoff = _cutoff();
+
+    // 1. Stop asking peers for the documents that are about to be evicted.
+    _subscription?.cancel();
+
+    // 2. Evict only documents outside the new subscription, so they do not
+    //    sync back.
+    final result = await ditto.store.execute(
+      'EVICT FROM orders '
+      'WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff',
+      arguments: {'storeId': storeId, 'cutoff': cutoff},
+    );
+
+    // 3. Subscribe again with the moved boundary.
+    _subscription = _subscribe(cutoff);
+    return result.mutatedDocumentIDs().length;
+  }
+
+  SyncSubscription _subscribe(String cutoff) =>
+      ditto.sync.registerSubscription(
+        'SELECT * FROM orders WHERE storeId = :storeId '
+        'AND (coalesce(isDeleted, false) = false OR deletedAt >= :cutoff)',
+        arguments: {'storeId': storeId, 'cutoff': cutoff},
+      );
+
+  void dispose() => _subscription?.cancel();
+}
+
+/// ❌ BAD: A flagged document leaves the subscription immediately, so devices
+/// (and relays) that do not have the flag yet can miss it.
+SyncSubscription subscribeToActiveOrdersOnly(Ditto ditto) {
+  return ditto.sync.registerSubscription(
+    'SELECT * FROM orders WHERE coalesce(isDeleted, false) = false',
+  );
+}
+
+// ============================================================================
+// UI: the observer hides flagged documents
+// ============================================================================
+
+/// ✅ GOOD: The subscription keeps flagged documents; the observer hides them.
+/// Results are consumed through the `changes` stream and both the stream
+/// subscription and the observer are cancelled in dispose().
+class ActiveOrdersList extends StatefulWidget {
+  const ActiveOrdersList({
+    super.key,
+    required this.ditto,
+    required this.storeId,
+  });
+
+  final Ditto ditto;
+  final String storeId;
+
+  @override
+  State<ActiveOrdersList> createState() => _ActiveOrdersListState();
+}
+
+class _ActiveOrdersListState extends State<ActiveOrdersList> {
+  late final StoreObserver _observer;
+  late final StreamSubscription<QueryResult> _changes;
+  List<Map<String, dynamic>> _orders = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _observer = widget.ditto.store.registerObserver(
+      'SELECT * FROM orders '
+      'WHERE storeId = :storeId AND coalesce(isDeleted, false) = false '
+      'ORDER BY createdAt DESC',
+      arguments: {'storeId': widget.storeId},
+    );
+    _changes = _observer.changes.listen((result) {
+      setState(() {
+        _orders = result.items.map((item) => item.value).toList();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _changes.cancel();
+    _observer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        children: [
+          for (final order in _orders)
+            ListTile(
+              key: ValueKey(order['_id']),
+              title: Text('${order['_id']}'),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => softDeleteOrder(widget.ditto, '${order['_id']}'),
+              ),
+            ),
+        ],
+      );
 }

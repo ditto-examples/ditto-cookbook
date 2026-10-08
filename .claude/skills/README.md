@@ -32,7 +32,7 @@ Located in `ditto/`, these Skills help you write high-quality Ditto SDK code acr
 ### Automatic Invocation
 
 Claude Code automatically discovers and uses Skills based on:
-- **File patterns**: e.g., `*.dart` files with `import 'package:ditto/ditto.dart'`
+- **File patterns**: e.g., `*.dart` files with `import 'package:ditto_live/ditto_live.dart'`
 - **Code patterns**: e.g., DQL queries, subscription creation, data model design
 - **Your questions**: e.g., "How should I structure this Ditto document?"
 
@@ -44,7 +44,7 @@ Ditto Skills automatically detect your platform:
 - **Flutter/Dart**: `*.dart` files with Ditto imports
 - **JavaScript**: `*.js` files with `@dittolive/ditto` imports
 - **Swift**: `*.swift` files with `import DittoSwift`
-- **Kotlin**: `*.kt` files with `import live.ditto.*`
+- **Kotlin**: `*.kt` files with `import com.ditto.kotlin.*`
 
 Skills provide platform-specific guidance based on your code.
 
@@ -54,7 +54,7 @@ Each Skill directory contains:
 
 ```
 skill-name/
-├── SKILL.md              # Main instructions (500-800 lines)
+├── SKILL.md              # Main instructions (keep under 500 lines)
 ├── examples/             # Runnable code examples (50-150 lines each)
 │   ├── pattern-good.dart
 │   ├── pattern-bad.dart

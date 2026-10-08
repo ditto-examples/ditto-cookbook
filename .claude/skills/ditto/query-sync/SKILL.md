@@ -1,799 +1,499 @@
 ---
 name: query-sync
 description: |
-  Validates Ditto DQL queries, subscriptions, and observer patterns.
+  Validates Ditto SDK 5.1 DQL queries, writes, subscriptions, and store observers.
 
   CRITICAL ISSUES PREVENTED:
-  - Memory leaks from uncanceled subscriptions and QueryResultItems
-  - Legacy API usage (non-Flutter: deprecated SDK 4.12+, removed v5)
-  - Broad subscriptions causing bandwidth waste
-  - Incorrect observer selection and backpressure management
+  - DQL built with string interpolation instead of parameters
+  - Filters that silently drop documents (MISSING vs NULL, IN (:values), ANY ... SATISFIES)
+  - Subscriptions rejected at registration (projections, JOIN, LIMIT/ORDER BY) or re-registered on every filter change
+  - Uncancelled subscriptions and observers; onChange-only observers retaining every result
+  - Upserts that rewrite unchanged data and fire observers (DO UPDATE instead of DO UPDATE_LOCAL_DIFF)
+  - JOIN queries failing without an index on the inner collection
+  - Retained QueryResult / QueryResultItem objects
 
   TRIGGERS:
-  - Writing DQL queries (execute())
-  - Creating subscriptions (registerSubscription())
-  - Setting up observers (registerObserver*)
-  - Managing QueryResult/QueryResultItem handling
-  - Using legacy builder methods (.collection(), .find(), .upsert())
+  - Writing DQL for ditto.store.execute() or tx.execute()
+  - Creating subscriptions with ditto.sync.registerSubscription()
+  - Setting up observers with registerObserver, registerObserverV2, or registerObserverWithSignalNext
+  - Using INSERT ... ON ID CONFLICT, UPDATE, RETURNING, DELETE, or EVICT
+  - Writing JOIN, GROUP BY, ORDER BY, or LIMIT queries
+  - Handling QueryResult, QueryResultItem, mutatedDocumentIDs(), commitID, or Differ
 
-  PLATFORMS: Flutter (Dart), JavaScript, Swift, Kotlin
+  PLATFORMS: Flutter (Dart) primary; JavaScript, Swift, Kotlin where behavior differs
 ---
 
 # Ditto Query and Sync Patterns
 
+Actionable patterns for DQL, subscriptions, and store observers in Ditto SDK 5.1.0 (Flutter package `ditto_live` 5.1.0). The authoritative reference is the [Ditto SDK Best Practices guide](../../../guides/best-practices/ditto.md); each pattern links to the guide section it is extracted from.
+
 ## Table of Contents
 
-- [Purpose](#purpose)
-- [When This Skill Applies](#when-this-skill-applies)
-- [Platform Detection](#platform-detection)
-- [SDK Version Compatibility](#sdk-version-compatibility)
-- [Common Workflows](#common-workflows)
+- [Core Model](#core-model)
+- [Workflow: A Screen That Shows Synced Data](#workflow-a-screen-that-shows-synced-data)
 - [Critical Patterns](#critical-patterns)
-  - [1. Legacy API Usage](#1-legacy-api-usage-priority-critical)
-  - [2. QueryResultItems Retention](#2-queryresultitems-retention-priority-critical)
-  - [3. Subscription Lifecycle Management](#3-subscription-lifecycle-management-priority-critical)
-  - [4. Observer Selection](#4-observer-selection-priority-critical---non-flutter-sdks-only)
-  - [5. Heavy Processing in Observer Callbacks](#5-heavy-processing-in-observer-callbacks-priority-high)
-  - [6. Broad Subscriptions](#6-broad-subscriptions-priority-high)
-  - [7. Query Without Active Subscription](#7-query-without-active-subscription-priority-high)
-  - [8. Missing signalNext() Call](#8-missing-signalnext-call-priority-high---non-flutter-sdks-only)
-  - [9. SELECT * Overuse](#9-select--overuse-priority-high)
-  - [10. DISTINCT with _id](#10-distinct-with-_id-priority-high)
-  - [11. Unbounded Aggregates](#11-unbounded-aggregates-priority-critical)
-  - [12. Nested Field Updates Failing](#12-nested-field-updates-failing-priority-high---sdk-411-strict-mode)
-  - [13. GROUP BY Without JOIN Awareness](#13-group-by-without-join-awareness-priority-high)
-  - [14. Large OFFSET Values](#14-large-offset-values-priority-medium)
-  - [15. Expensive Operator Usage](#15-expensive-operator-usage-priority-medium)
+- [Other Platforms](#other-platforms)
 - [Quick Reference Checklist](#quick-reference-checklist)
 - [See Also](#see-also)
 
 ---
 
-## Purpose
+## Core Model
 
-This Skill ensures proper usage of Ditto's query and synchronization APIs. It prevents memory leaks, API compatibility issues, and performance problems related to DQL queries, subscriptions, and observers.
+Every DQL statement runs against the **local store**. Only subscriptions cause data to sync to the device.
 
-**Critical issues prevented**:
-- Memory leaks from QueryResultItems retention
-- Memory leaks from uncanceled subscriptions/observers
-- Legacy API usage (non-Flutter: deprecated SDK 4.12+, removed v5)
-- Broad subscriptions causing bandwidth waste
-- Incorrect observer selection and backpressure management
+| API (Flutter) | Reads from | Causes data to sync? |
+|---|---|---|
+| `ditto.sync.registerSubscription(query, arguments: ...)` | Remote peers | ✅ Yes, while sync is running |
+| `ditto.store.execute(query, arguments: ...)` | Local store (snapshot) | ❌ No |
+| `ditto.store.registerObserver(query, arguments: ...)` | Local store (live) | ❌ No |
+| `ditto.store.transaction((tx) async { ... })` | Local store | ❌ No |
 
-## When This Skill Applies
+Subscriptions are long-lived and broad (app or feature scope). Observers and `execute` calls are short-lived and as specific as the screen needs (screen scope). An empty local result does not mean "no data exists"; it may not have synced yet.
 
-Use this Skill when:
-- Writing DQL queries with `ditto.store.execute()`
-- Creating subscriptions with `ditto.sync.registerSubscription()`
-- Setting up observers with `ditto.store.registerObserver*()`
-- Managing query result handling (`QueryResult`, `QueryResultItem`)
-- Using legacy builder methods: `.collection()`, `.find()`, `.upsert()` (DEPRECATED)
-- Optimizing query performance or subscription scope
-- Implementing subscription/observer lifecycle management
-
-## Platform Detection
-
-**Automatic Detection**:
-1. **Flutter/Dart**: `*.dart` files with `import 'package:ditto/ditto.dart'`
-2. **JavaScript**: `*.js`, `*.ts` files with `import { Ditto } from '@dittolive/ditto'`
-3. **Swift**: `*.swift` files with `import DittoSwift`
-4. **Kotlin**: `*.kt` files with `import live.ditto.*`
-
-**Platform-Specific Warnings**:
-- **Flutter SDK v4.x**: Only `registerObserver` available (no `signalNext` support until v5.0)
-  - **Recommended**: Use `observer.changes` Stream API (Dart-idiomatic, works with StreamBuilder)
-  - **Alternative**: Use `onChange` callback for simple cases
-- **Flutter SDK v5.0+**: Will support `registerObserverWithSignalNext`
-- **Non-Flutter** (Swift, JS, Kotlin): `registerObserverWithSignalNext` recommended (SDK 4.12+)
-- **All platforms**: DQL query patterns, subscription management
+**Guide**: [Where Queries Run](../../../guides/best-practices/ditto.md#where-queries-run), [Sync and Subscriptions](../../../guides/best-practices/ditto.md#sync-and-subscriptions)
 
 ---
 
-## SDK Version Compatibility
-
-This section consolidates all version-specific information referenced throughout this Skill.
-
-### Flutter SDK
-
-- **v4.x** (current stable)
-  - `registerObserver` only (no `signalNext` support)
-  - Stream-based API via `observer.changes` (recommended for Flutter UI)
-  - `onChange` callback API available for simple cases
-  - DQL query API fully supported
-  - No legacy builder API (never existed in Flutter SDK)
-
-- **v5.0+** (upcoming)
-  - `registerObserverWithSignalNext` support added
-  - All v4.x APIs remain supported
-  - Stream-based and callback APIs continue to work
-
-### Non-Flutter SDKs (JavaScript, Swift, Kotlin)
-
-- **SDK 4.8 - 4.11**
-  - DQL API introduced but legacy builder API still recommended
-  - `registerObserver` and `registerObserverWithSignalNext` available
-
-- **SDK 4.11+**
-  - **DQL_STRICT_MODE default true**
-  - Requires explicit MAP definitions for nested field updates
-  - See data-modeling skill Pattern 1.5 for collection definition patterns
-
-- **SDK 4.12+** (current)
-  - Legacy builder methods (.collection(), .find(), .upsert()) **fully deprecated**
-  - DQL API is the recommended and supported method
-  - `registerObserverWithSignalNext` recommended for most use cases
-  - `registerObserver` available for simple cases
-
-- **SDK v5.0+** (upcoming)
-  - Legacy builder methods **completely removed**
-  - DQL API is the only supported method
-  - All observer patterns continue to work
-
-**Throughout this Skill**: When patterns reference "deprecated SDK 4.12+" or "Flutter v4.x limitation", refer back to this section for full context.
-
----
-
-## Common Workflows
-
-### Workflow 1: Setting Up a New Query with Observer
-
-Copy this checklist and check off items as you complete them:
+## Workflow: A Screen That Shows Synced Data
 
 ```
-Query Setup Progress:
-- [ ] Step 1: Write DQL query with specific WHERE clause
-- [ ] Step 2: Create subscription with registerSubscription()
-- [ ] Step 3: Set up observer (platform-appropriate pattern)
-- [ ] Step 4: Store subscription/observer references
-- [ ] Step 5: Implement cancellation in dispose()/cleanup
-```
-
-**Step 1: Write DQL query with specific WHERE clause**
-
-Avoid broad subscriptions. Use WHERE to filter data at the source.
-
-```dart
-// ✅ GOOD: Specific WHERE clause
-'SELECT * FROM orders WHERE status = :status'
-
-// ❌ BAD: No WHERE clause (syncs all data)
-'SELECT * FROM orders'
-```
-
-**Step 2: Create subscription**
-
-```dart
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders WHERE status = :status',
-  arguments: {'status': 'pending'},
-);
-```
-
-**Step 3: Set up observer (platform-appropriate)**
-
-**Flutter SDK v4.x** - Use `registerObserver` with Stream or callback:
-
-```dart
-// Option A: Stream-based (recommended for Flutter UI)
-final observer = ditto.store.registerObserver(
-  'SELECT * FROM orders WHERE status = :status',
-  arguments: {'status': 'pending'},
-);
-
-observer.changes.listen((result) {
-  setState(() {
-    _orders = result.items.map((item) => item.value).toList();
-  });
-});
-```
-
-```dart
-// Option B: Callback-based (simple cases)
-final observer = ditto.store.registerObserver(
-  'SELECT * FROM orders WHERE status = :status',
-  arguments: {'status': 'pending'},
-  onChange: (result) {
-    setState(() {
-      _orders = result.items.map((item) => item.value).toList();
-    });
-  },
-);
-```
-
-**Non-Flutter SDKs** - Use `registerObserverWithSignalNext`:
-
-```javascript
-const observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM orders WHERE status = $args.status',
-  { args: { status: 'pending' } },
-  (result, signalNext) => {
-    updateUI(result);
-    setTimeout(signalNext, 0);  // Call after processing
-  }
-);
-```
-
-**Step 4: Store references**
-
-```dart
-class OrdersState {
-  DittoSyncSubscription? _subscription;
-  DittoStoreObserver? _observer;
-}
-```
-
-**Step 5: Implement cancellation**
-
-```dart
-@override
-void dispose() {
-  _subscription?.cancel();
-  _observer?.cancel();
-  super.dispose();
-}
-```
-
----
-
-### Workflow 2: Migrating from Legacy API to DQL
-
-**Non-Flutter platforms only** - See [reference/legacy-api-migration.md](reference/legacy-api-migration.md) for complete migration guide.
-
-```
-Migration Progress:
-- [ ] Step 1: Identify all legacy API usage
-- [ ] Step 2: Replace with DQL equivalents
-- [ ] Step 3: Update observer patterns if needed
-- [ ] Step 4: Test thoroughly
-- [ ] Step 5: Remove legacy imports/references
+Progress:
+- [ ] 1. Subscription: SELECT * FROM c WHERE <stable partition key> = :param, owned by an app/feature service
+- [ ] 2. Indexes: CREATE INDEX IF NOT EXISTS at startup for filter, sort, and JOIN keys
+- [ ] 3. Observer: registered in initState() without onChange, with ORDER BY (+ _id tie-breaker) and LIMIT if large
+- [ ] 4. Listener: consume observer.changes once; copy item.value into plain Dart data; call setState
+- [ ] 5. Cleanup: cancel the StreamSubscription and the observer in dispose(); cancel subscriptions on logout or workspace change
 ```
 
 ---
 
 ## Critical Patterns
 
-### 1. Legacy API Usage (Priority: CRITICAL)
+### 1. Pass Values as Parameters (CRITICAL)
 
-**Platform**: Non-Flutter only (JavaScript, Swift, Kotlin)
+Reference values with `:name` and pass them in `arguments`. Parameter names are case-sensitive.
 
-**Flutter Status**: ✅ Flutter SDK never provided legacy builder API - no concern
+**✅ DO**: use parameters for IDs, user input, dates, limits, and whole documents (`INSERT INTO orders DOCUMENTS (:order)`); pass arrays for membership (`status IN :statuses`).
+**❌ DON'T**: build statements with interpolation or concatenation; write `IN (:statuses)` (the array becomes a single list element and nothing matches).
 
-**Problem**: Builder methods (`.collection()`, `.find()`, `.findById()`, `.update()`, `.upsert()`, `.remove()`, `.exec()`) are **fully deprecated as of SDK 4.12** and will be **removed in SDK v5**. Code using these methods cannot upgrade to v5 without migration.
-
-**Detection**:
-```javascript
-// RED FLAGS (non-Flutter platforms)
-ditto.store.collection('orders')
-ditto.store.collection('users').find("status == 'active'")
-  .upsert({...})
-  .exec()
-```
-
-**✅ DO (All platforms - Current API)**:
 ```dart
-// Dart/Flutter
-await ditto.store.execute(
-  'SELECT * FROM orders WHERE status = :status',
-  arguments: {'status': 'active'},
-);
-
-await ditto.store.execute(
-  'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE',
-  arguments: {
-    'order': {
-      '_id': 'order_123',
-      'status': 'pending',
-      'items': [...],
-    },
-  },
-);
+// ✅ GOOD: Values travel as typed parameters
+Future<List<Map<String, dynamic>>> findOrders(
+  Ditto ditto,
+  String customerId,
+  List<String> statuses,
+) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders '
+    'WHERE customerId = :customerId AND status IN :statuses '
+    'ORDER BY createdAt DESC LIMIT :pageSize',
+    arguments: {'customerId': customerId, 'statuses': statuses, 'pageSize': 50},
+  );
+  return result.items.map((item) => item.value).toList();
+}
 ```
 
-```javascript
-// JavaScript
-await ditto.store.execute(
-  'SELECT * FROM orders WHERE status = $args.status',
-  { args: { status: 'active' } }
-);
+**Why**: interpolation allows DQL injection, breaks on quotes and backslashes, and defeats the shared statement cache.
 
-await ditto.store.execute(
-  'INSERT INTO orders DOCUMENTS ($args.order) ON ID CONFLICT DO UPDATE',
-  { args: { order: { _id: 'order_123', status: 'pending' } } }
-);
+**Guide**: [Parameters and Literals](../../../guides/best-practices/ditto.md#parameters-and-literals) · **Examples**: [dql-queries-good.dart](examples/dql-queries-good.dart), [dql-queries-bad.dart](examples/dql-queries-bad.dart)
+
+### 2. Quote Every Key in Inline Object Literals (HIGH)
+
+Unquoted keys are rejected in `INSERT` and silently produce `{}` in `SELECT`. Prefer passing documents as parameters.
+
+<!-- expect-error -->
+```sql
+-- ❌ BAD: Rejected ("Cannot convert to a literal")
+INSERT INTO orders DOCUMENTS ({_id: 'order-1', status: 'open'})
 ```
 
-**❌ DON'T (Non-Flutter platforms - Deprecated)**:
-```javascript
-// LEGACY API - FULLY DEPRECATED SDK 4.12+, REMOVED IN SDK v5
-const orders = await ditto.store
-  .collection('orders')
-  .find("status == 'active'")
-  .exec();
-
-await ditto.store
-  .collection('orders')
-  .upsert({ _id: 'order_123', status: 'completed' });
+```sql
+-- ✅ GOOD: Quoted keys
+INSERT INTO orders DOCUMENTS ({'_id': 'order-1', 'status': 'open'})
 ```
 
-**Why**: SDK 4.12+ fully deprecates the builder API in preparation for removal in v5. Migration to DQL required for v5 compatibility. Flutter developers never had this API so no migration needed.
+Other literal rules: single and double quotes both delimit strings; backticks quote identifiers; reserved words such as `collection` cannot be bare identifiers.
 
-**Migration**: See [reference/legacy-api-migration.md](reference/legacy-api-migration.md)
+### 3. MISSING vs NULL in Filters (CRITICAL)
 
----
+A comparison with a missing or null field is neither true nor false, so the row is dropped.
 
-### 2. QueryResultItems Retention (Priority: CRITICAL)
+| `WHERE` expression | Matches `false` | `null` | missing |
+|---|---|---|---|
+| `isDeleted != true` | ✓ | | | <!-- lint-ignore -->
+| `coalesce(isDeleted, false) = false` | ✓ | ✓ | ✓ |
+| `isDeleted IS NOT NULL` | ✓ | | ✓ | <!-- lint-ignore -->
+| `isDeleted IS NOT MISSING` | ✓ | ✓ | |
 
-**Platform**: All platforms
+**✅ DO**: filter optional booleans with `coalesce(field, default)`; test existence with `IS MISSING` / `IS NOT MISSING`; remove a field with `UNSET`.
+**❌ DON'T**: use `field != true` or `NOT field` for "false or not set"; use `IS NOT NULL` to test existence. <!-- lint-ignore -->
 
-**Problem**: Retaining QueryResultItems in state, storage, or between observer callbacks causes memory leaks. QueryResultItems are database cursors with lazy-loading that must be extracted immediately.
-
-**Detection**:
 ```dart
-// RED FLAGS
-class OrdersState {
-  List<QueryResultItem> items = []; // Storing live cursors!
-  QueryResult lastResult; // Storing live query result!
+// ✅ GOOD: A missing or null isDeleted flag counts as "not deleted"
+Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM tasks WHERE coalesce(isDeleted, false) = false ORDER BY createdAt, _id',
+  );
+  return result.items.map((item) => item.value).toList();
+}
+```
+
+**Guide**: [MISSING and NULL](../../../guides/best-practices/ditto.md#missing-and-null)
+
+### 4. Membership Filters (HIGH)
+
+| Goal | Expression |
+|---|---|
+| Field equals one of several values | `status IN :statuses` (array parameter; can use an index) |
+| Literal list | `status IN ('open', 'pending')` |
+| Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` (no index) |
+| ❌ Array parameter in parentheses | `status IN (:statuses)` matches nothing |
+
+> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) instead.
+
+**Guide**: [Filtering by Membership](../../../guides/best-practices/ditto.md#filtering-by-membership)
+
+### 5. Subscription Rules (CRITICAL)
+
+A subscription must be `SELECT * FROM <collection> [WHERE <condition>]`. Anything else throws when `registerSubscription` is called.
+
+| Rejected in subscriptions | Do instead |
+|---|---|
+| Projections, aggregates (`A projection other than wildcard (*)`), `DISTINCT`, `GROUP BY` (`Grouping`) | Subscribe with `SELECT *`; project in local queries |
+| `JOIN` | Subscribe to each collection separately; join locally |
+| `USE IDS` | `WHERE _id IN :ids` |
+| `LIMIT`, `ORDER BY` | Sort and limit in the local query or observer |
+
+Keep `DQL_RESTRICT_SUBSCRIPTIONS` at its default (`true`). Setting it to `false` allows only `LIMIT`/`ORDER BY`, which creates stateful subscriptions that degrade sync performance.
+
+```dart
+// ✅ GOOD: Scope by a stable partition key; sort and limit locally
+// (the subscription is owned by a long-lived service such as OrderSync)
+SyncSubscription subscribeToStoreOrders(Ditto ditto, String storeId) {
+  return ditto.sync.registerSubscription(
+    'SELECT * FROM orders WHERE storeId = :storeId',
+    arguments: {'storeId': storeId},
+  );
 }
 
-observer = ditto.store.registerObserver('SELECT * FROM orders', onChange: (result) {
-  cachedResult = result; // Retaining result reference!
-});
+Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) async {
+  final result = await ditto.store.execute(
+    'SELECT * FROM orders WHERE storeId = :storeId ORDER BY createdAt DESC LIMIT 50',
+    arguments: {'storeId': storeId},
+  );
+  return result.items.map((item) => item.value).toList();
+}
 ```
+
+**✅ DO**: filter by stable partition keys (tenant, store, region, team); use the same subscriptions on peers in the same role; keep predicates flat and simple; give relay devices at least the subscriptions of the devices behind them.
+**❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for small reference data); filter subscriptions on fields that change often (`status`, `assignee`).
+
+**Soft delete**: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Variant A subscribes to the whole collection (or partition) and cleans up with a synced `DELETE`; Variant B subscribes to active documents plus a retention window so devices can `EVICT` older ones. See [Soft delete, subscriptions, and cleanup](../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup) and the storage-lifecycle skill.
+
+**Guide**: [Subscription Rules](../../../guides/best-practices/ditto.md#subscription-rules), [Scope Balancing](../../../guides/best-practices/ditto.md#scope-balancing)
+
+### 6. Subscription Lifecycle (CRITICAL)
+
+Changing subscriptions makes peers across the mesh re-evaluate what they owe the device. Avoid changing subscriptions more often than about every 15 minutes.
 
 **✅ DO**:
-```dart
-// Extract data immediately from query results
-final result = await ditto.store.execute(
-  'SELECT * FROM orders WHERE status = :status',
-  arguments: {'status': 'active'},
-);
-
-// Convert to your model objects right away
-final orders = result.items.map((item) {
-  final data = item.value; // Materialize once
-  return Order.fromJson(data); // Extract to model
-}).toList();
-// QueryResultItems automatically cleaned up when result goes out of scope
-
-// ✅ Observer pattern - extract in callback
-// ⚠️ Note: This uses registerObserverWithSignalNext which is NOT available in Flutter SDK v4.x
-// Flutter SDK v4.14.0 and earlier must use registerObserver (without signalNext)
-// See Flutter v4.x alternative below
-
-observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT * FROM products WHERE category = :category',
-  onChange: (result, signalNext) {
-    // Extract data immediately - don't retain QueryResultItems
-    final products = result.items
-      .map((item) => Product.fromJson(item.value))
-      .toList();
-
-    updateUI(products); // Use extracted data
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      signalNext(); // Signal readiness after render
-    });
-    // QueryResultItems cleaned up after callback exits
-  },
-  arguments: {'category': 'electronics'},
-);
-
-// ✅ Flutter SDK v4.x Alternative (No signalNext support):
-observer = ditto.store.registerObserver(
-  'SELECT * FROM products WHERE category = :category',
-  onChange: (result) {
-    // No signalNext parameter in Flutter SDK v4.x
-    final products = result.items
-      .map((item) => Product.fromJson(item.value))
-      .toList();
-    updateUI(products);
-    // No backpressure control available in Flutter v4.x
-  },
-  arguments: {'category': 'electronics'},
-);
-
-// ✅ Flutter SDK v4.x Stream-Based Pattern (Recommended for Flutter):
-observer = ditto.store.registerObserver(
-  'SELECT * FROM products WHERE category = :category',
-  arguments: {'category': 'electronics'},
-);
-
-// Listen using Stream API (Dart-idiomatic)
-final subscription = observer.changes.listen((result) {
-  final products = result.items
-    .map((item) => Product.fromJson(item.value))
-    .toList();
-  updateUI(products);
-});
-
-// Cleanup
-subscription.cancel();
-observer.cancel();
-```
+- Register subscriptions at app start, after login, or when the user enters a workspace, in an app- or feature-level service
+- Keep a reference to every `SyncSubscription` and call `cancel()` on logout or workspace change
+- Change the **observer**, not the subscription, when the user changes a filter, search term, tab, or sort order
+- Cancel subscriptions **before** evicting their data; cancelling alone does not delete local data
 
 **❌ DON'T**:
-```dart
-// Retaining live QueryResultItems
-class ProductsState {
-  List<QueryResultItem> items = []; // MEMORY LEAK!
+- Register subscriptions in `build()` or on every screen visit
+- Drop a subscription reference without cancelling it; always release subscriptions explicitly and do not rely on garbage collection to cancel them
+- Read `queryArguments` from `ditto.sync.subscriptions` (see the note below)
 
-  void onQueryResult(QueryResult result) {
-    items = result.items.toList(); // Retains database cursors
+```dart
+// ✅ GOOD: A session-level service owns long-lived subscriptions
+class OrderSync {
+  OrderSync(this._ditto);
+
+  final Ditto _ditto;
+  final List<SyncSubscription> _subscriptions = [];
+
+  void enterStore(String storeId) {
+    leaveStore();
+    _subscriptions.add(_ditto.sync.registerSubscription(
+      'SELECT * FROM orders WHERE storeId = :storeId',
+      arguments: {'storeId': storeId},
+    ));
   }
 
-  String getProductName(int index) {
-    return items[index].value['name']; // Accessing retained cursor
-  }
-}
-
-// Multiple materializations (inefficient)
-final result = await ditto.store.execute('SELECT * FROM orders');
-for (var item in result.items) {
-  print(item.value); // First materialization
-  processOrder(item.value); // Second materialization - wasteful!
-  // Should cache item.value in a variable
-}
-```
-
-**Why**: QueryResultItems are database cursors that hold references to underlying storage. Retaining them prevents garbage collection, causes memory bloat, and keeps database resources locked. Extract data immediately and let Ditto clean up cursors automatically.
-
-**Memory Impact**: Each retained QueryResultItem keeps ~1-10KB in memory depending on document size. In a list of 1000 items, that's 1-10MB of unnecessary memory usage.
-
-**See**: [examples/query-result-handling-good.dart](examples/query-result-handling-good.dart)
-
----
-
-### 3. Subscription Lifecycle Management (Priority: CRITICAL)
-
-**Platform**: All platforms
-
-**Problem**: Uncanceled subscriptions cause memory leaks and unnecessary network traffic. Observers and subscriptions must be canceled when no longer needed.
-
-**Detection**:
-```dart
-// RED FLAGS
-void loadOrders() {
-  ditto.sync.registerSubscription('SELECT * FROM orders');
-  // No reference stored - can't cancel later!
-}
-
-void dispose() {
-  // Forgot to cancel subscription and observer - MEMORY LEAK
-}
-
-void fetchOnce() {
-  final sub = ditto.sync.registerSubscription(...);
-  // ... fetch data ...
-  sub.cancel(); // Too quick - no time to sync!
-}
-```
-
-**✅ DO**:
-```dart
-// Long-lived subscription with proper lifecycle
-class OrdersService {
-  late final Subscription _subscription;
-  late final StoreObserver _observer;
-
-  void initialize() {
-    // Start subscription - keep alive for feature lifetime
-    _subscription = ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'active'},
-    );
-
-    // Observer receives initial local data + continuous updates as sync occurs
-    _observer = ditto.store.registerObserverWithSignalNext(
-      'SELECT * FROM orders WHERE status = :status',
-      onChange: (result, signalNext) {
-        final orders = result.items
-          .map((item) => Order.fromJson(item.value))
-          .toList();
-
-        updateOrdersUI(orders); // Update UI with initial + synced data
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          signalNext(); // Ready for next update
-        });
-      },
-      arguments: {'status': 'active'},
-    );
-  }
-
-  void dispose() {
-    // Cancel when feature completely done (e.g., screen disposed)
-    _observer.cancel();
-    _subscription.cancel();
+  void leaveStore() {
+    for (final subscription in _subscriptions) {
+      subscription.cancel(); // No-op if already cancelled or Ditto was closed
+    }
+    _subscriptions.clear();
   }
 }
 ```
 
-**❌ DON'T**:
-```dart
-// Frequent start/stop (mesh network overhead)
-void loadOrders() {
-  final sub = ditto.sync.registerSubscription('SELECT * FROM orders');
-  // ... fetch data ...
-  sub.cancel(); // Creates unnecessary churn
-}
+`ditto.sync.stop()` pauses subscriptions (they resume on `start()`); `await ditto.close()` marks them cancelled.
 
-// Missing lifecycle management
-class OrdersWidget extends StatefulWidget {
+> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate the app. Read only `queryString` and `isCancelled` there, and keep your own references (as `OrderSync` does).
+
+**Guide**: [Subscription Lifecycle](../../../guides/best-practices/ditto.md#subscription-lifecycle) · **Examples**: [subscription-lifecycle-good.dart](examples/subscription-lifecycle-good.dart), [subscription-lifecycle-bad.dart](examples/subscription-lifecycle-bad.dart)
+
+### 7. The Flutter Observer Pattern (CRITICAL)
+
+Register **without** `onChange`, consume `changes` with one `StreamSubscription`, and cancel both in `dispose()`.
+
+```dart
+class OrdersList extends StatefulWidget {
+  const OrdersList({super.key, required this.ditto});
+  final Ditto ditto;
   @override
-  _OrdersWidgetState createState() => _OrdersWidgetState();
+  State<OrdersList> createState() => _OrdersListState();
 }
 
-class _OrdersWidgetState extends State<OrdersWidget> {
+class _OrdersListState extends State<OrdersList> {
+  late final StoreObserver _observer;
+  late final StreamSubscription<QueryResult> _changes;
+  List<Map<String, dynamic>> _orders = const [];
+
   @override
   void initState() {
     super.initState();
-
-    // No reference stored!
-    ditto.sync.registerSubscription('SELECT * FROM orders');
-    ditto.store.registerObserver('SELECT * FROM orders', onChange: (result) {
-      // Process orders
+    _observer = widget.ditto.store.registerObserver(
+      "SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC",
+      arguments: {'status': 'open'},
+    );
+    _changes = _observer.changes.listen((result) {
+      setState(() {
+        _orders = result.items.map((item) => item.value).toList();
+      });
     });
-    // Can't cancel in dispose() - MEMORY LEAK
   }
 
   @override
   void dispose() {
-    // Missing: Cancel subscription and observer
+    _changes.cancel();
+    _observer.cancel();
     super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        children: [for (final o in _orders) ListTile(title: Text('${o['_id']}'))],
+      );
 }
 ```
 
-**Why**: Subscriptions tell connected peers what data to sync. Uncanceled subscriptions:
-1. **Memory leaks**: Observer callbacks retain references that aren't garbage collected
-2. **Network overhead**: Peers continue syncing data you no longer need
-3. **Battery drain**: Continuous sync processing for unused data
+> **Note (SDK 5.1.0):** With `onChange`, every result is also queued in `changes`. If nothing listens to `changes`, those results stay in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2` with `onChange` only. Use the pattern above; if you need `onChange`, also drain the stream (`observer.changes.listen((_) {})`).
 
-Frequent start/stop creates mesh network churn (peers constantly updating what data to share).
+Lifecycle facts (`registerObserver`): `changes` is single-subscription (a second `listen()` throws, even after the first subscription was cancelled; a `StreamBuilder` works if it stays mounted for the observer's lifetime). Without `onChange`, the query starts when `changes` is first listened to; with `onChange`, events emitted before the first listener attaches are buffered, so listen right after registering. Cancelling the `StreamSubscription` does not cancel a `StoreObserver`, and `await ditto.close()` does not close its `changes` stream: always call `observer.cancel()` before closing. More in [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md#observer-lifecycle).
 
-**Best Practice**: Keep subscriptions alive for the lifetime of the feature (screen, service), cancel on dispose.
+**✅ DO**: register in `initState()` or a service; when inputs change (`didUpdateWidget`), cancel and re-register the observer; give each screen region its own small observer; use `COUNT(*)` for badges.
+**❌ DON'T**: register in `build()`; create an observer per list item; observe a whole collection at the root and rebuild the entire screen.
 
-**See**: [examples/subscription-lifecycle-good.dart](examples/subscription-lifecycle-good.dart)
+**Guide**: [Store Observers in Flutter](../../../guides/best-practices/ditto.md#store-observers-in-flutter), [Partial UI Updates](../../../guides/best-practices/ditto.md#partial-ui-updates) · **Examples**: [observer-patterns-good.dart](examples/observer-patterns-good.dart), [observer-patterns-bad.dart](examples/observer-patterns-bad.dart)
+
+### 8. ORDER BY and LIMIT Belong in Local Queries (HIGH)
+
+Results have no guaranteed order without `ORDER BY`, including observer results.
+
+- Add `ORDER BY` with a unique tie-breaker: `ORDER BY createdAt DESC, _id`.
+- Ascending type order: `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing. `DESC` puts missing values first.
+- Always combine `LIMIT`/`OFFSET` with `ORDER BY`; prefer keyset pagination (`WHERE createdAt < :after ORDER BY createdAt DESC LIMIT :pageSize`) for long lists. Check existence with `SELECT _id ... LIMIT 1`; count with `COUNT(*)`.
+
+**Guide**: [ORDER BY](../../../guides/best-practices/ditto.md#order-by), [LIMIT and OFFSET](../../../guides/best-practices/ditto.md#limit-and-offset)
+
+### 9. Query Result Handling (HIGH)
+
+| Member (Flutter) | Notes |
+|---|---|
+| `items` | `Iterable<QueryResultItem>`, not a `List`; each pass creates new wrappers |
+| `item.value` | `Map<String, dynamic>`, decoded on first access and cached on that item |
+| `item.jsonString`, `item.cborBytes` | Properties, not methods |
+| `mutatedDocumentIDs()` | Builds a new list on every call; call once. Still populated with `RETURNING` |
+| `commitID` | `int?`; `null` for reads |
+
+**✅ DO**: iterate `items` once and convert rows to maps or model objects right away; project only the fields you need.
+**❌ DON'T**: store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks (they reference native memory).
+
+**Guide**: [Working with Query Results](../../../guides/best-practices/ditto.md#working-with-query-results) · **Example**: [query-result-handling.dart](examples/query-result-handling.dart)
+
+### 10. Backpressure for Slow Observer Work (HIGH)
+
+`registerObserver` has no backpressure: results keep arriving while an `async` listener waits. Keep its listener synchronous and short. For slow or asynchronous per-update work, use one of the experimental APIs (SDK 5.1+), which hold back updates and later deliver the latest state:
+
+| Situation | API |
+|---|---|
+| Updating widgets | `registerObserver` + `changes` (stable, default) |
+| Slow `async` work that fits a loop | `registerObserverV2` **(Experimental)** + `await for` (follows pause/resume) |
+| Work finishes elsewhere (animation, external callback) | `registerObserverWithSignalNext` **(Experimental)**; call `signalNext()` in a `finally` block |
+
+`signalNext()` has no effect on `registerObserverV2` observers. A `registerObserverWithSignalNext` observer stops updating if you never call `signalNext()`; do not pause/resume its `changes` stream. Cancelling the stream subscription of a `StoreObserverV2` also cancels the observer.
+
+**Guide**: [Backpressure (SDK 5.1+)](../../../guides/best-practices/ditto.md#backpressure-sdk-51) · **Example**: [observer-backpressure.dart](examples/observer-backpressure.dart)
+
+### 11. Upserts and Field-Level Updates (HIGH)
+
+| `ON ID CONFLICT` | Existing document |
+|---|---|
+| `FAIL` (default) | Statement fails |
+| `DO NOTHING` | Unchanged |
+| `DO UPDATE` | Supplied fields merged in, even if identical (mutation recorded, observers fire) |
+| `DO UPDATE_LOCAL_DIFF` | Only differing fields written; no-op if nothing changed |
+
+**✅ DO**: use `DO UPDATE_LOCAL_DIFF` for upserts and re-imports; update only changed fields with `UPDATE ... SET`; remove fields with `UNSET`; replace an object with `UNSET obj` followed by `SET obj = :value` inside one transaction (two `tx.execute` calls).
+**❌ DON'T**: read-modify-write whole documents with `DO UPDATE`; expect `DO UPDATE` or `SET obj = {...}` to remove keys (with the default `DQL_STRICT_MODE = false`, objects merge).
+
+```dart
+// ✅ GOOD: Re-upserting unchanged data is a no-op
+Future<void> syncCatalogItem(Ditto ditto, Map<String, dynamic> item) async {
+  await ditto.store.execute(
+    'INSERT INTO products DOCUMENTS (:item) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
+    arguments: {'item': item},
+  );
+}
+```
+
+**Guide**: [INSERT and Conflict Handling](../../../guides/best-practices/ditto.md#insert-and-conflict-handling), [UPDATE](../../../guides/best-practices/ditto.md#update) · **Example**: [dql-writes.dart](examples/dql-writes.dart)
+
+### 12. RETURNING (SDK 5.1+) (MEDIUM)
+
+`RETURNING` on `INSERT`, `UPDATE`, `DELETE`, or `EVICT` returns the affected documents in `items`: after the update for `UPDATE`, before removal for `DELETE`/`EVICT`. Use it instead of "write, then query again", and to capture deleted content.
+
+```dart
+// ✅ GOOD: Update and read the new values in one statement
+Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) async {
+  final result = await ditto.store.execute(
+    'UPDATE orders SET status = :status WHERE _id IN :ids AND status = :expected '
+    'RETURNING _id, status',
+    arguments: {'ids': ids, 'status': 'shipped', 'expected': 'packed'},
+  );
+  return result.items.map((item) => item.value).toList();
+}
+```
+
+**Guide**: [RETURNING (SDK 5.1+)](../../../guides/best-practices/ditto.md#returning-sdk-51)
+
+### 13. Aggregates, GROUP BY, and HAVING (MEDIUM)
+
+- `GROUP BY` and `HAVING` cannot reference projection aliases: repeat the expression. `ORDER BY` can use aliases.
+- Every non-aggregate projection must be a `GROUP BY` key. Give computed expressions an alias with `AS`.
+- With zero matching rows, `SUM`/`AVG`/`MIN`/`MAX` return MISSING: wrap them, `ifmissing(SUM(total), 0)`.
+- `COUNT(field)` skips `false` values; use `COUNT(*)` or `COUNT(field IS NOT MISSING)`.
+- Do not use `DISTINCT` with `_id` or `*`.
+
+<!-- expect-error -->
+```sql
+-- ❌ BAD: HAVING references the alias "revenue"
+SELECT customerId, SUM(total) AS revenue FROM orders GROUP BY customerId HAVING revenue > 1000
+```
+
+```sql
+-- ✅ GOOD: Repeat the expression in HAVING; ORDER BY may use the alias
+SELECT customerId, SUM(total) AS revenue FROM orders
+GROUP BY customerId HAVING SUM(total) > 1000 ORDER BY revenue DESC
+```
+
+**Guide**: [Aggregates](../../../guides/best-practices/ditto.md#aggregates), [GROUP BY and HAVING](../../../guides/best-practices/ditto.md#group-by-and-having)
+
+### 14. JOIN (SDK 5.1+) Needs an Index on the Inner Collection (HIGH)
+
+Joins (`INNER`, `LEFT`, `RIGHT` as first join only) run on local data. The inner collection's join key needs an index, or the join must be on its `_id`; otherwise the query fails with `Joining to "c" disallowed without appropriate index support`.
+
+```sql
+CREATE INDEX IF NOT EXISTS ix_orders_customerId ON orders (customerId)
+```
+
+```sql
+-- ✅ GOOD: Inner side (orders) is looked up through ix_orders_customerId
+SELECT c.name, o._id AS orderId, o.total
+FROM customers c
+JOIN orders o ON o.customerId = c._id
+WHERE c.tier = 'gold'
+ORDER BY c.name, o.total DESC
+```
+
+**✅ DO**: qualify every field with its alias and alias colliding fields (`o._id AS orderId`); subscribe to each joined collection separately; filter the outer collection selectively; run `ADVISE` for index recommendations.
+**❌ DON'T**: use `JOIN` in subscriptions or on Ditto Server; use `USE INDEX ''` on large collections to silence the index error.
+
+**Guide**: [Joining Collections (SDK 5.1+)](../../../guides/best-practices/ditto.md#joining-collections-sdk-51)
+
+### 15. DELETE and EVICT by ID Use WHERE (HIGH)
+
+> **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` clause completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
+
+`DELETE` removes documents on all peers (tombstone); `EVICT` removes them from this device only. See the storage-lifecycle skill.
+
+**Guide**: [DELETE and EVICT](../../../guides/best-practices/ditto.md#delete-and-evict)
+
+### 16. Differ for Item-Level Changes (MEDIUM)
+
+An observer delivers the full result every time. `Differ` reports `insertions`, `deletions` (indexes into the old list), `updates`, and `moves` by `_id`.
+
+Pass `result.items.toList()` (`diff()` takes a `List`); the first call reports every item as an insertion. `Differ` keeps the previous result and is expensive, so bound diffed queries with `LIMIT` and keep previous values yourself if you need them. A plain `ListView.builder` with `ValueKey(_id)` does not need `Differ`; use it for `AnimatedList` or for processing only new items.
+
+**Guide**: [Diffing Results](../../../guides/best-practices/ditto.md#diffing-results) · **Example**: [observer-differ.dart](examples/observer-differ.dart)
 
 ---
 
+## Other Platforms
 
-### 11. Unbounded Aggregates (Priority: CRITICAL)
+Backpressure differs per platform: JavaScript `registerObserver` signals the next update when a synchronous handler returns (async handlers are not awaited; use `registerObserverWithSignalNext`), Swift offers `handler:` (automatic) and `handlerWithSignalNext:` (manual), and Kotlin has no `signalNext` (suspending handlers or a `Flow`; release with `close()`). Details: [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md#other-platforms).
 
-**Platform**: All platforms
+JavaScript passes arguments as the second positional parameter (`execute(query, { status: 'open' })`) and reads changed IDs with `mutatedDocumentIDsV2()`. Do not port Flutter observer code one-to-one.
 
-**Problem**: Aggregate functions (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`) buffer all matching documents in memory. Unbounded aggregates can crash mobile devices.
-
-**Detection**:
-```dart
-// RED FLAGS
-// No WHERE filter - buffers all documents
-await ditto.store.execute('SELECT COUNT(*) FROM orders');
-
-// COUNT(*) for existence check (inefficient)
-final count = (await ditto.store.execute(
-  'SELECT COUNT(*) FROM orders WHERE status = :status',
-  arguments: {'status': 'active'},
-)).items.first.value['($1)'];
-final hasActive = count > 0;
-```
-
-**✅ DO (Filter before aggregating)**:
-```dart
-// ✅ GOOD: Filtered aggregate
-final result = await ditto.store.execute(
-  '''SELECT COUNT(*) AS active_orders, AVG(total) AS avg_total
-     FROM orders WHERE status = :status AND createdAt >= :cutoff''',
-  arguments: {
-    'status': 'active',
-    'cutoff': DateTime.now().subtract(Duration(days: 30)).toIso8601String(),
-  },
-);
-
-// ✅ GOOD: GROUP BY reduces result set size
-final result = await ditto.store.execute(
-  'SELECT status, COUNT(*) AS count FROM orders GROUP BY status',
-);
-
-// ✅ BETTER: Use LIMIT 1 for existence checks
-final hasActive = (await ditto.store.execute(
-  'SELECT _id FROM orders WHERE status = :status LIMIT 1',
-  arguments: {'status': 'active'},
-)).items.isNotEmpty;
-```
-
-**❌ DON'T**:
-```dart
-// ❌ BAD: Unbounded aggregate in observer (memory buildup)
-final observer = ditto.store.registerObserverWithSignalNext(
-  'SELECT COUNT(*) AS total FROM orders', // Buffers all orders
-  onChange: (result, signalNext) {
-    updateTotalCount(result.items.first.value['total']);
-    WidgetsBinding.instance.addPostFrameCallback((_) => signalNext());
-  },
-);
-
-// ❌ BAD: Aggregate without WHERE (can crash if 100k+ docs)
-final avgPrice = (await ditto.store.execute(
-  'SELECT AVG(price) FROM products',
-)).items.first.value['($1)'];
-```
-
-**Why**: Aggregates create a "dam" in the pipeline—all matching documents buffer in memory before returning results. Use `WHERE` filters to reduce buffer size. For existence checks, `LIMIT 1` avoids buffering entirely.
-
-**See Also**: `.claude/guides/best-practices/ditto.md (lines 655-691: Aggregate Functions)`
+**Guide**: [Backpressure on Other Platforms](../../../guides/best-practices/ditto.md#backpressure-on-other-platforms)
 
 ---
 
-### 12. Nested Field Updates Failing (Priority: HIGH - SDK 4.11+ Strict Mode)
+## Quick Reference Checklist
 
-**Platform**: All platforms (SDK 4.11+)
+### DQL
+- [ ] Values passed as `:parameters`; arrays as `IN :values` (no parentheses)
+- [ ] Inline object literal keys quoted; documents passed as `DOCUMENTS (:doc)`
+- [ ] Optional booleans filtered with `coalesce(field, false)`; existence tested with `IS [NOT] MISSING`
+- [ ] No `ANY ... SATISFIES` membership filters in `WHERE`
+- [ ] `ORDER BY` with `_id` tie-breaker wherever order matters; `LIMIT` combined with `ORDER BY`
+- [ ] `GROUP BY` / `HAVING` repeat expressions instead of aliases; empty aggregates wrapped with `ifmissing`
+- [ ] JOIN inner keys indexed (or joined on `_id`); fields qualified with aliases
+- [ ] Upserts use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`; fields removed with `UNSET`
+- [ ] `DELETE` / `EVICT` by ID use `WHERE _id IN :ids`
 
-**Problem**: Nested field updates fail with strict mode enabled (SDK 4.11+ default) when explicit MAP collection definitions are missing.
+### Subscriptions
+- [ ] Only `SELECT * FROM c [WHERE ...]`, filtered by stable partition keys
+- [ ] Owned by an app/feature service; references kept and cancelled on logout or workspace change
+- [ ] Not re-registered for UI filters, search, tabs, or sorting
+- [ ] Cancelled before evicting their data
 
-**Context**:
-- **SDK 4.x default**: Strict Mode = `true` (requires explicit MAP definitions)
-- **SDK 5.0 default**: Strict Mode = `false` (automatic CRDT inference)
-- Neither setting is universally "recommended"—choose based on your requirements
-- **⚠️ CRITICAL**: All peers must use same setting
-
-**Detection**:
-```dart
-// RED FLAG: Nested field update without collection definition (strict mode = true)
-await ditto.store.execute(
-  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
-  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
-);
-// ERROR: Cannot update nested field - 'metadata' is REGISTER
-```
-
-**Solution Options:**
-
-**Option 1: Add Explicit MAP Definitions (Keep Strict Mode = true)**
-```dart
-// Define collection with MAP type
-await ditto.store.execute(
-  '''CREATE COLLECTION IF NOT EXISTS orders (
-       metadata MAP
-     )'''
-);
-
-// Now nested field updates work correctly
-await ditto.store.execute(
-  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
-  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
-);
-```
-- **Use when**: You want explicit type declarations and self-documenting schemas
-- **Trade-off**: Requires maintaining collection definitions
-
-**Option 2: Disable Strict Mode (Automatic Inference)**
-```dart
-// Disable strict mode (SDK v5.0 default behavior)
-await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = false');
-await ditto.startSync();
-
-// Objects automatically treated as MAPs, no definitions needed
-await ditto.store.execute(
-  'UPDATE orders SET metadata.updatedAt = :date WHERE _id = :id',
-  arguments: {'date': DateTime.now().toIso8601String(), 'id': orderId},
-);
-```
-- **Use when**: You prefer automatic CRDT inference or have dynamic schemas
-- **Trade-off**: Less explicit type declarations
-- **⚠️ WARNING**: Test thoroughly if switching from strict=true (different CRDT interpretation)
-
-**Decision Guide:**
-
-| Scenario | Recommended Approach |
-|----------|---------------------|
-| **Existing app with strict=true** | Keep strict=true, add MAP definitions (avoid switching) |
-| **New project on SDK 4.x** | Choose based on requirements (explicit types vs automatic inference) |
-| **Migrating from SDK <4.11** | Use strict=false to match legacy behavior |
-| **Mixed strict mode settings** | Standardize all peers to same setting |
-
-**❌ DON'T (Common mistakes)**:
-```dart
-// ❌ BAD: Mixing strict mode settings across peers
-// Device A: strict=true, Device B: strict=false
-// Result: Unpredictable CRDT merge behavior
-
-// ❌ BAD: Switching from strict=true to false without testing
-// Risk: Different CRDT type interpretation may cause unexpected behavior
-```
-
-**Why This Matters**:
-- **Strict mode = true**: Objects default to REGISTER, requires explicit MAP definitions
-- **Strict mode = false**: Objects automatically treated as MAP, no definitions needed
-- **Switching settings**: Has consequences—test all nested field operations thoroughly
-- **Cross-peer consistency**: All peers must use same strict mode setting
-
-**See Also**:
-- data-modeling/SKILL.md (Pattern 1.5: Explicit Collection Definitions)
-- `.claude/guides/best-practices/ditto.md (lines 2106-2126: When to Enable/Disable Strict Mode)`
-- `.claude/guides/best-practices/ditto.md (lines 2234-2331: Troubleshooting "Nested Fields Not Syncing")`
+### Observers
+- [ ] Registered in `initState()` or a service, never in `build()`
+- [ ] No `onChange`; `changes` consumed by exactly one listener
+- [ ] Stream subscription and observer both cancelled in `dispose()`
+- [ ] Listener copies `item.value` into plain data; no `QueryResult` retained
+- [ ] Slow async work uses `registerObserverV2` or `registerObserverWithSignalNext` (Experimental), with `signalNext()` in `finally`
 
 ---
-
-
-
-
-This section contains only the most critical (Tier 1) patterns that prevent data loss, memory leaks, and API deprecation issues. For additional patterns, see:
-- **[reference/common-patterns.md](reference/common-patterns.md)**: HIGH priority patterns for observer selection, heavy processing, subscriptions, signalNext(), SELECT optimization, DISTINCT, and GROUP BY
-- **[reference/advanced-patterns.md](reference/advanced-patterns.md)**: MEDIUM priority patterns for OFFSET optimization and expensive operator usage
-
----
-
-### API Usage
-- [ ] Using DQL string queries with `ditto.store.execute()` (all platforms)
-- [ ] **SDK 4.11+ Strict Mode**: Add CREATE COLLECTION definitions for nested objects
-- [ ] **Non-Flutter**: Not using legacy builder API (`.collection()`, `.find()` - fully deprecated SDK 4.12+, removed v5)
-- [ ] **Flutter**: Legacy API warnings don't apply (Flutter SDK never had builder API)
-- [ ] Parameterized arguments in queries (`:paramName` for Dart, `$args.paramName` for JS/Swift/Kotlin)
-- [ ] **Migration Reference**: See [Legacy API to DQL Quick Reference](.claude/guides/best-practices/ditto.md#legacy-api-to-dql-quick-reference) for systematic CRUD operation mapping
-
-### Memory Management
-- [ ] Not retaining QueryResultItems in state, storage, or between callbacks
-- [ ] Extracting data immediately from query results with `item.value`
-- [ ] Storing subscriptions and observers as class members for lifecycle management
-- [ ] Canceling observers and subscriptions in dispose()/cleanup
-
-### Subscription Patterns
-- [ ] Active subscriptions for data that needs remote sync
-- [ ] Specific WHERE clauses (not broad `SELECT *`)
-- [ ] Long-lived subscriptions (not frequent start/stop)
-- [ ] Subscriptions canceled only when feature disposed
-
-### Observer Patterns
-- [ ] **Non-Flutter SDKs**: Prefer `registerObserverWithSignalNext` (better performance)
-- [ ] **Non-Flutter SDKs**: Calling `signalNext()` after render cycle completes (e.g., `addPostFrameCallback`)
-- [ ] **Flutter SDK v4.x**: Use `registerObserver` (only option until v5.0)
-  - [ ] **Recommended**: Use `observer.changes` Stream API for Dart-idiomatic pattern
-  - [ ] **Alternative**: Use `onChange` callback for simple synchronous processing
-- [ ] **Flutter SDK v5.0+**: Will support `registerObserverWithSignalNext`
-- [ ] Lightweight observer callbacks (extract data only, offload heavy processing)
-- [ ] **Legacy observeLocal Migration**: See [Replacing observeLocal](.claude/guides/best-practices/ditto.md#replacing-legacy-observelocal-with-store-observers-sdk-412) for Differ pattern (non-Flutter SDKs)
-
-### Query Optimization
-- [ ] Subscriptions have specific WHERE clauses (avoid broad queries)
-- [ ] Query + Subscription + Observer pattern for real-time data
-- [ ] One-time queries for local-only data (no subscription needed)
-- [ ] Using specific field projections instead of `SELECT *` (reduces bandwidth)
-- [ ] Not using `DISTINCT` with `_id` field (redundant, wastes memory)
-- [ ] Filtering with `WHERE` before aggregates (reduces memory buffer)
-- [ ] Using `LIMIT 1` for existence checks (not `COUNT(*)`)
-- [ ] Avoiding large `OFFSET` values (linear performance degradation)
-- [ ] Combining `LIMIT` with `ORDER BY` (predictable results)
-- [ ] Aware that `GROUP BY` doesn't support `JOIN` across collections
 
 ## See Also
 
-### Main Guide
-- **API Version Awareness**: `.claude/guides/best-practices/ditto.md` lines 64-108
-- **SELECT Statements**: `.claude/guides/best-practices/ditto.md#select-statements`
-- **Projections**: `.claude/guides/best-practices/ditto.md (lines 596-623: Projections - Field Selection)`
-- **DISTINCT**: `.claude/guides/best-practices/ditto.md (lines 626-652: DISTINCT Keyword)`
-- **Aggregate Functions**: `.claude/guides/best-practices/ditto.md (lines 655-691: Aggregate Functions)`
-- **GROUP BY**: `.claude/guides/best-practices/ditto.md (lines 695-724: GROUP BY)`
-- **ORDER BY**: `.claude/guides/best-practices/ditto.md#order-by`
-- **LIMIT/OFFSET**: `.claude/guides/best-practices/ditto.md (lines 778-807: LIMIT and OFFSET)`
-- **Subscription Patterns**: `.claude/guides/best-practices/ditto.md` lines 1782+
-- **Query Result Handling**: `.claude/guides/best-practices/ditto.md#query-result-handling`
+### Guide sections
+- [DQL Fundamentals](../../../guides/best-practices/ditto.md#dql-fundamentals)
+- [Reading Data with SELECT](../../../guides/best-practices/ditto.md#reading-data-with-select)
+- [Writing Data](../../../guides/best-practices/ditto.md#writing-data)
+- [Sync and Subscriptions](../../../guides/best-practices/ditto.md#sync-and-subscriptions)
+- [Observing Changes](../../../guides/best-practices/ditto.md#observing-changes)
+- [Indexing and Query Performance](../../../guides/best-practices/ditto.md#indexing-and-query-performance)
 
-### Other Skills
-- **data-modeling**: Data structure design, denormalization
-- **storage-lifecycle**: EVICT patterns, deletion strategies
-- **performance-observability**: Observer performance, UI updates
+### Other skills
+- **data-modeling**: document structure, strict mode, CRDT types, relationships
+- **storage-lifecycle**: DELETE, soft delete, EVICT
+- **performance-observability**: indexes, ADVISE, EXPLAIN, logging
+- **transactions-attachments**: `store.transaction`, attachments
 
 ### Examples
-- [examples/dql-queries-good.dart](examples/dql-queries-good.dart)
-- [examples/dql-queries-bad.dart](examples/dql-queries-bad.dart)
-- [examples/subscription-lifecycle-good.dart](examples/subscription-lifecycle-good.dart)
-- [examples/subscription-lifecycle-bad.dart](examples/subscription-lifecycle-bad.dart)
-- [examples/observer-patterns-good.dart](examples/observer-patterns-good.dart)
-- [examples/observer-patterns-bad.dart](examples/observer-patterns-bad.dart)
-- [examples/query-result-handling-good.dart](examples/query-result-handling-good.dart)
+All examples are in [examples/](examples/) and linked from the patterns above; the `-good` / `-bad` pairs contrast correct and incorrect versions of the same task.
 
 ### Reference
-- [reference/legacy-api-migration.md](reference/legacy-api-migration.md) (non-Flutter platforms)
-- [reference/query-optimization.md](reference/query-optimization.md)
+- [reference/dql-reference.md](reference/dql-reference.md): literals, MISSING/NULL, USE IDS, JOIN details, write semantics
+- [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md): subscription rules, scope, observer lifecycle, choosing an observer API
+- [reference/query-optimization.md](reference/query-optimization.md): projections, indexes, pagination, counting
