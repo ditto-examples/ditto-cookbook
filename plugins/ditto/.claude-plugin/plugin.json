@@ -1,0 +1,12 @@
+{
+  "name": "ditto",
+  "version": "1.0.0",
+  "description": "Agent Skills for Ditto SDK 5.1 best practices: DQL queries and sync, CRDT-safe data modeling, deletion and eviction, transactions and attachments, and observer performance.",
+  "author": {
+    "name": "Ditto Examples"
+  },
+  "homepage": "https://github.com/ditto-examples/ditto-cookbook/tree/main/plugins/ditto",
+  "repository": "https://github.com/ditto-examples/ditto-cookbook",
+  "license": "MIT",
+  "keywords": ["ditto", "dql", "crdt", "offline-first", "flutter", "sync"]
+}

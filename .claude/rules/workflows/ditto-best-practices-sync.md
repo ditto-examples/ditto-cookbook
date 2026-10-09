@@ -1,8 +1,8 @@
 ---
 paths:
   - .claude/guides/best-practices/ditto.md
-  - .claude/skills/ditto/**
-version: 1.2
+  - plugins/ditto/**
+version: 1.3
 last_updated: 2026-10-09
 priority: CRITICAL
 ---
@@ -22,7 +22,7 @@ Ensures synchronization between the authoritative Ditto best practices guide and
 ## Critical Files Relationship
 
 - **Source of Truth**: `.claude/guides/best-practices/ditto.md` (comprehensive reference)
-- **Derivative Content**: `.claude/skills/ditto/*` (actionable patterns extracted from main guide)
+- **Derivative Content**: `plugins/ditto/skills/*` (actionable patterns extracted from main guide, published as the `ditto` Claude Code plugin; `.claude/skills/` holds symbolic links to them for use inside this repository)
   - `query-sync/SKILL.md` + examples + reference
   - `data-modeling/SKILL.md` + examples + reference
   - `storage-lifecycle/SKILL.md` + examples + reference
@@ -51,7 +51,7 @@ The ditto.md file must include version and timestamp information at the **beginn
 
 ### Step 1: After Editing ditto.md
 
-Always review `.claude/skills/ditto/` to identify which skills need updates.
+Always review `plugins/ditto/skills/` to identify which skills need updates.
 
 ### Step 2: Check Relevance
 
@@ -73,7 +73,8 @@ Propagate the changes to relevant SKILL.md files and example files:
 2. Update or add examples in `examples/` directory
 3. Update reference docs in `reference/` directory if needed
 4. Verify consistency across all affected files
-5. For the checklist, update the English item, the Japanese entries at the same position, and the version and date in the checklist header, then rebuild; the build fails if the Japanese data no longer lines up with the English
+5. Bump `version` in `plugins/ditto/.claude-plugin/plugin.json` (patch for fixes and wording, minor for new or revised patterns) so that installed copies of the plugin receive the update, then run `claude plugin validate .` from the repository root
+6. For the checklist, update the English item, the Japanese entries at the same position, and the version and date in the checklist header, then rebuild; the build fails if the Japanese data no longer lines up with the English
 
 ### Step 4: Skip if Unnecessary
 
@@ -101,7 +102,7 @@ If the changes are not relevant to any skills, you may skip the update.
 ```
 # Scenario: You edited ditto.md lines 780-1008 (Data Deletion Strategies)
 
-Step 1: Review `.claude/skills/ditto/storage-lifecycle/`
+Step 1: Review `plugins/ditto/skills/storage-lifecycle/`
 Step 2: Identify changes to tombstone TTL and logical deletion patterns
 Step 3: Update files:
   - storage-lifecycle/SKILL.md (update patterns section)
@@ -118,9 +119,11 @@ After synchronization, verify:
 3. Examples compile and run (for code examples)
 4. No orphaned references to old patterns
 5. Cross-references between skills remain valid
+6. Links from the Skills to the main guide use absolute GitHub URLs, because an installed plugin does not include `.claude/guides/`
+7. The plugin version has been bumped and `claude plugin validate .` passes
 
 ## See Also
 
 - [Source of Truth: Ditto Best Practices Guide](../../guides/best-practices/ditto.md)
-- [Skills Overview](../../skills/ditto/README.md)
+- [Ditto Plugin and Skills Overview](../../../plugins/ditto/README.md)
 - [Agent Skills Documentation](../../skills/README.md)

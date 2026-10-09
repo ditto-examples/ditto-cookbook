@@ -142,8 +142,8 @@ When implementing features or fixing issues, consult the platform-specific best 
 
 **Key points**:
 - **Source of Truth**: `.claude/guides/best-practices/ditto.md` (comprehensive reference)
-- **Derivative Content**: `.claude/skills/ditto/*` (actionable patterns extracted from main guide)
-- **Workflow**: Review → Check relevance → Update skills → Verify consistency
+- **Derivative Content**: `plugins/ditto/skills/*` (actionable patterns extracted from main guide, published as the `ditto` Claude Code plugin)
+- **Workflow**: Review → Check relevance → Update skills → Bump plugin version → Verify consistency
 - **Skip if unnecessary**: Pure conceptual content without actionable patterns
 
 Agent Skills provide real-time guidance to developers. They must stay synchronized with the authoritative best practices guide to ensure accuracy and consistency.

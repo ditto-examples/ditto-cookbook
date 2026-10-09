@@ -25,7 +25,7 @@ description: |
 
 # Ditto Query and Sync Patterns
 
-Actionable patterns for DQL, subscriptions, and store observers in Ditto SDK 5.1.0 (Flutter package `ditto_live` 5.1.0). The authoritative reference is the [Ditto SDK Best Practices guide](../../../guides/best-practices/ditto.md); each pattern links to the guide section it is extracted from.
+Actionable patterns for DQL, subscriptions, and store observers in Ditto SDK 5.1.0 (Flutter package `ditto_live` 5.1.0). The authoritative reference is the [Ditto SDK Best Practices guide](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md); each pattern links to the guide section it is extracted from.
 
 ## Table of Contents
 
@@ -51,7 +51,7 @@ Every DQL statement runs against the **local store**. Only subscriptions cause d
 
 Subscriptions are long-lived and scoped by stable partition keys (app or feature scope). Observers and `execute` calls are short-lived and as specific as the screen needs (screen scope). An empty local result does not mean "no data exists"; it may not have synced yet.
 
-**Guide**: [Where Queries Run](../../../guides/best-practices/ditto.md#where-queries-run), [Sync and Subscriptions](../../../guides/best-practices/ditto.md#sync-and-subscriptions)
+**Guide**: [Where Queries Run](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#where-queries-run), [Sync and Subscriptions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#sync-and-subscriptions)
 
 ---
 
@@ -96,7 +96,7 @@ Future<List<Map<String, dynamic>>> findOrders(
 
 **Why**: interpolation allows DQL injection, breaks on quotes and backslashes, and defeats the shared statement cache.
 
-**Guide**: [Parameters and Literals](../../../guides/best-practices/ditto.md#parameters-and-literals) · **Examples**: [dql-queries-good.dart](examples/dql-queries-good.dart), [dql-queries-bad.dart](examples/dql-queries-bad.dart)
+**Guide**: [Parameters and Literals](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#parameters-and-literals) · **Examples**: [dql-queries-good.dart](examples/dql-queries-good.dart), [dql-queries-bad.dart](examples/dql-queries-bad.dart)
 
 ### 2. Quote Every Key in Inline Object Literals (HIGH)
 
@@ -139,7 +139,7 @@ Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
 }
 ```
 
-**Guide**: [MISSING and NULL](../../../guides/best-practices/ditto.md#missing-and-null)
+**Guide**: [MISSING and NULL](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#missing-and-null)
 
 ### 4. Membership Filters (HIGH)
 
@@ -152,7 +152,7 @@ Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
 
 > **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) instead. This is a 5.1.0 regression and affects local queries and observers only. A subscription with the same predicate syncs the right documents, so "subscribe and observe with the same query" receives the data but shows an empty list.
 
-**Guide**: [Filtering by Membership](../../../guides/best-practices/ditto.md#filtering-by-membership)
+**Guide**: [Filtering by Membership](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#filtering-by-membership)
 
 ### 5. Subscription Rules (CRITICAL)
 
@@ -189,9 +189,9 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 **✅ DO**: filter by stable partition keys (tenant, store, region, team); use the same subscriptions on peers in the same role; keep predicates flat and simple; give relay devices at least the subscriptions of the devices behind them.
 **❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for a small reference-data collection that every device needs); filter subscriptions on fields that change often (`status`, `assignee`).
 
-**Soft delete**: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Variant A subscribes to the whole collection (or partition) and cleans up with a synced `DELETE`; Variant B subscribes to active documents plus a retention window so devices can `EVICT` older ones. See [Soft delete, subscriptions, and cleanup](../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup) and the storage-lifecycle skill.
+**Soft delete**: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Variant A subscribes to the whole collection (or partition) and cleans up with a synced `DELETE`; Variant B subscribes to active documents plus a retention window so devices can `EVICT` older ones. See [Soft delete, subscriptions, and cleanup](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup) and the storage-lifecycle skill.
 
-**Guide**: [Subscription Rules](../../../guides/best-practices/ditto.md#subscription-rules), [Scope Balancing](../../../guides/best-practices/ditto.md#scope-balancing)
+**Guide**: [Subscription Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#subscription-rules), [Scope Balancing](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#scope-balancing)
 
 ### 6. Subscription Lifecycle (CRITICAL)
 
@@ -241,7 +241,7 @@ class OrderSync {
 
 > **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate the app. Read only `queryString` and `isCancelled` there, and keep your own references (as `OrderSync` does).
 
-**Guide**: [Subscription Lifecycle](../../../guides/best-practices/ditto.md#subscription-lifecycle) · **Examples**: [subscription-lifecycle-good.dart](examples/subscription-lifecycle-good.dart), [subscription-lifecycle-bad.dart](examples/subscription-lifecycle-bad.dart)
+**Guide**: [Subscription Lifecycle](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#subscription-lifecycle) · **Examples**: [subscription-lifecycle-good.dart](examples/subscription-lifecycle-good.dart), [subscription-lifecycle-bad.dart](examples/subscription-lifecycle-bad.dart)
 
 ### 7. The Flutter Observer Pattern (CRITICAL)
 
@@ -299,7 +299,7 @@ Lifecycle facts (`registerObserver`): `changes` is single-subscription (a second
 **✅ DO**: register in `initState()` or a service; when inputs change (`didUpdateWidget`), cancel and re-register the observer; give each screen region its own small observer; use `COUNT(*)` for badges.
 **❌ DON'T**: register in `build()`; create an observer per list item; observe a whole collection at the root and rebuild the entire screen.
 
-**Guide**: [Store Observers in Flutter](../../../guides/best-practices/ditto.md#store-observers-in-flutter), [Partial UI Updates](../../../guides/best-practices/ditto.md#partial-ui-updates) · **Examples**: [observer-patterns-good.dart](examples/observer-patterns-good.dart), [observer-patterns-bad.dart](examples/observer-patterns-bad.dart)
+**Guide**: [Store Observers in Flutter](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#store-observers-in-flutter), [Partial UI Updates](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#partial-ui-updates) · **Examples**: [observer-patterns-good.dart](examples/observer-patterns-good.dart), [observer-patterns-bad.dart](examples/observer-patterns-bad.dart)
 
 ### 8. ORDER BY and LIMIT Belong in Local Queries (HIGH)
 
@@ -309,7 +309,7 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 - Ascending type order: `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing. `DESC` puts missing values first.
 - Always combine `LIMIT`/`OFFSET` with `ORDER BY`; prefer keyset pagination with an `_id` tie-breaker (`WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId) ORDER BY createdAt DESC, _id DESC LIMIT :pageSize`) for long lists. Check existence with `SELECT _id ... LIMIT 1`; count with `COUNT(*)`.
 
-**Guide**: [ORDER BY](../../../guides/best-practices/ditto.md#order-by), [LIMIT and OFFSET](../../../guides/best-practices/ditto.md#limit-and-offset)
+**Guide**: [ORDER BY](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#order-by), [LIMIT and OFFSET](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#limit-and-offset)
 
 ### 9. Query Result Handling (HIGH)
 
@@ -324,7 +324,7 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 **✅ DO**: iterate `items` once and convert rows to maps or model objects right away; project only the fields you need.
 **❌ DON'T**: store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks (they reference native memory).
 
-**Guide**: [Working with Query Results](../../../guides/best-practices/ditto.md#working-with-query-results) · **Example**: [query-result-handling.dart](examples/query-result-handling.dart)
+**Guide**: [Working with Query Results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#working-with-query-results) · **Example**: [query-result-handling.dart](examples/query-result-handling.dart)
 
 ### 10. Backpressure for Slow Observer Work (HIGH)
 
@@ -338,7 +338,7 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 
 `signalNext()` has no effect on `registerObserverV2` observers. A `registerObserverWithSignalNext` observer stops updating if you never call `signalNext()`; do not pause/resume its `changes` stream. Cancelling the stream subscription of a `StoreObserverV2` also cancels the observer.
 
-**Guide**: [Backpressure (SDK 5.1+)](../../../guides/best-practices/ditto.md#backpressure-sdk-51) · **Example**: [observer-backpressure.dart](examples/observer-backpressure.dart)
+**Guide**: [Backpressure (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#backpressure-sdk-51) · **Example**: [observer-backpressure.dart](examples/observer-backpressure.dart)
 
 ### 11. Upserts and Field-Level Updates (HIGH)
 
@@ -362,7 +362,7 @@ Future<void> syncCatalogItem(Ditto ditto, Map<String, dynamic> item) async {
 }
 ```
 
-**Guide**: [INSERT and Conflict Handling](../../../guides/best-practices/ditto.md#insert-and-conflict-handling), [UPDATE](../../../guides/best-practices/ditto.md#update) · **Example**: [dql-writes.dart](examples/dql-writes.dart)
+**Guide**: [INSERT and Conflict Handling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#insert-and-conflict-handling), [UPDATE](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#update) · **Example**: [dql-writes.dart](examples/dql-writes.dart)
 
 ### 12. RETURNING (SDK 5.1+) (MEDIUM)
 
@@ -380,7 +380,7 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
 }
 ```
 
-**Guide**: [RETURNING (SDK 5.1+)](../../../guides/best-practices/ditto.md#returning-sdk-51)
+**Guide**: [RETURNING (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#returning-sdk-51)
 
 ### 13. Aggregates, GROUP BY, and HAVING (MEDIUM)
 
@@ -402,7 +402,7 @@ SELECT customerId, SUM(total) AS revenue FROM orders
 GROUP BY customerId HAVING SUM(total) > 1000 ORDER BY revenue DESC
 ```
 
-**Guide**: [Aggregates](../../../guides/best-practices/ditto.md#aggregates), [GROUP BY and HAVING](../../../guides/best-practices/ditto.md#group-by-and-having)
+**Guide**: [Aggregates](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#aggregates), [GROUP BY and HAVING](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#group-by-and-having)
 
 ### 14. JOIN (SDK 5.1+) Needs an Index on the Inner Collection (HIGH)
 
@@ -424,7 +424,7 @@ ORDER BY c.name, o.total DESC
 **✅ DO**: qualify every field with its alias and alias colliding fields (`o._id AS orderId`); subscribe to each joined collection separately; filter the outer collection selectively; run `ADVISE` for index recommendations.
 **❌ DON'T**: use `JOIN` in subscriptions or on Ditto Server; use `USE INDEX ''` on large collections to silence the index error.
 
-**Guide**: [Joining Collections (SDK 5.1+)](../../../guides/best-practices/ditto.md#joining-collections-sdk-51)
+**Guide**: [Joining Collections (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#joining-collections-sdk-51)
 
 ### 15. DELETE and EVICT by ID Use WHERE (HIGH)
 
@@ -432,7 +432,7 @@ ORDER BY c.name, o.total DESC
 
 `DELETE` removes documents on all peers (tombstone); `EVICT` removes them from this device only. See the storage-lifecycle skill.
 
-**Guide**: [DELETE and EVICT](../../../guides/best-practices/ditto.md#delete-and-evict)
+**Guide**: [DELETE and EVICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#delete-and-evict)
 
 ### 16. Differ for Item-Level Changes (MEDIUM)
 
@@ -440,7 +440,7 @@ An observer delivers the full result every time. `Differ` reports `insertions`, 
 
 Pass `result.items.toList()` (`diff()` takes a `List`); the first call reports every item as an insertion. `Differ` keeps the previous result and is expensive, so bound diffed queries with `LIMIT` and keep previous values yourself if you need them. A plain `ListView.builder` with `ValueKey(_id)` does not need `Differ`; use it for `AnimatedList` or for processing only new items.
 
-**Guide**: [Diffing Results](../../../guides/best-practices/ditto.md#diffing-results) · **Example**: [observer-differ.dart](examples/observer-differ.dart)
+**Guide**: [Diffing Results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#diffing-results) · **Example**: [observer-differ.dart](examples/observer-differ.dart)
 
 ---
 
@@ -450,7 +450,7 @@ Backpressure differs per platform: JavaScript `registerObserver` signals the nex
 
 JavaScript passes arguments as the second positional parameter (`execute(query, { status: 'open' })`) and reads changed IDs with `mutatedDocumentIDsV2()`. Do not port Flutter observer code one-to-one.
 
-**Guide**: [Backpressure on Other Platforms](../../../guides/best-practices/ditto.md#backpressure-on-other-platforms)
+**Guide**: [Backpressure on Other Platforms](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#backpressure-on-other-platforms)
 
 ---
 
@@ -485,12 +485,12 @@ JavaScript passes arguments as the second positional parameter (`execute(query, 
 ## See Also
 
 ### Guide sections
-- [DQL Fundamentals](../../../guides/best-practices/ditto.md#dql-fundamentals)
-- [Reading Data with SELECT](../../../guides/best-practices/ditto.md#reading-data-with-select)
-- [Writing Data](../../../guides/best-practices/ditto.md#writing-data)
-- [Sync and Subscriptions](../../../guides/best-practices/ditto.md#sync-and-subscriptions)
-- [Observing Changes](../../../guides/best-practices/ditto.md#observing-changes)
-- [Indexing and Query Performance](../../../guides/best-practices/ditto.md#indexing-and-query-performance)
+- [DQL Fundamentals](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#dql-fundamentals)
+- [Reading Data with SELECT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#reading-data-with-select)
+- [Writing Data](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#writing-data)
+- [Sync and Subscriptions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#sync-and-subscriptions)
+- [Observing Changes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#observing-changes)
+- [Indexing and Query Performance](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-and-query-performance)
 
 ### Other skills
 - **data-modeling**: document structure, strict mode, CRDT types, relationships

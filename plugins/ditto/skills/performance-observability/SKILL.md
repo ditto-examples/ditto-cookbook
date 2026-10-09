@@ -68,7 +68,7 @@ Labels: **(SDK 5.1+)** marks features introduced in 5.1. **(Experimental)** mark
 
 ### 1. Consume Observer Results Through the changes Stream (CRITICAL)
 
-**Guide**: [Store Observers in Flutter](../../../guides/best-practices/ditto.md#store-observers-in-flutter)
+**Guide**: [Store Observers in Flutter](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#store-observers-in-flutter)
 
 Register the observer **without** `onChange`, consume `changes` with one `StreamSubscription`, and cancel both in `dispose()`.
 
@@ -137,8 +137,8 @@ StoreObserver observeOrdersWithCallbackOnly(Ditto ditto, void Function(int) onCo
 ```
 
 **✅ DO:**
-- Add `ORDER BY` whenever result order matters (use `_id` as a tie-breaker); without it the order of observer results is not guaranteed ([Stable Ordering](../../../guides/best-practices/ditto.md#stable-ordering))
-- Copy values out of the result (`item.value` or your own model objects) ([Working with Query Results](../../../guides/best-practices/ditto.md#working-with-query-results))
+- Add `ORDER BY` whenever result order matters (use `_id` as a tie-breaker); without it the order of observer results is not guaranteed ([Stable Ordering](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#stable-ordering))
+- Copy values out of the result (`item.value` or your own model objects) ([Working with Query Results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#working-with-query-results))
 
 **❌ DON'T:**
 - Pass `onChange` and leave `changes` unconsumed
@@ -150,7 +150,7 @@ StoreObserver observeOrdersWithCallbackOnly(Ditto ditto, void Function(int) onCo
 
 ### 2. Observer Lifecycle and Cleanup (CRITICAL)
 
-**Guide**: [Observer Lifecycle and Cleanup](../../../guides/best-practices/ditto.md#observer-lifecycle-and-cleanup), [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
+**Guide**: [Observer Lifecycle and Cleanup](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#observer-lifecycle-and-cleanup), [Resource Cleanup and Shutdown](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
 
 | Behavior (`registerObserver`) | What to do |
 |---|---|
@@ -176,7 +176,7 @@ StoreObserver observeOrdersWithCallbackOnly(Ditto ditto, void Function(int) onCo
 
 ### 3. Keep registerObserver Listeners Fast (HIGH)
 
-**Guide**: [Keep Observer Callbacks Fast](../../../guides/best-practices/ditto.md#keep-observer-callbacks-fast)
+**Guide**: [Keep Observer Callbacks Fast](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#keep-observer-callbacks-fast)
 
 `registerObserver` has no backpressure: Ditto never waits for your code before delivering the next result. Pausing the `changes` stream of a `StoreObserver` does not slow Ditto down; results queue up in the stream instead.
 
@@ -198,7 +198,7 @@ StoreObserver observeOrdersWithCallbackOnly(Ditto ditto, void Function(int) onCo
 
 ### 4. Backpressure for Slow or Async Work (HIGH)
 
-**Guide**: [Backpressure (SDK 5.1+)](../../../guides/best-practices/ditto.md#backpressure-sdk-51), [Choosing an Observer API](../../../guides/best-practices/ditto.md#choosing-an-observer-api)
+**Guide**: [Backpressure (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#backpressure-sdk-51), [Choosing an Observer API](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#choosing-an-observer-api)
 
 Two experimental Flutter APIs (SDK 5.1+) return a `StoreObserverV2`. While your code is busy, Ditto holds back further updates and later delivers the latest state, so intermediate results are merged instead of queued.
 
@@ -251,7 +251,7 @@ Facts to keep in mind:
 - Results passed to `onChange` of either API are also queued in `changes`; pattern 1 applies.
 - The experimental APIs may change in a future release; `registerObserver` remains the default for UI code.
 
-**Other platforms** ([Backpressure on Other Platforms](../../../guides/best-practices/ditto.md#backpressure-on-other-platforms)): do not port Flutter code one-to-one. JavaScript `registerObserver` signals automatically when the handler returns and does not await an `async` handler (use `registerObserverWithSignalNext` for async work). Swift signals when the handler returns, with `handlerWithSignalNext:` for manual control. Kotlin has no `signalNext`; a suspending handler or a `Flow` (with `.conflate()` for slow collectors) provides backpressure.
+**Other platforms** ([Backpressure on Other Platforms](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#backpressure-on-other-platforms)): do not port Flutter code one-to-one. JavaScript `registerObserver` signals automatically when the handler returns and does not await an `async` handler (use `registerObserverWithSignalNext` for async work). Swift signals when the handler returns, with `handlerWithSignalNext:` for manual control. Kotlin has no `signalNext`; a suspending handler or a `Flow` (with `.conflate()` for slow collectors) provides backpressure.
 
 **See**: [examples/observer-backpressure.dart](examples/observer-backpressure.dart)
 
@@ -259,7 +259,7 @@ Facts to keep in mind:
 
 ### 5. Partial UI Updates (HIGH)
 
-**Guide**: [Partial UI Updates](../../../guides/best-practices/ditto.md#partial-ui-updates), [Diffing Results](../../../guides/best-practices/ditto.md#diffing-results)
+**Guide**: [Partial UI Updates](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#partial-ui-updates), [Diffing Results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#diffing-results)
 
 An observer delivers a new result for **any** change that affects its query. A `setState` at the top of a large screen rebuilds the whole screen, which can drop frames and lose scroll position or input focus.
 
@@ -285,7 +285,7 @@ An observer delivers a new result for **any** change that affects its query. A `
 
 ### 6. Avoid Unnecessary Writes (HIGH)
 
-**Guide**: [ON ID CONFLICT](../../../guides/best-practices/ditto.md#on-id-conflict), [Prefer field-level updates over whole-document rewrites](../../../guides/best-practices/ditto.md#prefer-field-level-updates-over-whole-document-rewrites), [Assigning an object merges it](../../../guides/best-practices/ditto.md#assigning-an-object-merges-it)
+**Guide**: [ON ID CONFLICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#on-id-conflict), [Prefer field-level updates over whole-document rewrites](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#prefer-field-level-updates-over-whole-document-rewrites), [Assigning an object merges it](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#assigning-an-object-merges-it)
 
 | Write | Effect when values are unchanged |
 |---|---|
@@ -333,7 +333,7 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 
 ### 7. Create the Indexes Your Queries Need (HIGH)
 
-**Guide**: [Indexing and Query Performance](../../../guides/best-practices/ditto.md#indexing-and-query-performance), [Index Usage Rules](../../../guides/best-practices/ditto.md#index-usage-rules), [ADVISE (SDK 5.1+)](../../../guides/best-practices/ditto.md#advise-sdk-51), [EXPLAIN and PROFILE](../../../guides/best-practices/ditto.md#explain-and-profile)
+**Guide**: [Indexing and Query Performance](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-and-query-performance), [Index Usage Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#index-usage-rules), [ADVISE (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#advise-sdk-51), [EXPLAIN and PROFILE](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#explain-and-profile)
 
 Indexes are local to each device and persist across restarts. They are used by `execute` and store observers (not by subscriptions), and in-memory stores (Flutter Web) do not support them.
 
@@ -385,7 +385,7 @@ Future<void> printOrderIndexAdvice(Ditto ditto) async {
 
 ### 8. Configure Logging Before Opening Ditto (HIGH)
 
-**Guide**: [Logging](../../../guides/best-practices/ditto.md#logging), [Ditto.open, Ditto.openSync, and Ditto.init](../../../guides/best-practices/ditto.md#dittoopen-dittoopensync-and-dittoinit)
+**Guide**: [Logging](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#logging), [Ditto.open, Ditto.openSync, and Ditto.init](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#dittoopen-dittoopensync-and-dittoinit)
 
 Every `DittoLogger` member throws `Ditto not initialized` until the SDK is initialized. Call `await Ditto.init()` first, then configure `DittoLogger`, then `Ditto.open`, so startup is logged with your settings.
 
@@ -411,7 +411,7 @@ Future<void> configureDittoLogging() async {
 **❌ DON'T:**
 - Set `DittoLogger` properties before `Ditto.init()` (or `Ditto.open`) has completed
 - Leave `LogLevel.verbose` enabled in production
-- Register long-lived observers on `system:system_info`, or observers on `system:data_sync_info` in many places; query them with `execute` when needed, and for live sync status use a single observer with a trivial callback ([System Virtual Collections](../../../guides/best-practices/ditto.md#system-virtual-collections), [Monitoring Sync Status](../../../guides/best-practices/ditto.md#monitoring-sync-status))
+- Register long-lived observers on `system:system_info`, or observers on `system:data_sync_info` in many places; query them with `execute` when needed, and for live sync status use a single observer with a trivial callback ([System Virtual Collections](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#system-virtual-collections), [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status))
 - Change the `ROTATING_LOG_FILE_*` parameters unless Ditto support advises otherwise
 
 **See**: [examples/logging-configuration-good.dart](examples/logging-configuration-good.dart), [examples/logging-configuration-bad.dart](examples/logging-configuration-bad.dart)
@@ -481,11 +481,11 @@ Future<void> configureDittoLogging() async {
 ## See Also
 
 ### Main Guide
-- [Observing Changes](../../../guides/best-practices/ditto.md#observing-changes)
-- [Indexing and Query Performance](../../../guides/best-practices/ditto.md#indexing-and-query-performance)
-- [Logging and Observability](../../../guides/best-practices/ditto.md#logging-and-observability)
-- [INSERT and Conflict Handling](../../../guides/best-practices/ditto.md#insert-and-conflict-handling)
-- [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
+- [Observing Changes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#observing-changes)
+- [Indexing and Query Performance](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-and-query-performance)
+- [Logging and Observability](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#logging-and-observability)
+- [INSERT and Conflict Handling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#insert-and-conflict-handling)
+- [Resource Cleanup and Shutdown](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
 
 ### Other Skills
 - [query-sync](../query-sync/SKILL.md): subscriptions and query patterns

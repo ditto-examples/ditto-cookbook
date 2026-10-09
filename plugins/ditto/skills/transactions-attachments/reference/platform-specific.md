@@ -1,6 +1,6 @@
 # Transactions and Attachments on JavaScript, Swift, and Kotlin (SDK 5.1)
 
-The patterns in [SKILL.md](../SKILL.md) apply to every platform; the API shapes differ. Signatures below were checked against the 5.1.0 SDK artifacts: the JavaScript type definitions (`@dittolive/ditto` 5.1.0), the Swift interface (`DittoSwift` 5.1.0), and the Kotlin sources (`com.ditto:ditto-kotlin` 5.1.0). Guide: [Transactions on Other Platforms](../../../../guides/best-practices/ditto.md#transactions-on-other-platforms) and [Platform Differences](../../../../guides/best-practices/ditto.md#platform-differences).
+The patterns in [SKILL.md](../SKILL.md) apply to every platform; the API shapes differ. Signatures below were checked against the 5.1.0 SDK artifacts: the JavaScript type definitions (`@dittolive/ditto` 5.1.0), the Swift interface (`DittoSwift` 5.1.0), and the Kotlin sources (`com.ditto:ditto-kotlin` 5.1.0). Guide: [Transactions on Other Platforms](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions-on-other-platforms) and [Platform Differences](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#platform-differences).
 
 ## Table of Contents
 

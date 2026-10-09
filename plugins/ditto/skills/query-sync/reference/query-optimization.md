@@ -1,6 +1,6 @@
 # Query Optimization (SDK 5.1)
 
-How to keep local queries and observers fast. Extracted from the guide sections [Working with Query Results](../../../../guides/best-practices/ditto.md#working-with-query-results), [Reading Data with SELECT](../../../../guides/best-practices/ditto.md#reading-data-with-select), and [Indexing and Query Performance](../../../../guides/best-practices/ditto.md#indexing-and-query-performance). Index creation, `ADVISE`, `EXPLAIN`, and `PROFILE` are covered in the performance-observability skill.
+How to keep local queries and observers fast. Extracted from the guide sections [Working with Query Results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#working-with-query-results), [Reading Data with SELECT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#reading-data-with-select), and [Indexing and Query Performance](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-and-query-performance). Index creation, `ADVISE`, `EXPLAIN`, and `PROFILE` are covered in the performance-observability skill.
 
 ## Table of Contents
 
@@ -127,7 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)
 SELECT _id, status FROM orders WHERE status = :status
 ```
 
-Create indexes once at startup with `CREATE INDEX IF NOT EXISTS`; indexes persist and are local to each device. See [Creating Indexes](../../../../guides/best-practices/ditto.md#creating-indexes) and [Index Usage Rules](../../../../guides/best-practices/ditto.md#index-usage-rules).
+Create indexes once at startup with `CREATE INDEX IF NOT EXISTS`; indexes persist and are local to each device. See [Creating Indexes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#creating-indexes) and [Index Usage Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#index-usage-rules).
 
 ## JOIN Performance
 

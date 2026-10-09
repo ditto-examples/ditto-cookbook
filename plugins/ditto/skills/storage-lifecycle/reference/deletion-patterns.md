@@ -1,6 +1,6 @@
 # Storage Lifecycle: Additional Patterns
 
-Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The authoritative source is the guide section [Deletion and Storage Management](../../../../guides/best-practices/ditto.md#deletion-and-storage-management).
+Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The authoritative source is the guide section [Deletion and Storage Management](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deletion-and-storage-management).
 
 ## Table of Contents
 
@@ -22,7 +22,7 @@ Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The autho
 - A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear, unless another device edited the old document concurrently (those edits merge into the new document). Re-inserting an *evicted* `_id` merges with the copies other peers still hold.
 - Inserting with `INITIAL DOCUMENTS` for an `_id` that was previously deleted on this device does not bring the document back: the deletion wins. If the seed is identical to the `INITIAL` insert that created the document, the document stays deleted; if the content differs, or the document was originally created with a regular `INSERT`, a document remains whose fields are all `null`. The same applies when the deletion came from another device, and the `null` document then appears on every device (SDK 5.1.0).
 
-Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md pattern 2](../SKILL.md#2-respect-the-tombstone-ttl-priority-critical) and the guide's [Tombstone TTL and reaping](../../../../guides/best-practices/ditto.md#tombstone-ttl-and-reaping).
+Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md pattern 2](../SKILL.md#2-respect-the-tombstone-ttl-priority-critical) and the guide's [Tombstone TTL and reaping](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#tombstone-ttl-and-reaping).
 
 ---
 
@@ -77,7 +77,7 @@ class CarTile extends StatelessWidget {
 }
 ```
 
-Guide: [Husk documents](../../../../guides/best-practices/ditto.md#husk-documents)
+Guide: [Husk documents](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#husk-documents)
 
 ---
 
@@ -103,7 +103,7 @@ DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000
 - There is no `DROP COLLECTION` statement. `DELETE FROM orders` without a `WHERE` clause deletes every document, but the collection remains.
 - See the Ditto Server HTTP API documentation for the endpoint and authentication.
 
-Guide: [Deleting on the Ditto Server](../../../../guides/best-practices/ditto.md#deleting-on-the-ditto-server)
+Guide: [Deleting on the Ditto Server](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deleting-on-the-ditto-server)
 
 ---
 
@@ -131,7 +131,7 @@ EVICT FROM orders WHERE storeId = :storeId AND isDeleted = true AND deletedAt < 
 
 In Variant B, cancel the old subscription before evicting, use the same cutoff value for the eviction and the new subscription, and choose a retention window longer than the longest expected offline period. See [examples/soft-delete-relay.dart](../examples/soft-delete-relay.dart).
 
-Guide: [Soft delete, subscriptions, and cleanup](../../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup)
+Guide: [Soft delete, subscriptions, and cleanup](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup)
 
 ---
 
@@ -170,7 +170,7 @@ Data that was already being transferred when the subscriptions were cancelled ca
 
 Switch partitions only when the needed data really changes. Search boxes, tabs, filters, and sort orders should change local observers, not subscriptions (avoid changing subscriptions more often than about every 15 minutes).
 
-Guide: [Cancelling subscriptions and local data](../../../../guides/best-practices/ditto.md#cancelling-subscriptions-and-local-data), [Subscription Lifecycle](../../../../guides/best-practices/ditto.md#subscription-lifecycle)
+Guide: [Cancelling subscriptions and local data](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#cancelling-subscriptions-and-local-data), [Subscription Lifecycle](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#subscription-lifecycle)
 
 ---
 
@@ -182,7 +182,7 @@ Guide: [Cancelling subscriptions and local data](../../../../guides/best-practic
 - `EVICT` supports `LIMIT` and `RETURNING`, so a large cleanup can be split into short transactions (see [SKILL.md pattern 7](../SKILL.md#7-evict-on-a-schedule-in-batches-priority-high)). Batching does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule, not as many separate cleanups.
 - **Advanced:** `DISABLE_REPLICATION_GC_ON_EVICT` (default `false`) stops each eviction from triggering immediate per-peer replication metadata cleanup; periodic background garbage collection still runs. Leave it at the default unless profiling shows eviction-time write latency.
 
-Guide: [Eviction frequency](../../../../guides/best-practices/ditto.md#eviction-frequency)
+Guide: [Eviction frequency](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#eviction-frequency)
 
 ---
 
@@ -217,4 +217,4 @@ Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
 
 **❌ DON'T** register a long-lived observer on `system:system_info`: such observers run every 500 ms regardless of whether anything changed.
 
-Guide: [Monitoring Storage](../../../../guides/best-practices/ditto.md#monitoring-storage)
+Guide: [Monitoring Storage](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-storage)

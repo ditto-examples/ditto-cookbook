@@ -15,17 +15,19 @@ Agent Skills are modular capabilities that Claude Code uses autonomously during 
 
 ### Ditto SDK Skills
 
-Located in `ditto/`, these Skills help you write high-quality Ditto SDK code across multiple platforms (Flutter, JavaScript, Swift, Kotlin).
+These Skills help you write high-quality Ditto SDK code across multiple platforms (Flutter, JavaScript, Swift, Kotlin). Their source lives in the [`ditto` Claude Code plugin](../../plugins/ditto/), which this repository publishes so that anyone can install them. The entries below are symbolic links to the plugin's Skills, so Claude Code loads them as project Skills while you work in this repository.
 
 | Skill | Purpose | Priority |
 |-------|---------|----------|
-| [**query-sync**](ditto/query-sync/) | DQL queries, subscriptions, observers | CRITICAL |
-| [**data-modeling**](ditto/data-modeling/) | CRDT-safe data structures | CRITICAL |
-| [**storage-lifecycle**](ditto/storage-lifecycle/) | DELETE, EVICT, storage optimization | HIGH |
-| [**transactions-attachments**](ditto/transactions-attachments/) | Transactions and attachments | CRITICAL |
-| [**performance-observability**](ditto/performance-observability/) | Performance and monitoring | HIGH |
+| [**query-sync**](query-sync/) | DQL queries, subscriptions, observers | CRITICAL |
+| [**data-modeling**](data-modeling/) | CRDT-safe data structures | CRITICAL |
+| [**storage-lifecycle**](storage-lifecycle/) | DELETE, soft delete, EVICT, tombstones | CRITICAL |
+| [**transactions-attachments**](transactions-attachments/) | Transactions and attachments | CRITICAL |
+| [**performance-observability**](performance-observability/) | Performance and monitoring | HIGH |
 
-**See**: [ditto/README.md](ditto/README.md) for detailed overview of Ditto Skills.
+**Edit the Skills in `plugins/ditto/skills/`**, not through these links. Claude Code protects `.claude/skills/` from writes, and keeping the source outside it lets the Skills be maintained and published like any other file.
+
+**See**: [plugins/ditto/README.md](../../plugins/ditto/README.md) for a detailed overview and installation instructions.
 
 ## How Skills Work
 
@@ -115,25 +117,26 @@ The main guide is the authoritative source. Skills focus on automatable, common 
 
 **Update process**:
 1. Update main guide first (`.claude/guides/best-practices/ditto.md`)
-2. Extract new critical patterns into Skills
+2. Extract new critical patterns into Skills (in `plugins/ditto/skills/`)
 3. Update examples and references as needed
+4. Bump `version` in `plugins/ditto/.claude-plugin/plugin.json` and run `claude plugin validate .`
 
 ## Troubleshooting
 
 ### Claude doesn't use my Skill
 
 **Check**:
-- **File location**: Skills must be in `.claude/skills/[skill-name]/SKILL.md`
+- **File location**: Skills must be in `.claude/skills/[skill-name]/SKILL.md`, exactly one level deep (`[skill-name]` may be a symbolic link to a Skill directory elsewhere)
 - **YAML syntax**: Verify frontmatter is valid (opening/closing `---`)
 - **Description**: Is it specific enough? Include trigger keywords.
 
 **Debug**:
 ```bash
 # Verify Skill file exists
-ls -la .claude/skills/ditto/query-sync/SKILL.md
+ls -la .claude/skills/query-sync/SKILL.md
 
 # Check for YAML errors
-cat .claude/skills/ditto/query-sync/SKILL.md | head -n 10
+head -n 10 .claude/skills/query-sync/SKILL.md
 ```
 
 ### Skill triggers too often
@@ -151,5 +154,5 @@ Ask Claude Code:
 ## Learn More
 
 - [Claude Code Agent Skills documentation](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/quickstart)
-- [Ditto Skills overview](ditto/README.md)
+- [Ditto plugin and Skills overview](../../plugins/ditto/README.md)
 - [Ditto Best Practices guide](../guides/best-practices/ditto.md)

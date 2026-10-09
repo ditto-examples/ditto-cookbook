@@ -1,6 +1,6 @@
 # Data Modeling Common Patterns
 
-Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`. The source of truth is the [Data Modeling](../../../../guides/best-practices/ditto.md#data-modeling) section of the guide.
+Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`. The source of truth is the [Data Modeling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#data-modeling) section of the guide.
 
 ## Table of Contents
 
@@ -54,7 +54,7 @@ Future<bool> importProduct(Ditto ditto, Map<String, dynamic> product) async {
 - Use `DO UPDATE` for periodic re-upserts of unchanged data (for example, refreshing reference data from a backend).
 - Expect `DO UPDATE` to replace a document or an object: it merges.
 
-Guide: [INSERT and Conflict Handling](../../../../guides/best-practices/ditto.md#insert-and-conflict-handling), [Local write semantics you must know](../../../../guides/best-practices/ditto.md#local-write-semantics-you-must-know). Example: [field-level-updates.dart](../examples/field-level-updates.dart).
+Guide: [INSERT and Conflict Handling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#insert-and-conflict-handling), [Local write semantics you must know](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#local-write-semantics-you-must-know). Example: [field-level-updates.dart](../examples/field-level-updates.dart).
 
 ---
 
@@ -87,7 +87,7 @@ ORDER BY occurredAt ASC, _id ASC
 
 A variant uses the status as the key and the timestamp as the value; it records whether and when a state happened, but keeps only the latest time for a state entered more than once.
 
-Guide: [Event History and Audit Logs](../../../../guides/best-practices/ditto.md#event-history-and-audit-logs), [EVICT](../../../../guides/best-practices/ditto.md#evict). Examples: [event-history.dart](../examples/event-history.dart), [two-collection-pattern.dart](../examples/two-collection-pattern.dart).
+Guide: [Event History and Audit Logs](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#event-history-and-audit-logs), [EVICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#evict). Examples: [event-history.dart](../examples/event-history.dart), [two-collection-pattern.dart](../examples/two-collection-pattern.dart).
 
 ---
 
@@ -114,7 +114,7 @@ Every stored field costs storage and memory on every device that holds the docum
 - Quote field names that collide with DQL keywords or contain special characters with backticks (`` `value` ``).
 - Never name a collection `collection`; it is a DQL keyword.
 
-Guide: [Document Structure](../../../../guides/best-practices/ditto.md#document-structure), [MISSING and NULL](../../../../guides/best-practices/ditto.md#missing-and-null).
+Guide: [Document Structure](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-structure), [MISSING and NULL](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#missing-and-null).
 
 ---
 
@@ -144,4 +144,4 @@ WHERE _id = :id
 
 **❌ DON'T:** embed base64-encoded files, append to a nested map forever, or raise the hard limit to make a large document fit. If you change either limit, change it on every peer in the same release.
 
-Guide: [Document Size Limits](../../../../guides/best-practices/ditto.md#document-size-limits), [Attachments](../../../../guides/best-practices/ditto.md#attachments). Example: [document-size.dart](../examples/document-size.dart).
+Guide: [Document Size Limits](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-size-limits), [Attachments](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#attachments). Example: [document-size.dart](../examples/document-size.dart).

@@ -1,6 +1,6 @@
 # Subscriptions and Observers Reference (SDK 5.1)
 
-Detailed rules behind the subscription and observer patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections [Sync and Subscriptions](../../../../guides/best-practices/ditto.md#sync-and-subscriptions) and [Observing Changes](../../../../guides/best-practices/ditto.md#observing-changes).
+Detailed rules behind the subscription and observer patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections [Sync and Subscriptions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#sync-and-subscriptions) and [Observing Changes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#observing-changes).
 
 ## Table of Contents
 
@@ -46,13 +46,13 @@ Consequences:
 
 - Use the same subscriptions on peers in the same role so any of them can serve the others.
 - An intermediate device relays only documents in its local store: give relay or hub devices at least the subscriptions of the devices behind them.
-- A device accepts at most 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`, SDK 5.1.0). Extra clients of a TCP hub get no data and no error, only a `WARN ... at capacity` log line. On a hub with more clients, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open` and before `ditto.sync.start()`. Raising it after sync has started did not admit already rejected clients within 60 s. Guide: [Transport Configuration](../../../../guides/best-practices/ditto.md#transport-configuration).
+- A device accepts at most 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`, SDK 5.1.0). Extra clients of a TCP hub get no data and no error, only a `WARN ... at capacity` log line. On a hub with more clients, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open` and before `ditto.sync.start()`. Raising it after sync has started did not admit already rejected clients within 60 s. Guide: [Transport Configuration](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transport-configuration).
 - Keep predicates flat (`storeId = :storeId`); deeply nested `AND`/`OR` trees and deep paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` from Ditto Server.
 - Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below). In SDK 5.1.0, a document that stops matching becomes a **frozen copy**. The device receives the change that made it stop matching, and then no further edits and not even its deletion. Local queries keep showing it, so filter it out locally and evict it when it is no longer needed. When it matches again, it arrives in its latest state.
 - Soft delete: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Two designs meet this requirement:
   - **Variant A** (whole-collection or whole-partition subscription): simplest; devices cannot `EVICT` old soft-deleted documents because they still match the subscription, so cleanup is a `DELETE` after the retention period, run on the Ditto Server or by another authorized peer, that syncs to every device.
   - **Variant B** (retention-window subscription, `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff`): devices evict documents deleted before the cutoff; the subscription is re-registered when the cutoff moves (at most about once a day). Choose a window longer than the longest expected offline period.
-  - See [Soft delete, subscriptions, and cleanup](../../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup).
+  - See [Soft delete, subscriptions, and cleanup](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup).
 - An unfiltered subscription is acceptable only for a small reference-data collection that every device needs.
 
 ## Subscription Lifecycle
@@ -128,7 +128,7 @@ Callback rules:
 - Keep listeners synchronous: copy values, map to models, call `setState`. Move heavy computation off the UI isolate (for example `compute()` on copied values).
 - Do not `await` network, file, or database work in a `registerObserver` listener; do not write to the observed collection without a guard.
 - Changes that arrive through sync are delivered in batches: expect fewer callbacks than remote writes (a remote transaction arrives as one callback), and do not count or log remote changes through callbacks.
-- Ditto documents observers on `system:data_sync_info` as firing every 500 ms (in SDK 5.1.0 tests they fired only when the rows changed): use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
+- Ditto documents observers on `system:data_sync_info` as firing every 500 ms (in SDK 5.1.0 tests they fired only when the rows changed): use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
 - With state management libraries, let one provider or controller own each observer and cancel it in the provider's dispose hook. `item.value` creates a new `Map` per result, so map rows to immutable models with `==` if you rely on equality to skip rebuilds.
 
 ## Backpressure Behavior

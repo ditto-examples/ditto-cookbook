@@ -1,0 +1,14 @@
+{
+  "name": "ditto-cookbook",
+  "owner": {
+    "name": "Ditto Examples"
+  },
+  "description": "Claude Code plugins published from the Ditto Cookbook.",
+  "plugins": [
+    {
+      "name": "ditto",
+      "source": "./plugins/ditto",
+      "description": "Agent Skills for Ditto SDK 5.1 best practices, derived from the Ditto Cookbook best practices guide."
+    }
+  ]
+}

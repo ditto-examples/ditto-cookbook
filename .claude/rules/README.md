@@ -59,7 +59,7 @@ Rules with YAML frontmatter containing `paths:` field are loaded only when worki
 ---
 paths:
   - .claude/guides/best-practices/ditto.md
-  - .claude/skills/ditto/**
+  - plugins/ditto/**
 version: 1.0
 last_updated: 2025-12-23
 priority: CRITICAL
@@ -70,7 +70,7 @@ priority: CRITICAL
 
 **Path Patterns**:
 - Exact paths: `.claude/guides/best-practices/ditto.md`
-- Glob patterns: `.claude/skills/ditto/**` (all files under ditto/)
+- Glob patterns: `plugins/ditto/**` (all files under the ditto plugin)
 - Wildcard patterns: `apps/**/ARCHITECTURE.md` (all ARCHITECTURE.md in apps/)
 
 ### Unconditional Rule (Always Loaded)
@@ -95,16 +95,16 @@ priority: CRITICAL
 
 **Purpose**: Ensures synchronization between Ditto best practices guide and Agent Skills
 
-**Loading**: Path-specific (`.claude/guides/best-practices/ditto.md`, `.claude/skills/ditto/**`)
+**Loading**: Path-specific (`.claude/guides/best-practices/ditto.md`, `plugins/ditto/**`)
 
 **Priority**: CRITICAL
 
 **Triggers**: After editing ditto.md or ditto skills
 
 **Key Workflow**:
-1. After editing ditto.md, review `.claude/skills/ditto/`
+1. After editing ditto.md, review `plugins/ditto/skills/`
 2. Check relevance (query-sync, data-modeling, storage-lifecycle, etc.)
-3. Update affected SKILL.md files and examples
+3. Update affected SKILL.md files and examples, and bump the plugin version
 4. Skip if purely conceptual changes
 
 [View Rule →](workflows/ditto-best-practices-sync.md)

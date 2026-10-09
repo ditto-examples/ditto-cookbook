@@ -1,5 +1,5 @@
 ---
-name: ditto-data-modeling
+name: data-modeling
 description: |
   CRDT-safe document design for Ditto SDK 5.1: merge behavior, maps vs arrays, strict mode, relationships (embedding, separate collections, JOIN), IDs, counters, size limits, and timestamps.
 
@@ -31,7 +31,7 @@ description: |
 
 # Ditto Data Modeling Skill
 
-Actionable patterns extracted from the [Data Modeling](../../../guides/best-practices/ditto.md#data-modeling) section of the Ditto best practices guide. The guide is the source of truth; follow its links for details. Everything here targets SDK 5.1.0 with the default `DQL_STRICT_MODE = false`.
+Actionable patterns extracted from the [Data Modeling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#data-modeling) section of the Ditto best practices guide. The guide is the source of truth; follow its links for details. Everything here targets SDK 5.1.0 with the default `DQL_STRICT_MODE = false`.
 
 ## Table of Contents
 
@@ -142,7 +142,7 @@ Future<void> replaceAddress(
 }
 ```
 
-Guide: [CRDT Types and Merge Behavior](../../../guides/best-practices/ditto.md#crdt-types-and-merge-behavior), [Document Structure](../../../guides/best-practices/ditto.md#document-structure). Example: [field-level-updates.dart](examples/field-level-updates.dart).
+Guide: [CRDT Types and Merge Behavior](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#crdt-types-and-merge-behavior), [Document Structure](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-structure). Example: [field-level-updates.dart](examples/field-level-updates.dart).
 
 ---
 
@@ -187,7 +187,7 @@ Future<void> upsertOrderItem(
 
 To remove an entry, use ``UNSET items.`<key>` `` after validating the key against a strict pattern (for example, a UUID) before placing it inside backticks; never splice unchecked input into a query. In SDK 5.1.0, a removal does not win over a concurrent edit of the entry. The entry stays with only the edited fields if the removal came first, or with them set to `null` if it came later. Mark entries removed (`removed = true`) when concurrent edits are likely, and make readers skip entries with missing or `null` required fields. You can convert arrays to maps incrementally, as soon as you know more than one device writes them. Write the map to a **new field** (for example, `lineItems` next to the old `items` array): writing a map under the array's field name changes its CRDT type, so the old array and the new map coexist under the same key.
 
-Guide: [Arrays and Maps](../../../guides/best-practices/ditto.md#arrays-and-maps). Example: [array-to-map.dart](examples/array-to-map.dart).
+Guide: [Arrays and Maps](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#arrays-and-maps). Example: [array-to-map.dart](examples/array-to-map.dart).
 
 ---
 
@@ -222,7 +222,7 @@ WHERE _id = :id
 
 **❌ DON'T** mix declarations for one field. Each statement reads or writes the value of the type it declares, so values seem to vanish even on one device: a `REGISTER` insert followed by an undeclared `SET obj.a = 11` makes an undeclared `SELECT` return `"obj": {"a": 11}`. Keep the statements in one repository class.
 
-Guide: [Strict Mode](../../../guides/best-practices/ditto.md#strict-mode), [Keep type declarations consistent](../../../guides/best-practices/ditto.md#keep-type-declarations-consistent). Example: [strict-mode-and-declarations.dart](examples/strict-mode-and-declarations.dart).
+Guide: [Strict Mode](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#strict-mode), [Keep type declarations consistent](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#keep-type-declarations-consistent). Example: [strict-mode-and-declarations.dart](examples/strict-mode-and-declarations.dart).
 
 ---
 
@@ -292,7 +292,7 @@ List<SyncSubscription> subscribeForStore(Ditto ditto, String storeId) => [
 
 **Copying values:** copy a value only when it is a snapshot (price at time of sale) or a subscription filter key (`storeId`). For values that must stay current, reference by ID and JOIN at read time.
 
-Guide: [Relationships](../../../guides/best-practices/ditto.md#relationships-embedding-separate-collections-and-join), [Joining Collections](../../../guides/best-practices/ditto.md#joining-collections-sdk-51). Examples: [embedded-relationship.dart](examples/embedded-relationship.dart), [foreign-key-join.dart](examples/foreign-key-join.dart).
+Guide: [Relationships](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#relationships-embedding-separate-collections-and-join), [Joining Collections](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#joining-collections-sdk-51). Examples: [embedded-relationship.dart](examples/embedded-relationship.dart), [foreign-key-join.dart](examples/foreign-key-join.dart).
 
 ---
 
@@ -306,7 +306,7 @@ SELECT COUNT(*) AS openOrders FROM orders WHERE status = 'open'
 
 Snapshot values are facts, not derivations: copy `unitPriceCents` into the line item when it is added. Also keep UI state, progress flags, and device-local paths out of synced documents, and initialize flags you filter on (`isDeleted: false`) or filter with `coalesce(isDeleted, false) = false`.
 
-Guide: [Document Structure](../../../guides/best-practices/ditto.md#document-structure). Example: [derived-values.dart](examples/derived-values.dart).
+Guide: [Document Structure](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-structure). Example: [derived-values.dart](examples/derived-values.dart).
 
 ---
 
@@ -339,7 +339,7 @@ WHERE _id = :id
 - Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 
-Guide: [Counters](../../../guides/best-practices/ditto.md#counters). Example: [counter-patterns.dart](examples/counter-patterns.dart).
+Guide: [Counters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#counters). Example: [counter-patterns.dart](examples/counter-patterns.dart).
 
 ---
 
@@ -359,7 +359,7 @@ Guide: [Counters](../../../guides/best-practices/ditto.md#counters). Example: [c
 - **Never** use sequential or timestamp-only IDs: two offline devices produce the same ID, and the documents merge into one.
 - Keep human-readable numbers (`#A-0042`) in a separate field; they are labels, not keys.
 
-Guide: [Document IDs](../../../guides/best-practices/ditto.md#document-ids). Examples: [id-generation-patterns.dart](examples/id-generation-patterns.dart), [composite-id-patterns.dart](examples/composite-id-patterns.dart), [id-immutability-workaround.dart](examples/id-immutability-workaround.dart).
+Guide: [Document IDs](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-ids). Examples: [id-generation-patterns.dart](examples/id-generation-patterns.dart), [composite-id-patterns.dart](examples/composite-id-patterns.dart), [id-immutability-workaround.dart](examples/id-immutability-workaround.dart).
 
 ---
 
@@ -372,7 +372,7 @@ Guide: [Document IDs](../../../guides/best-practices/ditto.md#document-ids). Exa
 
 The limits apply to the size of each stored document. Design documents to stay well below 256 KiB; store binaries as attachments; move unbounded data (history, readings, comments) into its own collection; leave both limits at their defaults. `object_size()` gives an approximate size of the value, which can differ from the stored size, so leave headroom. To bring an oversized document back under the limits, move large values to attachments or to a separate collection and remove them from the document with `UNSET`.
 
-Guide: [Document Size Limits](../../../guides/best-practices/ditto.md#document-size-limits). Example: [document-size.dart](examples/document-size.dart).
+Guide: [Document Size Limits](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-size-limits). Example: [document-size.dart](examples/document-size.dart).
 
 ---
 
@@ -401,7 +401,7 @@ Future<void> markReady(Ditto ditto, String orderId) async {
 }
 ```
 
-Guide: [Timestamps](../../../guides/best-practices/ditto.md#timestamps). Example: [timestamps.dart](examples/timestamps.dart).
+Guide: [Timestamps](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#timestamps). Example: [timestamps.dart](examples/timestamps.dart).
 
 ---
 
@@ -450,5 +450,5 @@ More patterns: [reference/common-patterns.md](reference/common-patterns.md) (fie
 
 ## See Also
 
-- Guide: [Data Modeling](../../../guides/best-practices/ditto.md#data-modeling), [Writing Data](../../../guides/best-practices/ditto.md#writing-data), [Joining Collections (SDK 5.1+)](../../../guides/best-practices/ditto.md#joining-collections-sdk-51), [Transactions](../../../guides/best-practices/ditto.md#transactions), [Deletion and Storage Management](../../../guides/best-practices/ditto.md#deletion-and-storage-management)
+- Guide: [Data Modeling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#data-modeling), [Writing Data](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#writing-data), [Joining Collections (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#joining-collections-sdk-51), [Transactions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions), [Deletion and Storage Management](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deletion-and-storage-management)
 - Other skills: `query-sync` (DQL, subscriptions, observers), `storage-lifecycle` (DELETE, soft delete, EVICT), `transactions-attachments` (transactions, attachments), `performance-observability` (indexes, EXPLAIN, ADVISE)

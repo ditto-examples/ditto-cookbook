@@ -37,6 +37,16 @@ Each application includes:
 
 Browse the [tools/](tools/) directory for development utilities and helper tools that demonstrate specific Ditto patterns or simplify common tasks.
 
+### Claude Code Plugin
+
+This repository is also a Claude Code plugin marketplace. The [`ditto` plugin](plugins/ditto/) packages Agent Skills that help Claude Code write and review Ditto SDK code (DQL and sync, CRDT-safe data modeling, deletion and eviction, transactions and attachments, observer performance). The Skills are derived from the [Ditto best practices guide](.claude/guides/best-practices/ditto.md).
+
+```
+/plugin install ditto --marketplace ditto-examples/ditto-cookbook
+```
+
+See [plugins/ditto/README.md](plugins/ditto/README.md) for details and for the install steps on earlier Claude Code versions.
+
 ## Learning Resources
 
 ### Architecture Documentation

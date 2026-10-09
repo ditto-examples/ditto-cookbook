@@ -12,6 +12,9 @@ This directory contains configuration files for Claude Code, the AI-powered deve
     - ditto-best-practices-sync.md - Ditto guide/skills synchronization
   - enforcement/ - Always-on enforcement rules (future)
   - project-specific/ - Project-unique requirements (future)
+- **skills/** - Agent Skills loaded in this repository
+  - claude-skills/ - Skill authoring guidance
+  - query-sync, data-modeling, storage-lifecycle, transactions-attachments, performance-observability - Symbolic links to the Ditto Skills in `plugins/ditto/skills/` (edit them there)
 - **guides/** - Comprehensive documentation
   - git-hooks.md - Git Hooks setup and usage (universal quality enforcement)
   - quality-checks.md - Claude Code hooks and workflows

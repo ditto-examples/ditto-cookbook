@@ -20,7 +20,7 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 
 ## Observer Behavior
 
-**Guide**: [Observing Changes](../../../../guides/best-practices/ditto.md#observing-changes)
+**Guide**: [Observing Changes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#observing-changes)
 
 | API (Flutter) | Status | Returns | Backpressure |
 |---|---|---|---|
@@ -37,7 +37,7 @@ Behavior:
 - `registerObserverWithSignalNext`: one result, then nothing until `signalNext()`. Do not pause or resume its stream (the SDK logs a warning).
 - `Differ` keeps the previous result in memory, and diffing is computationally expensive; debounce updates for large or busy result sets and keep diffed queries bounded (for example, with `LIMIT`). `Differ` only accepts items produced by Ditto (test doubles throw an `ArgumentError`).
 
-Other platforms ([Backpressure on Other Platforms](../../../../guides/best-practices/ditto.md#backpressure-on-other-platforms)):
+Other platforms ([Backpressure on Other Platforms](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#backpressure-on-other-platforms)):
 
 | Platform | Default observer | Backpressure |
 |---|---|---|
@@ -49,7 +49,7 @@ Other platforms ([Backpressure on Other Platforms](../../../../guides/best-pract
 
 ## Index Usage Rules
 
-**Guide**: [Index Usage Rules](../../../../guides/best-practices/ditto.md#index-usage-rules)
+**Guide**: [Index Usage Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#index-usage-rules)
 
 The planner chooses indexes by rules, not by statistics. `EXPLAIN` shows these plans:
 
@@ -73,7 +73,7 @@ The planner chooses indexes by rules, not by statistics. `EXPLAIN` shows these p
 | `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan | Element lookups cannot use an index |
 | `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan | Does not read documents |
 
-Constraints ([Creating Indexes](../../../../guides/best-practices/ditto.md#creating-indexes), [Strict Mode and Data Types](../../../../guides/best-practices/ditto.md#strict-mode-and-data-types)):
+Constraints ([Creating Indexes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#creating-indexes), [Strict Mode and Data Types](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#strict-mode-and-data-types)):
 - Expression, partial, and functional indexes are not supported.
 - `IF NOT EXISTS` checks only the index **name**; to change a definition, create it under a new name or drop and recreate it.
 - `DROP INDEX` requires `ON <collection>`.
@@ -92,7 +92,7 @@ SELECT * FROM system:indexes WHERE collection = :collection
 
 ## Composite Indexes and Covering Scans
 
-**Guide**: [Composite Indexes and Key Order (SDK 5.1+)](../../../../guides/best-practices/ditto.md#composite-indexes-and-key-order-sdk-51), [Covering Scans](../../../../guides/best-practices/ditto.md#covering-scans)
+**Guide**: [Composite Indexes and Key Order (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#composite-indexes-and-key-order-sdk-51), [Covering Scans](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#covering-scans)
 
 - Put **equality** fields first, then the **range** or **sort** field.
 - Match the **sort direction**: with an index on `(status, total DESC)`, `WHERE status = 'open' ORDER BY total DESC` uses the index without a separate sort, while `ORDER BY total ASC` needs an extra sort step.
@@ -110,7 +110,7 @@ SELECT _id, status FROM orders WHERE status = :status
 
 ## ADVISE
 
-**Guide**: [ADVISE (SDK 5.1+)](../../../../guides/best-practices/ditto.md#advise-sdk-51)
+**Guide**: [ADVISE (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#advise-sdk-51)
 
 - `ADVISE <statement>` plans but does not execute; available on Small Peers for `SELECT`, `UPDATE`, `DELETE`, `EVICT`, and `INSERT ... SELECT`.
 - The result row has `advice.suggestedIndexes` (each with `collection`, `reason`, `statement`), `advice.existingIndexes` when related indexes exist, and `advice.outcome` when there is nothing to suggest (for example `optimal indexes already exist`, `no advice available for statement`, or `no keys to advise on` when every condition applies a function to the field).
@@ -120,13 +120,13 @@ SELECT _id, status FROM orders WHERE status = :status
 ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false ORDER BY createdAt DESC
 ```
 
-This statement filters with `isDeleted = false`, which is correct only when every document has the field; otherwise keep the `coalesce` form (see [Indexing soft-delete filters](../../../../guides/best-practices/ditto.md#indexing-soft-delete-filters)).
+This statement filters with `isDeleted = false`, which is correct only when every document has the field; otherwise keep the `coalesce` form (see [Indexing soft-delete filters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-soft-delete-filters)).
 
 ---
 
 ## EXPLAIN and PROFILE
 
-**Guide**: [EXPLAIN and PROFILE](../../../../guides/best-practices/ditto.md#explain-and-profile)
+**Guide**: [EXPLAIN and PROFILE](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#explain-and-profile)
 
 | | `EXPLAIN` | `PROFILE` |
 |---|---|---|
@@ -158,7 +158,7 @@ EXPLAIN SELECT * FROM orders WHERE status = 'open'
 PROFILE SELECT * FROM orders WHERE total = 5
 ```
 
-Directives ([Directives](../../../../guides/best-practices/ditto.md#directives)) override the planner for one statement; use them only after `EXPLAIN` and `PROFILE` show the planner's choice is wrong. `USE INDEX 'name'` is silently ignored if the index does not exist or cannot serve the query, and `USE INDEX ''` requests a collection scan. Do not put directives in subscription queries; indexes and directives only affect local query execution.
+Directives ([Directives](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#directives)) override the planner for one statement; use them only after `EXPLAIN` and `PROFILE` show the planner's choice is wrong. `USE INDEX 'name'` is silently ignored if the index does not exist or cannot serve the query, and `USE INDEX ''` requests a collection scan. Do not put directives in subscription queries; indexes and directives only affect local query execution.
 
 ```sql
 SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
@@ -168,7 +168,7 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 
 ## Query Scope
 
-**Guide**: [Query Scope and Execution](../../../../guides/best-practices/ditto.md#query-scope-and-execution), [Large results](../../../../guides/best-practices/ditto.md#large-results)
+**Guide**: [Query Scope and Execution](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#query-scope-and-execution), [Large results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#large-results)
 
 **✅ DO:**
 - Filter in `WHERE`, not in Dart
@@ -194,13 +194,13 @@ SELECT DISTINCT status FROM orders ORDER BY status
 SELECT * FROM orders WHERE _id IN :ids
 ```
 
-**Counting** ([Counting Documents](../../../../guides/best-practices/ditto.md#counting-documents)): a full-collection `COUNT(*)` is answered by a count scan (SDK 5.1+) without reading documents. Ditto's 5.1 benchmark reported about 167x faster full-collection counts and about 4.4x faster filtered counts, comparing median runtimes of SDK 5.0.3 and 5.1.0 on a single Android device (Orion O6) with one retail dataset of about 93,000 documents; results depend on device, data shape, indexes, and query mix. A filtered count still evaluates the filter, so index the filtered fields.
+**Counting** ([Counting Documents](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#counting-documents)): a full-collection `COUNT(*)` is answered by a count scan (SDK 5.1+) without reading documents. Ditto's 5.1 benchmark reported about 167x faster full-collection counts and about 4.4x faster filtered counts, comparing median runtimes of SDK 5.0.3 and 5.1.0 on a single Android device (Orion O6) with one retail dataset of about 93,000 documents; results depend on device, data shape, indexes, and query mix. A filtered count still evaluates the filter, so index the filtered fields.
 
 ---
 
 ## Long-Running Requests and Execution Model
 
-**Guide**: [Long-Running Requests (SDK 5.1+)](../../../../guides/best-practices/ditto.md#long-running-requests-sdk-51), [Flutter Execution Model](../../../../guides/best-practices/ditto.md#flutter-execution-model)
+**Guide**: [Long-Running Requests (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#long-running-requests-sdk-51), [Flutter Execution Model](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#flutter-execution-model)
 
 | Parameter | Default | Effect |
 |---|---|---|
@@ -221,7 +221,7 @@ On native platforms, `ditto.store.execute` runs on a long-lived worker isolate p
 
 ## Avoiding Unnecessary Writes
 
-**Guide**: [ON ID CONFLICT](../../../../guides/best-practices/ditto.md#on-id-conflict), [UPDATE](../../../../guides/best-practices/ditto.md#update), [Prefer field-level updates](../../../../guides/best-practices/ditto.md#prefer-field-level-updates)
+**Guide**: [ON ID CONFLICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#on-id-conflict), [UPDATE](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#update), [Prefer field-level updates](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#prefer-field-level-updates)
 
 | Policy | When the `_id` already exists locally |
 |---|---|
@@ -253,7 +253,7 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 
 ## Logging Details
 
-**Guide**: [Logging](../../../../guides/best-practices/ditto.md#logging)
+**Guide**: [Logging](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#logging)
 
 | `LogLevel` | Typical use |
 |---|---|
@@ -275,9 +275,9 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 
 ## System Virtual Collections
 
-**Guide**: [System Virtual Collections](../../../../guides/best-practices/ditto.md#system-virtual-collections), [Request Diagnostics](../../../../guides/best-practices/ditto.md#request-diagnostics)
+**Guide**: [System Virtual Collections](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#system-virtual-collections), [Request Diagnostics](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#request-diagnostics)
 
-Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; in SDK 5.1.0 tests they fired only when the rows changed). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
+Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; in SDK 5.1.0 tests they fired only when the rows changed). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
 
 | Collection | Purpose |
 |---|---|
@@ -301,7 +301,7 @@ SELECT _id, text, state, times FROM system:active_requests
 
 ## System Parameters for Diagnostics
 
-**Guide**: [System Parameters Reference](../../../../guides/best-practices/ditto.md#system-parameters-reference)
+**Guide**: [System Parameters Reference](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#system-parameters-reference)
 
 | Parameter | Default | Purpose |
 |---|---|---|
@@ -318,4 +318,4 @@ SHOW ALL LIKE 'dql_slow%'
 ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
 ```
 
-Settings are not persisted; apply them after every `Ditto.open`, before `ditto.sync.start()` ([Applying System Parameters](../../../../guides/best-practices/ditto.md#applying-system-parameters)).
+Settings are not persisted; apply them after every `Ditto.open`, before `ditto.sync.start()` ([Applying System Parameters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#applying-system-parameters)).

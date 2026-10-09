@@ -1,6 +1,6 @@
 # DQL Reference for Queries and Writes (SDK 5.1)
 
-Detailed rules behind the patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections [DQL Fundamentals](../../../../guides/best-practices/ditto.md#dql-fundamentals), [Reading Data with SELECT](../../../../guides/best-practices/ditto.md#reading-data-with-select), and [Writing Data](../../../../guides/best-practices/ditto.md#writing-data).
+Detailed rules behind the patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections [DQL Fundamentals](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#dql-fundamentals), [Reading Data with SELECT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#reading-data-with-select), and [Writing Data](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#writing-data).
 
 ## Table of Contents
 
@@ -220,7 +220,7 @@ Restrictions:
 - At most 10 joins per statement by default (directive `#max_joins`).
 - Observers accept joins and deliver a new result when a change in any joined collection changes the joined rows; rows carry a composite `_id` usable as a diff key.
 
-Embedding remains the default modeling choice; see [Relationships: Embedding, Separate Collections, and JOIN](../../../../guides/best-practices/ditto.md#relationships-embedding-separate-collections-and-join).
+Embedding remains the default modeling choice; see [Relationships: Embedding, Separate Collections, and JOIN](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#relationships-embedding-separate-collections-and-join).
 
 ## INSERT and ON ID CONFLICT
 
@@ -254,7 +254,7 @@ UPDATE collection [USE IDS ...]
 [RETURNING projection]
 ```
 
-- At least one of `APPLY`, `SET`, `UNSET`, in this order: `APPLY` before `SET`, and `UNSET` after `SET`. Without `WHERE`, every document in the collection is updated. Counters: see [Counters](../../../../guides/best-practices/ditto.md#counters).
+- At least one of `APPLY`, `SET`, `UNSET`, in this order: `APPLY` before `SET`, and `UNSET` after `SET`. Without `WHERE`, every document in the collection is updated. Counters: see [Counters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#counters).
 - Missing intermediate objects in nested `SET` paths are created.
 - Errors: `SET _id = ...` (``The document id `_id` cannot be modified``); the same path twice (`More than one modification specified for the path ...`); `SET items[0] = ...` (syntax error; replace the array or use a map keyed by ID).
 - An `UPDATE` that writes the current value is still a mutation: it appears in `mutatedDocumentIDs()` and can wake observers. Skip unchanged documents in `WHERE` (`coalesce(status, :none) != :status`).
@@ -268,7 +268,7 @@ With the default `DQL_STRICT_MODE = false`, objects are CRDT maps and assignment
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address.zip` | `{"city": "Oslo"}` |
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address`, then `SET address = :a` with `{"city": "Bergen"}`, as two `tx.execute` calls in one transaction | `{"city": "Bergen"}` |
 
-With `UNSET` and `SET`, the field is still a map, so a nested edit that another device made at the same time can merge into the new object. Only a `REGISTER` declaration guarantees that concurrent edits never mix two versions; see [Strict Mode](../../../../guides/best-practices/ditto.md#strict-mode).
+With `UNSET` and `SET`, the field is still a map, so a nested edit that another device made at the same time can merge into the new object. Only a `REGISTER` declaration guarantees that concurrent edits never mix two versions; see [Strict Mode](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#strict-mode).
 
 ## RETURNING (SDK 5.1+)
 
@@ -294,4 +294,4 @@ DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
 
 > **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
 
-Choosing between them, soft delete, and tombstones: [Deletion and Storage Management](../../../../guides/best-practices/ditto.md#deletion-and-storage-management).
+Choosing between them, soft delete, and tombstones: [Deletion and Storage Management](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deletion-and-storage-management).

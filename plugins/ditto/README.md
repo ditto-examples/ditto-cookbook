@@ -1,6 +1,6 @@
 # Ditto SDK Agent Skills
 
-This directory contains Agent Skills for Ditto SDK 5.1 best practices. Flutter (Dart, package `ditto_live`) is the primary platform; JavaScript, Swift, and Kotlin are covered where their APIs or behavior differ.
+This Claude Code plugin contains Agent Skills for Ditto SDK 5.1 best practices. Flutter (Dart, package `ditto_live`) is the primary platform; JavaScript, Swift, and Kotlin are covered where their APIs or behavior differ.
 
 ## Overview
 
@@ -13,6 +13,25 @@ These Skills help Claude Code provide real-time guidance while you write offline
 - Platform-specific API differences
 
 All examples target Ditto SDK 5.1.0. Features introduced in 5.1 are labeled **(SDK 5.1+)**, and APIs marked experimental in the SDK are labeled **(Experimental)**.
+
+## Installation
+
+This repository is a Claude Code plugin marketplace named `ditto-cookbook`. Install the plugin in Claude Code (2.1.275 or later):
+
+```
+/plugin install ditto --marketplace ditto-examples/ditto-cookbook
+```
+
+On earlier versions, add the marketplace first, then install the plugin:
+
+```
+/plugin marketplace add ditto-examples/ditto-cookbook
+/plugin install ditto@ditto-cookbook
+```
+
+The Skills are namespaced by the plugin name, for example `ditto:query-sync`. Claude uses them automatically when your code or question matches their triggers; you can also invoke one directly, for example `/ditto:data-modeling`.
+
+When you work inside this repository, you do not need to install the plugin: `.claude/skills/` contains symbolic links to the Skills in this directory, so Claude Code loads them as project Skills.
 
 ## Available Skills
 
@@ -246,7 +265,7 @@ transactions-attachments (as needed for specific features)
 
 ## Platform Notes
 
-The concepts are the same on every platform, but some APIs behave differently (see the guide's [Platform Differences](../../guides/best-practices/ditto.md#platform-differences)):
+The concepts are the same on every platform, but some APIs behave differently (see the guide's [Platform Differences](../../.claude/guides/best-practices/ditto.md#platform-differences)):
 
 | Topic | Flutter | JavaScript | Swift | Kotlin |
 |---|---|---|---|---|
@@ -266,7 +285,7 @@ The concepts are the same on every platform, but some APIs behave differently (s
 
 ## Relationship to Main Guide
 
-**Source of Truth**: `.claude/guides/best-practices/ditto.md`
+**Source of Truth**: [`.claude/guides/best-practices/ditto.md`](../../.claude/guides/best-practices/ditto.md)
 
 **Skills' Role**:
 - Extract critical, automatable patterns from the main guide
@@ -282,8 +301,9 @@ The concepts are the same on every platform, but some APIs behave differently (s
 
 **Update workflow**:
 1. New patterns discovered → Update the main guide
-2. After every guide edit → Propagate actionable changes into the Skills (see [Ditto Best Practices Synchronization](../../rules/workflows/ditto-best-practices-sync.md))
+2. After every guide edit → Propagate actionable changes into the Skills (see [Ditto Best Practices Synchronization](../../.claude/rules/workflows/ditto-best-practices-sync.md))
 3. SDK updates → Update both immediately
+4. Every change to this plugin → Bump `version` in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) so that installed copies receive the update
 
 ## Getting Started
 
@@ -291,10 +311,10 @@ The concepts are the same on every platform, but some APIs behave differently (s
 Just write Ditto code - Claude will automatically use Skills when relevant.
 
 **For Contributors**:
-See [../README.md](../README.md) for Skill authoring best practices.
+See the [authoring-claude-skills Skill](../../.claude/skills/claude-skills/SKILL.md) for Skill authoring best practices, and [Ditto Best Practices Synchronization](../../.claude/rules/workflows/ditto-best-practices-sync.md) for how to keep these Skills in sync with the main guide.
 
 ## Learn More
 
-- [Main Ditto Best Practices Guide](../../guides/best-practices/ditto.md)
+- [Main Ditto Best Practices Guide](../../.claude/guides/best-practices/ditto.md)
 - [Ditto SDK Documentation](https://docs.ditto.live/)
 - [Agent Skills Overview](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)

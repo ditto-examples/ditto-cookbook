@@ -25,7 +25,7 @@ description: |
 
 # Ditto Storage Lifecycle Management
 
-Actionable patterns for removing data and managing local storage with Ditto SDK 5.1. The authoritative explanation is the guide section [Deletion and Storage Management](../../../guides/best-practices/ditto.md#deletion-and-storage-management).
+Actionable patterns for removing data and managing local storage with Ditto SDK 5.1. The authoritative explanation is the guide section [Deletion and Storage Management](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deletion-and-storage-management).
 
 ## Table of Contents
 
@@ -85,7 +85,7 @@ Typical choices (from the guide):
 
 In deployments with a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typically on the Ditto Server) and `EVICT` to manage storage on edge devices. If you plan to use `DELETE` in a deployment with Small Peers only, contact Ditto support to review the design.
 
-Guide: [Choosing DELETE, Soft Delete, or EVICT](../../../guides/best-practices/ditto.md#choosing-delete-soft-delete-or-evict)
+Guide: [Choosing DELETE, Soft Delete, or EVICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#choosing-delete-soft-delete-or-evict)
 
 ---
 
@@ -135,7 +135,7 @@ Future<void> deleteOrdersWithUseIds(Ditto ditto, List<String> orderIds) async {
 DELETE FROM orders WHERE status = 'cancelled' AND createdAt < :cutoff RETURNING COUNT(*) AS removed
 ```
 
-Guide: [DELETE and Tombstones](../../../guides/best-practices/ditto.md#delete-and-tombstones), [RETURNING (SDK 5.1+)](../../../guides/best-practices/ditto.md#returning-sdk-51)
+Guide: [DELETE and Tombstones](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#delete-and-tombstones), [RETURNING (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#returning-sdk-51)
 
 ---
 
@@ -176,7 +176,7 @@ Future<void> applyTombstoneSettings(Ditto ditto) async {
 
 The TTL is measured from the deleting device's clock, so inaccurate clocks make tombstones expire earlier or later than expected. Scheduling reaping during off-hours (`ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING`, `REAPER_PREFERRED_HOUR`) requires environment variables set before Ditto starts and is not supported on WASM-based platforms; contact Ditto support before relying on it.
 
-Guide: [Tombstone TTL and reaping](../../../guides/best-practices/ditto.md#tombstone-ttl-and-reaping), [System Parameters Reference](../../../guides/best-practices/ditto.md#system-parameters-reference)
+Guide: [Tombstone TTL and reaping](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#tombstone-ttl-and-reaping), [System Parameters Reference](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#system-parameters-reference)
 
 ---
 
@@ -262,7 +262,7 @@ WHERE isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false
 
 Confirm the plan with `ADVISE` or `EXPLAIN`.
 
-Guide: [Soft Delete](../../../guides/best-practices/ditto.md#soft-delete), [Indexing soft-delete filters](../../../guides/best-practices/ditto.md#indexing-soft-delete-filters), [MISSING and NULL](../../../guides/best-practices/ditto.md#missing-and-null)
+Guide: [Soft Delete](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#soft-delete), [Indexing soft-delete filters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-soft-delete-filters), [MISSING and NULL](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#missing-and-null)
 
 ---
 
@@ -314,9 +314,9 @@ DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000
 
 Variant B subscribes with `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff` and evicts exactly the complement (`isDeleted = true AND deletedAt < :cutoff`), cancelling the old subscription first and re-registering it with the moved cutoff. Move the cutoff only when you run cleanup, not on every screen change. The full service class is in [examples/soft-delete-relay.dart](examples/soft-delete-relay.dart).
 
-Observers use the `changes` stream pattern (register without `onChange`, listen to `changes`, cancel both in `dispose()`); see [Store Observers in Flutter](../../../guides/best-practices/ditto.md#store-observers-in-flutter).
+Observers use the `changes` stream pattern (register without `onChange`, listen to `changes`, cancel both in `dispose()`); see [Store Observers in Flutter](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#store-observers-in-flutter).
 
-Guide: [Soft delete, subscriptions, and cleanup](../../../guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup), [Multi-hop relay](../../../guides/best-practices/ditto.md#multi-hop-relay)
+Guide: [Soft delete, subscriptions, and cleanup](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup), [Multi-hop relay](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#multi-hop-relay)
 
 ---
 
@@ -398,7 +398,7 @@ Future<SyncSubscription> evictAndResubscribeEverything(
 
 **Flag-based eviction**: when a central component (typically the Ditto Server, which can make sure documents have synced first) sets `evictionFlag = true`, devices subscribe with `coalesce(evictionFlag, false) = false` and evict `evictionFlag = true`. The subscription never matches flagged documents, so it does not need to be cancelled before each eviction. See [examples/flag-based-eviction.dart](examples/flag-based-eviction.dart) and [examples/ttl-eviction-ditto-server.dart](examples/ttl-eviction-ditto-server.dart).
 
-Guide: [EVICT](../../../guides/best-practices/ditto.md#evict), [Time-based eviction](../../../guides/best-practices/ditto.md#time-based-eviction), [Flag-based eviction](../../../guides/best-practices/ditto.md#flag-based-eviction), [Cancelling subscriptions and local data](../../../guides/best-practices/ditto.md#cancelling-subscriptions-and-local-data)
+Guide: [EVICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#evict), [Time-based eviction](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#time-based-eviction), [Flag-based eviction](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#flag-based-eviction), [Cancelling subscriptions and local data](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#cancelling-subscriptions-and-local-data)
 
 ---
 
@@ -416,7 +416,7 @@ Guide: [EVICT](../../../guides/best-practices/ditto.md#evict), [Time-based evict
 **❌ DON'T**:
 - Use `DELETE` for shared records that other devices edit.
 
-Details and a null-tolerant rendering example: [reference/deletion-patterns.md](reference/deletion-patterns.md#husk-documents). Guide: [Husk documents](../../../guides/best-practices/ditto.md#husk-documents)
+Details and a null-tolerant rendering example: [reference/deletion-patterns.md](reference/deletion-patterns.md#husk-documents). Guide: [Husk documents](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#husk-documents)
 
 ---
 
@@ -453,7 +453,7 @@ Future<int> evictInBatches(Ditto ditto, String cutoff) async {
 
 Batching keeps write transactions short. It does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule, not as many separate cleanups.
 
-Guide: [Batching evictions](../../../guides/best-practices/ditto.md#batching-evictions), [Eviction frequency](../../../guides/best-practices/ditto.md#eviction-frequency)
+Guide: [Batching evictions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#batching-evictions), [Eviction frequency](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#eviction-frequency)
 
 ---
 
@@ -489,10 +489,10 @@ Guide: [Batching evictions](../../../guides/best-practices/ditto.md#batching-evi
 ## See Also
 
 ### Main Guide
-- [Deletion and Storage Management](../../../guides/best-practices/ditto.md#deletion-and-storage-management)
-- [Subscription Lifecycle](../../../guides/best-practices/ditto.md#subscription-lifecycle)
-- [Monitoring Storage](../../../guides/best-practices/ditto.md#monitoring-storage)
-- [Applying System Parameters](../../../guides/best-practices/ditto.md#applying-system-parameters)
+- [Deletion and Storage Management](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deletion-and-storage-management)
+- [Subscription Lifecycle](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#subscription-lifecycle)
+- [Monitoring Storage](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-storage)
+- [Applying System Parameters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#applying-system-parameters)
 
 ### Other Skills
 - [query-sync](../query-sync/SKILL.md) - Subscription scope and lifecycle

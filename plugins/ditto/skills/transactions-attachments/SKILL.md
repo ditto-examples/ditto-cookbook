@@ -51,7 +51,7 @@ description: |
 
 ## Purpose
 
-This Skill applies the [Transactions](../../../guides/best-practices/ditto.md#transactions) and [Attachments](../../../guides/best-practices/ditto.md#attachments) sections of the Ditto best-practices guide. The guide is the source of truth; this Skill extracts the actionable patterns. Examples are Flutter (`ditto_live` 5.1.0) unless stated otherwise. For JavaScript, Swift, and Kotlin signatures, see [reference/platform-specific.md](reference/platform-specific.md).
+This Skill applies the [Transactions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions) and [Attachments](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#attachments) sections of the Ditto best-practices guide. The guide is the source of truth; this Skill extracts the actionable patterns. Examples are Flutter (`ditto_live` 5.1.0) unless stated otherwise. For JavaScript, Swift, and Kotlin signatures, see [reference/platform-specific.md](reference/platform-specific.md).
 
 ## When This Skill Applies
 
@@ -79,11 +79,11 @@ This Skill applies the [Transactions](../../../guides/best-practices/ditto.md#tr
 
 ## Transaction Patterns
 
-A transaction runs several DQL statements against the local store atomically. It does not lock anything on other peers. A single `INSERT`, `UPDATE`, or `DELETE` is already atomic, so do not wrap it in a transaction. Guide: [Using store.transaction](../../../guides/best-practices/ditto.md#using-storetransaction).
+A transaction runs several DQL statements against the local store atomically. It does not lock anything on other peers. A single `INSERT`, `UPDATE`, or `DELETE` is already atomic, so do not wrap it in a transaction. Guide: [Using store.transaction](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#using-storetransaction).
 
 ### 1. Use tx.execute Only, and Never Nest (Priority: CRITICAL)
 
-**Problem**: Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one deadlocks in Flutter and JavaScript (and can deadlock in Swift and Kotlin), because only one read-write transaction runs at a time; the Flutter SDK does not detect it. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences).
+**Problem**: Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one deadlocks in Flutter and JavaScript (and can deadlock in Swift and Kotlin), because only one read-write transaction runs at a time; the Flutter SDK does not detect it. Guide: [Transaction Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transaction-rules), [Platform Differences](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#platform-differences).
 
 ```dart
 // ✅ GOOD: Close an order and create its invoice atomically, using only tx.
@@ -127,7 +127,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 ### 2. Keep Transactions Short (Priority: CRITICAL)
 
-**Problem**: While a read-write transaction runs, every other read-write transaction waits, and so does a plain `store.execute` write issued meanwhile. Network calls, dialogs, user input, or timers inside the callback block all writes. Guide: [Transaction Rules](../../../guides/best-practices/ditto.md#transaction-rules), [Concurrency and Duration](../../../guides/best-practices/ditto.md#concurrency-and-duration).
+**Problem**: While a read-write transaction runs, every other read-write transaction waits, and so does a plain `store.execute` write issued meanwhile. Network calls, dialogs, user input, or timers inside the callback block all writes. Guide: [Transaction Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transaction-rules), [Concurrency and Duration](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#concurrency-and-duration).
 
 ```dart
 // ✅ GOOD: Do the I/O first, then record the outcome in one short transaction.
@@ -199,7 +199,7 @@ Future<bool> shipOrder(Ditto ditto, String orderId) async {
 
 ### 4. Await Pending Transactions Before close() (Priority: HIGH)
 
-**Problem**: `ditto.close()` in Flutter does not wait for in-flight transactions; calls that are still running can fail with `DittoClosedException`. Track pending transactions and await them before closing. Guide: [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown).
+**Problem**: `ditto.close()` in Flutter does not wait for in-flight transactions; calls that are still running can fail with `DittoClosedException`. Track pending transactions and await them before closing. Guide: [Resource Cleanup and Shutdown](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#resource-cleanup-and-shutdown).
 
 ```dart
 // ✅ GOOD: Track in-flight transactions so shutdown can wait for them.
@@ -226,13 +226,13 @@ class TransactionTracker {
 
 ### 5. Keep Transacted Documents in One Subscription Scope (Priority: MEDIUM)
 
-Atomicity is guaranteed on the device that commits. In SDK 5.1.0 tests, receivers whose subscriptions covered every document of a transaction also applied it all at once: no observer or read saw part of it, and a device returning from offline received the backlog as one step. Ditto's [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes two limits for replication: a peer whose subscriptions cover only part of a transaction's documents receives only that part, and a relay can forward only what it has. Keep documents that change together in the same subscription scope (for example, both carry the same `storeId`), and give relay devices subscriptions that cover what the devices behind them need. Guide: [Transactions and Sync](../../../guides/best-practices/ditto.md#transactions-and-sync).
+Atomicity is guaranteed on the device that commits. In SDK 5.1.0 tests, receivers whose subscriptions covered every document of a transaction also applied it all at once: no observer or read saw part of it, and a device returning from offline received the backlog as one step. Ditto's [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes two limits for replication: a peer whose subscriptions cover only part of a transaction's documents receives only that part, and a relay can forward only what it has. Keep documents that change together in the same subscription scope (for example, both carry the same `storeId`), and give relay devices subscriptions that cover what the devices behind them need. Guide: [Transactions and Sync](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions-and-sync).
 
 ---
 
 ## Attachment Patterns
 
-An attachment has two parts: the **token** (`{id, len, metadata}`), stored in a document field and synced like other data, and the **blob**, stored outside the document database and transferred only when a device calls `fetchAttachment`. The `id` is a hash of the contents, so identical blobs are stored once. Guide: [Attachment Architecture](../../../guides/best-practices/ditto.md#attachment-architecture).
+An attachment has two parts: the **token** (`{id, len, metadata}`), stored in a document field and synced like other data, and the **blob**, stored outside the document database and transferred only when a device calls `fetchAttachment`. The `id` is a hash of the contents, so identical blobs are stored once. Guide: [Attachment Architecture](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#attachment-architecture).
 
 ### 6. Create Attachments and Declare ATTACHMENT Fields (Priority: CRITICAL)
 
@@ -259,7 +259,7 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
 
 **✅ DO**:
 - Pass a file path (`String`) or bytes (`Uint8List`) to `newAttachment`; on the web only bytes work (paths throw). Pass an absolute file path (for example, one built from `path_provider`).
-- Declare the field (`COLLECTION photos (image ATTACHMENT)`); the `COLLECTION` keyword is required when you declare types. With the default `DQL_STRICT_MODE = false`, an attachment inserted without the declaration is still stored as an attachment, but strict mode requires the declaration and hides undeclared ATTACHMENT fields from queries ([Strict Mode](../../../guides/best-practices/ditto.md#strict-mode)). With strict mode enabled, statements that do not declare the field, including `UNSET`, leave the attachment value unchanged without an error. Declaring works in both modes.
+- Declare the field (`COLLECTION photos (image ATTACHMENT)`); the `COLLECTION` keyword is required when you declare types. With the default `DQL_STRICT_MODE = false`, an attachment inserted without the declaration is still stored as an attachment, but strict mode requires the declaration and hides undeclared ATTACHMENT fields from queries ([Strict Mode](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#strict-mode)). With strict mode enabled, statements that do not declare the field, including `UNSET`, leave the attachment value unchanged without an error. Declaring works in both modes.
 - Pass the `Attachment` object inside a parameter; never build tokens by hand
 - Create the attachment **before** starting a transaction that stores it
 
@@ -268,13 +268,13 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
 - Put non-string values into `AttachmentMetadata`
 - Delete the original file before `newAttachment` completes (afterwards, the copy in Ditto's store is what matters)
 
-Guide: [Creating and Inserting Attachments](../../../guides/best-practices/ditto.md#creating-and-inserting-attachments).
+Guide: [Creating and Inserting Attachments](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#creating-and-inserting-attachments).
 
 ---
 
 ### 7. Fetch Explicitly, Lazily, and Cancellably (Priority: CRITICAL)
 
-**Problem**: Subscriptions never download blobs; a token is not image data. Fetching every attachment as soon as a document syncs wastes bandwidth and storage. Guide: [Fetching Attachments](../../../guides/best-practices/ditto.md#fetching-attachments).
+**Problem**: Subscriptions never download blobs; a token is not image data. Fetching every attachment as soon as a document syncs wastes bandwidth and storage. Guide: [Fetching Attachments](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#fetching-attachments).
 
 | Event | Delivered | Contents |
 |---|---|---|
@@ -338,7 +338,7 @@ class PhotoLoader {
 
 ### 9. Replace, Never Modify (Priority: HIGH)
 
-Attachment contents never change. To "edit" a file, create a new attachment and replace the token. Attachments cannot be deleted directly: remove the token (`UPDATE COLLECTION photos (image ATTACHMENT) UNSET image ...`, or set a new token), delete the document with `DELETE` (for every peer), or evict it from this device with `EVICT`. On Small Peers, blobs that are no longer referenced are garbage-collected automatically every 10 minutes; garbage collection runs only on Small Peers, not on Ditto Server. An `Attachment` object the app still holds also kept its blob alive in tests (JavaScript SDK), so do not cache `Attachment` objects longer than needed. Guide: [Attachments Are Immutable](../../../guides/best-practices/ditto.md#attachments-are-immutable).
+Attachment contents never change. To "edit" a file, create a new attachment and replace the token. Attachments cannot be deleted directly: remove the token (`UPDATE COLLECTION photos (image ATTACHMENT) UNSET image ...`, or set a new token), delete the document with `DELETE` (for every peer), or evict it from this device with `EVICT`. On Small Peers, blobs that are no longer referenced are garbage-collected automatically every 10 minutes; garbage collection runs only on Small Peers, not on Ditto Server. An `Attachment` object the app still holds also kept its blob alive in tests (JavaScript SDK), so do not cache `Attachment` objects longer than needed. Guide: [Attachments Are Immutable](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#attachments-are-immutable).
 
 ```dart
 // ✅ GOOD: Replace the attachment by updating the token field.
@@ -362,7 +362,7 @@ Future<void> replacePhoto(Ditto ditto, String photoId, String newFilePath) async
 
 ### 10. Thumbnail Pattern (Priority: MEDIUM)
 
-Store a small preview next to the full-size attachment. List rows fetch only thumbnails; the full-size blob is fetched when the user opens the item. Guide: [Thumbnail Pattern](../../../guides/best-practices/ditto.md#thumbnail-pattern).
+Store a small preview next to the full-size attachment. List rows fetch only thumbnails; the full-size blob is fetched when the user opens the item. Guide: [Thumbnail Pattern](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#thumbnail-pattern).
 
 | Preview option | Pros | Cons |
 |---|---|---|
@@ -407,7 +407,7 @@ Future<void> savePhotoWithThumbnail(
 
 ### 11. Plan for Availability and Size (Priority: MEDIUM)
 
-An attachment can be fetched only while a peer that **holds the blob** is reachable. A blob exists on a device only if that device created or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) describes that Ditto Server can hold a document with an attachment token but not the blob, for example when Small Peers replicate the document among themselves without fetching the attachment. An interrupted transfer resumes from where it stopped. Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available, make sure a well-connected device or Ditto Server fetches it. In SDK 5.1.0 tests with devices in a line (A–B–C), C could not fetch a blob held only by A until B had fetched it itself, even though B subscribed to the documents. The fetch emitted no events for 60 s, for both 1 KB and 300 KB blobs. Guide: [Availability](../../../guides/best-practices/ditto.md#availability), [Size Guidance](../../../guides/best-practices/ditto.md#size-guidance).
+An attachment can be fetched only while a peer that **holds the blob** is reachable. A blob exists on a device only if that device created or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) describes that Ditto Server can hold a document with an attachment token but not the blob, for example when Small Peers replicate the document among themselves without fetching the attachment. An interrupted transfer resumes from where it stopped. Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available, make sure a well-connected device or Ditto Server fetches it. In SDK 5.1.0 tests with devices in a line (A–B–C), C could not fetch a blob held only by A until B had fetched it itself, even though B subscribed to the documents. The fetch emitted no events for 60 s, for both 1 KB and 300 KB blobs. Guide: [Availability](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#availability), [Size Guidance](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#size-guidance).
 
 **✅ DO**:
 - Show a placeholder with metadata while the blob is unavailable
@@ -420,7 +420,7 @@ An attachment can be fetched only while a peer that **holds the blob** is reacha
 - Fetch large attachments automatically on devices that may be connected only over Bluetooth LE
 - Look for attachment progress in `system:data_sync_info`; it is reported only through fetch events
 
-There is no fixed maximum attachment size in the SDK; device storage and bandwidth are the practical limits. Blob storage does not count toward the per-device key-value storage guidance (about 2 GB); uploads through the HTTP API have a separate 1 MB request body limit. Documents have a 256 KiB soft limit (warning) and a 5 MiB hard limit (writes that exceed it fail) ([Document Size Limits](../../../guides/best-practices/ditto.md#document-size-limits)).
+There is no fixed maximum attachment size in the SDK; device storage and bandwidth are the practical limits. Blob storage does not count toward the per-device key-value storage guidance (about 2 GB); uploads through the HTTP API have a separate 1 MB request body limit. Documents have a 256 KiB soft limit (warning) and a 5 MiB hard limit (writes that exceed it fail) ([Document Size Limits](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-size-limits)).
 
 ---
 
@@ -454,11 +454,11 @@ There is no fixed maximum attachment size in the SDK; device storage and bandwid
 ## See Also
 
 ### Main Guide
-- [Transactions](../../../guides/best-practices/ditto.md#transactions)
-- [Transactions on Other Platforms](../../../guides/best-practices/ditto.md#transactions-on-other-platforms)
-- [Attachments](../../../guides/best-practices/ditto.md#attachments)
-- [Resource Cleanup and Shutdown](../../../guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
-- [Platform Differences](../../../guides/best-practices/ditto.md#platform-differences)
+- [Transactions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions)
+- [Transactions on Other Platforms](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions-on-other-platforms)
+- [Attachments](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#attachments)
+- [Resource Cleanup and Shutdown](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#resource-cleanup-and-shutdown)
+- [Platform Differences](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#platform-differences)
 
 ### Examples
 - [examples/transaction-good.dart](examples/transaction-good.dart) - Atomic changes, rollback, read-only snapshots, shutdown tracking

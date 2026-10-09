@@ -203,7 +203,7 @@ See [SKILL.md](SKILL.md#quick-reference-checklist) for complete checklist.
 ## Related Skills
 
 This meta-skill complements:
-- Ditto SDK Skills (`.claude/skills/ditto/`) - Domain-specific Skills for Ditto development
+- Ditto SDK Skills (`plugins/ditto/skills/`) - Domain-specific Skills for Ditto development, published as the `ditto` plugin
 - Custom user Skills - Any Skills you create using these patterns
 
 ## Official Documentation
