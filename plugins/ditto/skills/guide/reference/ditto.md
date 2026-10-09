@@ -1,1 +1,1 @@
-../../../../../.claude/guides/best-practices/ditto.md
+../../../../../best-practices/ditto.md

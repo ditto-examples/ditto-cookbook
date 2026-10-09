@@ -6,8 +6,8 @@
 # (KDS) for restaurant locations ("stores"). Terminals and kitchen displays
 # sync with each other and with Ditto Server.
 #
-# Implementation: .claude/examples/ditto/simple_pos/simple_pos_example.dart
-# Guide:          .claude/guides/best-practices/ditto.md
+# Implementation: examples/simple-pos/simple_pos_example.dart
+# Guide:          best-practices/ditto.md
 #
 # DESIGN PRINCIPLES:
 # - Default settings: DQL_STRICT_MODE = false (no ALTER SYSTEM statements).

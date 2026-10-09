@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-This directory contains the sources and the build script for the Ditto SDK Implementation Checklist, an interactive review checklist for Flutter apps that use the Ditto SDK. The checklist is derived from the [Ditto SDK Best Practices guide](../../ditto.md) and is distributed as one self-contained HTML file.
+This directory contains the sources and the build script for the Ditto SDK Implementation Checklist, an interactive review checklist for Flutter apps that use the Ditto SDK. The checklist is derived from the [Ditto SDK Best Practices guide](../ditto.md) and is distributed as one self-contained HTML file.
 
 ## Overview
 
@@ -62,7 +62,7 @@ An optional paragraph after the list.
 
 Supported inline formatting: `` `code` ``, ``` `` code with `backticks` `` ```, `**bold**`, and `[links](https://...)`. Text is HTML-escaped by the build.
 
-The "Best-practices guide" line names headings of [ditto.md](../../ditto.md) exactly as written there. It is shown in both languages without translation.
+The "Best-practices guide" line names headings of [ditto.md](../ditto.md) exactly as written there. It is shown in both languages without translation.
 
 ### Translations
 
@@ -91,7 +91,7 @@ Conventions for the Japanese text:
 The build uses Python 3.9 or later. [Pygments](https://pygments.org/) provides syntax highlighting and is declared as inline script metadata (PEP 723), so `uv` installs it automatically:
 
 ```bash
-cd .claude/guides/best-practices/human-friendly-docs/ditto-sdk-checklist
+cd best-practices/ditto-sdk-checklist
 uv run build-checklist.py
 python3 validate-html-tags.py
 ```
@@ -120,7 +120,7 @@ Open `ditto-sdk-checklist.html` and check:
 
 ### Updating content
 
-Keep the checklist synchronized with [ditto.md](../../ditto.md). When a change to the guide affects a checklist item (see the [synchronization workflow](../../../../rules/workflows/ditto-best-practices-sync.md)):
+Keep the checklist synchronized with [ditto.md](../ditto.md). When a change to the guide affects a checklist item (see the [synchronization workflow](../../.claude/rules/ditto-best-practices-sync.md)):
 
 1. Edit `ditto-implementation-checklist.md`, and update `Version` and `Last Updated` in its header.
 2. Update the Japanese entries at the same positions in `translations.json`.

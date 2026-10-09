@@ -1,142 +1,58 @@
 # Ditto Cookbook
 
-A collection of example applications and tools demonstrating best practices for building offline-first applications with the Ditto SDK.
+Best practices, a review checklist, example code, and Claude Code Agent Skills for building offline-first applications with the [Ditto SDK](https://docs.ditto.live). Everything targets Ditto SDK 5.1. Flutter (Dart) is the primary platform, with notes for JavaScript, Swift, and Kotlin where they differ.
 
-## Overview
+## Contents
 
-The Ditto Cookbook provides comprehensive examples of how to build real-world applications using Ditto's offline-first synchronization platform. Each example demonstrates proper architecture, testing, and implementation patterns that developers can learn from and adapt to their own projects.
+| Path | What it is |
+|------|------------|
+| [`best-practices/ditto.md`](best-practices/ditto.md) | **Ditto SDK Best Practices**: the complete guide to data modeling, sync and subscriptions, deletion and storage, transactions and attachments, performance, setup, security, and testing. The rest of this repository is derived from it. |
+| [`best-practices/ditto-sdk-checklist/`](best-practices/ditto-sdk-checklist/) | **Ditto SDK Implementation Checklist**: an interactive English and Japanese review checklist in one self-contained HTML file. |
+| [`best-practices/flutter.md`](best-practices/flutter.md) | **Flutter Best Practices**: architecture, Riverpod state management, performance, and testing patterns. |
+| [`examples/simple-pos/`](examples/simple-pos/) | **Simple POS**: a Point-of-Sale and Kitchen Display example that applies the guide end to end, with its data model. |
+| [`plugins/ditto/`](plugins/ditto/) | **`ditto` Claude Code plugin**: Agent Skills that help coding agents write and review Ditto code, an anti-pattern scanner, and the bundled guide. |
 
-## Quick Start
+## Claude Code Plugin
 
-```bash
-# Clone the repository
-git clone https://github.com/getditto/ditto-cookbook.git
-cd ditto-cookbook
-
-# Browse examples in apps/ and tools/ directories
-```
-
-**Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
-
-## Available Examples
-
-### Applications
-
-Browse the [apps/](apps/) directory for example applications organized by platform:
-
-- **Flutter**: Cross-platform mobile and desktop applications
-- **[Future platforms]**: Additional platforms coming soon
-
-Each application includes:
-- Complete source code with best practices
-- Architecture documentation
-- Comprehensive tests
-- README with setup instructions
-
-### Tools
-
-Browse the [tools/](tools/) directory for development utilities and helper tools that demonstrate specific Ditto patterns or simplify common tasks.
-
-### Claude Code Plugin
-
-This repository is also a Claude Code plugin marketplace. The [`ditto` plugin](plugins/ditto/) packages Agent Skills that help Claude Code write and review Ditto SDK code: DQL and sync, CRDT-safe data modeling, deletion and eviction, transactions and attachments, performance, SDK setup and security, testing, and a code audit with an anti-pattern scanner. The Skills are derived from the [Ditto best practices guide](.claude/guides/best-practices/ditto.md), which ships with the plugin.
+This repository is a Claude Code plugin marketplace named `ditto-cookbook`. Install the `ditto` plugin with:
 
 ```
 /plugin install ditto --marketplace ditto-examples/ditto-cookbook
 ```
 
-See [plugins/ditto/README.md](plugins/ditto/README.md) for details and for the install steps on earlier Claude Code versions.
+See [plugins/ditto/README.md](plugins/ditto/README.md) for the list of Skills and the install steps on earlier Claude Code versions.
 
-## Learning Resources
+## Repository Layout
 
-### Architecture Documentation
-
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Central architecture overview of all examples
-- **[.claude/guides/architecture.md](.claude/guides/architecture.md)** - Complete guide to architecture documentation
-- **Individual app ARCHITECTURE.md files** - Detailed architecture for each example
-
-### How to Use This Repository
-
-**For Learning**:
-- Study architecture documentation to understand design decisions
-- Review code for implementation patterns
-- Check tests for validation approaches
-- Use as reference when building your own applications
-
-**For Development**:
-- Follow the patterns demonstrated in examples
-- Adapt examples to your specific use cases
-- Learn Ditto SDK best practices from working code
-
-## Testing
-
-Run tests across all applications from the repository root:
-
-```bash
-./scripts/test-all.sh
 ```
-
-This command:
-- Discovers all testable applications automatically
-- Runs tests in parallel for faster execution
-- Stops on first failure (fail-fast behavior)
-- Works with Flutter apps now, extensible to other platforms
-
-For platform-specific testing instructions, see the README in each platform directory (e.g., [apps/flutter/README.md](apps/flutter/README.md)).
-
-## Documentation
-
-### Official Ditto Resources
-
-- **Ditto Documentation**: https://docs.ditto.live
-- **Ditto MCP Integration**: https://docs.ditto.live/home/mcp-integration
-- **Ditto Support**: https://support.ditto.live/
-
-### Platform Documentation
-
-- **Flutter Documentation**: https://docs.flutter.dev
-- **Flutter MCP Server**: https://dart.dev/tools/mcp-server
-
-### Project Documentation
-
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Complete guide for contributors
-- **[CLAUDE.md](CLAUDE.md)** - Development guidelines
-- **[docs/README.md](docs/README.md)** - Documentation standards
+ditto-cookbook/
+├── best-practices/           # Guides and the checklist (customer-facing)
+│   ├── ditto.md              # Source of truth for everything Ditto-specific
+│   ├── flutter.md
+│   └── ditto-sdk-checklist/  # Checklist sources, build script, generated HTML
+├── examples/
+│   └── simple-pos/           # Flutter POS example and its schema
+├── plugins/
+│   └── ditto/                # Claude Code plugin: skills/, evals/
+├── .claude-plugin/
+│   └── marketplace.json      # Plugin marketplace definition
+├── scripts/
+│   └── check-ditto-skills.py # Checks the plugin Skills against the guide
+└── .claude/                  # Claude Code configuration for working in this repository
+    ├── rules/                # Synchronization workflow for the guide and its derivatives
+    └── skills/               # Links to the plugin Skills, and a Skill-authoring Skill
+```
 
 ## Contributing
 
-We welcome contributions! To get started:
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributors using Claude Code also follow [CLAUDE.md](CLAUDE.md).
 
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup and guidelines
-2. Check out [CLAUDE.md](CLAUDE.md) for development standards
-3. Browse existing examples to understand the patterns
-4. Submit your contribution following the workflow in CONTRIBUTING.md
+## Resources
 
-### Quick Contribution Checklist
-
-- ✅ Follow development guidelines in [CLAUDE.md](CLAUDE.md)
-- ✅ Write showcase-quality code (clear, documented, educational)
-- ✅ Target 80%+ test coverage
-- ✅ Create/update architecture documentation
-- ✅ Use English for all artifacts
-- ✅ Ensure all checks pass
-
-## Support
-
-### Getting Help
-
-- **Issue Tracker**: [GitHub Issues](https://github.com/getditto/ditto-cookbook/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/getditto/ditto-cookbook/discussions)
-- **Ditto Support**: https://support.ditto.live/
+- [Ditto documentation](https://docs.ditto.live)
+- [Ditto support](https://support.ditto.live/)
+- [Issues](https://github.com/ditto-examples/ditto-cookbook/issues)
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-Built by the Ditto community to help developers build better offline-first applications.
-
----
-
-**Explore the examples and start building offline-first applications with Ditto!**
+MIT. See [LICENSE](LICENSE).

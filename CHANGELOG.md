@@ -21,5 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rename the `ditto-data-modeling` Skill to `data-modeling` to match its directory and the other Skills.
 - Sync the `ditto` plugin Skills with version 2.6 of the best practices guide (plugin 1.0.1): the `ANY ... SATISFIES` caveat as a known 5.1.0 issue, the reason behind the 15-minute subscription guideline, `system:data_sync_info` observer timing, husk fields that read as missing or `null`, and attachment relay observations.
 - Restructure the `ditto` plugin Skills for coding agents, following the current Agent Skills guidance: one-paragraph descriptions of at most 450 characters (previously 1,200 to 1,600, above the 1,024-character limit of the open standard), `SKILL.md` bodies under about 5,000 tokens (previously 6,800 to 7,800) with the critical rules first, details moved to `reference/` files, a "Before You Apply" step that checks the project's SDK version and platform, and guide citations as `§ Heading` that resolve against the bundled guide instead of GitHub URLs.
+- Restructure the repository around its content. The best practices guides and the checklist move from `.claude/guides/best-practices/` to `best-practices/` (`human-friendly-docs/ditto-sdk-checklist/` becomes `best-practices/ditto-sdk-checklist/`), the POS example moves from `.claude/examples/ditto/simple_pos/` to `examples/simple-pos/`, and `check-ditto-skills.py` moves to `scripts/`. `.claude/` now holds only Claude Code configuration: the synchronization rule (now `.claude/rules/ditto-best-practices-sync.md`) and the Skills.
+- Rewrite `README.md`, `CONTRIBUTING.md`, and `CLAUDE.md` to describe the actual contents and maintenance workflows, and point all GitHub links to `ditto-examples/ditto-cookbook`.
+
+### Removed
+
+- Remove the scaffolding for example applications that did not exist yet: the `apps/` and `tools/` placeholders, `docs/` (architecture template and index), the test, dependency, tool-version, MCP, Git Hooks, and architecture-check scripts in `.claude/scripts/`, their guides in `.claude/guides/`, the `/update-deps` command, `VERSION_MANAGEMENT.md`, `.tool-versions`, `.nvmrc`, `.fvm/`, and `.env.template`. They can be restored from the Git history when an application is added.
+- Remove `.claude/hooks.json` and `.claude/settings.json`, which used a format and keys that Claude Code does not read, and `.claude/rules/README.md`, which Claude Code loaded into every session as a rule.
 
 Initial setup and infrastructure preparation.

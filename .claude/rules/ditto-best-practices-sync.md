@@ -1,8 +1,8 @@
 ---
 paths:
-  - .claude/guides/best-practices/ditto.md
+  - best-practices/ditto.md
   - plugins/ditto/**
-version: 1.4
+version: 1.5
 last_updated: 2026-10-09
 priority: CRITICAL
 ---
@@ -15,13 +15,13 @@ Ensures synchronization between the authoritative Ditto best practices guide and
 
 ## When This Rule Applies
 
-**MANDATORY TRIGGER**: After editing `.claude/guides/best-practices/ditto.md`
+**MANDATORY TRIGGER**: After editing `best-practices/ditto.md`
 
 **OPTIONAL SKIP**: If changes are purely conceptual content without actionable patterns (see "When to Update" below)
 
 ## Critical Files Relationship
 
-- **Source of Truth**: `.claude/guides/best-practices/ditto.md` (comprehensive reference)
+- **Source of Truth**: `best-practices/ditto.md` (comprehensive reference)
 - **Derivative Content**: `plugins/ditto/skills/*` (actionable patterns extracted from main guide, published as the `ditto` Claude Code plugin; `.claude/skills/` holds symbolic links to them for use inside this repository)
   - `query-sync/SKILL.md` + examples + reference
   - `data-modeling/SKILL.md` + examples + reference
@@ -32,9 +32,10 @@ Ensures synchronization between the authoritative Ditto best practices guide and
   - `testing/SKILL.md` + reference
   - `audit/SKILL.md` + `scripts/scan.py` + `reference/scanner-rules.md` (generated)
   - `guide/reference/ditto.md` is a symbolic link to the guide itself; Claude Code copies its content into installed copies of the plugin, so it needs no manual sync
-- **Derivative Content**: `.claude/guides/best-practices/human-friendly-docs/ditto-sdk-checklist/` (customer-facing checklist; see its [README](../../guides/best-practices/human-friendly-docs/ditto-sdk-checklist/README.md))
+- **Derivative Content**: `best-practices/ditto-sdk-checklist/` (customer-facing checklist; see its [README](../../best-practices/ditto-sdk-checklist/README.md))
   - `ditto-implementation-checklist.md` (English) + `translations.json` and `code-translations.json` (Japanese)
   - `ditto-sdk-checklist.html` (generated with `uv run build-checklist.py`)
+- **Derivative Content**: `examples/simple-pos/` (a Flutter POS example that applies the guide end to end)
 
 ## Documentation Format Requirements
 
@@ -72,7 +73,8 @@ Review the edited sections and determine which skill files are affected:
 | Testing strategies | `testing/` | `SKILL.md`, `reference/*.md` |
 | A new or changed anti-pattern that can be detected in source text, or a renamed heading cited by a scanner rule | `audit/` | `scripts/scan.py`, then regenerate `reference/scanner-rules.md` with `python3 scripts/scan.py --list-rules` |
 | A new top-level section | `guide/` | The section table in `SKILL.md` |
-| Any change to a rule, caveat, or code example that a checklist item covers, or a renamed heading that an item names under "Best-practices guide" | `human-friendly-docs/ditto-sdk-checklist/` | `ditto-implementation-checklist.md`, `translations.json`, `code-translations.json`, then rebuild `ditto-sdk-checklist.html` |
+| Any change to a rule, caveat, or code example that a checklist item covers, or a renamed heading that an item names under "Best-practices guide" | `best-practices/ditto-sdk-checklist/` | `ditto-implementation-checklist.md`, `translations.json`, `code-translations.json`, then rebuild `ditto-sdk-checklist.html` |
+| A changed API, DQL statement, or pattern that the POS example uses | `examples/simple-pos/` | `simple_pos_example.dart`, `simple_pos_schema.yaml` |
 
 ### Step 3: Update Skills
 
@@ -128,12 +130,12 @@ After synchronization, verify:
 3. Examples compile and run (for code examples)
 4. No orphaned references to old patterns
 5. Cross-references between skills remain valid
-6. `python3 .claude/scripts/checks/check-ditto-skills.py` passes: skill format, every `§ Heading` citation (a renamed heading breaks the citations that use it), relative links, and the generated scanner rules
+6. `python3 scripts/check-ditto-skills.py` passes: skill format, every `§ Heading` citation (a renamed heading breaks the citations that use it), relative links, and the generated scanner rules
 7. The plugin version has been bumped and `claude plugin validate .` passes
 8. For changes to rules or descriptions, the eval suite still passes (see `plugins/ditto/evals/README.md`)
 
 ## See Also
 
-- [Source of Truth: Ditto Best Practices Guide](../../guides/best-practices/ditto.md)
-- [Ditto Plugin and Skills Overview](../../../plugins/ditto/README.md)
-- [Agent Skills Documentation](../../skills/README.md)
+- [Source of Truth: Ditto Best Practices Guide](../../best-practices/ditto.md)
+- [Ditto Plugin and Skills Overview](../../plugins/ditto/README.md)
+- [Agent Skills in this repository](../skills/README.md)

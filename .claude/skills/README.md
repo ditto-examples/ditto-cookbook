@@ -101,7 +101,7 @@ Claude will use the data-modeling Skill to answer.
 ### Source of Truth
 
 Skills extract critical patterns from:
-- **Main guide**: `.claude/guides/best-practices/ditto.md` (comprehensive reference)
+- **Main guide**: `best-practices/ditto.md` (comprehensive reference)
 
 The main guide is the authoritative source. Skills focus on automatable, common patterns.
 
@@ -114,10 +114,10 @@ The main guide is the authoritative source. Skills focus on automatable, common 
 4. **Team feedback**: False positives, missing patterns
 
 **Update process**:
-1. Update main guide first (`.claude/guides/best-practices/ditto.md`)
+1. Update main guide first (`best-practices/ditto.md`)
 2. Extract new critical patterns into Skills (in `plugins/ditto/skills/`)
 3. Update examples and references as needed
-4. Run `python3 .claude/scripts/checks/check-ditto-skills.py` (format, `§ Heading` citations, links)
+4. Run `python3 scripts/check-ditto-skills.py` (format, `§ Heading` citations, links)
 5. Bump `version` in `plugins/ditto/.claude-plugin/plugin.json` and run `claude plugin validate . --strict`
 
 ## Troubleshooting
@@ -154,4 +154,4 @@ Ask Claude Code:
 
 - [Claude Code Agent Skills documentation](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/quickstart)
 - [Ditto plugin and Skills overview](../../plugins/ditto/README.md)
-- [Ditto Best Practices guide](../guides/best-practices/ditto.md)
+- [Ditto Best Practices guide](../../best-practices/ditto.md)

@@ -1,224 +1,63 @@
 # Development Guidelines
 
-> **Note**: This file is the authoritative source for all development guidelines in this project. The `.claude/settings.json` file references these guidelines but contains minimal configuration for maintainability.
+This file is the authoritative source for the development guidelines of this project. [CONTRIBUTING.md](CONTRIBUTING.md) describes the same workflows for human contributors.
 
-## Table of Contents
+## Repository Layout
 
-1. [Claude Code Rules](#claude-code-rules)
-2. [Language Policy](#language-policy)
-3. [Documentation Updates](#documentation-updates)
-4. [Architecture Documentation](#architecture-documentation)
-5. [Best Practices and Technology Updates](#best-practices-and-technology-updates)
-6. [Platform-Specific Best Practices](#platform-specific-best-practices)
-7. [Security Guidelines](#security-guidelines)
-8. [Code Quality Standards](#code-quality-standards)
-9. [Testing Standards](#testing-standards)
-10. [Dependency Management](#dependency-management)
-11. [Showcase Code Standards](#showcase-code-standards)
+| Path | Contents |
+|------|----------|
+| `best-practices/ditto.md` | Ditto SDK best practices guide: the **source of truth** for everything Ditto-specific |
+| `best-practices/ditto-sdk-checklist/` | Customer-facing checklist (sources, build script, generated HTML) derived from the guide |
+| `best-practices/flutter.md` | Flutter best practices |
+| `examples/simple-pos/` | Flutter POS example that applies the guide |
+| `plugins/ditto/` | The `ditto` Claude Code plugin: Skills derived from the guide, and evals |
+| `.claude-plugin/marketplace.json` | Marketplace that publishes the plugin |
+| `scripts/check-ditto-skills.py` | Checks the plugin Skills against the guide |
+| `.claude/rules/` | Path-specific rules for Claude Code |
+| `.claude/skills/` | Symbolic links to the plugin Skills, and the `claude-skills` authoring Skill |
 
----
+Edit the Ditto Skills in `plugins/ditto/skills/`, never through the links in `.claude/skills/`.
 
-# Development Guidelines
+## Ditto Best Practices Synchronization (CRITICAL)
 
-## Claude Code Rules
+After editing `best-practices/ditto.md`, you **must** propagate the change to the plugin Skills, the checklist, and the POS example, and bump the plugin version when Skills change. Follow [.claude/rules/ditto-best-practices-sync.md](.claude/rules/ditto-best-practices-sync.md). Skip only for purely conceptual changes without actionable patterns.
 
-This project uses `.claude/rules/` directory for specialized enforcement rules and workflows:
+Before finishing a change to the guide or the Skills, run:
 
-**Purpose**: Rules optimize context usage by extracting complex workflows from CLAUDE.md and loading them conditionally based on file paths.
-
-**Key Rules**:
-- [Ditto Best Practices Synchronization](.claude/rules/workflows/ditto-best-practices-sync.md) - Mandatory workflow for ditto.md edits
-
-**Full documentation**: [.claude/rules/README.md](.claude/rules/README.md)
-
-**Note**: CLAUDE.md remains the authoritative source for foundational guidelines. Rules provide targeted enforcement when needed.
-
----
+```bash
+python3 scripts/check-ditto-skills.py
+claude plugin validate . --strict
+```
 
 ## Language Policy
 
-All artifacts generated in this project must be written in English, including:
+All artifacts in this project must be written in English: documentation, code and comments, commit messages, identifiers, error messages, and configuration. The only exception is the Japanese translation data of the checklist (`translations.json` and `code-translations.json`).
 
-- Documentation files (*.md, *.txt, etc.)
-- Source code comments
-- Commit messages
-- Code documentation (docstrings, JSDoc, etc.)
-- Variable and function names
-- Error messages and logs
-- Configuration files
-- README and other project documentation
-
-This ensures consistency and accessibility for international collaboration.
-
-### Professional Language Standards
-
-This project is managed by a corporate entity. All language used must be:
-
-- **Professional and appropriate** for a business environment
-- **Respectful and inclusive** of all audiences
-- **Free from offensive content** or language that violates public morals and social norms
-- **Suitable for enterprise use** in documentation, code, and communications
+This project is managed by a corporate entity. All language must be professional, respectful, inclusive, and suitable for enterprise use.
 
 ## Documentation Updates
 
-After completing any code changes or implementation work:
-
-- **Always update relevant documentation** to reflect the changes made
-- Update README files, API documentation, and inline comments as needed
-- Ensure documentation remains synchronized with the codebase
-- Do not skip documentation updates even for minor changes
-- **Update architecture documentation** when making structural or significant changes
-
-## Architecture Documentation
-
-Every app/tool must maintain ARCHITECTURE.md using the template.
-
-**Requirements**:
-- Use [template](docs/ARCHITECTURE_TEMPLATE.md)
-- Update on structural changes
-- Include required sections: Overview, Tech Stack, Project Structure, Core Components, Ditto Integration, Testing Strategy
-- Timestamp updates with "Last Updated: YYYY-MM-DD"
-
-**Automation**:
-- Central index: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Auto-generated summaries in `docs/architecture/`
-- Validation via architecture-check hook (non-blocking)
-
-**Best Practices**: Write for developers learning from examples. Be comprehensive. Include code snippets and file references. Explain decisions. Update immediately.
-
-**Full guide**: [.claude/guides/architecture.md](.claude/guides/architecture.md)
-
-## Git Hooks
-
-This project uses Git Hooks to enforce quality standards before commits and pushes.
-
-**Setup**: Run `./.claude/scripts/setup/complete-setup.sh` once after cloning.
-
-**Installed Hooks**:
-- **pre-commit**: Security and language checks (blocking)
-- **commit-msg**: Commit message quality validation (blocking)
-- **pre-push**: Comprehensive checks including Dart analysis (blocking, with non-blocking architecture validation)
-
-**Bypassing**: Use `--no-verify` only for emergencies (e.g., broken hook, hotfix). Document the reason. All bypassed commits are still checked by CI/CD.
-
-**Behavior**: Security/language violations block commits/pushes. Architecture warnings are informational. Hooks work for all developers.
-
-**Full documentation**: [.claude/guides/git-hooks.md](.claude/guides/git-hooks.md)
+- Update the relevant documentation (READMEs, the guide, inline comments) together with every change, including minor ones.
+- Record user-visible changes in `CHANGELOG.md` under `Unreleased`.
+- Keep `Version` and `Last Updated` current in versioned documents (`best-practices/ditto.md`, the checklist Markdown).
 
 ## Best Practices and Technology Updates
 
-When working on this project:
-
-- **Check for latest information** about the tools and technologies being used (e.g., Ditto, Flutter SDK, platforms)
-- **Consider current best practices** when implementing features or making changes
-- Stay updated with official documentation and recommended patterns
-- Apply the most recent and appropriate solutions for the current technology versions
-
-## Platform-Specific Best Practices
-
-When implementing features or fixing issues, consult the platform-specific best practices documentation:
-
-**Flutter Development**: [.claude/guides/best-practices/flutter.md](.claude/guides/best-practices/flutter.md)
-- Widget architecture patterns
-- State management approaches
-- Performance optimization techniques
-- Testing strategies
-
-**Ditto SDK Integration**: [.claude/guides/best-practices/ditto.md](.claude/guides/best-practices/ditto.md)
-- Initialization and configuration patterns
-- Collection design and schema best practices
-- Query optimization and sync strategies
-- Error handling and resilience patterns
-
-**Directory Overview**: See [.claude/guides/best-practices/README.md](.claude/guides/best-practices/README.md) for structure and contribution guidelines.
-
-**Note**: These documents are continuously evolving. Always check for the latest patterns before implementation.
-
-### Ditto Best Practices Synchronization (CRITICAL)
-
-**⚠️ MANDATORY WORKFLOW**: After editing [.claude/guides/best-practices/ditto.md](.claude/guides/best-practices/ditto.md), you **MUST** propagate changes to the corresponding Agent Skills.
-
-**Full workflow documentation**: [.claude/rules/workflows/ditto-best-practices-sync.md](.claude/rules/workflows/ditto-best-practices-sync.md)
-
-**Key points**:
-- **Source of Truth**: `.claude/guides/best-practices/ditto.md` (comprehensive reference)
-- **Derivative Content**: `plugins/ditto/skills/*` (actionable patterns extracted from main guide, published as the `ditto` Claude Code plugin)
-- **Workflow**: Review → Check relevance → Update skills → Bump plugin version → Verify consistency
-- **Skip if unnecessary**: Pure conceptual content without actionable patterns
-
-Agent Skills provide real-time guidance to developers. They must stay synchronized with the authoritative best practices guide to ensure accuracy and consistency.
+- Check the latest official documentation for Ditto, Flutter, and Claude Code before writing guidance or code; the guide and the Skills target Ditto SDK 5.1.0.
+- Consult [best-practices/ditto.md](best-practices/ditto.md) for Ditto code and [best-practices/flutter.md](best-practices/flutter.md) for Flutter code.
+- Mark behavior that is specific to one SDK release, for example **Note (SDK 5.1.0)**.
 
 ## Security Guidelines
 
-Security is a top priority:
-
-- **Never commit** API keys, tokens, or credentials
-- **Environment variables**: Never commit `.env` files. Always maintain `.env.template` with placeholders. Keep template synchronized with `.env`
-- **Validate inputs** to prevent injection vulnerabilities
-- **Sanitize output** to prevent XSS attacks
-- **Follow OWASP guidelines** and security best practices
-- **Keep dependencies updated**
-
-## Code Quality Standards
-
-Maintain high code quality while keeping implementations practical:
-
-- **Follow existing code style** - Match the patterns and conventions already present in the codebase
-- **Keep it simple** - Avoid over-engineering; implement what is needed, not what might be needed
-- **Test critical functionality** - Ensure important features have appropriate test coverage
-- **Handle errors appropriately** - Implement proper error handling for user-facing features and external dependencies
-
-## Testing Standards
-
-Comprehensive testing is a priority:
-
-- **Target 80%+ coverage** across the codebase
-- **Test critical paths**: Core functionality, data sync, user-facing features
-- **Write unit tests** for business logic, utilities, isolated components
-- **Write integration tests** for component interactions and Ditto SDK integration
-- **Test error scenarios** and edge cases
-- **Update tests** when modifying functionality
-
-**Run all tests**: `./scripts/test-all.sh` (discovers all apps, runs in parallel, fail-fast)
-
-## Dependency Management
-
-Use `/update-deps` command to manage dependencies:
-
-```bash
-/update-deps check       # Check for outdated dependencies
-/update-deps update      # Update dependencies interactively
-/update-deps ditto       # Check Ditto SDK versions (HIGH PRIORITY)
-```
-
-**Ditto SDK Version Consistency** (HIGH PRIORITY):
-- Check regularly with `/update-deps ditto`
-- Version mismatches cause confusion for users learning from examples
-- When upgrading: Review release notes, update all projects, test all apps, verify consistency
-
-**Supported platforms**: Flutter, Node.js, Python, iOS, Android
-
-**Best practices**: Check weekly, verify after adding apps, run tests after updates, update docs if needed
-
-**Manual by default** - Does not run automatically via hooks (dependency updates can break code)
-
-**Full guide**: [.claude/guides/dependency-management.md](.claude/guides/dependency-management.md)
+- Never commit API keys, tokens, or credentials. Examples use placeholders such as `YOUR_DATABASE_ID`.
+- Validate inputs and sanitize output in example code, following OWASP guidance.
 
 ## Showcase Code Standards
 
-This project serves as a showcase for users to reference and learn from. Therefore, code quality and readability are paramount:
+This repository is a reference that readers copy from, so code quality and readability come first:
 
-- **Prioritize readability** - Code should be clear and easy to understand for developers learning from these examples
-- **Refactor proactively** - Regularly refactor code to improve clarity and maintainability
-  - Simplify complex logic
-  - Extract meaningful functions and components
-  - Use descriptive names for variables, functions, and classes
-  - Remove code duplication
-- **Balance maintainability with simplicity** - When refactoring:
-  - **Prefer simplicity over excessive abstraction** - Don't over-engineer for hypothetical future needs
-  - **Keep it straightforward** - If a simple solution works well, don't make it complex
-  - **Avoid premature optimization** - Focus on clarity first, optimize only when necessary
-- **Write self-documenting code** - Use clear naming and structure so the code explains itself
-- **Add helpful comments** - Explain the "why" behind non-obvious decisions, not the "what" (which should be clear from the code itself)
-- **Follow platform conventions** - Use idiomatic patterns for Flutter/Dart and the Ditto SDK
-- **Make examples complete** - Showcase implementations should be functional, not just conceptual snippets
+- **Prioritize readability**: clear names and structure that explain the code; comments explain the "why", not the "what".
+- **Keep it simple**: no abstraction for hypothetical needs, no premature optimization.
+- **Follow platform conventions**: idiomatic Dart, Flutter, and Ditto SDK patterns.
+- **Make examples complete**: functional code, not conceptual fragments.
+- **Follow existing style**: match the conventions already present in the file you edit.

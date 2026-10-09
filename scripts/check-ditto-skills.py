@@ -10,7 +10,7 @@ Checks, for every plugins/ditto/skills/*/SKILL.md:
 - every relative Markdown link points to an existing file
 - audit/reference/scanner-rules.md matches `scan.py --list-rules`
 
-Usage: python3 .claude/scripts/checks/check-ditto-skills.py
+Usage: python3 scripts/check-ditto-skills.py
 Exit code 1 when an error is found. Standard library only.
 """
 
@@ -21,9 +21,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / "plugins" / "ditto" / "skills"
-GUIDE = ROOT / ".claude" / "guides" / "best-practices" / "ditto.md"
+GUIDE = ROOT / "best-practices" / "ditto.md"
 
 MAX_DESCRIPTION = 1024
 TARGET_DESCRIPTION = 450

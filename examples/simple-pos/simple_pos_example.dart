@@ -17,8 +17,8 @@
 //                     (consume `changes`, cancel in dispose)
 // 4. runDemoWorkflow - An end-to-end walkthrough of the repository
 //
-// Schema: .claude/examples/ditto/simple_pos/simple_pos_schema.yaml
-// Guide:  .claude/guides/best-practices/ditto.md
+// Schema: examples/simple-pos/simple_pos_schema.yaml
+// Guide:  best-practices/ditto.md
 // ============================================================================
 
 import 'dart:async';
