@@ -411,8 +411,8 @@ class HTMLGenerator:
             code_html = f'''
             <div class="code-example">
               <div class="code-header">
-                <span class="code-label"><span class="code-label-text">Code Example</span> ({language})</span>
-                <button type="button" class="code-toggle" aria-expanded="false" aria-controls="{code_id}">Show Code</button>
+                <span class="code-label"><span class="code-label-text">Code example</span> ({language})</span>
+                <button type="button" class="code-toggle" aria-expanded="false" aria-controls="{code_id}">Show code</button>
               </div>
               <div class="code-content" id="{code_id}" hidden>
                 <pre><code class="highlight" data-code-index="{code_index}">{self.highlight_code(item.code_example.code, item.code_example.language)}</code></pre>

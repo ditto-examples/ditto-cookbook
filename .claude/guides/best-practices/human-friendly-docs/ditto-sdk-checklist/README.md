@@ -47,6 +47,8 @@ The header blockquote must contain `Version`, `Last Updated`, and `Applies to`; 
 - First point
 - Second point
 
+An optional paragraph after the list.
+
 **Why this matters:** Rationale.
 
 **Best-practices guide:** Heading in ditto.md, Another heading
@@ -68,7 +70,21 @@ The "Best-practices guide" line names headings of [ditto.md](../../ditto.md) exa
 - `code-translations.json` → one entry per code example, in Markdown order (`index` 0, 1, 2, ...). `originalCode` must equal the Markdown code block exactly, and `translatedCode` may differ from it only in comments.
 - English text in the HTML always comes from the Markdown file.
 
-Conventions for the Japanese text: keep product and DQL terms such as Ditto Server, Small Peer, CRDT, REGISTER, MISSING, attachment, sync scope, and tombstone in English; write "in our testing" as 「テストでは」 and keep "(SDK 5.1.0)" markers; label code comments 「良い例」 / 「悪い例」.
+### Writing style
+
+The checklist is customer-facing. Keep the text short and concrete in both languages:
+
+- One idea per sentence. Split long sentences instead of stacking clauses and parentheticals.
+- "What this means" starts with the action to take. "Why this matters" starts with what goes wrong, then explains why.
+- Keep every fact, number, and marker that qualifies a statement: "(SDK 5.1.0)", "SDK 5.1+", and "In our testing with SDK 5.1.0".
+
+Conventions for the Japanese text:
+
+- Write natural technical Japanese (です・ます in paragraphs, plain form such as 「〜する」 in list items and titles), not a word-for-word translation.
+- Keep product and DQL terms such as Ditto Server, Small Peer, CRDT, REGISTER, MISSING, attachment, sync scope, and tombstone in English.
+- Write "in our testing" as 「テストでは」 and keep the "(SDK 5.1.0)" markers.
+- Put a half-width space around `<code>` elements and around code identifiers in titles (「ditto.sync.start() より前に」). Do not put a space between Japanese and other Latin words or numbers (「SDKのバージョン」).
+- Label code comments 「良い例」 / 「悪い例」.
 
 ## Building
 
@@ -96,7 +112,7 @@ Open `ditto-sdk-checklist.html` and check:
 
 - Checkboxes update the overall and per-section progress, and survive a reload
 - ENG / JPN switches every title, text block, heading, button, and code comment
-- Section headers and Show Code buttons expand and collapse (also with the keyboard)
+- Section headers and "Show code" buttons expand and collapse (also with the keyboard)
 - Expand all, Collapse all, and Reset progress work
 - The print preview shows all sections and code examples in black on white
 

@@ -1,25 +1,25 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.6
+> **Version**: 2.7
 > **Last Updated**: 2026-10-09
 > **Applies to**: Ditto SDK 5.1.0 (Flutter `ditto_live` 5.1.0)
 >
 > **Ditto documentation**: [https://docs.ditto.live](https://docs.ditto.live)
 >
-> Each item names the section of the Ditto SDK Best Practices guide (`ditto.md`) that explains it in detail.
+> Each item names the sections of the Ditto SDK Best Practices guide (`ditto.md`) that explain it in detail.
 
 ## Section 1: Setup and Lifecycle
 
 ### ☐ Pin ditto_live 5.1.0 and meet the platform requirements
 
-**What this means:** Pin the SDK version in `pubspec.yaml` so that every developer and CI build uses the same release, and check the requirements of `ditto_live` 5.1.0:
+**What this means:** Pin the SDK version in `pubspec.yaml` so that every developer and every CI build uses the same release. Then check that your app meets the requirements of `ditto_live` 5.1.0:
 - Dart 3.5.4 or later and Flutter 3.24.5 or later
 - iOS 15+ and macOS 12+ on arm64 only (Intel Macs and x86_64 simulators are not supported), with CocoaPods
 - Android `minSdk` 24, set explicitly in your app's Gradle file, and Kotlin Gradle plugin 2.0 or later
-- Bluetooth, local network, and nearby-device permissions for peer-to-peer sync, as listed in the Flutter install guide, requested before sync starts
+- The Bluetooth, local network, and nearby-device permissions that peer-to-peer sync needs (listed in the Flutter install guide), requested before sync starts
 - On Flutter Web, data is kept in memory only, sync works only over WebSocket with Ditto Server, and indexes are not supported
 
-**Why this matters:** A floating version lets developers, CI, and devices run different SDK releases. Missing permissions or an unsupported architecture surface late, often as peers that never connect rather than as a clear error.
+**Why this matters:** Without a pinned version, developers, CI, and devices can end up on different SDK releases. Missing permissions and unsupported architectures are found late: they usually show up as peers that never connect, not as a clear error.
 
 **Best-practices guide:** Requirements
 
@@ -32,9 +32,9 @@ dependencies:
 
 ### ☐ Open one Ditto instance per persistence directory and share it
 
-**What this means:** Open Ditto once at app start with `await Ditto.open(DittoConfig(...))` and pass the instance to the parts of the app that need it, for example through dependency injection or a service object. Guard against concurrent opens by sharing one in-flight `Future`. Never open a new instance per screen or request, and never reopen a directory before `close()` has completed.
+**What this means:** Open Ditto once at app start with `await Ditto.open(DittoConfig(...))` and pass the instance to the parts of the app that need it, for example through dependency injection or a service object. If several callers may open Ditto at the same time, let them share one in-flight `Future`. Never open a new instance per screen or request, and never reopen a directory before `close()` has completed.
 
-**Why this matters:** Only one `Ditto` instance can use a persistence directory at a time. In Flutter, a second `Ditto.open()` on a directory that is already open may never complete instead of throwing, so the code that awaits it can stop silently.
+**Why this matters:** In Flutter, a second `Ditto.open()` on a directory that is already open may never complete, and it does not throw. The code that awaits it then stops without any error. Only one `Ditto` instance can use a persistence directory at a time.
 
 **Best-practices guide:** One instance per persistence directory
 
@@ -64,12 +64,12 @@ class DittoProvider {
 
 ### ☐ Choose the connection mode deliberately
 
-**What this means:** Pick the `connect` mode of `DittoConfig` for each build:
+**What this means:** Choose the `connect` mode of `DittoConfig` for each build:
 - `DittoConfigConnectServer(url: ...)`: devices sync through Ditto Server and with each other, and must authenticate. Copy the Server URL from the Ditto Portal exactly as shown.
 - `DittoConfigConnectSmallPeersOnly(privateKey: key)`: devices sync only with each other, using a shared key (TLS 1.3).
-- `DittoConfigConnectSmallPeersOnly()` without a key: local store tests and development only (sync still requires an offline license token).
+- `DittoConfigConnectSmallPeersOnly()` without a key: for local store tests and development only. Sync in this mode still requires an offline license token.
 
-**Why this matters:** The mode decides how devices authenticate and whether traffic is encrypted. Without a `privateKey`, peers do not authenticate each other: any device with the SDK, the Database ID, and an offline license token can connect, read, and write. The SDK documents this mode as unencrypted in transit, so treat it as unprotected. `databaseID` must be a valid UUID; do not rely on `Ditto.open()` to reject a leftover placeholder.
+**Why this matters:** The mode decides how devices authenticate and whether traffic is encrypted. Without a `privateKey`, peers do not authenticate each other: any device that has the SDK, the Database ID, and an offline license token can connect, read, and write. The SDK documents this mode as unencrypted in transit, so treat it as unprotected. Also make sure that `databaseID` is a valid UUID: do not count on `Ditto.open()` to reject a leftover placeholder.
 
 **Best-practices guide:** Initializing Ditto
 
@@ -77,7 +77,7 @@ class DittoProvider {
 
 **What this means:** For small-peers-only deployments, obtain an offline license token from Ditto and call `ditto.setOfflineOnlyLicenseToken(token)` before `ditto.sync.start()`. No expiration handler is needed in this mode.
 
-**Why this matters:** In small-peers-only mode, `ditto.sync.start()` throws until a valid offline license token is set, whether or not a private key is used. The local store works without a license, which is why tests that never start sync can open Ditto without one.
+**Why this matters:** In small-peers-only mode, `ditto.sync.start()` throws until a valid offline license token is set, whether or not you use a private key. The local store works without a license, so tests that never start sync can open Ditto without one.
 
 **Best-practices guide:** Initializing Ditto
 
@@ -112,7 +112,7 @@ Future<Ditto> openProvisionedSmallPeer({
 - Check `response.exception`: `login()` does not throw when the token is rejected or the server is unreachable
 - Catch errors from your own token code and report them; never throw or rethrow from the handler
 
-**Why this matters:** For server connections, `ditto.sync.start()` throws when no handler is set. The handler is called again before credentials expire, so a cached token breaks refreshes. Its return type is `void`, so an error thrown inside becomes an unhandled asynchronous error that Ditto never receives.
+**Why this matters:** With a server connection, `ditto.sync.start()` throws if no handler is set. Ditto calls the handler again before the credentials expire, so reusing a cached token makes the refresh fail. The handler returns `void`: an error thrown inside it never reaches Ditto and becomes an unhandled asynchronous error.
 
 **Best-practices guide:** Authentication
 
@@ -139,9 +139,9 @@ Future<void> configureAuthentication(Ditto ditto) async {
 
 ### ☐ Apply ALTER SYSTEM settings after every open and before starting sync
 
-**What this means:** System parameters set with `ALTER SYSTEM SET` are kept in memory only. Apply them in one startup function every time you open Ditto, after `Ditto.open()` and before `ditto.sync.start()`, running queries, or registering observers (subscriptions may be registered first). Confirm a value with `SHOW` when needed, and restore a default with `ALTER SYSTEM RESET`.
+**What this means:** System parameters set with `ALTER SYSTEM SET` are kept in memory only. Apply them in one startup function every time you open Ditto: after `Ditto.open()`, and before you call `ditto.sync.start()`, run queries, or register observers. Subscriptions may be registered before them. Use `SHOW` to check a value and `ALTER SYSTEM RESET` to restore a default.
 
-**Why this matters:** After a restart, or after closing and reopening Ditto, every parameter is back at its default. Settings such as `DQL_STRICT_MODE`, `USER_COLLECTION_SYNC_SCOPES`, and `TOMBSTONE_TTL_HOURS` silently revert, and sync scopes applied after sync has started can let data sync unintentionally.
+**Why this matters:** After an app restart, or after Ditto is closed and reopened, every parameter is back at its default, so settings such as `DQL_STRICT_MODE`, `USER_COLLECTION_SYNC_SCOPES`, and `TOMBSTONE_TTL_HOURS` silently revert. Sync scopes applied after sync has started can let data sync unintentionally.
 
 **Best-practices guide:** Applying System Parameters
 
@@ -160,9 +160,9 @@ Future<void> applySettingsAndStartSync(Ditto ditto) async {
 
 ### ☐ Treat sync.start() and sync.stop() as synchronous, and keep Ditto open in the background
 
-**What this means:** `ditto.sync.start()` and `ditto.sync.stop()` return `void`, so do not `await` them. `start()` throws when a prerequisite (expiration handler or offline license token) is missing and does nothing while sync is active (`ditto.sync.isActive`). Keep Ditto open when the app is paused: do not call `ditto.close()`. Only if your app must not sync in the background, call `stop()` when it is paused, and on resume restart only the sync that you paused.
+**What this means:** `ditto.sync.start()` and `ditto.sync.stop()` return `void`, so do not `await` them. `start()` throws if a prerequisite (the expiration handler or the offline license token) is missing, and does nothing if sync is already active (`ditto.sync.isActive`). Keep Ditto open while the app is paused; do not call `ditto.close()`. If your app must not sync in the background, call `stop()` when the app is paused, and on resume restart only the sync that you stopped.
 
-**Why this matters:** Awaiting a `void` call is a compile error in Dart. `close()` is final for that instance: every later call throws `DittoClosedException`, and you would have to open a new instance and register all subscriptions and observers again. After `stop()`, the local store remains fully usable.
+**Why this matters:** In Dart, awaiting a `void` call is a compile error. `close()` cannot be undone: every later call on that instance throws `DittoClosedException`, so you would have to open a new instance and register every subscription and observer again. `stop()` has no such cost: the local store stays fully usable.
 
 **Best-practices guide:** Starting and Stopping Sync
 
@@ -207,9 +207,9 @@ class SyncLifecycle with WidgetsBindingObserver {
 
 ### ☐ Change transport settings with updateTransportConfig()
 
-**What this means:** `TransportConfig` is immutable. Use `ditto.updateTransportConfig((config) { ... })`, which starts from the current configuration, and change only what you need, for example with `setAllPeerToPeerEnabled()` or a single transport under `peerToPeer`. Treat `global.syncGroup` as an optimization, not as a security boundary. On a hub that more than six devices connect to over TCP, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every open and before `ditto.sync.start()`. This parameter is not part of the documented configuration and may change in a later release, so confirm the setting with Ditto support before you rely on it in production.
+**What this means:** `TransportConfig` is immutable. Call `ditto.updateTransportConfig((config) { ... })` instead: it starts from the current configuration, so you change only what you need, for example with `setAllPeerToPeerEnabled()` or one transport under `peerToPeer`. Treat `global.syncGroup` as an optimization, not as a security boundary. If more than six devices connect to a hub over TCP, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` on the hub after every open and before `ditto.sync.start()`. This parameter is undocumented and may change in a later release, so confirm the setting with Ditto support before you rely on it in production.
 
-**Why this matters:** A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Configuration changes are applied asynchronously and invalid values do not throw, so a hand-built configuration can silently stop devices from finding each other. In our testing with SDK 5.1.0, a device accepted 6 TCP connections by default: further clients of a hub received no data, and no API reported an error (only a `WARN` log line showed it).
+**Why this matters:** A hand-built configuration can silently stop devices from finding each other. A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Changes are applied asynchronously, and invalid values do not throw. In our testing with SDK 5.1.0, a device accepted 6 TCP connections by default. Additional clients of a hub received no data, no API reported an error, and only a `WARN` log line showed the problem.
 
 **Best-practices guide:** Transport Configuration
 
@@ -227,9 +227,9 @@ void configureTransports(Ditto ditto) {
 
 ### ☐ Release Ditto objects explicitly and await pending work before close()
 
-**What this means:** Cancel `StoreObserver`, `StoreObserverV2`, and `SyncSubscription` objects with `cancel()`; stop `PresenceObserver`, transport-condition observers, and `AttachmentFetcher` objects with `stop()`. Before `await ditto.close()`, await your own pending queries and transactions, and cancel your observers and the `StreamSubscription`s on their `changes` streams. Call `close()` only when the whole app no longer needs Ditto, and use the instance only from the isolate that opened it.
+**What this means:** Release each Ditto object when you no longer need it: call `cancel()` on `StoreObserver`, `StoreObserverV2`, and `SyncSubscription` objects, and `stop()` on `PresenceObserver`, transport-condition observers, and `AttachmentFetcher` objects. Before `await ditto.close()`, await your own pending queries and transactions, and cancel your observers and the `StreamSubscription`s on their `changes` streams. Call `close()` only when the whole app no longer needs Ditto. Use the instance only from the isolate that opened it.
 
-**Why this matters:** Ditto objects hold native resources; do not rely on garbage collection to cancel them. `close()` does not wait for in-flight `execute()` calls or transactions (they can fail with `DittoClosedException`), does not end an `await for` loop over the `changes` stream of a `StoreObserver` or `StoreObserverV2` (and `cancel()` does nothing once Ditto is closed), and resets `DittoLogger.customLogCallback` for the whole process.
+**Why this matters:** Ditto objects hold native resources, so do not rely on garbage collection to release them. `close()` does not clean up for you. It does not wait for in-flight `execute()` calls or transactions, which can then fail with `DittoClosedException`. It does not end an `await for` loop over the `changes` stream of a `StoreObserver` or `StoreObserverV2`, and once Ditto is closed, `cancel()` no longer does anything. It also resets `DittoLogger.customLogCallback` for the whole process.
 
 **Best-practices guide:** Resource Cleanup and Shutdown
 
@@ -239,9 +239,9 @@ void configureTransports(Ditto ditto) {
 
 ### ☐ Pass every value as a DQL parameter
 
-**What this means:** Reference values with `:name` placeholders and pass them in `arguments`: IDs, user input, dates, limits, and whole documents (`INSERT INTO orders DOCUMENTS (:order)`). Never build DQL strings with string interpolation or concatenation. Parameter names are case-sensitive.
+**What this means:** Write a `:name` placeholder for every value and pass the value in `arguments`. This includes IDs, user input, dates, limits, and whole documents (`INSERT INTO orders DOCUMENTS (:order)`). Never build DQL strings with string interpolation or concatenation. Parameter names are case-sensitive.
 
-**Why this matters:** Interpolated input can change the meaning of a statement (DQL injection). DQL interprets backslash escapes in string literals, so user text containing `\` or quotes can be altered or break the statement. Parameters keep their exact value and type, and a constant statement text lets Ditto reuse the prepared plan from its statement cache.
+**Why this matters:** Interpolated input can change what a statement does (DQL injection). DQL also interprets backslash escapes in string literals, so user text that contains `\` or quotes can be altered or can break the statement. Parameters keep their exact value and type. And because the statement text stays the same, Ditto can reuse the prepared plan from its statement cache.
 
 **Best-practices guide:** Parameters and Literals
 
@@ -272,9 +272,9 @@ Future<void> findOrdersUnsafe(Ditto ditto, String customerId) async {
 
 ### ☐ Use IN :values for membership filters
 
-**What this means:** Pass an array parameter without parentheses: `WHERE status IN :statuses`. To test whether an array field contains a value, use `:tag IN tags` or `array_contains(tags, :tag)`.
-- Do not write `IN (:statuses)`: the parentheses make a one-element list whose only element is the array, so nothing matches
-- Do not filter with `ANY` or `EVERY ... SATISFIES ... END` over a parameter or literal array in `WHERE`, such as `ANY s IN :statuses SATISFIES s = status END` (returns no rows in SDK 5.1.0; use `status IN :statuses`)
+**What this means:** To match any value in a list, pass the list as an array parameter without parentheses: `WHERE status IN :statuses`. To test whether an array field contains a value, use `:tag IN tags` or `array_contains(tags, :tag)`.
+- Do not write `IN (:statuses)`: the parentheses wrap the array in a one-element list, so nothing matches
+- Do not filter with `ANY` or `EVERY ... SATISFIES ... END` over a parameter or literal array in `WHERE`. For example, `ANY s IN :statuses SATISFIES s = status END` returns no rows in SDK 5.1.0; use `status IN :statuses` instead
 
 **Why this matters:** Both mistakes return an empty result without an error, so the bug looks like missing data. `status IN :statuses` can also use an index on `status`.
 
@@ -306,9 +306,9 @@ Future<void> tasksWithStatusWrong(Ditto ditto) async {
 
 ### ☐ Quote every key in inline object literals
 
-**What this means:** Object literals written inside a DQL statement must use quoted keys, for example `{'status': 'open'}`. Better still, avoid inline objects and pass documents as parameters (`DOCUMENTS (:order)`).
+**What this means:** When you write an object literal inside a DQL statement, quote every key, for example `{'status': 'open'}`. Better still, avoid inline objects and pass documents as parameters (`DOCUMENTS (:order)`).
 
-**Why this matters:** Unquoted keys are rejected in `INSERT`, and in `SELECT` they are silently evaluated as field references, usually producing an empty object (`{}`).
+**Why this matters:** `INSERT` rejects unquoted keys. `SELECT` accepts them without an error but evaluates them as field references, which usually produces an empty object (`{}`).
 
 **Best-practices guide:** Quote every key in inline object literals
 
@@ -326,7 +326,7 @@ INSERT INTO orders DOCUMENTS ({'_id': 'order-1', 'status': 'open'})
 
 **What this means:** Choose names that are not DQL keywords, such as `orders`, `tasks`, and `createdAt`. Never name a collection `collection`. If you cannot rename an existing reserved name, quote it with backticks in every statement. Do not start ordinary comments with `/*+` or `--+`; those prefixes mark query directives.
 
-**Why this matters:** `SELECT * FROM collection` is a parser error (`expected identifier`), and a reserved name forces quoting in every statement that touches it.
+**Why this matters:** `SELECT * FROM collection` fails with a parser error (`expected identifier`). A reserved name must be quoted with backticks in every statement that uses it.
 
 **Best-practices guide:** Reserved words
 
@@ -337,15 +337,15 @@ INSERT INTO orders DOCUMENTS ({'_id': 'order-1', 'status': 'open'})
 - Test existence with `IS MISSING` / `IS NOT MISSING`; `IS NOT NULL` is also true for a missing field
 - Remove a field with `UNSET`; writing `null` keeps the field present
 
-**Why this matters:** Documents written by older app versions or other platforms often lack newer fields, and a filter that ignores MISSING hides them without any error. Aggregates other than `COUNT` also return MISSING, not `0`, over zero matching documents.
+**Why this matters:** Documents written by older app versions or other platforms often lack newer fields. A filter that ignores MISSING hides those documents without any error. Also, when no documents match, aggregates other than `COUNT` return MISSING, not `0`.
 
 **Best-practices guide:** MISSING and NULL
 
 ### ☐ Convert query results to plain Dart data right away
 
-**What this means:** Map each `QueryResultItem` to a `Map` or to your own model class once, then let the `QueryResult` go out of scope. `items` is an `Iterable`: iterate it once. Call `mutatedDocumentIDs()` once and keep the list.
+**What this means:** Convert each `QueryResultItem` to a `Map` or to your own model class once, and then let the `QueryResult` go out of scope. `items` is an `Iterable`, so iterate it only once. Likewise, call `mutatedDocumentIDs()` once and keep the list.
 
-**Why this matters:** `QueryResult` and `QueryResultItem` objects reference native memory that is released only when the Dart object is garbage-collected. Storing them in state, caches, or across observer callbacks keeps that memory alive, and every pass over `items` decodes the rows again.
+**Why this matters:** `QueryResult` and `QueryResultItem` objects reference native memory, which is released only when the Dart object is garbage-collected. Keeping them in state, in caches, or across observer callbacks keeps that memory alive. In addition, every pass over `items` decodes the rows again.
 
 **Best-practices guide:** Working with Query Results
 
@@ -376,9 +376,9 @@ Future<List<Order>> loadOpenOrders(Ditto ditto) async {
 
 ### ☐ Use RETURNING to read what a write changed (SDK 5.1+)
 
-**What this means:** Add `RETURNING` to `INSERT`, `UPDATE`, `DELETE`, or `EVICT` to get the affected documents in `items` from the same statement: the documents after an `UPDATE`, and the documents before removal for `DELETE` and `EVICT`. Aggregates such as `RETURNING COUNT(*) AS removed` are allowed.
+**What this means:** Add `RETURNING` to an `INSERT`, `UPDATE`, `DELETE`, or `EVICT` statement to get the affected documents in its `items`. An `UPDATE` returns the documents after the change; `DELETE` and `EVICT` return them as they were before removal. Aggregates such as `RETURNING COUNT(*) AS removed` are allowed.
 
-**Why this matters:** It replaces the "write, then query again" pattern, so the values you read are exactly the ones you wrote. For `DELETE`, it returns the removed content from the same atomic statement. `commitID` is populated as usual, and so is `mutatedDocumentIDs()`. Treat `items` as the result: include `_id` in the `RETURNING` projection when you need the IDs, rather than making that code depend on `mutatedDocumentIDs()`.
+**Why this matters:** It replaces the "write, then query again" pattern, so the values you read are exactly the ones you wrote. For `DELETE`, you get the removed content from the same atomic statement. `commitID` and `mutatedDocumentIDs()` are populated as usual. Still, treat `items` as the result: when you need the IDs, include `_id` in the `RETURNING` list instead of relying on `mutatedDocumentIDs()`.
 
 **Best-practices guide:** RETURNING (SDK 5.1+)
 
@@ -407,9 +407,9 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
 
 **What this means:** Watch for these common mistakes:
 - `type(x) = 'number'` never matches, because `type()` returns `'integer'` or `'float'`; use `is_number(x)`
-- Swapped `part` and `count` arguments to `date_add` and `date_sub` return MISSING; keep `date_add(date, part, count)`. `date_diff(date1, date2, part)` returns `date1 - date2`, so swapping the dates flips the sign
+- `date_add` and `date_sub` return MISSING if you swap the `part` and `count` arguments; keep the order `date_add(date, part, count)`. `date_diff(date1, date2, part)` returns `date1 - date2`, so swapping the dates flips the sign
 - `GROUP BY` and `HAVING` cannot reference projection aliases (the statement fails); repeat the expression
-- Comparing values of different types, including with `=` and `!=` (`1 = 'a'`, `1 != 'a'`, `1 < 'a'`), evaluates to MISSING
+- A comparison between values of different types evaluates to MISSING, even with `=` and `!=` (`1 = 'a'`, `1 != 'a'`, `1 < 'a'`)
 
 **Why this matters:** Most of these look like valid queries, so the bug shows up as missing rows or fields in the UI rather than as an exception.
 
@@ -421,9 +421,9 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
 
 ### ☐ Update individual fields instead of rewriting whole documents
 
-**What this means:** Use `UPDATE ... SET` for the fields that changed. Do not read a document, change it in Dart, and write the whole map back with `ON ID CONFLICT DO UPDATE`. When a user edits a document, write only the fields that the user changed. Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports of data that another system owns: it skips fields whose values are equal, but it does not protect a stale in-memory copy, because an old value that differs from the stored one is written back.
+**What this means:** Write only the fields that changed, with `UPDATE ... SET`. When a user edits a document, write only the fields that the user changed. Do not read a document, change it in Dart, and write the whole map back with `ON ID CONFLICT DO UPDATE`. For upserts and re-imports of data that another system owns, use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`. It skips fields whose values are unchanged, but it does not protect you from a stale in-memory copy: any old value that differs from the stored one is written back.
 
-**Why this matters:** Ditto syncs changes at field level. Rewriting every field makes the change larger and lets an unchanged value written by this device win a merge against a real concurrent change from another device. An `UPDATE` that writes a value that is already stored is still recorded as a mutation and can wake observers.
+**Why this matters:** A whole-document rewrite can undo another device's edit. Ditto syncs changes field by field, so every field you write takes part in the merge, and an unchanged value written by this device can win against a real concurrent change from another device. Rewriting every field also makes each change larger. Even an `UPDATE` that writes the value that is already stored counts as a mutation and can trigger observers.
 
 **Best-practices guide:** Prefer field-level updates over whole-document rewrites, ON ID CONFLICT
 
@@ -460,7 +460,7 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 
 **What this means:** Store line items, participants, or checklist entries as a map keyed by a stable ID (`{"items": {"<itemId>": {...}}}`), and keep any display order in a field such as `position`. Use arrays only for lists that one device owns or that are replaced as a whole. To add or update one entry from code, upsert a partial document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`.
 
-**Why this matters:** An array is a single register: when two devices change the same array concurrently, one version wins and the other change disappears without an error. Map entries merge independently, so concurrent additions and edits to different entries are all kept. In our testing with SDK 5.1.0, removing an entry with `UNSET` did not win over a concurrent edit of that entry and left a partial entry. When devices may edit an entry while another removes it, mark it removed (`` SET items.`<id>`.removed = true ``) instead, and make readers skip entries with missing or `null` required fields.
+**Why this matters:** An array is a single register: when two devices change the same array concurrently, one version wins and the other change disappears without an error. Map entries merge independently, so concurrent additions and edits to different entries are all kept. In our testing with SDK 5.1.0, removing an entry with `UNSET` did not win over a concurrent edit of the same entry, and a partial entry remained. If one device may remove an entry while another edits it, mark the entry as removed instead (`` SET items.`<id>`.removed = true ``), and make readers skip entries whose required fields are missing or `null`.
 
 **Best-practices guide:** Arrays and Maps
 
@@ -490,9 +490,9 @@ Future<void> upsertOrderItem(
 
 ### ☐ Remove object keys explicitly with UNSET
 
-**What this means:** With the default settings, an object is a CRDT map, and `SET obj = {...}` or `ON ID CONFLICT DO UPDATE` merges the new keys into the existing object: keys you leave out remain, and `SET obj = {}` changes nothing. Update nested fields individually (`SET address.city = :city`), remove keys with `UNSET address.zip`, and replace an object as a whole with `UNSET` followed by `SET` in one transaction, or declare it as `REGISTER`. Only a `REGISTER` guarantees that concurrent edits never mix two versions.
+**What this means:** With the default settings, an object is a CRDT map. `SET obj = {...}` and `ON ID CONFLICT DO UPDATE` merge the new keys into the existing object: keys you leave out remain, and `SET obj = {}` changes nothing. Update nested fields individually (`SET address.city = :city`) and remove keys with `UNSET address.zip`. To replace an object as a whole, run `UNSET` and then `SET` in one transaction, or declare the field as `REGISTER`. Only a `REGISTER` guarantees that concurrent edits never mix two versions.
 
-**Why this matters:** Add-wins maps let offline edits from many devices merge without data loss, so removal must be explicit. Code that expects an assignment to replace an object leaves stale keys behind.
+**Why this matters:** Code that expects an assignment to replace an object leaves stale keys behind. Maps are add-wins so that offline edits from many devices merge without data loss; the trade-off is that removals must be explicit.
 
 **Best-practices guide:** Assigning an object merges it, CRDT Types and Merge Behavior
 
@@ -521,11 +521,11 @@ Future<void> replaceAddress(
 
 ### ☐ Use COUNTER for values that several devices change concurrently
 
-**What this means:** Change counters with `APPLY f INCREMENT BY n` (a negative `n` decrements) and correct them occasionally with `APPLY f RESTART WITH n` while every device that changes the counter is in sync. Declare the counter in every statement, including the `INSERT` that sets the initial value, for example `UPDATE COLLECTION inventory (stockCount COUNTER) ...`. Counters hold integers only, so count money in minor units.
+**What this means:** Change counters with `APPLY f INCREMENT BY n` (a negative `n` decrements). For an occasional correction, use `APPLY f RESTART WITH n`, and only while every device that changes the counter is in sync. Declare the counter in every statement, including the `INSERT` that sets the initial value, for example `UPDATE COLLECTION inventory (stockCount COUNTER) ...`. Counters hold integers only, so count money in minor units.
 - Do not use counters for unique sequence numbers or for balances that must never go below zero
 - Do not use counters for values you can compute with `COUNT(*)`
 
-**Why this matters:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. `SET stock = stock - 1` on two devices loses one of the decrements. An undeclared `INSERT` stores the initial value as a register, and a later increment starts a separate counter at 0. A `RESTART` discards every increment that the restarting device had not received yet, including increments that other devices make later while offline (SDK 5.1.0).
+**Why this matters:** When two devices run `SET stock = stock - 1` concurrently, one of the decrements is lost. Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. An undeclared `INSERT` stores the initial value as a register, so a later increment starts a separate counter at 0. A `RESTART` discards every increment that the restarting device has not received yet, including increments that other devices make later while offline (SDK 5.1.0).
 
 **Best-practices guide:** Counters
 
@@ -558,7 +558,7 @@ Future<void> sellOne(Ditto ditto, String itemId) async {
 
 **What this means:** Use UUIDs (version 4), composite IDs that combine stable scope fields with a UUID (`{"storeId": "s1", "orderId": "<uuid>"}`), or let Ditto generate the ID. Never use sequential numbers or timestamp-only IDs. Keep human-readable numbers such as "#A-0042" in a separate field, and put only immutable attributes into `_id`.
 
-**Why this matters:** Offline devices cannot coordinate a sequence. Two of them create the same ID, and after sync the two documents become one document whose fields are mixed together. `_id` cannot be changed after creation, so an attribute that may change does not belong in it.
+**Why this matters:** Offline devices cannot coordinate a sequence, so two of them can create the same ID. After sync, the two documents become one document with their fields mixed together. `_id` cannot be changed after creation, so keep attributes that may change out of it.
 
 **Best-practices guide:** Document IDs
 
@@ -590,9 +590,9 @@ Future<void> createOrder(Ditto ditto, String storeId, String orderUuid) async {
 
 ### ☐ Keep documents well below 256 KiB
 
-**What this means:** Ditto logs a warning for documents above 256 KiB (soft limit) and rejects `INSERT` and `UPDATE` statements that would exceed 5 MiB (hard limit). Store binary content as attachments, move data that grows without bound (history, readings, comments) into its own collection, and leave both limits at their defaults.
+**What this means:** Ditto logs a warning for documents above 256 KiB (soft limit) and rejects `INSERT` and `UPDATE` statements that would make a document larger than 5 MiB (hard limit). Store binary content as attachments, move data that grows without bound (history, readings, comments) into its own collection, and leave both limits at their defaults.
 
-**Why this matters:** Document size affects storage and memory on every device, merge cost, and initial replication: over Bluetooth LE, a 256 KiB document takes more than 10 seconds to replicate the first time. A write that exceeds the hard limit fails with a `DittoException`. The limit is checked only for local writes: offline additions on two devices can merge into a document above it, after which every `UPDATE` of it fails on every device (SDK 5.1.0). To bring an oversized document back under the limits, move large values to attachments or a separate collection and remove them from the document with `UNSET`.
+**Why this matters:** Large documents cost storage and memory on every device, make merges more expensive, and slow down initial replication: over Bluetooth LE, a 256 KiB document takes more than 10 seconds to replicate the first time. A write that exceeds the hard limit fails with a `DittoException`. The limit is checked only for local writes, so offline additions on two devices can merge into a document above it. After that, every `UPDATE` of the document fails on every device (SDK 5.1.0). To bring an oversized document back under the limits, move large values to attachments or a separate collection and remove them from the document with `UNSET`.
 
 **Best-practices guide:** Document Size Limits
 
@@ -619,7 +619,7 @@ Future<bool> saveNotes(Ditto ditto, String visitId, String notes) async {
 
 **What this means:** Do not store totals, counts, or remaining stock that are computed from other fields. Compute them in Dart or with a DQL aggregate when you read the data. Snapshot values are different: copy the unit price at the time of sale into the line item.
 
-**Why this matters:** A stored derived value is a separate register. When two devices update the inputs concurrently, each recomputes the total from its own partial view, and after the merge the stored total may match neither device's inputs.
+**Why this matters:** A stored total can disagree with the data it summarizes. It is a separate register: when two devices update the inputs concurrently, each recomputes the total from its own partial view, and after the merge the stored total may match neither device's inputs.
 
 **Best-practices guide:** Do not store derived values that can diverge
 
@@ -633,9 +633,9 @@ Future<bool> saveNotes(Ditto ditto, String visitId, String notes) async {
 
 ### ☐ Store timestamps in UTC with a zone designator
 
-**What this means:** Write ISO-8601 strings in UTC (`DateTime.now().toUtc().toIso8601String()`, ending in `Z`) or epoch milliseconds, and use one helper with fixed precision for every timestamp that is sorted or compared. Compute time windows such as "last 7 days" in Dart and pass the boundary as a parameter.
+**What this means:** Write timestamps as ISO-8601 strings in UTC (`DateTime.now().toUtc().toIso8601String()`, ending in `Z`) or as epoch milliseconds. Generate every timestamp that is sorted or compared with one helper that uses a fixed precision. Compute time windows such as "last 7 days" in Dart and pass the boundary as a parameter.
 
-**Why this matters:** Dart's local `DateTime.now().toIso8601String()` has no zone designator, and DQL date functions return MISSING for such strings without an error. On native platforms Dart emits microseconds (`.123456Z`) but omits them when they are zero (`.123Z`), while the web always emits milliseconds, and mixed precisions do not sort correctly as text.
+**Why this matters:** Dart's local `DateTime.now().toIso8601String()` has no zone designator, and DQL date functions silently return MISSING for such strings. Precision varies too: on native platforms Dart emits microseconds (`.123456Z`) but omits them when they are zero (`.123Z`), and on the web it always emits milliseconds. Strings with mixed precision do not sort correctly as text.
 
 **Best-practices guide:** Timestamps
 
@@ -658,9 +658,9 @@ String localTimestamp() => DateTime.now().toIso8601String();
 
 ### ☐ Do not rely on your own timestamps to decide which write wins
 
-**What this means:** Treat stored timestamps as approximate information for display, filtering, and retention. Where order matters, model the data so that the merge cannot go wrong: a counter, a map keyed by ID, or an audit log from which you derive the current state. Tolerate small negative durations between timestamps written by different devices.
+**What this means:** Use stored timestamps only as approximate information for display, filtering, and retention. Where the order of writes matters, model the data so that the merge cannot go wrong: use a counter, a map keyed by ID, or an audit log from which you derive the current state. Expect small negative durations between timestamps written by different devices.
 
-**Why this matters:** Ditto resolves concurrent register writes with its own Hybrid Logical Clock, independently of your fields. Device clocks drift (Android devices can deviate by several seconds, and manually set clocks by much more), so comparing your own timestamps at read time lets the device with the fastest clock win.
+**Why this matters:** If you compare your own timestamps at read time, the device with the fastest clock wins. Device clocks drift: Android devices can deviate by several seconds, and manually set clocks by much more. Ditto itself resolves concurrent register writes with its own Hybrid Logical Clock, independently of your fields.
 
 **Best-practices guide:** Clock drift
 
@@ -677,7 +677,7 @@ String localTimestamp() => DateTime.now().toIso8601String();
 
 ### ☐ Choose between embedding and separate collections deliberately
 
-**What this means:** Embed sub-entities that belong to one parent and are read and written with it, as a map keyed by ID. Use a separate collection when the data has different permissions, is shared by many parents, is accessed independently, or grows without bound, and read it together with `JOIN` (SDK 5.1+). Copy a value from another document only when it is a snapshot or a subscription filter key.
+**What this means:** Embed sub-entities that belong to one parent and are read and written with it, as a map keyed by ID. Use a separate collection when the data has different permissions, is shared by many parents, is accessed on its own, or grows without bound, and read the collections together with `JOIN` (SDK 5.1+). Copy a value from another document only when it is a snapshot or a subscription filter key.
 
 **Why this matters:** An embedded write is atomic and syncs as one unit. A separate collection is a separate sync unit: it needs its own subscription and an index on the join key. Concurrent edits alone are not a reason to split, because map entries merge independently.
 
@@ -687,7 +687,7 @@ String localTimestamp() => DateTime.now().toIso8601String();
 
 **What this means:** Insert default settings or built-in categories with `INSERT INTO c INITIAL DOCUMENTS (:doc)`, using fixed, well-known `_id` values and identical content in every app version. Running it on every launch is safe: existing documents, including edited ones, are kept. Use a regular `INSERT` with a new UUID for data that only one device creates.
 
-**Why this matters:** A regular `INSERT` of shared defaults fails with an ID conflict on the second run, and `ON ID CONFLICT DO UPDATE` would overwrite users' edits. Seeding an ID that was deleted leaves a document with `null` fields when the seed content differs from the original `INITIAL` insert, or when the deleted document was originally created with a regular `INSERT`. If the seed content may change in a later app version, use a soft delete (such as an `isArchived` flag) for seed documents that users can remove. In our testing with SDK 5.1.0, different seeds for the same `_id` merged field by field, so a key removed in a new app version came back from devices that still ran the old one. Initial documents sync like any other document.
+**Why this matters:** A regular `INSERT` of shared defaults fails with an ID conflict on the second run, and `ON ID CONFLICT DO UPDATE` overwrites users' edits. Seeding an ID that was deleted leaves a document with `null` fields in two cases: when the seed content differs from the original `INITIAL` insert, and when the deleted document was originally created with a regular `INSERT`. So if the seed content may change in a later app version, let users remove seed documents with a soft delete (such as an `isArchived` flag). In our testing with SDK 5.1.0, different seeds for the same `_id` merged field by field: a key removed in a new app version came back from devices that still ran the old version. Initial documents sync like any other document.
 
 **Best-practices guide:** Default Data with INITIAL Documents
 
@@ -711,9 +711,9 @@ Future<void> seedDefaultCategories(Ditto ditto) async {
 
 ### ☐ Evolve the schema with additive changes
 
-**What this means:** Add new fields and read them with defaults for older documents. Instead of changing a field's meaning, unit, or type, add a new field (for example `mileageKm`). For breaking changes, version the data (a schema version in a composite `_id`, or a new collection per version) and ship a version that reads both formats before one that writes the new format.
+**What this means:** Add new fields, and read them with a default value when an older document lacks them. Instead of changing a field's meaning, unit, or type, add a new field (for example `mileageKm`). For breaking changes, version the data (a schema version in a composite `_id`, or a new collection per version). Ship an app version that reads both formats before one that writes the new format.
 
-**Why this matters:** Devices run different app versions for weeks or months. A change of CRDT type on an indexed field (for example, from a REGISTER to a MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed. Backfilling old documents does not work, because devices that are offline during the backfill reintroduce them.
+**Why this matters:** Devices run different app versions for weeks or months, so old and new formats coexist. Changing the CRDT type of an indexed field (for example, from REGISTER to MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed. Backfilling old documents does not work either: devices that are offline during the backfill bring the old documents back.
 
 **Best-practices guide:** Schema Evolution
 
@@ -725,7 +725,7 @@ Future<void> seedDefaultCategories(Ditto ditto) async {
 
 **What this means:** `DQL_STRICT_MODE` defaults to `false`: objects are inferred as maps, and MAP, COUNTER, and ATTACHMENT fields are inferred from the value or operation. Choose `true` only when almost every object needs whole-object replacement and you are prepared to declare every MAP, COUNTER, and ATTACHMENT field in every statement. If you opt in, apply the setting after every open and use the same value on every peer.
 
-**Why this matters:** With strict mode enabled, undeclared objects become registers, nested updates fail, fields stored as MAP, COUNTER, or ATTACHMENT are invisible to `SELECT` and `WHERE` unless declared, and the SDK 5.1.0 query planner does not use secondary indexes. Each peer interprets synced data with its own setting, so mixed settings make data look missing.
+**Why this matters:** With strict mode enabled, undeclared objects become registers and nested updates fail. Fields stored as MAP, COUNTER, or ATTACHMENT are invisible to `SELECT` and `WHERE` unless the statement declares them, and the SDK 5.1.0 query planner does not use secondary indexes. Each peer interprets synced data with its own setting, so mixed settings across peers make data look missing.
 
 **Best-practices guide:** Strict Mode
 
@@ -760,9 +760,9 @@ Future<void> setShippingAddress(
 
 ### ☐ Use the same type declaration for a field in every statement
 
-**What this means:** Keep `REGISTER`, `COUNTER`, and `ATTACHMENT` declarations identical in every `INSERT`, `UPDATE`, and `SELECT` that touches a field, and keep these statements in one place, such as a repository class. Never write a counter field with `SET`, and introduce a new field instead of changing a field's CRDT type.
+**What this means:** Keep the `REGISTER`, `COUNTER`, and `ATTACHMENT` declarations of a field identical in every `INSERT`, `UPDATE`, and `SELECT` that touches it, and keep these statements in one place, such as a repository class. Never write a counter field with `SET`. Instead of changing a field's CRDT type, introduce a new field.
 
-**Why this matters:** When statements disagree, a field holds several CRDT values at once and each statement sees a different one. An undeclared `INSERT` of 10 followed by `INCREMENT BY 1` yields 1, not 11, which looks like data loss even on a single device.
+**Why this matters:** When statements disagree, a field holds several CRDT values at once, and each statement sees a different one. An undeclared `INSERT` of 10 followed by `INCREMENT BY 1` yields 1, not 11, which looks like data loss even on a single device.
 
 **Best-practices guide:** Keep type declarations consistent
 
@@ -772,17 +772,17 @@ Future<void> setShippingAddress(
 
 ### ☐ Pair each screen's local queries with a long-lived subscription
 
-**What this means:** `execute`, store observers, and transactions read only the local store and never fetch data from other peers. Data reaches a device only through subscriptions registered with `ditto.sync.registerSubscription(...)` while sync is running. Register the subscriptions that bring a screen's data to the device in an app-level or feature-level service (see "Own subscriptions in a long-lived service, not in widgets"), and read that data on the screen with local queries and observers.
+**What this means:** Queries (`execute`), store observers, and transactions read only the local store; they never fetch data from other peers. Data reaches a device only through subscriptions registered with `ditto.sync.registerSubscription(...)` while sync is running. Register the subscriptions for a screen's data in an app-level or feature-level service (see "Own subscriptions in a long-lived service, not in widgets"). On the screen itself, read that data with local queries and observers.
 
-**Why this matters:** A `SELECT` sees only documents created on the device or already delivered by a subscription. Without a matching subscription, a screen shows only local data, and the missing documents look like a query bug.
+**Why this matters:** Without a matching subscription, a screen shows only local data, and the missing documents look like a query bug. A `SELECT` sees only documents that were created on the device or already delivered by a subscription.
 
 **Best-practices guide:** Core Principles, Where Queries Run
 
 ### ☐ Write subscriptions as SELECT * FROM collection with an optional WHERE clause
 
-**What this means:** A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. Projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS` are rejected when you register, and `LIMIT` and `ORDER BY` are rejected while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value `true`. Keep that default, and sort and limit in local queries.
+**What this means:** Write every subscription as `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. A subscription selects whole documents from one collection. Registration rejects projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS`. It also rejects `LIMIT` and `ORDER BY` while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value, `true`. Keep that default, and sort and limit in local queries instead.
 
-**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` is stateful: the sync engine must re-evaluate it whenever a document crosses the limit boundary, which degrades sync performance. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0): later, every matching new or changed document is synced, whether or not it is inside the window. In our testing with SDK 5.1.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits and even its deletion no longer arrived.
+**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` degrades sync performance: it is stateful, so the sync engine must re-evaluate it whenever a document crosses the limit boundary. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0); after that, every matching new or changed document is synced, inside the window or not. In our testing with SDK 5.1.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits, and even its deletion, no longer arrived.
 
 **Best-practices guide:** Subscription Rules
 
@@ -809,9 +809,9 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 
 ### ☐ Own subscriptions in a long-lived service, not in widgets
 
-**What this means:** Register subscriptions when their data becomes relevant (app start, login, entering a store), keep a reference to each one in an app-level or feature-level service, and call `cancel()` on logout, when the user leaves the workspace, or when you register a replacement. Never register subscriptions in `build()` or on every screen visit. Use `ditto.sync.subscriptions` only for debugging, and read only `queryString` and `isCancelled` there: reading `queryArguments` of a subscription registered without arguments can terminate the app in SDK 5.1.0.
+**What this means:** Register a subscription when its data becomes relevant, such as at app start, at login, or when the user enters a store. Keep a reference to each subscription in an app-level or feature-level service, and call `cancel()` on logout, when the user leaves the workspace, or when you register a replacement. Never register subscriptions in `build()` or on every screen visit. Use `ditto.sync.subscriptions` only for debugging, and read only `queryString` and `isCancelled` from it. In SDK 5.1.0, reading `queryArguments` of a subscription registered without arguments can terminate the app.
 
-**Why this matters:** Subscriptions stay active until they are cancelled or Ditto is closed, so one registered in `build()` adds a new mesh-wide subscription on every rebuild. Do not rely on garbage collection to cancel them.
+**Why this matters:** A subscription registered in `build()` adds a new mesh-wide subscription on every rebuild, because subscriptions stay active until they are cancelled or Ditto is closed. Do not rely on garbage collection to cancel them.
 
 **Best-practices guide:** Subscription Lifecycle
 
@@ -856,41 +856,41 @@ class OrderSync {
 
 ### ☐ Filter locally instead of re-registering subscriptions
 
-**What this means:** When the user changes a filter, search term, tab, or sort order, replace the local observer, not the subscription. Change subscriptions only when the set of data the device needs changes, such as switching to a different store, and no more often than about every 15 minutes.
+**What this means:** When the user changes a filter, search term, tab, or sort order, replace the local observer, not the subscription. Change a subscription only when the device needs a different set of data, for example after switching to a different store, and no more often than about once every 15 minutes.
 
-**Why this matters:** Registering, cancelling, or changing a subscription makes peers across the mesh re-evaluate what they owe the device, which degrades sync throughput and can interrupt in-flight transfers. Observers are local and cheap to replace.
+**Why this matters:** Every subscription change slows sync down: registering, cancelling, or changing a subscription makes peers across the mesh re-evaluate what to send the device, which degrades sync throughput and can interrupt transfers in progress. Observers are local and cheap to replace.
 
 **Best-practices guide:** Filter locally instead of re-registering
 
 ### ☐ Scope subscriptions by stable partition keys
 
-**What this means:** Filter subscriptions by fields that partition your data and do not change during a document's lifetime, such as `storeId`, `tenantId`, or `region`. Give devices in the same role the same subscriptions, give relay or hub devices at least everything the devices behind them need, and keep predicates simple. Subscribe to entire collections only for small reference data.
+**What this means:** Filter subscriptions by fields that partition your data and never change during a document's lifetime, such as `storeId`, `tenantId`, or `region`, and keep the predicates simple. Give devices in the same role the same subscriptions, and give relay or hub devices at least everything that the devices behind them need. Subscribe to an entire collection only when it holds small reference data.
 
-**Why this matters:** Unfiltered subscriptions on large collections cost storage, bandwidth, and battery on every device. Filters on mutable fields (`status`, `assignee`) and narrow relay devices leave devices without data, because a device can relay only documents that it stores itself.
+**Why this matters:** Unfiltered subscriptions on large collections cost storage, bandwidth, and battery on every device. Filters on fields that change (`status`, `assignee`) leave devices without data, and so do relay devices that subscribe to less than the devices behind them need: a device can relay only documents that it stores itself.
 
 **Best-practices guide:** Scope subscriptions to what the device needs, Multi-hop relay
 
 ### ☐ Subscribe to every collection that a JOIN reads
 
-**What this means:** `JOIN` (SDK 5.1+) reads only documents that are already in the local store, and it is not allowed in subscriptions. Register a separate `SELECT * FROM c WHERE ...` subscription for each joined collection. If a child collection must be filtered by a key that lives on the parent, copy that key into the child documents.
+**What this means:** `JOIN` (SDK 5.1+) reads only documents that are already in the local store, and it is not allowed in subscriptions. Register a separate `SELECT * FROM c WHERE ...` subscription for each joined collection. If you need to filter a child collection by a key that is stored on the parent, copy that key into the child documents.
 
-**Why this matters:** A join never pulls related documents onto a device. Without a subscription for every joined collection, joined rows are silently missing on devices that did not create the data.
+**Why this matters:** Without a subscription for every joined collection, joined rows are silently missing on devices that did not create the data. A join never pulls related documents onto a device.
 
 **Best-practices guide:** Joining Collections (SDK 5.1+)
 
 ### ☐ Apply sync scopes before sync starts, and do not use them for access control
 
-**What this means:** `USER_COLLECTION_SYNC_SCOPES` limits where this device sends a collection (`AllPeers`, `BigPeerOnly`, `SmallPeersOnly`, or `LocalPeerOnly`). Set it after every `Ditto.open()` and before `ditto.sync.start()`, on every device that can store the collection (devices that write it, subscribe to it, or relay it). List every scoped collection in one statement: each `ALTER SYSTEM SET USER_COLLECTION_SYNC_SCOPES` replaces the whole map, so collections left out of a later statement lose their scope.
+**What this means:** `USER_COLLECTION_SYNC_SCOPES` limits where this device sends a collection: `AllPeers`, `BigPeerOnly`, `SmallPeersOnly`, or `LocalPeerOnly`. Set it after every `Ditto.open()` and before `ditto.sync.start()` on every device that can store the collection, that is, every device that writes, subscribes to, or relays it. List all scoped collections in one statement. Each `ALTER SYSTEM SET USER_COLLECTION_SYNC_SCOPES` replaces the whole map, so a collection left out of a later statement loses its scope.
 
-**Why this matters:** Sync scopes are not persisted, and a scope is checked by the device that sends the data: a device without the setting can send the collection to Ditto Server. Scopes control what a device sends, not what other devices may read; use permissions for access control.
+**Why this matters:** A device without the setting can send the collection to Ditto Server, because sync scopes are not persisted and the device that sends the data is the one that checks the scope. Scopes control what a device sends, not what other devices may read. Use permissions for access control.
 
 **Best-practices guide:** Sync Scopes
 
 ### ☐ Use sync status to enhance the UI, never to block it
 
-**What this means:** Keep the `commitID` of important writes and compare it with `synced_up_to_local_commit_id` in `system:data_sync_info` to show an "uploaded" indicator. Read the collection with `execute` for snapshots; if you observe it, use one small observer (one per screen, not one per list row) whose callback rebuilds only when the derived value changes. Use the presence API for connectivity indicators. Track a `commitID` only when `mutatedDocumentIDs()` is not empty.
+**What this means:** To show an "uploaded" indicator, keep the `commitID` of important writes and compare it with `synced_up_to_local_commit_id` in `system:data_sync_info`. Track a `commitID` only when `mutatedDocumentIDs()` is not empty. Read `system:data_sync_info` with `execute` when you need a snapshot. If you observe it, use one small observer per screen, not one per list row, and rebuild only when the derived value changes. Use the presence API for connectivity indicators.
 
-**Why this matters:** Ditto is offline-first, so there is no single "synced" state to wait for. Ditto documents observers on `system:data_sync_info` as firing every 500 ms, so such observers in many widgets can waste CPU and battery. A statement that changed nothing still gets a `commitID`, which peers confirm only with a later commit (up to about 30 seconds), and `sync_session_status` stays `"Connected"` for about 73 seconds after a peer disconnects (SDK 5.1.0).
+**Why this matters:** Ditto is offline-first, so there is no single "synced" state to wait for. According to the Ditto documentation, observers on `system:data_sync_info` fire every 500 ms, so using them in many widgets can waste CPU and battery. A statement that changed nothing still gets a `commitID`, which peers confirm only with a later commit (up to about 30 seconds later), and `sync_session_status` stays `"Connected"` for about 73 seconds after a peer disconnects (SDK 5.1.0).
 
 **Best-practices guide:** Monitoring Sync Status
 
@@ -900,9 +900,9 @@ class OrderSync {
 
 ### ☐ Consume observer results through the changes stream
 
-**What this means:** Call `registerObserver` without `onChange`, listen to `observer.changes` with a single `StreamSubscription` (or hand the stream to one `StreamBuilder`), and cancel both the stream subscription and the observer in `dispose()`. Register observers in `initState()` or in a service, never in `build()`.
+**What this means:** Call `registerObserver` without `onChange`, and listen to `observer.changes` with a single `StreamSubscription`, or hand the stream to one `StreamBuilder`. In `dispose()`, cancel both the stream subscription and the observer. Register observers in `initState()` or in a service, never in `build()`.
 
-**Why this matters:** When an observer is registered with `onChange`, every result is also queued in its `changes` stream; if nothing listens to it, memory grows with every update in SDK 5.1.0. `changes` is a single-subscription stream, and cancelling the stream subscription does not cancel a `StoreObserver`. `registerObserverV2` (Experimental, SDK 5.1+) starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` stream right after registering it.
+**Why this matters:** An observer registered with `onChange` also queues every result in its `changes` stream. If nothing listens to that stream, memory grows with every update (SDK 5.1.0). `changes` is a single-subscription stream, and cancelling the stream subscription does not cancel a `StoreObserver`. `registerObserverV2` (Experimental, SDK 5.1+) starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` stream right after registering it.
 
 **Best-practices guide:** Store Observers in Flutter
 
@@ -959,7 +959,7 @@ class _OrdersListState extends State<OrdersList> {
 
 ### ☐ Add ORDER BY with a tie-breaker to observer queries
 
-**What this means:** Whenever the order of results matters, include `ORDER BY` with a unique tie-breaker such as `_id`, for example `ORDER BY createdAt DESC, _id`, and give list rows a `ValueKey` based on `_id`.
+**What this means:** Whenever the order of results matters, add `ORDER BY` with a unique tie-breaker such as `_id`, for example `ORDER BY createdAt DESC, _id`. Give each list row a `ValueKey` based on `_id`.
 
 **Why this matters:** Without `ORDER BY`, observer results have no guaranteed order, so rows can change position on every update. Sorting by a timestamp is reliable only when every value is written with the same fixed-precision helper (`utcTimestamp()`).
 
@@ -980,7 +980,7 @@ StoreObserver observeTasksOrdered(Ditto ditto) => ditto.store.registerObserver(
 
 ### ☐ Keep observer callbacks fast, and use backpressure for slow work
 
-**What this means:** Keep `registerObserver` listeners short and synchronous: copy values, map them to models, call `setState`. For uploads, exports, or heavy aggregation per update, use `registerObserverV2` with `await for`, or `registerObserverWithSignalNext` with `signalNext()` called in a `finally` block (both Experimental, SDK 5.1+). Do not write to the observed collection from its own observer without a guard.
+**What this means:** Keep `registerObserver` listeners short and synchronous: copy the values, map them to models, and call `setState`. When an update triggers slow work such as an upload, an export, or heavy aggregation, use `registerObserverV2` with `await for`, or `registerObserverWithSignalNext` with `signalNext()` called in a `finally` block (both Experimental, SDK 5.1+). Never write to the observed collection from its own observer without a guard.
 
 **Why this matters:** `registerObserver` has no backpressure: results keep arriving while an asynchronous listener waits, so work overlaps and queues up. With the backpressure APIs, Ditto holds back updates while your code is busy and then delivers the latest state. An observer registered with `registerObserverWithSignalNext` stops delivering updates if `signalNext()` is never called.
 
@@ -1019,9 +1019,9 @@ class SensorAggregator {
 
 ### ☐ Give each screen region its own small observer
 
-**What this means:** Observe what each region needs instead of a whole collection in the root widget: a `COUNT(*)` query for a badge, `WHERE` and `LIMIT` for lists, and `ListView.builder` with a `ValueKey` per row. With state-management libraries, let one provider or controller own each observer and cancel it in its dispose hook. Use `Differ` when you need to know which items changed.
+**What this means:** Instead of observing a whole collection in the root widget, observe only what each region needs: a `COUNT(*)` query for a badge, and `WHERE` and `LIMIT` for a list rendered with `ListView.builder` and a `ValueKey` per row. With a state-management library, let one provider or controller own each observer and cancel it in its dispose hook. Use `Differ` when you need to know which items changed.
 
-**Why this matters:** An observer delivers the full result for any change that affects its query. A whole-collection observer at the top of a screen rebuilds everything on every change, which causes dropped frames and lost scroll position or input focus.
+**Why this matters:** A whole-collection observer at the top of a screen rebuilds everything on every change, which causes dropped frames and lost scroll position or input focus. An observer delivers its full result for any change that affects its query.
 
 **Best-practices guide:** Partial UI Updates, Diffing Results
 
@@ -1031,9 +1031,9 @@ class SensorAggregator {
 
 ### ☐ Use transactions for multi-document changes that must be atomic
 
-**What this means:** Use `ditto.store.transaction(...)` for changes that span several documents (closing an order and creating its invoice), for read-check-write sequences, and for consistent multi-query reads (`isReadOnly: true`). Give every transaction a `hint`. Throwing or returning `TransactionCompletionAction.rollback` rolls the transaction back; a statement error that you catch inside the callback does not.
+**What this means:** Use `ditto.store.transaction(...)` for changes that span several documents, such as closing an order and creating its invoice, for read-check-write sequences, and for consistent reads across several queries (`isReadOnly: true`). Give every transaction a `hint`. To roll back, throw or return `TransactionCompletionAction.rollback`. Catching a statement error inside the callback does not roll the transaction back.
 
-**Why this matters:** A single statement is already atomic, so wrapping it in a transaction adds nothing. The `hint` appears in log messages about long-running transactions, which makes them traceable. If you catch an error and continue, the remaining changes are committed unless you roll back.
+**Why this matters:** If you catch an error and continue, the remaining changes are committed unless you roll back. The `hint` appears in log messages about long-running transactions, so you can tell which code started them. A single statement is already atomic, so wrapping it in a transaction adds nothing.
 
 **Best-practices guide:** Using store.transaction
 
@@ -1071,13 +1071,13 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 **What this means:** Inside the callback, run every statement through the `Transaction` passed in (`tx.execute`). Never call `ditto.store.execute` there, never start a read-write transaction inside another one, and never keep the `Transaction` object after the callback returns.
 
-**Why this matters:** In Flutter, `ditto.store.execute` inside a transaction throws a `DittoException`; on other platforms it can deadlock. Only one read-write transaction runs at a time, so a nested one waits for the outer one forever, and Flutter has no guard against this.
+**Why this matters:** In Flutter, `ditto.store.execute` inside a transaction throws a `DittoException`; on other platforms it can deadlock. Only one read-write transaction runs at a time, so a nested one waits forever for the outer one to finish. Flutter has no guard against this.
 
 **Best-practices guide:** Transaction Rules
 
 ### ☐ Keep transactions short and do I/O outside them
 
-**What this means:** Read, decide, write, and return. Prepare network responses, files, user input, and attachments (`newAttachment`) before the transaction starts, and never make network calls, show dialogs, or await timers inside it. Track pending transactions and await them before `ditto.close()`.
+**What this means:** A transaction should only read, decide, write, and return. Prepare network responses, files, user input, and attachments (`newAttachment`) before the transaction starts, and never make network calls, show dialogs, or await timers inside it. Track pending transactions and await them before `ditto.close()`.
 
 **Why this matters:** While a read-write transaction runs, every other read-write transaction and plain write waits. Once a transaction has run for 10 seconds, Ditto logs a message about it every 5 seconds, starting at debug level and escalating to higher levels. `close()` does not wait for in-flight transactions.
 
@@ -1145,20 +1145,20 @@ Future<void> checkout(
 ### ☐ Choose between DELETE, soft delete, and EVICT deliberately
 
 **What this means:** Each removal tool solves a different problem:
-- `DELETE`: removes documents for every peer and leaves a tombstone; suited to data that is rarely edited concurrently, in deployments where devices sync regularly
+- `DELETE`: removes documents on every peer and leaves a tombstone; suited to data that is rarely edited concurrently, in deployments where devices sync regularly
 - Soft delete (`UPDATE ... SET isDeleted = true`): for shared records that several devices edit, or for long offline periods
 - `EVICT`: removes documents from this device only, to manage local storage
 - In deployments with Small Peers only, contact Ditto support to review the design before relying on `DELETE`
 
-**Why this matters:** There is no single place where a deletion happens: offline devices can reintroduce data, deletions merge with concurrent edits, and local storage is finite. Picking the wrong tool leads to resurrected data, half-deleted documents, or full devices.
+**Why this matters:** Picking the wrong tool leads to resurrected data, half-deleted documents, or devices that run out of storage. A deletion does not happen in one central place: offline devices can reintroduce data, deletions merge with concurrent edits, and local storage is finite.
 
 **Best-practices guide:** Choosing DELETE, Soft Delete, or EVICT
 
 ### ☐ Filter soft-deleted documents with coalesce(isDeleted, false) = false
 
-**What this means:** When deleting, set `isDeleted = true` and a UTC `deletedAt`; when creating documents, write `isDeleted: false`. Filter with `coalesce(isDeleted, false) = false` in every query and observer. To use an index, combine it with a selective indexed predicate such as `status = :status`.
+**What this means:** Write `isDeleted: false` when you create a document, and set `isDeleted = true` and a UTC `deletedAt` when you delete it. Filter every query and observer with `coalesce(isDeleted, false) = false`. To benefit from an index, combine this filter with a selective indexed predicate such as `status = :status`.
 
-**Why this matters:** `isDeleted != true` and `NOT isDeleted` silently exclude documents where the flag is missing or `null`, because comparisons with MISSING or NULL are never true. `coalesce()` applied to the field cannot use an index by itself.
+**Why this matters:** `isDeleted != true` and `NOT isDeleted` silently exclude documents where the flag is missing or `null`, because comparisons with MISSING or NULL are never true. A `coalesce()` condition on the field cannot use an index by itself.
 
 **Best-practices guide:** Soft Delete, Indexing soft-delete filters
 
@@ -1192,25 +1192,27 @@ Future<List<Map<String, dynamic>>> activeOrders(Ditto ditto, String status) asyn
 
 ### ☐ Keep soft-deleted documents in the subscription until every device has the flag
 
-**What this means:** Do not exclude flagged documents from the subscription; hide them in local queries instead. Clean them up in one of two ways: subscribe to the whole collection (or partition) and run a `DELETE` after a retention period on Ditto Server or on an authorized peer, or subscribe to active documents plus documents deleted within a retention window and evict exactly the older ones on each device.
+**What this means:** Do not exclude flagged documents from the subscription; hide them in local queries instead. To clean them up, choose one of two approaches:
+- Subscribe to the whole collection (or partition), and after a retention period run a `DELETE` on Ditto Server or on an authorized peer
+- Subscribe to active documents plus documents deleted within a retention window, and on each device evict exactly the older ones
 
-**Why this matters:** A subscription that excludes flagged documents stops requesting a document as soon as it is flagged. In our testing with SDK 5.1.0, the flag still arrived, but later changes, including a restore, did not. Cancelling or narrowing a subscription never deletes local data, and a subscription filter does not hide documents in local results, so every local query and observer must filter flagged documents itself.
+**Why this matters:** A subscription that excludes flagged documents stops requesting a document as soon as it is flagged. In our testing with SDK 5.1.0, the flag still arrived, but later changes, including a restore, did not. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.
 
 **Best-practices guide:** Soft delete, subscriptions, and cleanup
 
 ### ☐ Avoid DELETE for concurrently edited data and long offline periods
 
-**What this means:** Use `DELETE` only when the same document is not updated concurrently elsewhere and every device connects within the tombstone TTL (`TOMBSTONE_TTL_HOURS`, 7 days by default on Small Peers). If you raise `TOMBSTONE_TTL_HOURS`, keep it at or below the Ditto Server tombstone TTL and apply it after every open. Make the UI tolerate documents whose fields are `null` or missing.
+**What this means:** Use `DELETE` only when both of these hold: no other device updates the same document concurrently, and every device connects within the tombstone TTL (`TOMBSTONE_TTL_HOURS`, 7 days by default on Small Peers). If you raise `TOMBSTONE_TTL_HOURS`, keep it at or below the Ditto Server tombstone TTL, and apply it after every open. Make the UI tolerate documents with `null` or missing fields.
 
-**Why this matters:** A deletion merged with a concurrent update produces a husk document: the document is not deleted, even when the `DELETE` is the later write. The updated fields keep their values (or become `null` if the deletion was later), and all other fields become missing (SDK 5.1.0). A device that is offline longer than the TTL can resurrect deleted data (zombie data), and a Small Peer tombstone TTL above the Ditto Server tombstone TTL makes tombstones sync back to the server repeatedly.
+**Why this matters:** When a deletion merges with a concurrent update, the result is a husk document: the document is not deleted, even when the `DELETE` is the later write. The updated fields keep their values (or become `null` if the deletion was later), and all other fields become missing (SDK 5.1.0). A device that stays offline longer than the TTL can resurrect deleted data (zombie data). A Small Peer tombstone TTL above the Ditto Server tombstone TTL makes tombstones sync back to the server again and again.
 
 **Best-practices guide:** Husk documents, Tombstone TTL and reaping
 
 ### ☐ Target deletions and evictions with WHERE _id IN :ids
 
-**What this means:** Remove specific documents with `WHERE _id = :id` or `WHERE _id IN :ids`; both are planned as an ID scan. Do not use `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`).
+**What this means:** Remove specific documents with `WHERE _id = :id` or `WHERE _id IN :ids`; both are planned as an ID scan. Do not write `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate, that is, without a `WHERE` clause or with `WHERE true`.
 
-**Why this matters:** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing in SDK 5.1.0. The `WHERE` form is just as efficient and works reliably.
+**Why this matters:** In SDK 5.1.0, such a statement completes without an error but removes nothing. The `WHERE _id` form is just as efficient and works reliably.
 
 **Best-practices guide:** DELETE and Tombstones
 
@@ -1233,7 +1235,7 @@ Future<void> deleteOrderWithUseIds(Ditto ditto) async {
 
 ### ☐ Cancel or narrow subscriptions before EVICT
 
-**What this means:** Evict only documents that are outside every active subscription: cancel or narrow the affected subscriptions first, and write the eviction as the exact complement of the new subscription (subscribe to `createdAt >= :cutoff`, evict `createdAt < :cutoff`, with the same cutoff). Data that was already being transferred can still arrive after you cancel, so if the device must not keep it, run the eviction again later (for example, on the next app start or in a periodic cleanup).
+**What this means:** Evict only documents that no active subscription matches. First cancel or narrow the affected subscriptions, then write the eviction as the exact complement of the new subscription: for example, subscribe to `createdAt >= :cutoff` and evict `createdAt < :cutoff`, with the same cutoff. Data that was already in transit can still arrive after you cancel. If the device must not keep it, run the eviction again later, for example on the next app start or in a periodic cleanup.
 
 **Why this matters:** If an active subscription still matches an evicted document, connected peers notice that it is missing and sync it straight back, so you pay the sync cost without freeing any space.
 
@@ -1289,17 +1291,17 @@ class OrderRetention {
 
 ### ☐ Evict on a schedule, at most about once per day
 
-**What this means:** Run eviction as a scheduled maintenance task during quiet periods, such as after hours, never on screen changes. Split large cleanups with `LIMIT` after cancelling or narrowing every subscription that matches the documents, for example `EVICT ... LIMIT 1000 RETURNING COUNT(*) AS evicted` in a loop until nothing is left. Treat Ditto's warning about too-frequent post-eviction cleanup (SDK 5.1+) as a sign to evict less often.
+**What this means:** Run eviction as a scheduled maintenance task during quiet periods, such as after hours, and never on screen changes. Split a large cleanup into batches with `LIMIT` after cancelling or narrowing every subscription that matches the documents: for example, run `EVICT ... LIMIT 1000 RETURNING COUNT(*) AS evicted` in a loop until nothing is left. If Ditto warns that post-eviction cleanup runs too often (SDK 5.1+), evict less often.
 
-**Why this matters:** Each eviction triggers a resync with every connected peer, which costs network traffic and processing on those peers even though the local `EVICT` itself is fast. Batching keeps individual write transactions short but does not reduce that cost.
+**Why this matters:** The local `EVICT` itself is fast, but each eviction triggers a resync with every connected peer, which costs network traffic and processing on those peers. Batching keeps each write transaction short but does not reduce that cost.
 
 **Best-practices guide:** Eviction frequency, Batching evictions
 
 ### ☐ Monitor storage with on-demand queries
 
-**What this means:** Read storage usage and document counts from `system:system_info` (keys such as `fs_usage_total` and `collection_num_docs[...]`) with `execute`, for example from a diagnostics screen or a daily maintenance task, and use the newest row for each key. Combine monitoring with a retention policy.
+**What this means:** Read storage usage and document counts from `system:system_info` with `execute`, for example from a diagnostics screen or a daily maintenance task. Use keys such as `fs_usage_total` and `collection_num_docs[...]`, and take the newest row for each key. Pair monitoring with a retention policy.
 
-**Why this matters:** The values are collected periodically and can lag behind recent writes, and long-lived observers on `system:system_info` run every 500 ms even when nothing changed.
+**Why this matters:** The values are collected periodically, so they can lag behind recent writes. A long-lived observer on `system:system_info` runs every 500 ms, even when nothing has changed.
 
 **Best-practices guide:** Monitoring Storage
 
@@ -1309,9 +1311,9 @@ class OrderRetention {
 
 ### ☐ Create indexes at startup with CREATE INDEX IF NOT EXISTS
 
-**What this means:** Create the indexes your queries need on every device, after `Ditto.open()` and before queries and observers run. Skip index creation on Flutter Web, where the in-memory store does not support indexes. `IF NOT EXISTS` checks only the name, so change a definition by creating the index under a new name. For composite indexes (SDK 5.1+), list equality fields first and the range or sort field last. Drop indexes that no query uses.
+**What this means:** Create the indexes your queries need on every device, after `Ditto.open()` and before any query or observer runs. Skip this step on Flutter Web: its in-memory store does not support indexes. `IF NOT EXISTS` checks only the index name, so to change a definition, create the index under a new name. In composite indexes (SDK 5.1+), list the equality fields first and the range or sort field last. Drop indexes that no query uses.
 
-**Why this matters:** Indexes persist but are local to each device and are not synced. Creating an index on demand right before a query scans the whole collection, and every unused index costs write time and storage.
+**Why this matters:** Indexes persist across restarts, but they are local to each device and are not synced, so every device must create its own. Creating an index on demand, right before a query, scans the whole collection at that moment. Every unused index slows down writes and takes up storage.
 
 **Best-practices guide:** Creating Indexes
 
@@ -1344,9 +1346,9 @@ Future<void> ensureIndexes(Ditto ditto) async {
 
 ### ☐ Index the join key of every inner JOIN collection
 
-**What this means:** Create an index on the join key of the inner (joined) collection, or join on the inner collection's `_id`, which needs no extra index. Do not silence the index error with `USE INDEX ''` on large collections, and qualify every field with its alias.
+**What this means:** Create an index on the join key of the inner (joined) collection, or join on the inner collection's `_id`, which needs no extra index. On large collections, do not silence the missing-index error with `USE INDEX ''`. Qualify every field with its collection alias.
 
-**Why this matters:** Joins run as nested loops, and the inner lookup must use an index or an ID lookup unless you explicitly allow a scan with `USE INDEX ''`. Without one, the query fails with "Joining to ... disallowed without appropriate index support"; with `USE INDEX ''`, every outer row scans the whole inner collection.
+**Why this matters:** Joins run as nested loops. If the lookup in the inner collection can use neither an index nor `_id`, the query fails with "Joining to ... disallowed without appropriate index support". `USE INDEX ''` allows a scan instead, but then every outer row scans the whole inner collection.
 
 **Best-practices guide:** Index requirement
 
@@ -1365,22 +1367,22 @@ ORDER BY c.name, o.total DESC
 
 ### ☐ Write predicates that the planner can serve from an index
 
-**What this means:** Compare indexed fields directly and keep functions on the value side:
-- Do not apply functions to indexed fields (`lower(name) = :name`)
-- Make every `OR` branch indexable
+**What this means:** Compare indexed fields directly, and apply functions to the value, not to the field:
+- Do not wrap an indexed field in a function, as in `lower(name) = :name`
+- Make sure every branch of an `OR` can use an index
 - Use `LIKE 'abc%'` instead of `starts_with()`
-- Match a composite index's key order and sort direction, and index the full path you filter on (`address.city`)
+- Match the key order and sort direction of a composite index, and index the full path you filter on, such as `address.city`
 - Keep each field's CRDT type declaration consistent, and do not index fields that are written with more than one type
 
-**Why this matters:** The planner chooses indexes by rules, not by statistics. A function on the field, an unindexed `OR` branch, or `starts_with()` falls back to a collection scan, and an indexed field written with mixed CRDT type declarations can produce incorrect or mis-ordered results.
+**Why this matters:** The planner picks indexes by rules, not by statistics. A function on the field, an `OR` branch without an index, or `starts_with()` makes the query fall back to a collection scan. An indexed field written with mixed CRDT type declarations can produce incorrect or mis-ordered results.
 
 **Best-practices guide:** Index Usage Rules
 
 ### ☐ Check query plans with ADVISE and EXPLAIN during development
 
-**What this means:** Prefix important queries with `ADVISE` (SDK 5.1+) to get index suggestions, copy the suggested `CREATE INDEX IF NOT EXISTS` statements into your startup code, and confirm the plan with `EXPLAIN`. Use `PROFILE` to measure where time is spent. Never run `ADVISE AND PROVISION` from production code.
+**What this means:** Prefix important queries with `ADVISE` (SDK 5.1+) to get index suggestions. Copy the suggested `CREATE INDEX IF NOT EXISTS` statements into your startup code, and confirm the new plan with `EXPLAIN`. To measure where time is spent, use `PROFILE`. Never run `ADVISE AND PROVISION` from production code.
 
-**Why this matters:** `ADVISE` plans the statement without executing it, and `EXPLAIN` never runs the query, so neither can measure performance. `ADVISE AND PROVISION` creates indexes as a side effect that depends on whichever queries happen to run.
+**Why this matters:** `ADVISE` and `EXPLAIN` only plan the statement and never execute it, so neither can measure performance. `ADVISE AND PROVISION` creates indexes as a side effect, so which indexes exist would depend on whichever queries happened to run.
 
 **Best-practices guide:** ADVISE (SDK 5.1+), EXPLAIN and PROFILE
 
@@ -1396,9 +1398,13 @@ EXPLAIN SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC
 
 ### ☐ Keep local queries lean
 
-**What this means:** Filter in `WHERE` rather than in Dart, project only the fields a screen needs, page with `ORDER BY ... LIMIT`, count with `SELECT COUNT(*)`, check existence with `LIMIT 1`, and fetch several documents with one `WHERE _id IN :ids` query instead of one query per ID.
+**What this means:** Let the query do the work:
+- Filter in `WHERE`, not in Dart
+- Select only the fields the screen needs
+- Page with `ORDER BY ... LIMIT`, count with `SELECT COUNT(*)`, and check existence with `LIMIT 1`
+- Fetch several documents with one `WHERE _id IN :ids` query, not one query per ID
 
-**Why this matters:** Every row of a `SELECT` is materialized in the result. Projections reduce decoding work and can enable covering scans, a full-collection `COUNT(*)` is answered without reading documents (SDK 5.1+), and a loop of single-document queries multiplies the per-query cost.
+**Why this matters:** Every row that a `SELECT` returns is materialized in the result. Selecting only the fields you need (a projection) reduces decoding work and can enable covering scans. A `COUNT(*)` over a whole collection is answered without reading documents (SDK 5.1+). A loop of single-document queries pays the per-query cost once for every ID.
 
 **Best-practices guide:** Query Scope and Execution
 
@@ -1433,9 +1439,9 @@ Future<List<Map<String, dynamic>>> loadOrders(Ditto ditto, List<String> ids) asy
 
 ### ☐ Surface slow DQL requests (SDK 5.1+)
 
-**What this means:** Lower `DQL_SLOW_REQUEST_WARN_SECONDS` (default 60) during development to log slow requests, and enable `DQL_REQUEST_TIMEOUT_SECONDS` (default 0, disabled) only after your code handles the resulting timeout error for every query. Apply both after every open.
+**What this means:** During development, lower `DQL_SLOW_REQUEST_WARN_SECONDS` (default 60) so that slow requests are logged. Enable `DQL_REQUEST_TIMEOUT_SECONDS` (default 0, which means disabled) only after your code handles the timeout error for every query. Apply both settings after every open.
 
-**Why this matters:** Slow queries often appear only with production-sized data. The warning includes the request details, so you can find the query to index or rewrite before users notice.
+**Why this matters:** Slow queries often show up only with production-sized data. The warning includes the request details, so you can find which query to index or rewrite before users notice.
 
 **Best-practices guide:** Long-running requests (SDK 5.1+)
 
@@ -1445,9 +1451,9 @@ Future<List<Map<String, dynamic>>> loadOrders(Ditto ditto, List<String> ids) asy
 
 ### ☐ Store binary data as attachments with a declared ATTACHMENT field
 
-**What this means:** Create attachments with `ditto.store.newAttachment(pathOrBytes, AttachmentMetadata({...}))` (metadata values must be strings) and store the returned object in a field declared as `ATTACHMENT`, for example `INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)`. Compress and downscale media first, and never store base64-encoded files in document fields.
+**What this means:** Create an attachment with `ditto.store.newAttachment(pathOrBytes, AttachmentMetadata({...}))`; metadata values must be strings. Store the returned object in a field declared as `ATTACHMENT`, for example `INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)`. Compress and downscale media first. Never store base64-encoded files in document fields.
 
-**Why this matters:** Base64 data counts toward the document size limit and is re-sent with the document. An attachment's token syncs with the document, while the blob is transferred only when a device fetches it, through a resumable protocol. The declaration works both with and without strict mode.
+**Why this matters:** Base64 data counts toward the document size limit and is re-sent with the document. With an attachment, only its token syncs with the document. The file itself (the blob) is transferred only when a device fetches it, over a resumable protocol. The `ATTACHMENT` declaration works with and without strict mode.
 
 **Best-practices guide:** Creating and Inserting Attachments, Size Guidance
 
@@ -1478,7 +1484,7 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
 
 ### ☐ Fetch attachments on demand and stop fetchers you no longer need
 
-**What this means:** Subscriptions sync only the attachment token. Call `ditto.store.fetchAttachment(token, onEvent)` when the content is needed, for example when the user opens a photo, show lists from small thumbnail attachments, and call `stop()` on the returned `AttachmentFetcher` if the screen closes before the fetch completes.
+**What this means:** Subscriptions sync only the attachment token. Call `ditto.store.fetchAttachment(token, onEvent)` only when the content is needed, for example when the user opens a photo. Show lists with small thumbnail attachments. If the screen closes before the fetch completes, call `stop()` on the returned `AttachmentFetcher`.
 
 **Why this matters:** Fetching every attachment as soon as its document syncs wastes bandwidth and storage, especially over Bluetooth LE, which is much slower than Wi-Fi.
 
@@ -1508,17 +1514,20 @@ Future<AttachmentFetcher?> showPhoto(Ditto ditto, String photoId) async {
 
 ### ☐ Plan for attachments that cannot be fetched yet
 
-**What this means:** Show a placeholder with the attachment's metadata while the blob is unavailable, and use a timeout with a retry in the UI. Let hub devices, or a backend connected to Ditto Server, fetch attachments that many devices need.
+**What this means:** While the blob is unavailable, show a placeholder built from the attachment's metadata, and give the UI a timeout and a retry. Have hub devices, or a backend connected to Ditto Server, fetch the attachments that many devices need.
 
-**Why this matters:** A blob can be fetched only while a peer that holds it is reachable, and a blob exists on a device only if that device created or fetched it. The fetch API has no "not available" event: the fetch simply makes no progress. Do not rely on relays to pass blobs on across multiple hops: in our testing with SDK 5.1.0, a device two hops away could fetch a blob only after the device in between had fetched it itself.
+**Why this matters:** A device can fetch a blob only while it can reach a peer that holds the blob, and a device holds a blob only if it created or fetched it. The fetch API has no "not available" event: the fetch simply makes no progress. Do not rely on relays to pass blobs on across multiple hops. In our testing with SDK 5.1.0, a device two hops away could fetch a blob only after the device in between had fetched it itself.
 
 **Best-practices guide:** Availability
 
 ### ☐ Replace attachments instead of editing them
 
-**What this means:** Attachments are immutable. To change a file, create a new attachment and update the token field; to remove one, `UNSET` the field with its type declared (`UPDATE COLLECTION photos (image ATTACHMENT) UNSET image ...`), delete the document, or evict it from the device.
+**What this means:** Attachments are immutable. To change a file, create a new attachment and update the token field. To remove an attachment, do one of the following:
+- `UNSET` the field with its type declared: `UPDATE COLLECTION photos (image ATTACHMENT) UNSET image ...`
+- Delete the document
+- Evict the document from the device
 
-**Why this matters:** Attachments cannot be deleted directly. Blobs that no document references are garbage-collected on Small Peers every 10 minutes, so referencing old tokens from history documents keeps every version on the device.
+**Why this matters:** You cannot delete an attachment directly. On Small Peers, blobs that no document references are garbage-collected every 10 minutes. If history documents keep referencing old tokens, every version stays on the device.
 
 **Best-practices guide:** Attachments Are Immutable
 
@@ -1528,17 +1537,17 @@ Future<AttachmentFetcher?> showPhoto(Ditto ditto, String photoId) async {
 
 ### ☐ Authenticate production apps through a webhook provider
 
-**What this means:** Connect with `DittoConfigConnectServer` and authenticate users through an authentication webhook that you operate: the app fetches a short-lived token from your backend in the expiration handler, and the webhook validates it and returns the user ID, session lifetime, and permissions. Use `Authenticator.developmentProvider` and the development token from the Ditto Portal only during development.
+**What this means:** Connect with `DittoConfigConnectServer` and authenticate users through an authentication webhook that you operate. In the expiration handler, the app fetches a short-lived token from your backend. The webhook validates the token and returns the user ID, the session lifetime, and the permissions. Use `Authenticator.developmentProvider` and the development token from the Ditto Portal only during development.
 
-**Why this matters:** Anyone who has the development token gets the same access, so it must never ship in a production build. Permissions are issued together with the credentials, so a moderate `expirationSeconds` lets permission changes reach devices when they re-authenticate.
+**Why this matters:** Anyone who has the development token gets the same access, so it must never ship in a production build. Permissions are issued together with the credentials. With a moderate `expirationSeconds`, permission changes reach devices when they re-authenticate.
 
 **Best-practices guide:** Authentication in Production
 
 ### ☐ Provision a privateKey for small-peers-only deployments
 
-**What this means:** Always pass a `privateKey` to `DittoConfigConnectSmallPeersOnly` in production, distribute it through a controlled channel such as MDM or secure provisioning, and keep it and the offline license token in secure storage. Never hardcode keys, tokens, or API keys in source code.
+**What this means:** In production, always pass a `privateKey` to `DittoConfigConnectSmallPeersOnly`. Distribute the key through a controlled channel such as MDM or secure provisioning, and keep it and the offline license token in secure storage. Never hardcode keys, tokens, or API keys in source code.
 
-**Why this matters:** Without a key, peers do not authenticate each other: any device with the SDK, your Database ID, and a license token can join and read all data, and the SDK documents the mode as unencrypted. Peers with different keys (or one without a key) never connect, and only `WARN` logs show it. Keys in an app binary can be extracted by decompiling it. Shared-key mode has no per-user identity, so every key holder has full access and individual devices cannot be revoked.
+**Why this matters:** Without a key, peers do not authenticate each other: any device with the SDK, your Database ID, and a license token can join and read all data. The SDK also documents this mode as unencrypted. Peers with different keys, or a peer without a key, never connect, and only `WARN` logs show why. A key in an app binary can be extracted by decompiling the app. Shared-key mode has no per-user identity: every key holder has full access, and you cannot revoke individual devices.
 
 **Best-practices guide:** Small-Peers-Only Deployments
 
@@ -1578,17 +1587,17 @@ Future<Ditto> openUnprotectedSmallPeer() {
 
 ### ☐ Encode permission scopes in an immutable _id
 
-**What this means:** Permission queries returned by your webhook can reference only the document's `_id`. Decide permission boundaries (user, store, organization) before shipping and put them into a structured `_id`, such as `{"storeId": "store-1", "orderId": "..."}`, matched by rules like `_id.storeId == 'store-1'`. Permission queries use Ditto's legacy query syntax, not DQL, so compare with `==`, not with the DQL `=`. Grant the narrowest `read` and `write` rules each role needs.
+**What this means:** The permission queries that your webhook returns can reference only the document's `_id`. Decide the permission boundaries (user, store, organization) before you ship, and put them into a structured `_id` such as `{"storeId": "store-1", "orderId": "..."}`. Rules such as `_id.storeId == 'store-1'` can then match them. Permission queries use Ditto's legacy query syntax, not DQL, so compare with `==`, not with the DQL `=`. Grant each role only the `read` and `write` rules it needs.
 
-**Why this matters:** Permissions on mutable fields such as `status` or `ownerId` are not supported, and `_id` cannot be changed after creation. Sync scopes, `syncGroup`, and client-side checks are not access control.
+**Why this matters:** Permissions based on mutable fields such as `status` or `ownerId` are not supported, and `_id` cannot be changed after a document is created. Sync scopes, `syncGroup`, and client-side checks do not provide access control.
 
 **Best-practices guide:** Permissions
 
 ### ☐ Validate input and treat synced data as untrusted
 
-**What this means:** Validate required fields, types, and ranges before `INSERT` or `UPDATE`, pass every value as a parameter, and treat documents received from other peers as untrusted input when you render or process them.
+**What this means:** Before an `INSERT` or `UPDATE`, validate required fields, types, and value ranges, and pass every value as a parameter. When you render or process documents received from other peers, treat them as untrusted input.
 
-**Why this matters:** Ditto collections are schema-free, so the application is responsible for validating data before writing it. Parameters keep values separate from the query text, so input cannot change the meaning of a statement.
+**Why this matters:** Ditto collections have no schema, so validating data before writing it is your application's job. Parameters keep values separate from the query text, so input cannot change the meaning of a statement.
 
 **Best-practices guide:** Input Validation and Query Parameters
 
@@ -1610,17 +1619,20 @@ Future<void> updateOrderStatus(Ditto ditto, String orderId, String status) async
 
 ### ☐ Protect sensitive data at rest and keep it out of metadata
 
-**What this means:** Ditto does not encrypt its local database at rest, and there is no supported API to enable it. Rely on OS protection (screen lock and file-based encryption, enforced through MDM on managed devices), encrypt sensitive field values in the app before writing them, and keep the keys in secure storage. Never store secrets in documents, peer metadata, or `identityServiceMetadata`.
+**What this means:** Ditto does not encrypt its local database at rest, and no supported API enables it. Instead:
+- Rely on OS protection: screen lock and file-based encryption, enforced through MDM on managed devices
+- Encrypt sensitive field values in the app before writing them, and keep the keys in secure storage
+- Never store secrets in documents, peer metadata, or `identityServiceMetadata`
 
-**Why this matters:** OS protections require a passcode or screen lock and, with the default settings, protect data mainly while the device is powered off or has not been unlocked since it started; an app installed from a public app store cannot enforce device encryption. Peer metadata and identity metadata are shared with every peer in the mesh, not only with directly connected peers.
+**Why this matters:** OS protection requires a passcode or screen lock. With the default settings, it protects data mainly while the device is powered off or has not been unlocked since it started. An app installed from a public app store cannot enforce device encryption. Peer metadata and identity metadata are shared with every peer in the mesh, not only with directly connected peers.
 
 **Best-practices guide:** Data at Rest, Identity metadata is visible to the mesh
 
 ### ☐ Reject identities in the webhook before revoking certificates (SDK 5.1+)
 
-**What this means:** To remove a user's or device's access, reject the identity in your authentication webhook first, then create the certificate revocation through the Ditto Server HTTP API. Keep `PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED` at its default (enabled).
+**What this means:** To remove a user's or device's access, first reject the identity in your authentication webhook, then create a certificate revocation through the Ditto Server HTTP API. Keep `PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED` at its default (enabled).
 
-**Why this matters:** A revocation applies only to certificates issued before it was created; if the webhook still accepts the user, the device re-authenticates and regains access. Revocations are permanent, reach offline peers when they next connect, and do not apply to shared-key deployments.
+**Why this matters:** If the webhook still accepts the user, the device re-authenticates and regains access, because a revocation applies only to certificates issued before it was created. Revocations are permanent. They reach offline peers when those peers next connect, and they do not apply to shared-key deployments.
 
 **Best-practices guide:** Certificate Revocation (SDK 5.1+)
 
@@ -1630,9 +1642,9 @@ Future<void> updateOrderStatus(Ditto ditto, String orderId, String status) async
 
 ### ☐ Configure logging before opening Ditto
 
-**What this means:** Call `await Ditto.init()`, then set `DittoLogger.minimumLogLevel` (for example `kReleaseMode ? LogLevel.warning : LogLevel.debug`) before `Ditto.open()`. Forward warnings and errors with `DittoLogger.customLogCallback`, and set the callback before every `Ditto.open()`, because `ditto.close()` resets it. Use `LogLevel.verbose` only for short, targeted investigations.
+**What this means:** Before `Ditto.open()`, call `await Ditto.init()` and then set `DittoLogger.minimumLogLevel`, for example to `kReleaseMode ? LogLevel.warning : LogLevel.debug`. Forward warnings and errors with `DittoLogger.customLogCallback`. Set the callback again before every `Ditto.open()`, because `ditto.close()` resets it. Use `LogLevel.verbose` only for short, targeted investigations.
 
-**Why this matters:** `DittoLogger` throws until the SDK is initialized, and verbose logging can significantly slow down replication. On-disk logs always include debug-level entries, so a production console level of `warning` does not reduce what you can export later with `DittoLogger.exportLogs()` or request from the Ditto Portal.
+**Why this matters:** `DittoLogger` throws until the SDK is initialized. Verbose logging can significantly slow down replication. A production console level of `warning` does not limit later diagnosis: on-disk logs always include debug-level entries, which you can export with `DittoLogger.exportLogs()` or request from the Ditto Portal.
 
 **Best-practices guide:** Logging
 
@@ -1656,9 +1668,9 @@ Future<void> configureDittoLogging() async {
 
 ### ☐ Use presence and transport conditions for connectivity diagnostics
 
-**What this means:** Use `ditto.presence.observe(...)` for connection indicators and stop the returned `PresenceObserver` when you no longer need it. Use `ditto.observeTransportConditions()` (SDK 5.1+) to surface missing permissions or disabled radios, and `DittoSyncPermissions` to find missing runtime permissions on Android. Keep peer metadata small and non-sensitive.
+**What this means:** Show connection indicators with `ditto.presence.observe(...)`, and stop the returned `PresenceObserver` when you no longer need it. Use `ditto.observeTransportConditions()` (SDK 5.1+) to detect missing permissions or disabled radios, and `DittoSyncPermissions` to find missing runtime permissions on Android. Keep peer metadata small and free of sensitive data.
 
-**Why this matters:** Transport configuration changes do not throw, so transport conditions are the way to see why peers do not connect. Peer metadata is shared with every peer in the mesh.
+**Why this matters:** Transport configuration changes do not throw, so transport conditions are how you find out why peers do not connect. Peer metadata is shared with every peer in the mesh.
 
 **Best-practices guide:** Diagnosing transport problems (SDK 5.1+), Presence
 
@@ -1683,7 +1695,7 @@ Future<TransportConditionsObserver> watchTransports(Ditto ditto) async {
 
 ### ☐ Test your DQL statements against a real local store
 
-**What this means:** Keep Ditto behind a repository interface so that UI and business logic can be unit-tested with mocks, and test every DQL statement against a real small-peers-only instance with a fresh temporary persistence directory per test. Do not start sync in these tests, apply the same system parameters as the app, and close every instance with `addTearDown`. Run them with the `integration_test` package on a desktop or device target.
+**What this means:** Put Ditto behind a repository interface so that you can unit-test the UI and business logic with mocks. Test every DQL statement against a real small-peers-only instance, with a fresh temporary persistence directory for each test. In these tests, do not start sync, apply the same system parameters as the app, and close every instance with `addTearDown`. Run them with the `integration_test` package on a desktop or device target.
 
 **Why this matters:** Most bugs come from the data model and the queries, not from the SDK. Local store tests need no license token or network, so they can run in CI. Sharing a persistence directory between tests, or opening it twice, can make `Ditto.open()` never complete.
 
@@ -1741,7 +1753,13 @@ void main() {
 
 ### ☐ Test the behaviors that fail silently
 
-**What this means:** Assert the write shapes your code relies on (field-level updates, maps keyed by ID, no-op re-upserts), soft-delete filters with the flag set to `true`, `false`, `null`, and missing, deletions by `WHERE _id IN :ids`, and observer and subscription cleanup (`isCancelled` after `cancel()`). Test concurrent merges, deletion propagation, relay, and attachments separately, with several Ditto instances that sync for real (most of these tests can run in one test process over localhost, and they need an offline license token).
+**What this means:** Write tests that assert:
+- The write shapes your code relies on: field-level updates, maps keyed by ID, and re-upserts that change nothing
+- Soft-delete filters, with the flag set to `true`, `false`, `null`, and missing
+- Deletions with `WHERE _id IN :ids`
+- Observer and subscription cleanup: `isCancelled` after `cancel()`
+
+Test concurrent merges, deletion propagation, relay, and attachments separately, with several Ditto instances that sync for real. Most of these tests can run in one test process over localhost, and they need an offline license token.
 
 **Why this matters:** These bugs raise no exception: a filter hides documents, a statement removes nothing, or an observer keeps running. A single device cannot reproduce a concurrent merge, but it can verify that your code produces writes that merge well. Test your own business rules rather than basic SDK behavior.
 
