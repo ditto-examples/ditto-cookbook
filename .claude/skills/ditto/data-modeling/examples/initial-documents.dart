@@ -15,6 +15,13 @@
 //     INSERT, a document with null fields remains.
 //   - Evicted earlier on this device: inserted again.
 //   - Combined with ON ID CONFLICT: parser error.
+// Across devices (SDK 5.1.0 tests):
+//   - The deletion rule also applies to deletions received from other devices,
+//     and a document with null fields then appears on every device (also when
+//     a newly installed device seeds before it first connects).
+//   - Different seeds for the same _id merge field by field; a field set by
+//     both is decided by its value, not by which device seeded later. Keep
+//     seed content identical across app versions.
 // Initial documents are regular documents: whether they sync is decided by
 // subscriptions, not by INITIAL.
 //

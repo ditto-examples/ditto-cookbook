@@ -10,7 +10,8 @@
 // Key rules:
 // - EVICT removes documents from this device only. If an active subscription
 //   still matches them, connected peers sync them back.
-// - Cancel or narrow the affected subscriptions BEFORE evicting.
+// - Cancel or narrow the affected subscriptions BEFORE evicting, including
+//   overlapping subscriptions that also match the documents.
 // - Evict exactly the complement of the remaining subscriptions (same cutoff,
 //   `>=` in the subscription, `<` in the eviction).
 // - Keep subscription references in a long-lived service so they can be

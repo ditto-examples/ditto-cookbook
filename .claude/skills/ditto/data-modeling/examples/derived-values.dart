@@ -60,12 +60,17 @@ Future<void> setItemQuantity(
   );
 }
 
+/// Entries with a missing or null price or quantity (an entry removed on one
+/// device while another device edited it) are skipped instead of throwing.
 int orderSubtotalCents(Map<String, dynamic> order) {
   final items = (order['items'] as Map<String, dynamic>?) ?? const {};
   var subtotal = 0;
   for (final entry in items.values) {
-    final item = entry as Map<String, dynamic>;
-    subtotal += (item['unitPriceCents'] as int) * (item['quantity'] as int);
+    if (entry is! Map<String, dynamic>) continue;
+    final price = entry['unitPriceCents'];
+    final quantity = entry['quantity'];
+    if (price is! int || quantity is! int) continue;
+    subtotal += price * quantity;
   }
   return subtotal;
 }

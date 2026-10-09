@@ -6,7 +6,10 @@
 //   Soft limit 256 KiB (DOCUMENT_SIZE_SOFT_LIMIT_BYTES): write succeeds,
 //     warning "exceeds recommended limit" is logged.
 //   Hard limit 5 MiB (DOCUMENT_SIZE_HARD_LIMIT_BYTES): INSERT/UPDATE fails,
-//     the stored document is unchanged.
+//     the stored document is unchanged. It is checked only for local writes:
+//     concurrent offline additions on two devices can merge into a larger
+//     document, after which every UPDATE of it fails until UNSET removes data
+//     (SDK 5.1.0).
 // Design documents to stay well below 256 KiB; leave both limits at their
 // defaults.
 //

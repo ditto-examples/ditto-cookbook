@@ -34,7 +34,7 @@ A subscription query selects whole documents from one collection: `SELECT * FROM
 Consequences:
 - Subscriptions sync whole documents. To reduce what a device receives, split rarely needed data into another collection or move binary data into attachments.
 - Subscriptions cannot join. If a child collection must be filtered by a key on its parent (for example `orderItems` by `storeId`), copy the key into the child documents.
-- `DQL_RESTRICT_SUBSCRIPTIONS` (default `true`) controls `LIMIT`/`ORDER BY`. Setting it to `false` allows only those two and creates stateful subscriptions that force re-evaluation whenever documents cross the limit boundary. Keep the default; if you must use one, do not filter or sort on mutable fields together with `LIMIT`.
+- `DQL_RESTRICT_SUBSCRIPTIONS` (default `true`) controls `LIMIT`/`ORDER BY`. Setting it to `false` allows only those two and creates stateful subscriptions that force re-evaluation whenever documents cross the limit boundary. Keep the default; if you must use one, do not filter or sort on mutable fields together with `LIMIT`. In SDK 5.1.0, `LIMIT` bounds only the initial download. Afterwards, every new or changed document that matches the `WHERE` is synced, including documents that never ranked inside the window, and documents already received stay. The setting is checked only on the subscribing device.
 
 ## Subscription Scope
 
@@ -46,8 +46,9 @@ Consequences:
 
 - Use the same subscriptions on peers in the same role so any of them can serve the others.
 - An intermediate device relays only documents in its local store: give relay or hub devices at least the subscriptions of the devices behind them.
+- A device accepts at most 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`, SDK 5.1.0). Extra clients of a TCP hub get no data and no error, only a `WARN ... at capacity` log line. On a hub with more clients, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open` and before `ditto.sync.start()`. Raising it after sync has started did not admit already rejected clients within 60 s. Guide: [Transport Configuration](../../../../guides/best-practices/ditto.md#transport-configuration).
 - Keep predicates flat (`storeId = :storeId`); deeply nested `AND`/`OR` trees and deep paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` from Ditto Server.
-- Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below).
+- Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below). In SDK 5.1.0, a document that stops matching becomes a **frozen copy**. The device receives the change that made it stop matching, and then no further edits and not even its deletion. Local queries keep showing it, so filter it out locally and evict it when it is no longer needed. When it matches again, it arrives in its latest state.
 - Soft delete: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Two designs meet this requirement:
   - **Variant A** (whole-collection or whole-partition subscription): simplest; devices cannot `EVICT` old soft-deleted documents because they still match the subscription, so cleanup is a `DELETE` after the retention period, run on the Ditto Server or by another authorized peer, that syncs to every device.
   - **Variant B** (retention-window subscription, `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff`): devices evict documents deleted before the cutoff; the subscription is re-registered when the cutoff moves (at most about once a day). Choose a window longer than the longest expected offline period.
@@ -56,11 +57,11 @@ Consequences:
 
 ## Subscription Lifecycle
 
-- Avoid changing subscriptions more often than about every 15 minutes. Each change makes peers re-evaluate what they owe the device and can interrupt transfers.
+- Avoid changing subscriptions more often than about every 15 minutes (Ditto's guidance): each change makes peers re-evaluate what they owe the device. Documents already held are not downloaded again. An identical second registration transferred nothing in tests, but data keeps syncing until **every** copy of it is cancelled.
 - Register when data becomes relevant (app start, login, entering a workspace) in an app- or feature-level service; keep every `SyncSubscription` reference.
 - Re-register only when the set of data the device needs changes (switching store or tenant). Search, tabs, filters, and sort orders change observers.
 - Subscriptions stay active until `cancel()` or `ditto.close()`. Always release them explicitly; do not rely on garbage collection to cancel them.
-- Cancelling does not delete local data; documents stop receiving updates. To free storage, cancel first, then `EVICT`. Data that was already being transferred can still arrive after cancelling; if the device must not keep it, run the eviction again later (for example, on the next app start or in a periodic cleanup).
+- Cancelling does not delete local data; documents stop receiving updates, new documents, and deletions from other peers. A device receives the union of its subscriptions, so documents that another active subscription matches keep syncing. To free storage, cancel every subscription that matches the documents (including overlapping ones), then `EVICT`; a document that another active subscription still matches is synced back. Data that was already being transferred can still arrive after cancelling; if the device must not keep it, run the eviction again later (for example, on the next app start or in a periodic cleanup).
 - `ditto.sync.stop()` pauses all subscriptions; `start()` resumes them. `await ditto.close()` marks them cancelled; `cancel()` afterwards is a no-op.
 - `ditto.sync.subscriptions` is for debugging: read `queryString` and `isCancelled` only.
 
@@ -126,7 +127,8 @@ Callback rules:
 - `registerObserver` has no backpressure: it never waits for your code, and pausing its stream only queues results.
 - Keep listeners synchronous: copy values, map to models, call `setState`. Move heavy computation off the UI isolate (for example `compute()` on copied values).
 - Do not `await` network, file, or database work in a `registerObserver` listener; do not write to the observed collection without a guard.
-- Observers on `system:data_sync_info` fire every 500 ms even without changes: use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
+- Changes that arrive through sync are delivered in batches: expect fewer callbacks than remote writes (a remote transaction arrives as one callback), and do not count or log remote changes through callbacks.
+- Ditto documents observers on `system:data_sync_info` as firing every 500 ms (in SDK 5.1.0 tests they fired only when the rows changed): use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
 - With state management libraries, let one provider or controller own each observer and cancel it in the provider's dispose hook. `item.value` creates a new `Map` per result, so map rows to immutable models with `==` if you rely on equality to skip rebuilds.
 
 ## Backpressure Behavior

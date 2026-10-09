@@ -6,7 +6,9 @@
 // concurrent changes add up instead of overwriting each other. Counter
 // operations use APPLY, not SET:
 //   APPLY f INCREMENT BY n   (negative n decrements; n must be an integer)
-//   APPLY f RESTART WITH n   (set a value; concurrent RESTARTs: last write wins)
+//   APPLY f RESTART WITH n   (set a value; concurrent RESTARTs: last write wins;
+//                             increments the restarting device has not received
+//                             yet are discarded)
 //   APPLY f RESTART          (reset to zero)
 // Declarations use the COLLECTION keyword: UPDATE COLLECTION t (f COUNTER) ...
 // This file declares the counter in every statement, which works with strict
@@ -68,9 +70,14 @@ Future<void> sellOne(Ditto ditto, String itemId) async {
 }
 
 /// ✅ GOOD: RESTART WITH for an occasional correction by one authority, such
-/// as recalibrating stock after a physical count. How increments made
-/// concurrently on another device combine with a RESTART is not specified;
-/// do not rely on a precise result in that situation.
+/// as recalibrating stock after a physical count, run only while every device
+/// that changes the counter is online and in sync.
+///
+/// Note (SDK 5.1.0): a RESTART discards every increment that this device had
+/// not received when it ran the restart, including increments that other
+/// devices make later (by the clock) until the restart reaches them. If tills
+/// keep selling offline during a recount, store recounts and sales as event
+/// documents and derive the stock instead.
 Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
   await ditto.store.execute(
     '''

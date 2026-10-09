@@ -277,17 +277,17 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 
 **Guide**: [System Virtual Collections](../../../../guides/best-practices/ditto.md#system-virtual-collections), [Request Diagnostics](../../../../guides/best-practices/ditto.md#request-diagnostics)
 
-Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info`, or observers on `system:data_sync_info` in many places (such observers fire every 500 ms regardless of whether anything changed). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
+Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; in SDK 5.1.0 tests they fired only when the rows changed). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](../../../../guides/best-practices/ditto.md#monitoring-sync-status).
 
 | Collection | Purpose |
 |---|---|
 | `system:system_info` | Key/value rows: SDK version, database ID, storage usage, subscriptions, log settings, non-default parameters |
 | `system:indexes` | Indexes on this device |
-| `system:data_sync_info` | One row per sync connection |
+| `system:data_sync_info` | One row per sync connection. `sync_session_status` stays `"Connected"` for about 73 s after a disconnect (SDK 5.1.0); use presence for live connectivity |
 | `system:active_requests` | DQL requests executing now |
 | `system:request_history` | Recently completed requests matching the history qualifiers (in memory) |
 | `system:shared_statements` | Prepared-statement cache with execution statistics |
-| `system:metrics` | SDK metrics; disabled by default |
+| `system:metrics` | SDK metrics; disabled by default, and can be enabled only at process start (see the parameter below) |
 
 ```sql
 SELECT key, value FROM system:system_info WHERE namespace = 'logs'
@@ -310,7 +310,7 @@ SELECT _id, text, state, times FROM system:active_requests
 | `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` | Request timeout; `0` disables |
 | `DQL_REQUEST_HISTORY_SIZE` | `4096` | Entries kept in `system:request_history` |
 | `DQL_DEFAULT_DIRECTIVES` | `{}` | Default directives for every statement |
-| `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables `system:metrics` |
+| `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables `system:metrics`, only at process start: `ALTER SYSTEM` after `Ditto.open` has no effect; the environment variable `DITTO_METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED=true` works (verified on Node.js) |
 
 ```sql
 SHOW ALL LIKE 'dql_slow%'

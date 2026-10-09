@@ -45,7 +45,7 @@ There is no statement to create or drop a collection: a collection exists as soo
 | Literal | Syntax | Notes |
 |---|---|---|
 | String | `'open'` or `"open"` | Both quote styles delimit strings; double quotes never refer to a field |
-| Escapes | `'it\'s'`, `'line1\nline2'` | JSON escapes in both quote styles; `'it''s'` is a syntax error; a literal backslash is `\\` |
+| Escapes | `'it\'s'`, `'line1\nline2'` | JSON escapes in both quote styles; `'it''s'` is a syntax error; a literal backslash is `\\`. Changed in 5.1.0: on 5.0.x, `''` escaped a quote and backslashes were literal |
 | Identifier | `` `my field` `` | Backticks quote names with special characters or reserved words |
 | Number | `42`, `2.5`, `1e3`, `0xFF` | `5 / 2` is `2`; `5.0 / 2` is `2.5` |
 | Boolean / null | `true`, `FALSE`, `null` | Case-insensitive |
@@ -91,7 +91,7 @@ Related behavior:
 | Array field contains a value | `:tag IN tags` / `array_contains(tags, :tag)` | ✅ No index |
 | Array parameter in parentheses | `status IN (:statuses)` | ❌ Matches nothing |
 
-> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`).
+> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`). The bug (new in 5.1.0) affects local queries and observers; a subscription with the same predicate syncs correctly.
 
 | `USE IDS` form | Behavior |
 |---|---|

@@ -150,7 +150,7 @@ Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
 | Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` (no index) |
 | ❌ Array parameter in parentheses | `status IN (:statuses)` matches nothing |
 
-> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) instead.
+> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) instead. This is a 5.1.0 regression and affects local queries and observers only. A subscription with the same predicate syncs the right documents, so "subscribe and observe with the same query" receives the data but shows an empty list.
 
 **Guide**: [Filtering by Membership](../../../guides/best-practices/ditto.md#filtering-by-membership)
 
@@ -165,7 +165,7 @@ A subscription selects whole documents from one collection: `SELECT * FROM <coll
 | `USE IDS` | `WHERE _id IN :ids` |
 | `LIMIT`, `ORDER BY` | Sort and limit in the local query or observer |
 
-Keep `DQL_RESTRICT_SUBSCRIPTIONS` at its default (`true`). Setting it to `false` allows only `LIMIT`/`ORDER BY`, which creates stateful subscriptions that degrade sync performance.
+Keep `DQL_RESTRICT_SUBSCRIPTIONS` at its default (`true`). Setting it to `false` allows only `LIMIT`/`ORDER BY`, which creates stateful subscriptions that degrade sync performance. In SDK 5.1.0, `LIMIT` also bounds only the initial download: afterwards, every new or changed document that matches the `WHERE` is synced, whether or not it ranks inside the window. Bound what syncs with `WHERE` (a stable key or a time window), not `LIMIT`.
 
 ```dart
 // ✅ GOOD: Scope by a stable partition key; sort and limit locally
@@ -319,7 +319,7 @@ Results have no guaranteed order without `ORDER BY`, including observer results.
 | `item.value` | `Map<String, dynamic>`, decoded on first access and cached on that item |
 | `item.jsonString`, `item.cborBytes` | Properties, not methods |
 | `mutatedDocumentIDs()` | Builds a new list on every call; call once. With `RETURNING`, treat `items` as the result and include `_id` in the projection when you need the IDs |
-| `commitID` | `int?`; `null` for reads, and `null` inside a transaction until it commits |
+| `commitID` | `int?`; `null` for reads, and `null` inside a transaction until it commits. A write that changed nothing (empty `mutatedDocumentIDs()`) still gets one, which peers confirm only with a later commit (up to about 30 s; SDK 5.1.0): track it only when something changed |
 
 **✅ DO**: iterate `items` once and convert rows to maps or model objects right away; project only the fields you need.
 **❌ DON'T**: store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks (they reference native memory).

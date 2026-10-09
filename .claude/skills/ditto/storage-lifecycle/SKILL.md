@@ -268,7 +268,7 @@ Guide: [Soft Delete](../../../guides/best-practices/ditto.md#soft-delete), [Inde
 
 ### 4. Keep Soft-Deleted Documents in Subscriptions (Priority: CRITICAL)
 
-**Problem**: The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. Devices that already have the document keep it (cancelling or narrowing a subscription never deletes local data), and a subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
+**Problem**: The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. In SDK 5.1.0 the flagging update itself still reached such devices, but later changes to the flagged document, including a restore (`isDeleted = false`), did not; keep restorable documents inside the subscription. Devices that already have the document keep it (cancelling or narrowing a subscription never deletes local data), and a subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
 
 **✅ DO**:
 - Keep soft-deleted documents inside the subscription at least until every device has received the flag.
@@ -404,13 +404,14 @@ Guide: [EVICT](../../../guides/best-practices/ditto.md#evict), [Time-based evict
 
 ### 6. Avoid Husk Documents (Priority: HIGH)
 
-**Problem**: When one device deletes a document while another concurrently updates it, the add-wins merge produces a *husk document*: fields written by the update keep their new values, all other fields are `null`, and the document is **not** deleted.
+**Problem**: When one device deletes a document while another concurrently updates it, the add-wins merge produces a *husk document*, and the document is **not** deleted, even when the `DELETE` is the later write. In SDK 5.1.0, the updated fields keep their new values (or become `null` if the deletion was later), and all other fields are **MISSING**, not `null` as Ditto's docs say.
 
 **✅ DO**:
 - Use a soft delete for data that may be edited concurrently.
 - Manage edge storage with `EVICT` and perform permanent deletion on the Ditto Server.
 - Coordinate workflows so the same document is not deleted and updated at the same time.
-- Make the UI tolerate documents whose fields are `null` if husks are possible.
+- Make the UI tolerate documents whose fields are `null` or missing if husks are possible, and keep husks out of lists with `WHERE make IS NOT MISSING AND make IS NOT NULL` on a field every live document has (`IS NOT NULL` alone is true for a missing field). <!-- lint-ignore -->
+- Run the `DELETE` again after the merge to remove a husk on every device.
 
 **❌ DON'T**:
 - Use `DELETE` for shared records that other devices edit.

@@ -185,7 +185,7 @@ Future<void> upsertOrderItem(
 }
 ```
 
-To remove an entry, use ``UNSET items.`<key>` `` after validating the key against a strict pattern (for example, a UUID) before placing it inside backticks; never splice unchecked input into a query. You can convert arrays to maps incrementally, as soon as you know more than one device writes them. Write the map to a **new field** (for example, `lineItems` next to the old `items` array): writing a map under the array's field name changes its CRDT type, so the old array and the new map coexist under the same key.
+To remove an entry, use ``UNSET items.`<key>` `` after validating the key against a strict pattern (for example, a UUID) before placing it inside backticks; never splice unchecked input into a query. In SDK 5.1.0, a removal does not win over a concurrent edit of the entry. The entry stays with only the edited fields if the removal came first, or with them set to `null` if it came later. Mark entries removed (`removed = true`) when concurrent edits are likely, and make readers skip entries with missing or `null` required fields. You can convert arrays to maps incrementally, as soon as you know more than one device writes them. Write the map to a **new field** (for example, `lineItems` next to the old `items` array): writing a map under the array's field name changes its CRDT type, so the old array and the new map coexist under the same key.
 
 Guide: [Arrays and Maps](../../../guides/best-practices/ditto.md#arrays-and-maps). Example: [array-to-map.dart](examples/array-to-map.dart).
 
@@ -317,7 +317,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 | Operation | Statement |
 |---|---|
 | Increment / decrement | `APPLY f INCREMENT BY n` (integer `n`; negative to decrement) |
-| Set a value | `APPLY f RESTART WITH n` (concurrent `RESTART`s: last writer wins) |
+| Set a value | `APPLY f RESTART WITH n` (concurrent `RESTART`s: last writer wins; increments the restarting device has not received yet are discarded, even later ones) |
 | Reset to zero | `APPLY f RESTART` |
 
 ```sql
@@ -335,6 +335,7 @@ WHERE _id = :id
 - `SET stock = stock - 1` (two devices both write 9 from 10; one decrement is lost).
 - Initialize with an undeclared `INSERT` (stored as a REGISTER; the first `INCREMENT` starts a new counter at 0).
 - Overwrite with `SET`; use `RESTART WITH`.
+- Recalibrate with `RESTART WITH` while other devices keep changing the counter offline: their unsynced increments are discarded (SDK 5.1.0). Recount only while every device is in sync, or keep recounts and changes as events.
 - Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 
@@ -367,7 +368,7 @@ Guide: [Document IDs](../../../guides/best-practices/ditto.md#document-ids). Exa
 | Threshold | Default | Behavior |
 |---|---|---|
 | Soft limit | 256 KiB | Write succeeds; warning `exceeds recommended limit` is logged |
-| Hard limit | 5 MiB | `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
+| Hard limit | 5 MiB | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged. Merges from other devices are not checked: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data (SDK 5.1.0) |
 
 The limits apply to the size of each stored document. Design documents to stay well below 256 KiB; store binaries as attachments; move unbounded data (history, readings, comments) into its own collection; leave both limits at their defaults. `object_size()` gives an approximate size of the value, which can differ from the stored size, so leave headroom. To bring an oversized document back under the limits, move large values to attachments or to a separate collection and remove them from the document with `UNSET`.
 
@@ -416,7 +417,8 @@ Guide: [Timestamps](../../../guides/best-practices/ditto.md#timestamps). Example
 - [ ] No stored derived values; snapshot values copied deliberately
 - [ ] Concurrent tallies use `COUNTER` with `APPLY`
 - [ ] UUID (or composite / natural) IDs; display numbers separate from `_id`
-- [ ] Shared defaults seeded with `INITIAL DOCUMENTS`, not a plain `INSERT` or `ON ID CONFLICT DO UPDATE`
+- [ ] Shared defaults seeded with `INITIAL DOCUMENTS`, not a plain `INSERT` or `ON ID CONFLICT DO UPDATE`, with identical seed content in every app version
+- [ ] Counters recalibrated with `RESTART WITH` only while every device that changes them is in sync
 - [ ] Documents well under 256 KiB; binaries as attachments
 - [ ] Timestamps in UTC with a zone designator, written by one fixed-precision helper
 

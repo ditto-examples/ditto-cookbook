@@ -17,10 +17,10 @@ Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The autho
 ## What DELETE Leaves Behind
 
 - The values are removed. A small tombstone remains: the document ID, metadata such as the deletion time, and the field names the document had. Tombstones are internal and cannot be queried.
-- Tombstones are only shared with peers that have seen the document before it was deleted; a peer never receives a tombstone for a document it never knew about.
+- Tombstones are only shared with peers that have seen the document before it was deleted; a peer never receives a tombstone for a document it never knew about. Such a peer can accept a stale copy from a device that was offline, and pass it on, until it meets a peer that holds the tombstone (SDK 5.1.0 tests).
 - After `DELETE`, the document no longer appears in `SELECT`, is not counted by `COUNT(*)`, and an `UPDATE` no longer matches it.
-- A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear.
-- Inserting with `INITIAL DOCUMENTS` for an `_id` that was previously deleted on this device does not bring the document back: the deletion wins. If the seed is identical to the `INITIAL` insert that created the document, the document stays deleted; if the content differs, or the document was originally created with a regular `INSERT`, a document remains whose fields are all `null`.
+- A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear, unless another device edited the old document concurrently (those edits merge into the new document). Re-inserting an *evicted* `_id` merges with the copies other peers still hold.
+- Inserting with `INITIAL DOCUMENTS` for an `_id` that was previously deleted on this device does not bring the document back: the deletion wins. If the seed is identical to the `INITIAL` insert that created the document, the document stays deleted; if the content differs, or the document was originally created with a regular `INSERT`, a document remains whose fields are all `null`. The same applies when the deletion came from another device, and the `null` document then appears on every device (SDK 5.1.0).
 
 Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md pattern 2](../SKILL.md#2-respect-the-tombstone-ttl-priority-critical) and the guide's [Tombstone TTL and reaping](../../../../guides/best-practices/ditto.md#tombstone-ttl-and-reaping).
 
@@ -28,14 +28,24 @@ Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md patte
 
 ## Husk Documents
 
-When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) describes the result as a *husk document*: the updated fields keep their new values, every other field is `null`, and the document is not deleted:
+When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. The result is a *husk document*, and the document is not deleted. In SDK 5.1.0, the husk's shape depends on which operation was written first:
 
 ```text
 Initial:            {"_id": "abc123", "color": "red", "make": "Toyota", "year": 2020}
+
 Device A:           DELETE FROM cars WHERE _id = 'abc123'
+Device B (offline, later): UPDATE cars SET color = 'blue' WHERE _id = 'abc123'
+After merge:        {"_id": "abc123", "color": "blue"}      // make, year: MISSING
+
 Device B (offline): UPDATE cars SET color = 'blue' WHERE _id = 'abc123'
-After merge:        {"_id": "abc123", "color": "blue", "make": null, "year": null}
+Device A (later):   DELETE FROM cars WHERE _id = 'abc123'
+After merge:        {"_id": "abc123", "color": null}        // make, year: MISSING
 ```
+
+- The document survives even when the `DELETE` is the later write.
+- Fields the update did not touch are MISSING (`make IS MISSING` is `true`), not `null` as Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) shows.
+- Husks count in `SELECT COUNT(*)`, but value filters exclude them.
+- Running the `DELETE` again after the merge removes the husk on every device.
 
 To avoid husk documents:
 
@@ -43,7 +53,7 @@ To avoid husk documents:
 2. Manage edge storage with `EVICT` and perform permanent deletion on the Ditto Server (for example through its HTTP API).
 3. Coordinate your workflow so that the same document is not deleted and updated at the same time.
 
-If husk documents are possible in your data, make the UI tolerate `null` fields instead of assuming every field is present:
+If husk documents are possible in your data, keep them out of lists with a filter on a field that every live document has. Test for both cases: `WHERE make IS NOT MISSING AND make IS NOT NULL`. `IS NOT NULL` alone is `true` for a missing field. Also make the UI tolerate `null` and missing fields instead of assuming every field is present (a missing key reads as `null` from the item's map): <!-- lint-ignore -->
 
 ```dart
 import 'package:flutter/material.dart';
