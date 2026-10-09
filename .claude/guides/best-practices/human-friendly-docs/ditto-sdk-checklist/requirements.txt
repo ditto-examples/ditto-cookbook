@@ -1,2 +1,0 @@
-# Syntax highlighting for code examples
-Pygments>=2.18.0

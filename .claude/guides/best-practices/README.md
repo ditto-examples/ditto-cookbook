@@ -26,6 +26,10 @@ Each document focuses on platform-specific or technology-specific patterns, with
   - Error handling and resilience patterns
   - **Note**: This document uses semantic versioning (Major.Minor) to track significant changes
 
+- **[human-friendly-docs/ditto-sdk-checklist/](human-friendly-docs/ditto-sdk-checklist/README.md)**: Ditto SDK Implementation Checklist
+  - Interactive English/Japanese review checklist derived from ditto.md, distributed as one self-contained HTML file
+  - Generated from Markdown and JSON sources with `build-checklist.py`; keep it synchronized with ditto.md
+
 ## How to Use
 
 ### For Claude Code

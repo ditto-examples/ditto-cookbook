@@ -2,19 +2,18 @@
 """
 HTML Tag Validator
 
-Validates HTML tag opening/closing in the Ditto SDK checklist HTML file.
-Checks for missing or mismatched HTML tags and reports errors.
-Also validates dynamic HTML generation in JavaScript string concatenation.
+Validates HTML tag opening/closing in the generated Ditto SDK checklist HTML
+file and reports missing or mismatched tags. (The Japanese HTML fragments that
+are swapped in at runtime are checked by build-checklist.py.)
 
 Usage:
-    python validate-html-tags.py
-    ./validate-html-tags.py
+    python3 validate-html-tags.py
 """
 
 import re
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Tuple
 from dataclasses import dataclass
 
 
@@ -128,195 +127,6 @@ class HTMLValidator:
         )
 
 
-class JavaScriptHTMLValidator:
-    """Validates HTML tag structure in JavaScript string concatenation."""
-
-    def __init__(self, js_content: str):
-        self.js_content = js_content
-        self.errors: List[str] = []
-        self.warnings: List[str] = []
-
-    def extract_html_concatenations(self) -> Dict[int, List[str]]:
-        """
-        Extract HTML strings from JavaScript += operations.
-
-        Returns:
-            Dict mapping line numbers to HTML fragments
-        """
-        html_fragments: Dict[int, List[str]] = {}
-        lines = self.js_content.split('\n')
-
-        # Pattern to match: html += '...' or html += "..." or html += `...`
-        pattern = r"html\s*\+=\s*['\"`](.*?)['\"`]"
-
-        for line_num, line in enumerate(lines, 1):
-            # Skip comments
-            if line.strip().startswith('//'):
-                continue
-
-            matches = re.findall(pattern, line)
-            if matches:
-                html_fragments[line_num] = matches
-
-        return html_fragments
-
-    def validate_tag_balance(self) -> ValidationResult:
-        """
-        Validate that HTML tag opening/closing is balanced in JavaScript concatenations.
-
-        Focuses on detecting common patterns like:
-        - Opening N tags but closing M tags (N != M)
-        - Mismatched tag pairs
-
-        Returns:
-            ValidationResult containing validation status, errors, and warnings
-        """
-        fragments = self.extract_html_concatenations()
-
-        if not fragments:
-            self.warnings.append("No HTML concatenation patterns found in JavaScript")
-            return ValidationResult(is_valid=True, errors=[], warnings=self.warnings)
-
-        # Track opening and closing tags for each line
-        for line_num, html_strings in fragments.items():
-            for html_str in html_strings:
-                # Count opening and closing tags
-                opening_tags = re.findall(r'<([a-zA-Z][a-zA-Z0-9]*)[^>]*(?<!/)>', html_str)
-                closing_tags = re.findall(r'</([a-zA-Z][a-zA-Z0-9]*)>', html_str)
-
-                # Filter out self-closing tags
-                self_closing = {'br', 'hr', 'img', 'input', 'link', 'meta', 'source'}
-                opening_tags = [tag for tag in opening_tags if tag.lower() not in self_closing]
-
-                # Check for specific anti-pattern: </div></div> when opening fewer than 2 divs
-                if '</div></div>' in html_str:
-                    div_opens = html_str.count('<div')
-                    # Bug pattern: closing 2 divs but opening 0 or 1
-                    # This causes premature closing of parent containers
-                    if 0 < div_opens < 2:
-                        self.errors.append(
-                            f"Line {line_num}: Closing 2 divs (</div></div>) but opening only {div_opens} div(s) - "
-                            f"this will close parent container prematurely"
-                        )
-                    elif div_opens == 0:
-                        # Closing tags only - this is normal when tags span multiple lines
-                        # We expect the opening to be on a previous line
-                        pass
-
-        return ValidationResult(
-            is_valid=len(self.errors) == 0,
-            errors=self.errors,
-            warnings=self.warnings
-        )
-
-    def validate(self) -> ValidationResult:
-        """
-        Run all JavaScript HTML validations.
-
-        Returns:
-            ValidationResult containing validation status, errors, and warnings
-        """
-        return self.validate_tag_balance()
-
-
-class EmbeddedMarkdownValidator:
-    """Validates embedded Markdown content in JavaScript template literals."""
-
-    def __init__(self, js_content: str):
-        self.js_content = js_content
-        self.errors: List[str] = []
-        self.warnings: List[str] = []
-
-    def extract_markdown_content(self) -> str:
-        """
-        Extract embedded Markdown from markdownContent template literal.
-
-        Returns:
-            The markdown content string, or empty string if not found
-        """
-        # Find the markdownContent template literal
-        pattern = r'const markdownContent = `(.*?)`;'
-        match = re.search(pattern, self.js_content, flags=re.DOTALL)
-
-        if match:
-            return match.group(1)
-        return ""
-
-    def validate_code_block_markers(self) -> ValidationResult:
-        r"""
-        Validate that code block markers are properly escaped for template literals.
-
-        When markdown is embedded in JavaScript template literals, all backticks MUST be
-        escaped to prevent syntax errors. The parser function must then check for the
-        escaped patterns (e.g., line.trim() === '\\`\\`\\`dart').
-
-        Returns:
-            ValidationResult containing validation status, errors, and warnings
-        """
-        markdown_content = self.extract_markdown_content()
-
-        if not markdown_content:
-            self.warnings.append("No embedded Markdown content found")
-            return ValidationResult(is_valid=True, errors=[], warnings=self.warnings)
-
-        lines = markdown_content.split('\n')
-
-        # Check for properly escaped backticks (e.g., \`\`\`dart)
-        escaped_pattern = r'\\`\\`\\`'
-        escaped_count = sum(1 for line in lines if re.search(escaped_pattern, line))
-
-        # Count code block markers (escaped)
-        opening_markers = sum(1 for line in lines if line.strip() == '\\`\\`\\`dart')
-        closing_markers = sum(1 for line in lines if line.strip() == '\\`\\`\\`')
-
-        # Check for UNESCAPED backticks (which would cause JavaScript syntax errors)
-        unescaped_pattern = r'(?<!\\)`'
-        unescaped_lines = []
-        for line_num, line in enumerate(lines, 1):
-            if re.search(unescaped_pattern, line):
-                unescaped_lines.append(line_num)
-                if len(unescaped_lines) >= 3:
-                    break
-
-        if unescaped_lines:
-            for line_num in unescaped_lines:
-                self.errors.append(
-                    f"Line {line_num}: Unescaped backtick found - all backticks must be escaped in template literals"
-                )
-            if len(unescaped_lines) >= 3:
-                self.errors.append("... and more unescaped backticks found")
-
-        # Validate code block marker balance
-        if opening_markers == 0 and closing_markers == 0:
-            self.warnings.append(
-                "No code block markers found (expected \\`\\`\\`dart and \\`\\`\\`)"
-            )
-        elif opening_markers != closing_markers:
-            self.warnings.append(
-                f"Code block marker mismatch: {opening_markers} opening markers (\\`\\`\\`dart) "
-                f"but {closing_markers} closing markers (\\`\\`\\`)"
-            )
-        else:
-            self.warnings.append(
-                f"Found {opening_markers} properly escaped code blocks"
-            )
-
-        return ValidationResult(
-            is_valid=len(self.errors) == 0,
-            errors=self.errors,
-            warnings=self.warnings
-        )
-
-    def validate(self) -> ValidationResult:
-        """
-        Run all embedded Markdown validations.
-
-        Returns:
-            ValidationResult containing validation status, errors, and warnings
-        """
-        return self.validate_code_block_markers()
-
-
 def main():
     """Main entry point."""
     script_dir = Path(__file__).parent
@@ -350,45 +160,13 @@ def main():
         for warning in html_result.warnings:
             print(f"  • {warning}")
 
-    # Validate JavaScript HTML generation
-    print("\n🔧 Validating JavaScript HTML generation...")
-    js_validator = JavaScriptHTMLValidator(html_content)
-    js_result = js_validator.validate()
-
-    if js_result.errors:
-        print(f"\n❌ Found {len(js_result.errors)} JavaScript HTML error(s):\n")
-        for error in js_result.errors:
-            print(f"  • {error}")
-
-    if js_result.warnings:
-        print(f"\n⚠️  Found {len(js_result.warnings)} JavaScript HTML warning(s):\n")
-        for warning in js_result.warnings:
-            print(f"  • {warning}")
-
-    # Validate embedded Markdown
-    print("\n📝 Validating embedded Markdown content...")
-    md_validator = EmbeddedMarkdownValidator(html_content)
-    md_result = md_validator.validate()
-
-    if md_result.errors:
-        print(f"\n❌ Found {len(md_result.errors)} Markdown error(s):\n")
-        for error in md_result.errors:
-            print(f"  • {error}")
-
-    if md_result.warnings:
-        print(f"\n⚠️  Found {len(md_result.warnings)} Markdown warning(s):\n")
-        for warning in md_result.warnings:
-            print(f"  • {warning}")
-
     # Overall result
-    all_valid = html_result.is_valid and js_result.is_valid and md_result.is_valid
-    total_errors = len(html_result.errors) + len(js_result.errors) + len(md_result.errors)
-    total_warnings = len(html_result.warnings) + len(js_result.warnings) + len(md_result.warnings)
+    all_valid = html_result.is_valid
+    total_errors = len(html_result.errors)
+    total_warnings = len(html_result.warnings)
 
     if all_valid and not total_warnings:
         print("\n✅ All HTML tags are properly opened and closed!")
-        print("✅ JavaScript HTML generation is correct!")
-        print("✅ Embedded Markdown content is valid!")
         print("\n📊 Summary:")
         print(f"  • File size: {len(html_content):,} bytes")
         print(f"  • Lines: {html_content.count(chr(10)) + 1:,}")

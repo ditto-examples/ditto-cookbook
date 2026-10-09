@@ -1,398 +1,140 @@
-# Ditto SDK Implementation Checklist - Build System
+# Ditto SDK Implementation Checklist
 
-This directory contains the build system for generating the Ditto SDK Implementation Checklist HTML file from maintainable source files.
+This directory contains the sources and the build script for the Ditto SDK Implementation Checklist, an interactive review checklist for Flutter apps that use the Ditto SDK. The checklist is derived from the [Ditto SDK Best Practices guide](../../ditto.md) and is distributed as one self-contained HTML file.
 
 ## Overview
 
-The checklist is distributed as a **single self-contained HTML file** (`ditto-sdk-checklist.html`) that users can open directly in their browser. However, during development, the content is maintained in separate source files for better maintainability.
+`ditto-sdk-checklist.html` can be opened directly in a browser or shared as a single file. It has no external dependencies and works offline. It provides:
 
-### Architecture
+- 12 sections of checklist items, each with "What this means", "Why this matters", the related sections of the best-practices guide, and an optional code example
+- English and Japanese, switchable at any time
+- Progress tracking per section and overall, saved in the browser's `localStorage`
+- Expand all / Collapse all, Reset progress, and a print layout with all code examples expanded
 
-```
-Development (Source Files)              Distribution (Generated)
-├── ditto-implementation-checklist.md   ────┐
-├── translations.json                   ────┤
-├── code-translations.json              ────┤
-├── template.html                       ────┼─> ditto-sdk-checklist.html
-└── build-checklist.py                  ────┘    (single HTML file)
-```
-
-**Key Insight**: Separation of concerns during development, single file for distribution.
-
-## File Structure
+The HTML file is generated. Edit the source files and rebuild; do not edit `ditto-sdk-checklist.html` by hand.
 
 ```
-.claude/guides/best-practices/
-└── human-friendly-docs/
-    └── ditto-sdk-checklist/
-        ├── ditto-implementation-checklist.md  # Content source (Markdown)
-        ├── translations.json                  # English/Japanese translations
-        ├── code-translations.json             # Japanese-commented code examples
-        ├── template.html                      # HTML/CSS shell + UI logic
-        ├── build-checklist.py                 # Build script (Python)
-        ├── validate-html-tags.py              # HTML validation tool
-        ├── extract_translations.py            # Helper script (one-time use)
-        ├── ditto-sdk-checklist.html           # Generated output (distribution)
-        └── README.md                          # This file
+Source files                              Generated file
+├── ditto-implementation-checklist.md  ─┐
+├── translations.json                  ─┤
+├── code-translations.json             ─┼─>  ditto-sdk-checklist.html
+├── template.html                      ─┤
+└── build-checklist.py                 ─┘
 ```
 
-### Source Files
+## Files
 
-#### 1. `ditto-implementation-checklist.md` (Content Source)
-- Location: Same directory as build script
-- Single source of truth for checklist content
-- Standard Markdown format with special structure:
-  ```markdown
-  ## Section N: Title
+| File | Purpose |
+|------|---------|
+| `ditto-implementation-checklist.md` | Content source (English) and single source of truth for items, code examples, version, and date |
+| `translations.json` | UI strings (English and Japanese) and the Japanese section titles, item titles, and "What this means" / "Why this matters" text |
+| `code-translations.json` | Code examples with Japanese comments |
+| `template.html` | HTML, CSS, and JavaScript shell with injection placeholders |
+| `build-checklist.py` | Parses the Markdown, validates the translations, and writes the HTML |
+| `validate-html-tags.py` | Checks the tag structure of the generated HTML |
+| `ditto-sdk-checklist.html` | Generated output for distribution |
 
-  ### ☐ Checklist Item Title
+### Markdown format
 
-  **What this means:** Explanation...
+The header blockquote must contain `Version`, `Last Updated`, and `Applies to`; the build copies them into the page header. Each item follows this structure:
 
-  **Why this matters:** Rationale...
+````markdown
+## Section N: Title
 
-  **Code Example**:
+### ☐ Checklist item title
 
-  \`\`\`dart
-  // Code here
-  \`\`\`
-  ```
+**What this means:** Explanation. Bullet lists are supported:
+- First point
+- Second point
 
-#### 2. `translations.json` (Translation Data)
-- English and Japanese UI translations
-- Section titles, item titles, and explanations
-- Extracted from original HTML file
-- Format:
-  ```json
-  {
-    "en": {
-      "title": "Ditto SDK Implementation Checklist",
-      "sections": [...],
-      ...
-    },
-    "ja": {
-      "title": "Ditto SDK実装チェックリスト",
-      "sections": [...],
-      "items": [...],
-      "whatMeansSections": [...]
-    }
-  }
-  ```
+**Why this matters:** Rationale.
 
-#### 3. `template.html` (HTML/CSS Shell)
-- Complete HTML structure with CSS styling
-- UI logic (JavaScript functions):
-  - `toggleSection()` - Accordion expand/collapse
-  - `toggleCode()` - Code example show/hide
-  - `updateProgress()` - Progress bar updates
-  - `switchLanguage()` - Language switching
-- Placeholder comments for injection:
-  - `/* INJECT_TRANSLATIONS_HERE */` - Translation data
-  - `<!-- Pre-rendered sections will be injected here by build script -->` - HTML content
+**Best-practices guide:** Heading in ditto.md, Another heading
 
-#### 4. `build-checklist.py` (Build Script)
-- Parses Markdown into structured data
-- Generates HTML sections from parsed data
-- Injects translations and sections into template
-- Outputs self-contained HTML file
+**Code Example**:
 
-### Generated File
+```dart
+// Optional. One code block per item (dart, sql, or yaml).
+```
+````
 
-#### `ditto-sdk-checklist.html` (Distribution Artifact)
-- **Single self-contained HTML file** - no dependencies
-- Pre-rendered content (no runtime parsing)
-- Can be opened directly in any browser
-- Can be shared as a single file
+Supported inline formatting: `` `code` ``, ``` `` code with `backticks` `` ```, `**bold**`, and `[links](https://...)`. Text is HTML-escaped by the build.
 
-## Build Process
+The "Best-practices guide" line names headings of [ditto.md](../../ditto.md) exactly as written there. It is shown in both languages without translation.
 
-### Prerequisites
+### Translations
 
-- Python 3.7 or later
-- **Optional**: Pygments for syntax highlighting
-  ```bash
-  pip install -r requirements.txt
-  # Or: pip install Pygments
-  ```
+- `translations.json` → `ja.sections`, `ja.items`, `ja.whatMeansSections`, and `ja.whyMattersSections` are arrays aligned by position with the sections and items in the Markdown file. Entries are HTML fragments (`<p>`, `<ul>`, `<li>`, `<code>`, `<strong>`).
+- `code-translations.json` → one entry per code example, in Markdown order (`index` 0, 1, 2, ...). `originalCode` must equal the Markdown code block exactly, and `translatedCode` may differ from it only in comments.
+- English text in the HTML always comes from the Markdown file.
 
-**Note**: Build works without Pygments, but code examples won't be syntax highlighted.
+Conventions for the Japanese text: keep product and DQL terms such as Ditto Server, Small Peer, CRDT, REGISTER, MISSING, attachment, sync scope, and tombstone in English; write "in our testing" as 「テストでは」 and keep "(SDK 5.1.0)" markers; label code comments 「良い例」 / 「悪い例」.
 
-### Building the HTML
+## Building
+
+The build uses Python 3.9 or later. [Pygments](https://pygments.org/) provides syntax highlighting and is declared as inline script metadata (PEP 723), so `uv` installs it automatically:
 
 ```bash
-# Navigate to the directory
 cd .claude/guides/best-practices/human-friendly-docs/ditto-sdk-checklist
-
-# Run the build script
-python3 build-checklist.py
-```
-
-**Output**:
-```
-🔨 Building Ditto SDK Checklist HTML...
-  📄 Markdown source: ditto-implementation-checklist.md
-  🌐 Translations: translations.json
-  📋 Template: template.html
-
-1️⃣  Parsing Markdown...
-   ✓ Parsed 12 sections with 77 items
-2️⃣  Loading translations...
-   ✓ Loaded translations for 2 languages
-3️⃣  Generating HTML sections...
-   ✓ Generated 280910 characters of HTML
-4️⃣  Loading template...
-   ✓ Loaded template (23922 characters)
-5️⃣  Injecting translations and sections...
-   ✓ Generated 42 English code examples
-   ✓ Generated 42 Japanese code examples
-   ✓ Injection complete
-6️⃣  Writing output file...
-   ✓ Written to: ditto-sdk-checklist.html
-
-✅ Build complete!
-   📊 Output size: 729,844 characters
-   📦 Output file: ditto-sdk-checklist.html
-```
-
-### Validating the Output
-
-After building, validate the generated HTML:
-
-```bash
+uv run build-checklist.py
 python3 validate-html-tags.py
 ```
 
-This checks for:
-- Unclosed or mismatched HTML tags
-- Tag nesting errors
-- Proper HTML structure
+`python3 build-checklist.py` also works without Pygments, but the code examples are then not highlighted. Commit HTML built with highlighting.
 
-### Testing in Browser
+The build stops with an error, and writes nothing, when:
 
-```bash
-# macOS
-open ditto-sdk-checklist.html
+- the header fields are missing, or an item lacks "What this means" or "Why this matters"
+- a Japanese array does not have one entry per section or item, or a Japanese fragment has unbalanced HTML tags
+- a code translation's `originalCode` differs from the Markdown code block, or its `translatedCode` differs outside of comments
 
-# Linux
-xdg-open ditto-sdk-checklist.html
+These checks catch the most common maintenance error: changing the English content without updating the Japanese.
 
-# Windows
-start ditto-sdk-checklist.html
-```
+## Testing in a browser
 
-Test these features:
-- ✅ Section accordion (expand/collapse)
-- ✅ Checkbox state persistence (uses localStorage)
-- ✅ Progress bar updates
-- ✅ Language switching (ENG/JPN)
-- ✅ Code example toggles
+Open `ditto-sdk-checklist.html` and check:
 
-## Maintenance Workflows
+- Checkboxes update the overall and per-section progress, and survive a reload
+- ENG / JPN switches every title, text block, heading, button, and code comment
+- Section headers and Show Code buttons expand and collapse (also with the keyboard)
+- Expand all, Collapse all, and Reset progress work
+- The print preview shows all sections and code examples in black on white
 
-### Adding a New Checklist Item
+## Maintenance workflows
 
-1. **Edit the Markdown file**:
-   ```bash
-   vim ditto-implementation-checklist.md
-   ```
+### Updating content
 
-2. **Add the item following the structure**:
-   ```markdown
-   ### ☐ New Item Title
+Keep the checklist synchronized with [ditto.md](../../ditto.md). When a change to the guide affects a checklist item (see the [synchronization workflow](../../../../rules/workflows/ditto-best-practices-sync.md)):
 
-   **What this means:** Explanation...
+1. Edit `ditto-implementation-checklist.md`, and update `Version` and `Last Updated` in its header.
+2. Update the Japanese entries at the same positions in `translations.json`.
+3. If a code example changed, update `originalCode` and `translatedCode` in `code-translations.json`.
+4. Run `uv run build-checklist.py` and `python3 validate-html-tags.py`, and check the page in a browser.
+5. Commit the sources together with `ditto-sdk-checklist.html`.
 
-   **Why this matters:** Rationale...
+### Adding or removing an item
 
-   **Code Example**:
+Insert or remove the item in the Markdown file, and insert or remove the entries at the same position in every `ja` array of `translations.json`. If the item has a code example, insert or remove its block in `code-translations.json` and renumber the `index` values of the following blocks.
 
-   \`\`\`dart
-   // Example code
-   \`\`\`
-   ```
+Saved progress is keyed by each item's English title, so renaming an item resets only that item's checkbox.
 
-3. **Update translations** (if adding Japanese translations):
-   ```bash
-   vim translations.json
-   ```
+### Changing the layout or behavior
 
-   Add entries to:
-   - `ja.items[]` - Japanese item title
-   - `ja.whatMeansSections[]` - Japanese "What this means" content
-   - `ja.whyMattersSections[]` - Japanese "Why this matters" content
-
-   All arrays are aligned by index with the items in the Markdown file. If the item has a code example, also add an entry to `code-translations.json` (`originalCode` must match the Markdown block exactly; `translatedCode` differs only in its comments).
-
-4. **Rebuild**:
-   ```bash
-   python3 build-checklist.py
-   ```
-
-5. **Validate and test**:
-   ```bash
-   python3 validate-html-tags.py
-   open ditto-sdk-checklist.html
-   ```
-
-6. **Commit changes**:
-   ```bash
-   git add ditto-implementation-checklist.md translations.json ditto-sdk-checklist.html
-   git commit -m "Add checklist item: <description>"
-   ```
-
-### Updating Translations
-
-1. **Edit translations**:
-   ```bash
-   vim translations.json
-   ```
-
-2. **Rebuild**:
-   ```bash
-   python3 build-checklist.py
-   ```
-
-3. **Test language switching** in browser
-
-4. **Commit**:
-   ```bash
-   git add translations.json ditto-sdk-checklist.html
-   git commit -m "Update translations: <description>"
-   ```
-
-### Modifying Styles or UI Logic
-
-1. **Edit template**:
-   ```bash
-   vim template.html
-   ```
-
-2. **Modify CSS or JavaScript** as needed
-
-3. **Rebuild**:
-   ```bash
-   python3 build-checklist.py
-   ```
-
-4. **Test in browser** (check responsive design, interactions)
-
-5. **Commit**:
-   ```bash
-   git add template.html ditto-sdk-checklist.html
-   git commit -m "Update styles: <description>"
-   ```
-
-## Benefits of This Architecture
-
-### For End Users
-- ✅ Single HTML file (no change from before)
-- ✅ No build dependencies required
-- ✅ Works offline
-- ✅ Instant page load (pre-rendered)
-
-### For Developers (Maintainability)
-- ✅ Content in standard Markdown (easy editing)
-- ✅ Translations in clean JSON format
-- ✅ No content duplication (single source of truth)
-- ✅ Separation of concerns (content, styling, logic)
-- ✅ Standard Python libraries (no custom parser)
-- ✅ Clear build process
-
-## Comparison: Before vs After
-
-| Aspect | Before | After |
-|--------|--------|-------|
-| **Content updates** | Edit embedded JS string | Edit Markdown file |
-| **Translation updates** | Edit inline HTML in JS | Edit JSON file |
-| **Parser** | 222-line custom parser | Standard library |
-| **Content duplication** | Yes (Markdown in 2 places) | No (single source) |
-| **File for development** | 1 file (2,636 lines) | 4 files (separated) |
-| **File for distribution** | 1 HTML file ✅ | 1 HTML file ✅ |
-| **Maintainability score** | 2/10 | 8/10 |
+Edit `template.html` and rebuild. The build replaces these placeholders: `{{VERSION}}`, `{{LAST_UPDATED}}`, `{{APPLIES_TO}}`, `<!-- INJECT_SECTIONS_HERE -->`, `/* INJECT_TRANSLATIONS_HERE */`, and `/* INJECT_PYGMENTS_CSS_HERE */`. UI strings belong in `translations.json` (elements with `data-i18n` or `data-i18n-html`), not in the template.
 
 ## Troubleshooting
 
-### Build Fails with "Could not find translations object"
+| Symptom | Cause and fix |
+|---------|---------------|
+| `Translations are out of sync` | The English content changed without matching Japanese updates. The message lists each entry to update. |
+| `Placeholder ... not found` | A placeholder was removed from `template.html`. Restore it. |
+| Validation reports an unclosed tag | Check the line in the generated HTML; the source is usually `template.html`. Text from the Markdown file is escaped by the build. |
+| Progress is not saved | The browser blocks `localStorage` for this page (for example, in a private window or with a strict policy for `file://` pages). The checklist still works, but progress is not remembered. |
 
-The build script expects `translations.json` to exist. If it's missing:
+## Browser storage
 
-```bash
-# Regenerate from current HTML (if needed)
-python3 extract_translations.py
-```
-
-### Validation Errors: "Unclosed tag"
-
-This usually means:
-1. Missing closing tag in template.html
-2. Improperly escaped content in Markdown
-
-Check the line numbers in the error message and inspect the generated HTML.
-
-### Language Switching Doesn't Work
-
-Check:
-1. Translations are properly injected (view source of generated HTML)
-2. JavaScript console for errors
-3. Translation keys match between template and translations.json
-
-### Progress Bar Not Updating
-
-Check:
-1. Checkbox elements have correct class: `item-checkbox`
-2. JavaScript `updateProgress()` function is present
-3. Browser console for errors
-
-## Future Enhancements
-
-After this refactoring, these improvements become easier:
-
-1. **Automated translation validation** in build script
-2. **Git hook integration** for auto-build on commit
-3. **CI/CD integration** for automated deployment
-4. **Syntax highlighting** for code examples (using Pygments)
-5. **Content sync** from main Ditto best practices guide
-
-## Technical Details
-
-### Build Script Architecture
-
-```python
-class MarkdownParser:
-    # Parses .md file into structured data
-    def parse() -> List[Section]
-
-class HTMLGenerator:
-    # Converts structured data to HTML
-    def generate_sections_html() -> str
-
-class ChecklistBuilder:
-    # Orchestrates: parse → generate → inject → write
-    def build()
-```
-
-### HTML Escaping
-
-The build script properly escapes:
-- `<`, `>`, `&` in code examples
-- `<uuid>`, `<timestamp>` placeholders in inline code
-- Special characters in Markdown content
-
-### LocalStorage State
-
-The generated HTML uses `localStorage` to persist:
-- Checkbox states: `ditto-checklist-state`
-- Language preference: `ditto-checklist-lang`
-
-## Support
-
-For issues or questions:
-1. Check this README
-2. Run `python3 build-checklist.py` and review output
-3. Run `python3 validate-html-tags.py` to check HTML structure
-4. Open an issue in the repository
+The page stores two `localStorage` entries: `ditto-checklist-state-v2` (the IDs of checked items) and `ditto-checklist-lang` (the selected language). Nothing is sent anywhere.
 
 ---
 
-**Last Updated**: 2026-10-08
-**Architecture Version**: 1.0
+**Last Updated**: 2026-10-09

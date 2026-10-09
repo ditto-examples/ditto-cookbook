@@ -2,8 +2,8 @@
 paths:
   - .claude/guides/best-practices/ditto.md
   - .claude/skills/ditto/**
-version: 1.1
-last_updated: 2026-10-08
+version: 1.2
+last_updated: 2026-10-09
 priority: CRITICAL
 ---
 
@@ -28,6 +28,9 @@ Ensures synchronization between the authoritative Ditto best practices guide and
   - `storage-lifecycle/SKILL.md` + examples + reference
   - `transactions-attachments/SKILL.md` + examples + reference
   - `performance-observability/SKILL.md` + examples + reference
+- **Derivative Content**: `.claude/guides/best-practices/human-friendly-docs/ditto-sdk-checklist/` (customer-facing checklist; see its [README](../../guides/best-practices/human-friendly-docs/ditto-sdk-checklist/README.md))
+  - `ditto-implementation-checklist.md` (English) + `translations.json` and `code-translations.json` (Japanese)
+  - `ditto-sdk-checklist.html` (generated with `uv run build-checklist.py`)
 
 ## Documentation Format Requirements
 
@@ -61,6 +64,7 @@ Review the edited sections and determine which skill files are affected:
 | Deletion/EVICT/storage changes | `storage-lifecycle/` | `SKILL.md`, `examples/*.dart`, `reference/*.md` |
 | Transaction/attachment changes | `transactions-attachments/` | `SKILL.md`, `examples/*.dart`, `reference/*.md` |
 | Performance/logging/observer changes | `performance-observability/` | `SKILL.md`, `examples/*.dart`, `reference/*.md` |
+| Any change to a rule, caveat, or code example that a checklist item covers, or a renamed heading that an item names under "Best-practices guide" | `human-friendly-docs/ditto-sdk-checklist/` | `ditto-implementation-checklist.md`, `translations.json`, `code-translations.json`, then rebuild `ditto-sdk-checklist.html` |
 
 ### Step 3: Update Skills
 
@@ -69,6 +73,7 @@ Propagate the changes to relevant SKILL.md files and example files:
 2. Update or add examples in `examples/` directory
 3. Update reference docs in `reference/` directory if needed
 4. Verify consistency across all affected files
+5. For the checklist, update the English item, the Japanese entries at the same position, and the version and date in the checklist header, then rebuild; the build fails if the Japanese data no longer lines up with the English
 
 ### Step 4: Skip if Unnecessary
 

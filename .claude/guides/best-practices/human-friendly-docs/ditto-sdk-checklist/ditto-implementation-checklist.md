@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.5
+> **Version**: 2.6
 > **Last Updated**: 2026-10-09
 > **Applies to**: Ditto SDK 5.1.0 (Flutter `ditto_live` 5.1.0)
 >
@@ -69,7 +69,7 @@ class DittoProvider {
 - `DittoConfigConnectSmallPeersOnly(privateKey: key)`: devices sync only with each other, using a shared key (TLS 1.3).
 - `DittoConfigConnectSmallPeersOnly()` without a key: local store tests and development only (sync still requires an offline license token).
 
-**Why this matters:** The mode decides how devices authenticate and whether traffic is encrypted. Without a `privateKey`, traffic between peers is not encrypted in transit. `databaseID` must be a valid UUID; do not rely on `Ditto.open()` to reject a leftover placeholder.
+**Why this matters:** The mode decides how devices authenticate and whether traffic is encrypted. Without a `privateKey`, peers do not authenticate each other: any device with the SDK, the Database ID, and an offline license token can connect, read, and write. The SDK documents this mode as unencrypted in transit, so treat it as unprotected. `databaseID` must be a valid UUID; do not rely on `Ditto.open()` to reject a leftover placeholder.
 
 **Best-practices guide:** Initializing Ditto
 
@@ -160,7 +160,7 @@ Future<void> applySettingsAndStartSync(Ditto ditto) async {
 
 ### ☐ Treat sync.start() and sync.stop() as synchronous, and keep Ditto open in the background
 
-**What this means:** `ditto.sync.start()` and `ditto.sync.stop()` return `void`, so do not `await` them. `start()` throws when a prerequisite (expiration handler or offline license token) is missing and does nothing while sync is active (`ditto.sync.isActive`). To pause syncing in the background, call `stop()` and start again on resume; do not call `ditto.close()` when the app is paused.
+**What this means:** `ditto.sync.start()` and `ditto.sync.stop()` return `void`, so do not `await` them. `start()` throws when a prerequisite (expiration handler or offline license token) is missing and does nothing while sync is active (`ditto.sync.isActive`). Keep Ditto open when the app is paused: do not call `ditto.close()`. Only if your app must not sync in the background, call `stop()` when it is paused, and on resume restart only the sync that you paused.
 
 **Why this matters:** Awaiting a `void` call is a compile error in Dart. `close()` is final for that instance: every later call throws `DittoClosedException`, and you would have to open a new instance and register all subscriptions and observers again. After `stop()`, the local store remains fully usable.
 
@@ -169,22 +169,32 @@ Future<void> applySettingsAndStartSync(Ditto ditto) async {
 **Code Example**:
 
 ```dart
-// ✅ GOOD: Pause sync in the background without closing Ditto.
+// ✅ GOOD: For apps that must not sync in the background: pause sync without
+// closing Ditto, and resume only the sync that this class paused.
 class SyncLifecycle with WidgetsBindingObserver {
   SyncLifecycle(this.ditto) {
     WidgetsBinding.instance.addObserver(this);
   }
 
   final Ditto ditto;
+  bool _pausedByLifecycle = false;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.paused:
-        ditto.sync.stop(); // the local store stays usable
+        if (ditto.sync.isActive) {
+          ditto.sync.stop(); // the local store stays usable
+          _pausedByLifecycle = true;
+        }
       case AppLifecycleState.resumed:
-        if (!ditto.sync.isActive) {
-          ditto.sync.start();
+        if (_pausedByLifecycle) {
+          _pausedByLifecycle = false;
+          try {
+            ditto.sync.start();
+          } catch (error) {
+            showError(error); // for example, prerequisites changed in the background
+          }
         }
       default:
         break;
@@ -197,9 +207,9 @@ class SyncLifecycle with WidgetsBindingObserver {
 
 ### ☐ Change transport settings with updateTransportConfig()
 
-**What this means:** `TransportConfig` is immutable. Use `ditto.updateTransportConfig((config) { ... })`, which starts from the current configuration, and change only what you need, for example with `setAllPeerToPeerEnabled()` or a single transport under `peerToPeer`. Treat `global.syncGroup` as an optimization, not as a security boundary. On a hub that more than six devices connect to over TCP, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every open and before `ditto.sync.start()`.
+**What this means:** `TransportConfig` is immutable. Use `ditto.updateTransportConfig((config) { ... })`, which starts from the current configuration, and change only what you need, for example with `setAllPeerToPeerEnabled()` or a single transport under `peerToPeer`. Treat `global.syncGroup` as an optimization, not as a security boundary. On a hub that more than six devices connect to over TCP, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every open and before `ditto.sync.start()`. This parameter is not part of the documented configuration and may change in a later release, so confirm the setting with Ditto support before you rely on it in production.
 
-**Why this matters:** A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Configuration changes are applied asynchronously and invalid values do not throw, so a hand-built configuration can silently stop devices from finding each other. A device accepts only 6 TCP connections by default (SDK 5.1.0): further clients of a hub get no data and no error.
+**Why this matters:** A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Configuration changes are applied asynchronously and invalid values do not throw, so a hand-built configuration can silently stop devices from finding each other. In our testing with SDK 5.1.0, a device accepted 6 TCP connections by default: further clients of a hub received no data, and no API reported an error (only a `WARN` log line showed it).
 
 **Best-practices guide:** Transport Configuration
 
@@ -298,7 +308,7 @@ Future<void> tasksWithStatusWrong(Ditto ditto) async {
 
 **What this means:** Object literals written inside a DQL statement must use quoted keys, for example `{'status': 'open'}`. Better still, avoid inline objects and pass documents as parameters (`DOCUMENTS (:order)`).
 
-**Why this matters:** Unquoted keys are rejected in `INSERT`, and in `SELECT` they silently produce an empty object (`{}`), because the unquoted key is evaluated as a field reference.
+**Why this matters:** Unquoted keys are rejected in `INSERT`, and in `SELECT` they are silently evaluated as field references, usually producing an empty object (`{}`).
 
 **Best-practices guide:** Quote every key in inline object literals
 
@@ -385,7 +395,8 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
       'ids': ids,
       'status': 'shipped',
       'expected': 'packed',
-      'now': DateTime.now().toUtc().toIso8601String(),
+      // utcTimestamp(): see "Store timestamps in UTC with a zone designator".
+      'now': utcTimestamp(),
     },
   );
   return result.items.map((item) => item.value).toList();
@@ -396,13 +407,13 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
 
 **What this means:** Watch for these common mistakes:
 - `type(x) = 'number'` never matches, because `type()` returns `'integer'` or `'float'`; use `is_number(x)`
-- Swapped arguments to date functions return MISSING; keep `date_add(date, part, count)` and `date_diff(date1, date2, part)`
+- Swapped `part` and `count` arguments to `date_add` and `date_sub` return MISSING; keep `date_add(date, part, count)`. `date_diff(date1, date2, part)` returns `date1 - date2`, so swapping the dates flips the sign
 - `GROUP BY` and `HAVING` cannot reference projection aliases (the statement fails); repeat the expression
 - Comparing values of different types, including with `=` and `!=` (`1 = 'a'`, `1 != 'a'`, `1 < 'a'`), evaluates to MISSING
 
 **Why this matters:** Most of these look like valid queries, so the bug shows up as missing rows or fields in the UI rather than as an exception.
 
-**Best-practices guide:** DQL Functions and Operators, GROUP BY and HAVING
+**Best-practices guide:** Type Checking, Date and Time, GROUP BY and HAVING, MISSING and NULL
 
 ---
 
@@ -449,7 +460,7 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 
 **What this means:** Store line items, participants, or checklist entries as a map keyed by a stable ID (`{"items": {"<itemId>": {...}}}`), and keep any display order in a field such as `position`. Use arrays only for lists that one device owns or that are replaced as a whole. To add or update one entry from code, upsert a partial document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`.
 
-**Why this matters:** An array is a single register: when two devices change the same array concurrently, one version wins and the other change disappears without an error. Map entries merge independently, so concurrent additions and edits to different entries are all kept. Removing an entry with `UNSET` does not win over a concurrent edit of that entry, which leaves a partial entry, so readers must skip entries with missing or `null` fields.
+**Why this matters:** An array is a single register: when two devices change the same array concurrently, one version wins and the other change disappears without an error. Map entries merge independently, so concurrent additions and edits to different entries are all kept. In our testing with SDK 5.1.0, removing an entry with `UNSET` did not win over a concurrent edit of that entry and left a partial entry. When devices may edit an entry while another removes it, mark it removed (`` SET items.`<id>`.removed = true ``) instead, and make readers skip entries with missing or `null` required fields.
 
 **Best-practices guide:** Arrays and Maps
 
@@ -458,6 +469,7 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 ```dart
 /// ✅ GOOD: Adds or updates one line item of a map keyed by item ID.
 /// The key is passed as data, never spliced into the query.
+/// Note: if the order does not exist yet, this creates it.
 Future<void> upsertOrderItem(
   Ditto ditto, {
   required String orderId,
@@ -675,7 +687,7 @@ String localTimestamp() => DateTime.now().toIso8601String();
 
 **What this means:** Insert default settings or built-in categories with `INSERT INTO c INITIAL DOCUMENTS (:doc)`, using fixed, well-known `_id` values and identical content in every app version. Running it on every launch is safe: existing documents, including edited ones, are kept. Use a regular `INSERT` with a new UUID for data that only one device creates.
 
-**Why this matters:** A regular `INSERT` of shared defaults fails with an ID conflict on the second run, and `ON ID CONFLICT DO UPDATE` would overwrite users' edits. Seeding a deleted ID with different content (or an ID that was first created with a regular `INSERT`) leaves a document with `null` fields, so if the seed content may change in a later app version, use a soft delete (such as an `isArchived` flag) for seed documents that users can remove. Different seeds for the same `_id` merge field by field, so a key removed in a new app version comes back from devices that still run the old one. Initial documents sync like any other document.
+**Why this matters:** A regular `INSERT` of shared defaults fails with an ID conflict on the second run, and `ON ID CONFLICT DO UPDATE` would overwrite users' edits. Seeding an ID that was deleted leaves a document with `null` fields when the seed content differs from the original `INITIAL` insert, or when the deleted document was originally created with a regular `INSERT`. If the seed content may change in a later app version, use a soft delete (such as an `isArchived` flag) for seed documents that users can remove. In our testing with SDK 5.1.0, different seeds for the same `_id` merged field by field, so a key removed in a new app version came back from devices that still ran the old one. Initial documents sync like any other document.
 
 **Best-practices guide:** Default Data with INITIAL Documents
 
@@ -770,7 +782,7 @@ Future<void> setShippingAddress(
 
 **What this means:** A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. Projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS` are rejected when you register, and `LIMIT` and `ORDER BY` are rejected while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value `true`. Keep that default, and sort and limit in local queries.
 
-**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` is stateful: the sync engine must re-evaluate it whenever a document crosses the limit boundary, which degrades sync performance. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0): later, every matching new or changed document is synced, whether or not it is inside the window. A document that stops matching a filter stays on the device as a frozen copy: later edits and even its deletion no longer arrive.
+**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` is stateful: the sync engine must re-evaluate it whenever a document crosses the limit boundary, which degrades sync performance. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0): later, every matching new or changed document is synced, whether or not it is inside the window. In our testing with SDK 5.1.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits and even its deletion no longer arrived.
 
 **Best-practices guide:** Subscription Rules
 
@@ -932,8 +944,15 @@ class _OrdersListState extends State<OrdersList> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-        children: [for (final o in _orders) ListTile(title: Text('${o['_id']}'))],
+  Widget build(BuildContext context) => ListView.builder(
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return ListTile(
+            key: ValueKey(order['_id']),
+            title: Text('${order['_id']}'),
+          );
+        },
       );
 }
 ```
@@ -942,7 +961,7 @@ class _OrdersListState extends State<OrdersList> {
 
 **What this means:** Whenever the order of results matters, include `ORDER BY` with a unique tie-breaker such as `_id`, for example `ORDER BY createdAt DESC, _id`, and give list rows a `ValueKey` based on `_id`.
 
-**Why this matters:** Without `ORDER BY`, observer results have no guaranteed order, so rows can change position on every update.
+**Why this matters:** Without `ORDER BY`, observer results have no guaranteed order, so rows can change position on every update. Sorting by a timestamp is reliable only when every value is written with the same fixed-precision helper (`utcTimestamp()`).
 
 **Best-practices guide:** Stable ordering
 
@@ -1085,14 +1104,19 @@ Future<void> badCheckout(Ditto ditto, String orderId, Future<void> Function() ch
     await ditto.store.transaction((inner) async {
       await inner.execute(
         'UPDATE orders SET paidAt = :paidAt WHERE _id = :id',
-        arguments: {'id': orderId, 'paidAt': DateTime.now().toUtc().toIso8601String()},
+        arguments: {'id': orderId, 'paidAt': utcTimestamp()},
       );
     });
   });
 }
 
 // ✅ GOOD: Do the I/O first, then record the outcome in one short transaction.
-Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() chargeCard) async {
+Future<void> checkout(
+  Ditto ditto,
+  String orderId,
+  String paymentId, // a UUID, generated once per payment
+  Future<void> Function() chargeCard,
+) async {
   await chargeCard(); // Outside the transaction.
   await ditto.store.transaction(hint: 'recordPayment', (tx) async {
     await tx.execute(
@@ -1100,13 +1124,14 @@ Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() charg
       arguments: {
         'id': orderId,
         'status': 'paid',
-        'paidAt': DateTime.now().toUtc().toIso8601String(),
+        // utcTimestamp(): see "Store timestamps in UTC with a zone designator".
+        'paidAt': utcTimestamp(),
       },
     );
     await tx.execute(
       'INSERT INTO payments DOCUMENTS (:payment)',
       arguments: {
-        'payment': {'_id': 'payment-$orderId', 'orderId': orderId},
+        'payment': {'_id': paymentId, 'orderId': orderId},
       },
     );
   });
@@ -1169,7 +1194,7 @@ Future<List<Map<String, dynamic>>> activeOrders(Ditto ditto, String status) asyn
 
 **What this means:** Do not exclude flagged documents from the subscription; hide them in local queries instead. Clean them up in one of two ways: subscribe to the whole collection (or partition) and run a `DELETE` after a retention period on Ditto Server or on an authorized peer, or subscribe to active documents plus documents deleted within a retention window and evict exactly the older ones on each device.
 
-**Why this matters:** A subscription that excludes flagged documents stops requesting a document as soon as it is flagged: the flag still arrives, but later changes, including a restore, do not (SDK 5.1.0). Cancelling or narrowing a subscription never deletes local data, and a subscription filter does not hide documents in local results, so every local query and observer must filter flagged documents itself.
+**Why this matters:** A subscription that excludes flagged documents stops requesting a document as soon as it is flagged. In our testing with SDK 5.1.0, the flag still arrived, but later changes, including a restore, did not. Cancelling or narrowing a subscription never deletes local data, and a subscription filter does not hide documents in local results, so every local query and observer must filter flagged documents itself.
 
 **Best-practices guide:** Soft delete, subscriptions, and cleanup
 
@@ -1424,7 +1449,7 @@ Future<List<Map<String, dynamic>>> loadOrders(Ditto ditto, List<String> ids) asy
 
 **Why this matters:** Base64 data counts toward the document size limit and is re-sent with the document. An attachment's token syncs with the document, while the blob is transferred only when a device fetches it, through a resumable protocol. The declaration works both with and without strict mode.
 
-**Best-practices guide:** Creating and Inserting Attachments
+**Best-practices guide:** Creating and Inserting Attachments, Size Guidance
 
 **Code Example**:
 
@@ -1469,14 +1494,15 @@ Future<AttachmentFetcher?> showPhoto(Ditto ditto, String photoId) async {
     arguments: {'id': photoId},
   );
   if (result.items.isEmpty) return null;
-  final token = result.items.first.value['image'] as Map<String, dynamic>;
+  final token = result.items.first.value['image'];
+  if (token is! Map<String, dynamic>) return null; // Field missing or null.
+  // The caller calls stop() on the returned fetcher if the screen closes first.
   return ditto.store.fetchAttachment(token, (event) async {
     if (event is AttachmentFetchEventCompleted) {
       final bytes = await event.attachment.data;
       debugPrint('fetched ${bytes.length} bytes');
     }
   });
-  // Call stop() on the returned fetcher if the screen closes first.
 }
 ```
 
@@ -1484,7 +1510,7 @@ Future<AttachmentFetcher?> showPhoto(Ditto ditto, String photoId) async {
 
 **What this means:** Show a placeholder with the attachment's metadata while the blob is unavailable, and use a timeout with a retry in the UI. Let hub devices, or a backend connected to Ditto Server, fetch attachments that many devices need.
 
-**Why this matters:** A blob can be fetched only while a peer that holds it is reachable, and a blob exists on a device only if that device created or fetched it. The fetch API has no "not available" event: the fetch simply makes no progress. A relay that has not fetched a blob itself does not pass it on: in tests, a device two hops away could fetch it only after the device in between had (SDK 5.1.0).
+**Why this matters:** A blob can be fetched only while a peer that holds it is reachable, and a blob exists on a device only if that device created or fetched it. The fetch API has no "not available" event: the fetch simply makes no progress. Do not rely on relays to pass blobs on across multiple hops: in our testing with SDK 5.1.0, a device two hops away could fetch a blob only after the device in between had fetched it itself.
 
 **Best-practices guide:** Availability
 
@@ -1538,7 +1564,8 @@ Future<Ditto> openProvisionedSmallPeer({
   return ditto;
 }
 
-// ❌ BAD: No privateKey means no encryption in transit.
+// ❌ BAD: Without a privateKey, peers do not authenticate each other, and the
+// SDK documents this mode as unencrypted.
 Future<Ditto> openUnprotectedSmallPeer() {
   return Ditto.open(
     const DittoConfig(
@@ -1673,7 +1700,9 @@ import 'package:integration_test/integration_test.dart';
 
 /// Opens a Ditto instance for one test. Sync is never started, so no
 /// license token or network connection is needed.
-Future<Ditto> openTestDitto() async {
+Future<Ditto> openTestDitto({
+  Future<void> Function(Ditto ditto)? configure,
+}) async {
   final directory = await Directory.systemTemp.createTemp('ditto_test_');
   final ditto = await Ditto.open(
     DittoConfig(
@@ -1684,8 +1713,14 @@ Future<Ditto> openTestDitto() async {
   // Runs after the test, even when it fails.
   addTearDown(() async {
     await ditto.close();
-    await directory.delete(recursive: true);
+    try {
+      await directory.delete(recursive: true);
+    } on FileSystemException {
+      // Best effort: the OS removes temporary directories eventually.
+    }
   });
+  // Apply the app's system parameters and indexes, as at app startup.
+  await configure?.call(ditto);
   return ditto;
 }
 
@@ -1706,7 +1741,7 @@ void main() {
 
 ### ☐ Test the behaviors that fail silently
 
-**What this means:** Assert the write shapes your code relies on (field-level updates, maps keyed by ID, no-op re-upserts), soft-delete filters with the flag set to `true`, `false`, `null`, and missing, deletions by `WHERE _id IN :ids`, and observer and subscription cleanup (`isCancelled` after `cancel()`). Test concurrent merges, deletion propagation, relay, and attachments separately, on multiple devices with real sync.
+**What this means:** Assert the write shapes your code relies on (field-level updates, maps keyed by ID, no-op re-upserts), soft-delete filters with the flag set to `true`, `false`, `null`, and missing, deletions by `WHERE _id IN :ids`, and observer and subscription cleanup (`isCancelled` after `cancel()`). Test concurrent merges, deletion propagation, relay, and attachments separately, with several Ditto instances that sync for real (most of these tests can run in one test process over localhost, and they need an offline license token).
 
 **Why this matters:** These bugs raise no exception: a filter hides documents, a statement removes nothing, or an observer keeps running. A single device cannot reproduce a concurrent merge, but it can verify that your code produces writes that merge well. Test your own business rules rather than basic SDK behavior.
 
