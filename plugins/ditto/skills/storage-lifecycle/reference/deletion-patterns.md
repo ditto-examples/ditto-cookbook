@@ -43,7 +43,7 @@ After merge:        {"_id": "abc123", "color": null}        // make, year: MISSI
 ```
 
 - The document survives even when the `DELETE` is the later write.
-- Fields the update did not touch are MISSING (`make IS MISSING` is `true`), not `null` as Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) shows.
+- Fields the update did not touch are MISSING (`make IS MISSING` is `true`) in SDK 5.1.0, although Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) shows them as `null`. Make code that reads husk documents handle both cases.
 - Husks count in `SELECT COUNT(*)`, but value filters exclude them.
 - Running the `DELETE` again after the merge removes the husk on every device.
 

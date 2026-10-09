@@ -57,7 +57,7 @@ Consequences:
 
 ## Subscription Lifecycle
 
-- Avoid changing subscriptions more often than about every 15 minutes (Ditto's guidance): each change makes peers re-evaluate what they owe the device. Documents already held are not downloaded again. An identical second registration transferred nothing in tests, but data keeps syncing until **every** copy of it is cancelled.
+- Avoid changing subscriptions more often than about every 15 minutes: each change makes peers re-evaluate which documents they must send to the device. The guideline is about that re-evaluation work, not data transfer: documents already held are not downloaded again, and an identical second registration transferred nothing in our testing, but data keeps syncing until **every** copy of it is cancelled.
 - Register when data becomes relevant (app start, login, entering a workspace) in an app- or feature-level service; keep every `SyncSubscription` reference.
 - Re-register only when the set of data the device needs changes (switching store or tenant). Search, tabs, filters, and sort orders change observers.
 - Subscriptions stay active until `cancel()` or `ditto.close()`. Always release them explicitly; do not rely on garbage collection to cancel them.
@@ -128,7 +128,7 @@ Callback rules:
 - Keep listeners synchronous: copy values, map to models, call `setState`. Move heavy computation off the UI isolate (for example `compute()` on copied values).
 - Do not `await` network, file, or database work in a `registerObserver` listener; do not write to the observed collection without a guard.
 - Changes that arrive through sync are delivered in batches: expect fewer callbacks than remote writes (a remote transaction arrives as one callback), and do not count or log remote changes through callbacks.
-- Ditto documents observers on `system:data_sync_info` as firing every 500 ms (in SDK 5.1.0 tests they fired only when the rows changed): use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
+- How often observers on `system:data_sync_info` fire varies: the Ditto documentation describes a 500 ms interval, while with SDK 5.1.0 an idle observer fired only when the rows changed (about once every 10 seconds). Write code that works with either behavior: use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
 - With state management libraries, let one provider or controller own each observer and cancel it in the provider's dispose hook. `item.value` creates a new `Map` per result, so map rows to immutable models with `==` if you rely on equality to skip rebuilds.
 
 ## Backpressure Behavior

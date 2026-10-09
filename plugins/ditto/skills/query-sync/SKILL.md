@@ -150,7 +150,7 @@ Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
 | Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` (no index) |
 | ❌ Array parameter in parentheses | `status IN (:statuses)` matches nothing |
 
-> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) instead. This is a 5.1.0 regression and affects local queries and observers only. A subscription with the same predicate syncs the right documents, so "subscribe and observe with the same query" receives the data but shows an empty list.
+> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) instead. This is a known issue in 5.1.0 (5.0.x returned the matching documents) and affects local queries and observers only. A subscription with the same predicate syncs the right documents, so "subscribe and observe with the same query" receives the data but shows an empty list.
 
 **Guide**: [Filtering by Membership](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#filtering-by-membership)
 
@@ -195,7 +195,7 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 
 ### 6. Subscription Lifecycle (CRITICAL)
 
-Changing subscriptions makes peers across the mesh re-evaluate what they owe the device. Avoid changing subscriptions more often than about every 15 minutes.
+Changing subscriptions makes peers across the mesh re-evaluate which documents they must send to the device. Avoid changing subscriptions more often than about every 15 minutes. The guideline is about that re-evaluation work, not data transfer: documents the device already holds are not downloaded again.
 
 **✅ DO**:
 - Register subscriptions at app start, after login, or when the user enters a workspace, in an app- or feature-level service

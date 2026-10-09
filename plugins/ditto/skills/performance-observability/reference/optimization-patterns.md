@@ -277,7 +277,7 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 
 **Guide**: [System Virtual Collections](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#system-virtual-collections), [Request Diagnostics](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#request-diagnostics)
 
-Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; in SDK 5.1.0 tests they fired only when the rows changed). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
+Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; with SDK 5.1.0 an idle observer fired only when the rows changed, so do not rely on either behavior). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
 
 | Collection | Purpose |
 |---|---|
