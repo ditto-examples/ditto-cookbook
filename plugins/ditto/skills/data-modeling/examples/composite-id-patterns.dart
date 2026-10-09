@@ -8,8 +8,8 @@
 // Put only immutable attributes into _id. Key order inside a composite _id
 // does not matter.
 //
-// Guide: .claude/guides/best-practices/ditto.md
-//   #composite-ids-for-permission-scoping-and-grouping, #schema-evolution
+// Guide: § Composite IDs for permission scoping and grouping,
+//   § Schema Evolution
 
 import 'package:ditto_live/ditto_live.dart';
 

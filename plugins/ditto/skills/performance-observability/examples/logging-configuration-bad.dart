@@ -6,11 +6,11 @@
 // Logging and Diagnostics Configuration (Anti-Patterns)
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #logging
-// - #forwarding-logs-to-your-own-pipeline
-// - #on-disk-logs-and-exporting-them
-// - #system-virtual-collections
+// Guide sections (../../guide/reference/ditto.md):
+// - § Logging
+// - § Forwarding logs to your own pipeline
+// - § On-disk logs and exporting them
+// - § System Virtual Collections
 //
 // Each function compiles, but fails at runtime or loses diagnostics.
 // Corrected versions are in logging-configuration-good.dart.

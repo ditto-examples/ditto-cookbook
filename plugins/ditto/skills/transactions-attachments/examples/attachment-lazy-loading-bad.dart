@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Attachment loading anti-patterns
 //
-// Guide: .claude/guides/best-practices/ditto.md#fetching-attachments
+// Guide: § Fetching Attachments
 //
 // Every function below compiles. The problems appear at runtime.
 //

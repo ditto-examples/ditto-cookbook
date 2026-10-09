@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Lazy attachment loading
 //
-// Guide: .claude/guides/best-practices/ditto.md#fetching-attachments
+// Guide: § Fetching Attachments
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Subscriptions sync tokens only; blobs are fetched explicitly

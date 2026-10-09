@@ -5,9 +5,9 @@
 // Device-local, time-based retention on a Small Peer, plus tombstone TTL
 // settings applied at startup.
 //
-// Guide: .claude/guides/best-practices/ditto.md#time-based-eviction
-//        .claude/guides/best-practices/ditto.md#batching-evictions
-//        .claude/guides/best-practices/ditto.md#tombstone-ttl-and-reaping
+// Guide: § Time-based eviction
+//        § Batching evictions
+//        § Tombstone TTL and reaping
 //
 // Two different "TTLs" appear here:
 // - Retention window (app logic): how long documents stay on this device.

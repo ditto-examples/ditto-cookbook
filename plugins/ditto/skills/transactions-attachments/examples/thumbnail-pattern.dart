@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Thumbnail pattern
 //
-// Guide: .claude/guides/best-practices/ditto.md#thumbnail-pattern
+// Guide: § Thumbnail Pattern
 //
 // Lists of photos should not download full-size images. Store a small
 // preview next to the full-size attachment and fetch the full-size file only

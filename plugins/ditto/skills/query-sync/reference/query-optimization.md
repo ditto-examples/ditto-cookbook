@@ -1,9 +1,10 @@
 # Query Optimization (SDK 5.1)
 
-How to keep local queries and observers fast. Extracted from the guide sections [Working with Query Results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#working-with-query-results), [Reading Data with SELECT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#reading-data-with-select), and [Indexing and Query Performance](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-and-query-performance). Index creation, `ADVISE`, `EXPLAIN`, and `PROFILE` are covered in the performance-observability skill.
+How to keep local queries and observers fast. Extracted from the guide sections `§ Working with Query Results`, `§ Reading Data with SELECT`, and `§ Indexing and Query Performance`. Index creation, `ADVISE`, `EXPLAIN`, and `PROFILE` are covered in the performance-observability skill.
 
 ## Table of Contents
 
+- [Query Results](#query-results)
 - [Query Scope](#query-scope)
 - [Pagination](#pagination)
 - [Counting and Existence](#counting-and-existence)
@@ -15,6 +16,20 @@ How to keep local queries and observers fast. Extracted from the guide sections 
 - [Checklist](#checklist)
 
 ---
+
+## Query Results
+
+| Member (Flutter) | Notes |
+|---|---|
+| `items` | `Iterable<QueryResultItem>`, not a `List`; each pass creates new wrappers |
+| `item.value` | `Map<String, dynamic>`, decoded on first access and cached on that item |
+| `item.jsonString`, `item.cborBytes` | Properties, not methods |
+| `mutatedDocumentIDs()` | Builds a new list on every call; call once. With `RETURNING`, treat `items` as the result and include `_id` in the projection when you need the IDs |
+| `commitID` | `int?`; `null` for reads, and `null` inside a transaction until it commits. A write that changed nothing (empty `mutatedDocumentIDs()`) still gets one, which peers confirm only with a later commit (up to about 30 s; SDK 5.1.0): track it only when something changed |
+
+- Iterate `items` once and convert rows to maps or model objects right away; project only the fields you need.
+- Do not store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks: they reference native memory.
+- See `§ Working with Query Results` and [query-result-handling.dart](../examples/query-result-handling.dart).
 
 ## Query Scope
 
@@ -127,7 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)
 SELECT _id, status FROM orders WHERE status = :status
 ```
 
-Create indexes once at startup with `CREATE INDEX IF NOT EXISTS`; indexes persist and are local to each device. See [Creating Indexes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#creating-indexes) and [Index Usage Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#index-usage-rules).
+Create indexes once at startup with `CREATE INDEX IF NOT EXISTS`; indexes persist and are local to each device. See `§ Creating Indexes` and `§ Index Usage Rules`.
 
 ## JOIN Performance
 

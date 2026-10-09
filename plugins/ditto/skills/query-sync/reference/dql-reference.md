@@ -1,6 +1,6 @@
 # DQL Reference for Queries and Writes (SDK 5.1)
 
-Detailed rules behind the patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections [DQL Fundamentals](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#dql-fundamentals), [Reading Data with SELECT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#reading-data-with-select), and [Writing Data](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#writing-data).
+Detailed rules behind the patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections `§ DQL Fundamentals`, `§ Reading Data with SELECT`, and `§ Writing Data`.
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ There is no statement to create or drop a collection: a collection exists as soo
 | Identifier | `` `my field` `` | Backticks quote names with special characters or reserved words |
 | Number | `42`, `2.5`, `1e3`, `0xFF` | `5 / 2` is `2`; `5.0 / 2` is `2.5` |
 | Boolean / null | `true`, `FALSE`, `null` | Case-insensitive |
-| Object | `{'status': 'open'}` | Every key quoted; unquoted keys fail in `INSERT` and are evaluated as field references in `SELECT` (usually `{}`) |
+| Object | `{'status': 'open'}` | Every key quoted; unquoted keys fail in `INSERT` (`Cannot convert to a literal`) and are evaluated as field references in `SELECT` (usually `{}`). Prefer passing documents as parameters |
 
 ```sql
 SELECT 'it\'s' AS a, "double quoted" AS b, `my field` AS c, 0xFF AS d
@@ -138,7 +138,7 @@ SELECT * FROM orders USE IDS LIST :ids
 
 ## GROUP BY and HAVING
 
-- Every non-aggregate projection must be a `GROUP BY` key.
+- Every non-aggregate projection must be a `GROUP BY` key. Give computed expressions an alias with `AS`.
 - `GROUP BY` and `HAVING` cannot reference projection aliases; repeat the expression. `ORDER BY` can use aliases.
 
 <!-- expect-error -->
@@ -220,7 +220,7 @@ Restrictions:
 - At most 10 joins per statement by default (directive `#max_joins`).
 - Observers accept joins and deliver a new result when a change in any joined collection changes the joined rows; rows carry a composite `_id` usable as a diff key.
 
-Embedding remains the default modeling choice; see [Relationships: Embedding, Separate Collections, and JOIN](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#relationships-embedding-separate-collections-and-join).
+Embedding remains the default modeling choice; see `§ Relationships: Embedding, Separate Collections, and JOIN`.
 
 ## INSERT and ON ID CONFLICT
 
@@ -254,7 +254,7 @@ UPDATE collection [USE IDS ...]
 [RETURNING projection]
 ```
 
-- At least one of `APPLY`, `SET`, `UNSET`, in this order: `APPLY` before `SET`, and `UNSET` after `SET`. Without `WHERE`, every document in the collection is updated. Counters: see [Counters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#counters).
+- At least one of `APPLY`, `SET`, `UNSET`, in this order: `APPLY` before `SET`, and `UNSET` after `SET`. Without `WHERE`, every document in the collection is updated. Counters: see `§ Counters`.
 - Missing intermediate objects in nested `SET` paths are created.
 - Errors: `SET _id = ...` (``The document id `_id` cannot be modified``); the same path twice (`More than one modification specified for the path ...`); `SET items[0] = ...` (syntax error; replace the array or use a map keyed by ID).
 - An `UPDATE` that writes the current value is still a mutation: it appears in `mutatedDocumentIDs()` and can wake observers. Skip unchanged documents in `WHERE` (`coalesce(status, :none) != :status`).
@@ -268,9 +268,11 @@ With the default `DQL_STRICT_MODE = false`, objects are CRDT maps and assignment
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address.zip` | `{"city": "Oslo"}` |
 | `{"city": "Oslo", "zip": "0150"}` | `UNSET address`, then `SET address = :a` with `{"city": "Bergen"}`, as two `tx.execute` calls in one transaction | `{"city": "Bergen"}` |
 
-With `UNSET` and `SET`, the field is still a map, so a nested edit that another device made at the same time can merge into the new object. Only a `REGISTER` declaration guarantees that concurrent edits never mix two versions; see [Strict Mode](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#strict-mode).
+With `UNSET` and `SET`, the field is still a map, so a nested edit that another device made at the same time can merge into the new object. Only a `REGISTER` declaration guarantees that concurrent edits never mix two versions; see `§ Strict Mode`.
 
 ## RETURNING (SDK 5.1+)
+
+Use `RETURNING` instead of "write, then query again", and to capture deleted content (`DELETE ... RETURNING *`). Example: `UPDATE orders SET status = :status WHERE _id IN :ids AND status = :expected RETURNING _id, status`; more in [dql-writes.dart](../examples/dql-writes.dart).
 
 | Statement | Rows in `items` |
 |---|---|
@@ -294,4 +296,4 @@ DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
 
 > **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
 
-Choosing between them, soft delete, and tombstones: [Deletion and Storage Management](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deletion-and-storage-management).
+Choosing between them, soft delete, and tombstones: `§ Deletion and Storage Management`.

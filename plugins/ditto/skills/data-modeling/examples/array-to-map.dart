@@ -11,7 +11,7 @@
 // array's field name changes its CRDT type: the old array and the new map then
 // coexist under the same key.
 //
-// Guide: .claude/guides/best-practices/ditto.md#arrays-and-maps
+// Guide: § Arrays and Maps
 
 import 'dart:math';
 

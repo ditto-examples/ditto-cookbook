@@ -4,9 +4,9 @@
 //
 // Server-driven retention with a Ditto Server (formerly Big Peer).
 //
-// Guide: .claude/guides/best-practices/ditto.md#flag-based-eviction
-//        .claude/guides/best-practices/ditto.md#deleting-on-the-ditto-server
-//        .claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup
+// Guide: § Flag-based eviction
+//        § Deleting on the Ditto Server
+//        § Soft delete, subscriptions, and cleanup
 //
 // Division of work documented by the guide:
 // - The Ditto Server (for example through its HTTP API) or an authorized

@@ -1,72 +1,31 @@
 ---
 name: data-modeling
-description: |
-  CRDT-safe document design for Ditto SDK 5.1: merge behavior, maps vs arrays, strict mode, relationships (embedding, separate collections, JOIN), IDs, counters, size limits, and timestamps.
-
-  CRITICAL ISSUES PREVENTED:
-  - Silent data loss from arrays edited on several devices (an array is one last-writer-wins register)
-  - Keys that never go away because SET obj = {...} and ON ID CONFLICT DO UPDATE merge into maps
-  - Values that seem to vanish when type declarations (REGISTER, MAP, COUNTER) differ between statements
-  - Lost increments from read-modify-write instead of the COUNTER type
-  - JOIN errors and empty results (missing index on the join key, JOIN in a subscription, unsynced collections)
-  - Derived totals that diverge from the merged data
-  - ID collisions from sequential or timestamp-only IDs
-  - Documents over the 256 KiB soft limit or the 5 MiB hard limit
-  - Zone-less timestamps that make DQL date functions return MISSING
-
-  TRIGGERS:
-  - Designing or reviewing document schemas and collections
-  - Arrays of objects that several devices edit (line items, participants, checklists)
-  - Assigning objects with SET or upserting with ON ID CONFLICT
-  - Choosing between embedding, separate collections, and JOIN
-  - Changing DQL_STRICT_MODE or declaring field types
-  - Counters (likes, views, inventory), totals, or balances
-  - Event history, audit logs, status transitions
-  - Generating document IDs or display numbers
-  - Large documents, binary data, growing maps
-  - Storing or comparing timestamps
-
-  PLATFORMS: Flutter (Dart), JavaScript, Swift, Kotlin (CRDT and DQL rules are the same on every platform)
+description: Designs CRDT-safe Ditto documents, covering merge behavior, maps vs arrays, SET and ON ID CONFLICT upserts that merge, DQL_STRICT_MODE and REGISTER, MAP, or COUNTER declarations, relationships and JOIN, counters, document IDs, document size, and timestamps. Use when designing or reviewing a Ditto schema or collection, editing arrays from several devices, adding counters or totals, generating IDs, or storing timestamps.
 ---
 
-# Ditto Data Modeling Skill
+# Ditto Data Modeling
 
-Actionable patterns extracted from the [Data Modeling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#data-modeling) section of the Ditto best practices guide. The guide is the source of truth; follow its links for details. Everything here targets SDK 5.1.0 with the default `DQL_STRICT_MODE = false`.
+How to shape Ditto documents so concurrent offline edits merge correctly. Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`; examples are Flutter (Dart), and the rules are the same on every platform.
 
-## Table of Contents
+## Before You Apply
 
-- [When This Skill Applies](#when-this-skill-applies)
-- [Workflow: Designing a Document Schema](#workflow-designing-a-document-schema)
-- [Critical Patterns](#critical-patterns)
-  - [1. Model Every Field for Its Merge](#1-model-every-field-for-its-merge)
-  - [2. Maps Keyed by ID, Not Arrays](#2-maps-keyed-by-id-not-arrays)
-  - [3. Strict Mode and Type Declarations](#3-strict-mode-and-type-declarations)
-  - [4. Relationships: Embedding, Separate Collections, and JOIN](#4-relationships-embedding-separate-collections-and-join)
-  - [5. Do Not Store Derived Values](#5-do-not-store-derived-values)
-  - [6. Counters](#6-counters)
-  - [7. Document IDs](#7-document-ids)
-  - [8. Document Size Limits](#8-document-size-limits)
-  - [9. Timestamps](#9-timestamps)
-- [Quick Reference Checklist](#quick-reference-checklist)
-- [Examples](#examples)
-- [See Also](#see-also)
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
+- `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
----
+## Prevents
 
-## When This Skill Applies
+- Lost edits in arrays changed on several devices (an array is one last-writer-wins register)
+- Keys that never go away because `SET obj = {...}` and `ON ID CONFLICT DO UPDATE` merge into maps
+- Values that seem to vanish when type declarations differ between statements
+- Lost increments from read-modify-write instead of the `COUNTER` type
+- JOIN errors and empty results (unindexed join key, JOIN in a subscription, unsynced collection)
+- Derived totals that diverge from the merged data
+- ID collisions from sequential or timestamp-only IDs
+- Documents over the 256 KiB soft limit or the 5 MiB hard limit
+- Zone-less timestamps that make DQL date functions return `MISSING`
 
-- A document schema is designed or reviewed, or a new collection is added.
-- Several devices may modify the same data while offline (always assume they will).
-- Code assigns whole objects (`SET obj = :obj`, `ON ID CONFLICT DO UPDATE`) or edits arrays.
-- Related data is split across collections, or a `JOIN` is written.
-- Code declares field types (`COLLECTION t (f REGISTER)`) or changes `DQL_STRICT_MODE`.
-- A field is incremented, totaled, or used as an ID or timestamp.
-
-The rules are the same on every platform. Examples use Flutter (`import 'package:ditto_live/ditto_live.dart';`).
-
----
-
-## Workflow: Designing a Document Schema
+## Workflow
 
 ```
 Schema Design Progress:
@@ -81,11 +40,9 @@ Schema Design Progress:
 - [ ] 9. Store timestamps in UTC with a zone designator
 ```
 
----
+## Rules
 
-## Critical Patterns
-
-### 1. Model Every Field for Its Merge
+### 1. Model every field for its merge (CRITICAL)
 
 Every value is stored as a CRDT. With the default settings the type is inferred:
 
@@ -109,44 +66,18 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 | `UNSET obj`, then `SET obj = {'w': 1}`, in one transaction | `{"w": 1}`: clearing first replaces the object |
 | `ON ID CONFLICT DO UPDATE` with `{"obj": {"c": 3}}` | `{"a": 1, "b": 2, "c": 3}`: upserts merge too |
 
-**✅ DO:**
-- Update individual fields: `UPDATE ... SET obj.field = :value`.
-- When a user edits a document, update only the fields the user changed.
-- Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports of data that another system owns (it skips fields whose values are equal; nothing is written when nothing changed).
-- Remove keys with `UNSET`. To replace an object, run `UNSET` then `SET` in one transaction, or declare the field as `REGISTER` (see [Strict Mode and Type Declarations](#3-strict-mode-and-type-declarations)). Only `REGISTER` guarantees that concurrent edits never mix two versions: after `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object.
+**✅ DO**:
+- Update individual fields (`UPDATE ... SET obj.field = :value`), only the ones the user changed.
+- Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports of data another system owns (it skips equal fields; nothing is written when nothing changed).
+- Remove keys with `UNSET`. To replace an object, run `UNSET` then `SET` in one transaction, or declare it `REGISTER` (Rule 3). Only `REGISTER` guarantees concurrent edits never mix: after `UNSET` and `SET` the field is still a map, so another device's concurrent nested edit can merge into the new object.
 
-**❌ DON'T:**
-- Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out.
-- Write back a stale in-memory copy with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`. `DO UPDATE` rewrites every supplied field; `DO UPDATE_LOCAL_DIFF` writes every field that differs from the local document, including an old value that another device has already changed. Either can override a concurrent change.
-- Clear a map with `SET obj = {}` or by assigning a scalar.
+**❌ DON'T**:
+- Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out, or clear a map with `SET obj = {}` or by assigning a scalar.
+- Write back a stale in-memory copy with `DO UPDATE` (rewrites every supplied field) or `DO UPDATE_LOCAL_DIFF` (writes every field that differs locally, including an old value another device already changed). Either overrides a concurrent change.
 
-> **Note:** `UNSET` creates removal metadata. Unsetting a very large number of dynamically generated keys over time can degrade performance; unsetting the parent field (or deleting the document) mitigates the accumulation.
+`§ CRDT Types and Merge Behavior`, `§ Local write semantics you must know`, `§ Document Structure` · Example: [examples/field-level-updates.dart](examples/field-level-updates.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, replacing an object, `UNSET` metadata)
 
-```dart
-// ✅ GOOD: Replace a MAP value: clear it, then write it, atomically.
-Future<void> replaceAddress(
-  Ditto ditto,
-  String customerId,
-  Map<String, dynamic> newAddress,
-) async {
-  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
-    await tx.execute(
-      'UPDATE customers UNSET address WHERE _id = :id',
-      arguments: {'id': customerId},
-    );
-    await tx.execute(
-      'UPDATE customers SET address = :address WHERE _id = :id',
-      arguments: {'id': customerId, 'address': newAddress},
-    );
-  });
-}
-```
-
-Guide: [CRDT Types and Merge Behavior](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#crdt-types-and-merge-behavior), [Document Structure](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-structure). Example: [field-level-updates.dart](examples/field-level-updates.dart).
-
----
-
-### 2. Maps Keyed by ID, Not Arrays
+### 2. Use maps keyed by ID, not arrays, for data several devices edit (CRITICAL)
 
 | Use a **map keyed by ID** when | Use an **array** when |
 |---|---|
@@ -157,41 +88,21 @@ Guide: [CRDT Types and Merge Behavior](https://github.com/ditto-examples/ditto-c
 ```json
 // ❌ BAD: concurrent edits to different items: one device's change is lost
 { "_id": "order-1", "items": [ { "productId": "p1", "quantity": 2 } ] }
-
 // ✅ GOOD: entries merge independently; display order is a field
-{ "_id": "order-1",
-  "items": { "9b2f6c1e-4d0a-4f7e-8a51-3c2d1e0f9a87": { "productId": "p1", "quantity": 2, "position": 0 } } }
+{ "_id": "order-1", "items": { "<item uuid>": { "productId": "p1", "quantity": 2, "position": 0 } } }
 ```
 
-DQL parameters bind values, not paths (`items[:key]` is a parser error). With a variable key:
+**✅ DO**:
+- Pass a variable key as data: `INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF` with `patch = {'_id': orderId, 'items': {itemId: item}}`. Parameters bind values, not paths (`items[:key]` is a parser error).
+- Remove an entry with ``UNSET items.`<key>` `` only after validating the key against a strict pattern (for example, a UUID).
+- Mark entries removed (`removed = true`) when concurrent edits are likely; make readers skip entries with missing or `null` required fields. **Note (SDK 5.1.0)**: a removal does not win over a concurrent edit; the entry stays with only the edited fields (removal first) or with them `null` (removal later).
+- Convert an array to a map as soon as more than one device writes it, into a **new field** (`lineItems` next to the old `items`).
 
-```dart
-// ✅ GOOD: Add or update one entry; the key travels as data.
-Future<void> upsertOrderItem(
-  Ditto ditto,
-  String orderId,
-  String itemId,
-  Map<String, dynamic> item,
-) async {
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {
-      'patch': {
-        '_id': orderId,
-        'items': {itemId: item},
-      },
-    },
-  );
-}
-```
+**❌ DON'T**: splice unchecked input into a query; write a map under the array's field name (it changes the CRDT type, so the old array and the new map coexist under the same key).
 
-To remove an entry, use ``UNSET items.`<key>` `` after validating the key against a strict pattern (for example, a UUID) before placing it inside backticks; never splice unchecked input into a query. In SDK 5.1.0, a removal does not win over a concurrent edit of the entry. The entry stays with only the edited fields if the removal came first, or with them set to `null` if it came later. Mark entries removed (`removed = true`) when concurrent edits are likely, and make readers skip entries with missing or `null` required fields. You can convert arrays to maps incrementally, as soon as you know more than one device writes them. Write the map to a **new field** (for example, `lineItems` next to the old `items` array): writing a map under the array's field name changes its CRDT type, so the old array and the new map coexist under the same key.
+`§ Arrays and Maps` · Example: [examples/array-to-map.dart](examples/array-to-map.dart)
 
-Guide: [Arrays and Maps](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#arrays-and-maps). Example: [array-to-map.dart](examples/array-to-map.dart).
-
----
-
-### 3. Strict Mode and Type Declarations
+### 3. Keep the default strict mode and declare types consistently (CRITICAL)
 
 **The default is `DQL_STRICT_MODE = false`.** Keep it for new apps.
 
@@ -203,32 +114,58 @@ Guide: [Arrays and Maps](https://github.com/ditto-examples/ditto-cookbook/blob/m
 | `SELECT` / `WHERE` on undeclared MAP / COUNTER / ATTACHMENT fields | Visible | **Invisible** |
 | Secondary index use | Used | Not used (see the note) |
 
-> **Note (SDK 5.1.0):** With `DQL_STRICT_MODE = true`, the query planner does not use secondary indexes (`EXPLAIN` shows a collection scan where an index scan would be used); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default if you rely on indexes.
+**Note (SDK 5.1.0)**: with `DQL_STRICT_MODE = true` the planner does not use secondary indexes (`EXPLAIN` shows a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default if you rely on indexes.
 
-Choose `true` rarely: only when nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. `ALTER SYSTEM` is not persisted: apply it after every `Ditto.open`, before `ditto.sync.start()`, queries, and observers. Use the same value on every peer; each peer interprets synced data with its own setting.
+Choose `true` only when nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. `ALTER SYSTEM` is not persisted: apply it after every `Ditto.open`, before `ditto.sync.start()`, queries, and observers, with the same value on every peer (each peer interprets synced data with its own setting).
 
-For a few replace-as-a-whole objects, keep the default and declare `REGISTER` **in every statement** that touches the field:
+**✅ DO**: for a few replace-as-a-whole objects, keep the default and declare `REGISTER` **in every statement** on the field, reads included: `UPDATE COLLECTION customers (shippingAddress REGISTER) SET shippingAddress = :address WHERE _id = :id` and `SELECT * FROM COLLECTION customers (shippingAddress REGISTER) WHERE _id = :id`. Keep the statements in one repository class.
 
-```sql
-UPDATE COLLECTION customers (shippingAddress REGISTER)
-SET shippingAddress = :address
-WHERE _id = :id
-```
+**❌ DON'T**: mix declarations for one field. Each statement reads or writes the value of its declared type, so values seem to vanish even on one device: a `REGISTER` insert followed by an undeclared `SET obj.a = 11` makes an undeclared `SELECT` return `"obj": {"a": 11}`.
 
-```sql
-SELECT * FROM COLLECTION customers (shippingAddress REGISTER)
-WHERE _id = :id
-```
+`§ Strict Mode`, `§ Keep type declarations consistent` · Example: [examples/strict-mode-and-declarations.dart](examples/strict-mode-and-declarations.dart)
 
-**❌ DON'T** mix declarations for one field. Each statement reads or writes the value of the type it declares, so values seem to vanish even on one device: a `REGISTER` insert followed by an undeclared `SET obj.a = 11` makes an undeclared `SELECT` return `"obj": {"a": 11}`. Keep the statements in one repository class.
+### 4. Use COUNTER with APPLY for concurrent tallies (CRITICAL)
 
-Guide: [Strict Mode](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#strict-mode), [Keep type declarations consistent](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#keep-type-declarations-consistent). Example: [strict-mode-and-declarations.dart](examples/strict-mode-and-declarations.dart).
+Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add concurrent changes together. Use `APPLY`, not `SET`, and the `COLLECTION` keyword for declarations:
 
----
+| Operation | Statement |
+|---|---|
+| Increment / decrement | `APPLY f INCREMENT BY n` (integer `n`; negative to decrement) |
+| Set a value | `APPLY f RESTART WITH n` (concurrent `RESTART`s: last writer wins) |
+| Reset to zero | `APPLY f RESTART` |
 
-### 4. Relationships: Embedding, Separate Collections, and JOIN
+**✅ DO**: initialize with `INSERT INTO COLLECTION products (viewCount COUNTER) DOCUMENTS (:product)` and increment with `UPDATE COLLECTION products (viewCount COUNTER) APPLY viewCount INCREMENT BY 1 WHERE _id = :id`.
 
-**Embed by default** (sub-entities as maps keyed by ID). `JOIN` (SDK 5.1+) removes the main read-side cost of separate collections, which makes normalized models practical when the decision guide below calls for them; the other trade-offs remain: each collection is a separate sync unit with its own subscription, and the join key needs an index.
+**❌ DON'T**:
+- `SET stock = stock - 1` (two devices both write 9 from 10; one decrement is lost).
+- Initialize with an undeclared `INSERT` (stored as a REGISTER; the first `INCREMENT` starts a new counter at 0), or overwrite with `SET` (use `RESTART WITH`).
+- Recalibrate with `RESTART WITH` while other devices change the counter offline: increments the restarting device has not received yet are discarded, even later ones (**Note (SDK 5.1.0)**). Recount only while all devices are in sync, or keep recounts and changes as events and derive the value.
+- Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
+- Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
+
+`§ Counters` · Example: [examples/counter-patterns.dart](examples/counter-patterns.dart)
+
+### 5. Generate collision-free document IDs (CRITICAL)
+
+| Strategy | Use when |
+|---|---|
+| **UUID v4** (primary) | Almost always |
+| ULID / time-ordered random ID | Rough creation-time ordering (device clocks make it approximate) |
+| Composite object `{"storeId": ..., "orderId": "<uuid>"}` | Permissions or subscriptions scoped by owner, location, or tenant |
+| Natural key (SKU) | Globally unique, immutable domain key |
+| Generated by Ditto (omit `_id`) | Nothing needs the ID before insert; read `result.mutatedDocumentIDs()` |
+
+- **Never** use sequential or timestamp-only IDs: two offline devices produce the same ID, and the documents merge into one.
+- Strings and objects are recommended; floats and `null` are rejected. Do not depend on the format of generated IDs.
+- `_id` is immutable: copy to a new `_id` and remove the old document in one transaction, declaring `COUNTER`, `ATTACHMENT`, and `REGISTER` fields in both the `SELECT` and the `INSERT` (see the reference).
+- Put only immutable attributes into a composite `_id`; filter and index its subfields (`_id.storeId`).
+- Keep human-readable numbers (`#A-0042`) in a separate field: labels, not keys.
+
+`§ Document IDs`, `§ IDs are immutable`, `§ Never use sequential or timestamp-only IDs` · Examples: [examples/id-generation-patterns.dart](examples/id-generation-patterns.dart), [examples/composite-id-patterns.dart](examples/composite-id-patterns.dart), [examples/id-immutability-workaround.dart](examples/id-immutability-workaround.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (changing an ID, composite IDs, display numbers)
+
+### 6. Embed by default; JOIN separate collections locally (HIGH)
+
+Embed sub-entities as maps keyed by ID. `JOIN` **(SDK 5.1+)** removes the main read-side cost of separate collections, but each collection is still a separate sync unit with its own subscription, and the join key needs an index.
 
 | Embed when the data is... | Use a separate collection when the data is... |
 |---|---|
@@ -240,147 +177,49 @@ Guide: [Strict Mode](https://github.com/ditto-examples/ditto-cookbook/blob/main/
 
 Concurrent edits alone are **not** a reason to split: map entries merge.
 
-**JOIN rules (SDK 5.1+):** local data only (never fetches from peers); not allowed in subscriptions or on Ditto Server; the inner collection needs an index on the join key, or join on its `_id`; qualify every field with its alias.
+**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key (`CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)`), or join on its `_id`. Without a usable index the JOIN fails with `Joining to "<alias>" disallowed without appropriate index support`.
 
-```sql
-CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)
-```
+**✅ DO**:
+- Subscribe to every joined collection (app or feature scope); copy the filter key (`storeId`) into children, since subscriptions filter only on their own fields.
+- Treat a missing joined document as normal (not synced yet); use `LEFT JOIN` when the parent must appear without children.
+- Write a parent and children created together in one transaction; check plans with `EXPLAIN` and `ADVISE`.
+- Copy a value only when it is a snapshot (price at time of sale) or a subscription filter key; otherwise reference by ID and JOIN at read time.
 
-```sql
-SELECT o._id AS orderId, o.status, i.productId, i.quantity
-FROM orders AS o
-JOIN orderItems AS i ON i.orderId = o._id
-WHERE o._id = :orderId
-ORDER BY i.productId
-```
-
-Without a usable index the query fails with `Joining to "c" disallowed without appropriate index support`:
-
-<!-- expect-error -->
-```sql
-SELECT o._id, c.name
-FROM orders AS o
-JOIN customers AS c ON c.email = o.customerEmail
-```
-
-```dart
-// ✅ GOOD: One subscription per joined collection (app or feature scope).
-// Subscriptions filter only on their own fields, so storeId is copied into
-// orderItems when items are created.
-List<SyncSubscription> subscribeForStore(Ditto ditto, String storeId) => [
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orders WHERE storeId = :storeId',
-        arguments: {'storeId': storeId},
-      ),
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orderItems WHERE storeId = :storeId',
-        arguments: {'storeId': storeId},
-      ),
-      ditto.sync.registerSubscription('SELECT * FROM products'),
-    ];
-```
-
-**✅ DO:**
-- Treat a missing joined document as normal (it may not have synced yet); use `LEFT JOIN` when the parent must appear without children.
-- Write a parent and its children created together in one transaction.
-- Check plans with `EXPLAIN` and index suggestions with `ADVISE`.
-
-**❌ DON'T:**
+**❌ DON'T**:
 - Put a JOIN in `registerSubscription` (rejected: `Unsupported feature: Joining`).
 - Silence the index error with `USE INDEX ''` on a large collection.
 - Split a small, bounded, single-owner sub-entity only because JOIN exists.
 
-**Copying values:** copy a value only when it is a snapshot (price at time of sale) or a subscription filter key (`storeId`). For values that must stay current, reference by ID and JOIN at read time.
+`§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)` · Examples: [examples/embedded-relationship.dart](examples/embedded-relationship.dart), [examples/foreign-key-join.dart](examples/foreign-key-join.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (JOIN queries, index error, subscriptions)
 
-Guide: [Relationships](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#relationships-embedding-separate-collections-and-join), [Joining Collections](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#joining-collections-sdk-51). Examples: [embedded-relationship.dart](examples/embedded-relationship.dart), [foreign-key-join.dart](examples/foreign-key-join.dart).
+### 7. Do not store derived values (HIGH)
 
----
+A stored total is a separate register that devices recompute from partial views; after the merge it can match neither. Compute it at read time, in Dart or DQL (`SELECT COUNT(*) AS openOrders FROM orders WHERE status = 'open'`).
 
-### 5. Do Not Store Derived Values
+**✅ DO**: copy snapshot values, which are facts, not derivations (`unitPriceCents` into the line item when it is added); initialize flags you filter on (`isDeleted: false`) or filter with `coalesce(isDeleted, false) = false`.
 
-A stored total, line total, or remaining stock is a separate register. Devices recompute it from partial views, and after the merge it can match neither. Compute it at read time, in Dart or with DQL:
+**❌ DON'T**: store UI state, progress flags, or device-local paths in synced documents.
 
-```sql
-SELECT COUNT(*) AS openOrders FROM orders WHERE status = 'open'
-```
+`§ Document Structure` · Example: [examples/derived-values.dart](examples/derived-values.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (document structure, field names)
 
-Snapshot values are facts, not derivations: copy `unitPriceCents` into the line item when it is added. Also keep UI state, progress flags, and device-local paths out of synced documents, and initialize flags you filter on (`isDeleted: false`) or filter with `coalesce(isDeleted, false) = false`.
-
-Guide: [Document Structure](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-structure). Example: [derived-values.dart](examples/derived-values.dart).
-
----
-
-### 6. Counters
-
-Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add concurrent changes together. Use `APPLY`, not `SET`, and the `COLLECTION` keyword for declarations:
-
-| Operation | Statement |
-|---|---|
-| Increment / decrement | `APPLY f INCREMENT BY n` (integer `n`; negative to decrement) |
-| Set a value | `APPLY f RESTART WITH n` (concurrent `RESTART`s: last writer wins; increments the restarting device has not received yet are discarded, even later ones) |
-| Reset to zero | `APPLY f RESTART` |
-
-```sql
-INSERT INTO COLLECTION products (viewCount COUNTER)
-DOCUMENTS (:product)
-```
-
-```sql
-UPDATE COLLECTION products (viewCount COUNTER)
-APPLY viewCount INCREMENT BY 1
-WHERE _id = :id
-```
-
-**❌ DON'T:**
-- `SET stock = stock - 1` (two devices both write 9 from 10; one decrement is lost).
-- Initialize with an undeclared `INSERT` (stored as a REGISTER; the first `INCREMENT` starts a new counter at 0).
-- Overwrite with `SET`; use `RESTART WITH`.
-- Recalibrate with `RESTART WITH` while other devices keep changing the counter offline: their unsynced increments are discarded (SDK 5.1.0). Recount only while every device is in sync, or keep recounts and changes as events.
-- Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
-- Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
-
-Guide: [Counters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#counters). Example: [counter-patterns.dart](examples/counter-patterns.dart).
-
----
-
-### 7. Document IDs
-
-| Strategy | Use when |
-|---|---|
-| **UUID v4** (primary) | Almost always |
-| ULID / time-ordered random ID | Rough creation-time ordering (device clocks make it approximate) |
-| Composite object `{"storeId": ..., "orderId": "<uuid>"}` | Permissions or subscriptions scoped by owner, location, or tenant |
-| Natural key (SKU) | Globally unique, immutable domain key |
-| Generated by Ditto (omit `_id`) | Nothing needs the ID before insert; read `result.mutatedDocumentIDs()` |
-
-- Strings and objects are recommended; floats and `null` are rejected. Do not depend on the format of generated IDs.
-- `_id` is immutable: to change it, copy to a new `_id` and remove the old document in one transaction. Declare the document's `COUNTER`, `ATTACHMENT`, and `REGISTER` fields in both the `SELECT` and the `INSERT`; a query result holds plain values, so an undeclared copy stores a counter as a plain number and an attachment token as a map.
-- Put only immutable attributes into a composite `_id`; filter and index subfields (`_id.storeId`).
-- **Never** use sequential or timestamp-only IDs: two offline devices produce the same ID, and the documents merge into one.
-- Keep human-readable numbers (`#A-0042`) in a separate field; they are labels, not keys.
-
-Guide: [Document IDs](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-ids). Examples: [id-generation-patterns.dart](examples/id-generation-patterns.dart), [composite-id-patterns.dart](examples/composite-id-patterns.dart), [id-immutability-workaround.dart](examples/id-immutability-workaround.dart).
-
----
-
-### 8. Document Size Limits
+### 8. Keep documents well under the size limits (HIGH)
 
 | Threshold | Default | Behavior |
 |---|---|---|
 | Soft limit | 256 KiB | Write succeeds; warning `exceeds recommended limit` is logged |
-| Hard limit | 5 MiB | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged. Merges from other devices are not checked: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data (SDK 5.1.0) |
+| Hard limit | 5 MiB | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
 
-The limits apply to the size of each stored document. Design documents to stay well below 256 KiB; store binaries as attachments; move unbounded data (history, readings, comments) into its own collection; leave both limits at their defaults. `object_size()` gives an approximate size of the value, which can differ from the stored size, so leave headroom. To bring an oversized document back under the limits, move large values to attachments or to a separate collection and remove them from the document with `UNSET`.
+**Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data.
 
-Guide: [Document Size Limits](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-size-limits). Example: [document-size.dart](examples/document-size.dart).
+**✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate, so leave headroom; to shrink an oversized document, move large values out and `UNSET` them.
 
----
+`§ Document Size Limits` · Example: [examples/document-size.dart](examples/document-size.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (causes of growth, system parameters)
 
-### 9. Timestamps
+### 9. Store timestamps in UTC with a zone designator and fixed precision (MEDIUM)
 
-Store UTC with a zone designator (`DateTime.now().toUtc().toIso8601String()`) or epoch milliseconds, consistently per field. Zone-less ISO strings make every DQL date function return `MISSING` without an error. Clocks drift: never decide between conflicting writes with your own timestamp fields.
+Store UTC with a zone designator (`DateTime.now().toUtc().toIso8601String()`) or epoch milliseconds, consistently per field. Zone-less ISO strings make every DQL date function return `MISSING` silently. Clocks drift: never resolve conflicting writes with your own timestamp fields.
 
-ISO strings sort chronologically as text only when they share one precision. Native Dart emits microseconds (`2026-10-08T10:30:00.123456Z`), but omits them when they are zero (`...00.123Z`), and the web always emits milliseconds, so even one device produces mixed precision. Use one helper with fixed precision for every timestamp field that is sorted or compared:
+ISO strings sort as text only at one precision. Native Dart emits microseconds (`...00.123456Z`) but omits them when zero (`...00.123Z`), and the web emits milliseconds, so even one device mixes precisions. Write every sorted or compared timestamp with one fixed-precision helper:
 
 ```dart
 /// ISO-8601 UTC string with exactly millisecond precision.
@@ -391,64 +230,31 @@ String utcTimestamp([DateTime? time]) {
     isUtc: true,
   ).toIso8601String();
 }
-
-// ✅ GOOD: UTC with a zone designator and fixed precision.
-Future<void> markReady(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    'UPDATE orders SET readyAt = :readyAt WHERE _id = :id',
-    arguments: {'id': orderId, 'readyAt': utcTimestamp()},
-  );
-}
 ```
 
-Guide: [Timestamps](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#timestamps). Example: [timestamps.dart](examples/timestamps.dart).
+`§ Timestamps` · Example: [examples/timestamps.dart](examples/timestamps.dart)
 
----
+## Checklist
 
-## Quick Reference Checklist
-
-- [ ] No array of items edited by several devices; maps keyed by stable IDs instead
+- [ ] Items edited by several devices live in maps keyed by stable IDs, not arrays
 - [ ] No reliance on `SET obj = {...}` / `DO UPDATE` to remove keys; `UNSET` used
 - [ ] User edits are field-level `UPDATE`s; upserts and re-imports use `DO UPDATE_LOCAL_DIFF`
 - [ ] `DQL_STRICT_MODE` left at `false`, or applied on every launch and identical on every peer
 - [ ] Each declared field (`REGISTER`, `MAP`, `COUNTER`, `ATTACHMENT`) declared the same way in every statement
 - [ ] Embedded by default; separate collections justified by the decision guide
-- [ ] Every JOIN: inner join key indexed (or `_id`), every joined collection subscribed, JOINs kept out of subscriptions
+- [ ] JOINs: inner join key indexed (or `_id`), each joined collection subscribed, no JOIN in subscriptions
 - [ ] No stored derived values; snapshot values copied deliberately
 - [ ] Concurrent tallies use `COUNTER` with `APPLY`
-- [ ] UUID (or composite / natural) IDs; display numbers separate from `_id`
-- [ ] Shared defaults seeded with `INITIAL DOCUMENTS`, not a plain `INSERT` or `ON ID CONFLICT DO UPDATE`, with identical seed content in every app version
 - [ ] Counters recalibrated with `RESTART WITH` only while every device that changes them is in sync
+- [ ] UUID (or composite / natural) IDs; display numbers separate from `_id`
+- [ ] Shared defaults seeded with `INITIAL DOCUMENTS` (not `INSERT` or `DO UPDATE`), identical in every app version
 - [ ] Documents well under 256 KiB; binaries as attachments
 - [ ] Timestamps in UTC with a zone designator, written by one fixed-precision helper
 
-More patterns: [reference/common-patterns.md](reference/common-patterns.md) (field-level updates, event history, document size) and [reference/advanced-patterns.md](reference/advanced-patterns.md) (current state plus history, INITIAL documents, schema evolution, field names).
+## More
 
----
-
-## Examples
-
-| File | Shows |
-|---|---|
-| [field-level-updates.dart](examples/field-level-updates.dart) | Field updates, `UNSET`, `DO UPDATE_LOCAL_DIFF` vs `DO UPDATE`, replacing an object |
-| [array-to-map.dart](examples/array-to-map.dart) | Array vs map keyed by ID, dynamic keys, safe `UNSET` |
-| [strict-mode-and-declarations.dart](examples/strict-mode-and-declarations.dart) | `REGISTER` declarations, mixed declarations, opting in to strict mode |
-| [embedded-relationship.dart](examples/embedded-relationship.dart) | Embedding with one subscription |
-| [foreign-key-join.dart](examples/foreign-key-join.dart) | Separate collections, `CREATE INDEX`, JOIN, LEFT JOIN, JOIN observer |
-| [derived-values.dart](examples/derived-values.dart) | Derived vs snapshot values, `COUNT(*)` |
-| [counter-patterns.dart](examples/counter-patterns.dart) | `COUNTER` declarations, `INCREMENT`, `RESTART WITH`, mistakes |
-| [event-history.dart](examples/event-history.dart) | Audit-log map, append-only event documents, eviction |
-| [two-collection-pattern.dart](examples/two-collection-pattern.dart) | Current state plus history in one transaction |
-| [document-size.dart](examples/document-size.dart) | Splitting, attachments, size errors, `object_size()` |
-| [id-generation-patterns.dart](examples/id-generation-patterns.dart) | UUID, natural key, generated IDs, display numbers |
-| [composite-id-patterns.dart](examples/composite-id-patterns.dart) | Composite IDs, subfield index, schema version in `_id` |
-| [id-immutability-workaround.dart](examples/id-immutability-workaround.dart) | Moving a document to a new ID |
-| [initial-documents.dart](examples/initial-documents.dart) | Seeding defaults with `INITIAL DOCUMENTS` |
-| [timestamps.dart](examples/timestamps.dart) | UTC timestamps, range filters, `date_diff` |
-
----
-
-## See Also
-
-- Guide: [Data Modeling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#data-modeling), [Writing Data](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#writing-data), [Joining Collections (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#joining-collections-sdk-51), [Transactions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions), [Deletion and Storage Management](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#deletion-and-storage-management)
-- Other skills: `query-sync` (DQL, subscriptions, observers), `storage-lifecycle` (DELETE, soft delete, EVICT), `transactions-attachments` (transactions, attachments), `performance-observability` (indexes, EXPLAIN, ADVISE)
+- Reference: [reference/common-patterns.md](reference/common-patterns.md) - conflict policies, event history and audit logs, document structure, field names, document size
+- Reference: [reference/advanced-patterns.md](reference/advanced-patterns.md) - current state plus history, `INITIAL DOCUMENTS`, schema evolution, IDs, JOIN
+- Examples: [examples/](examples/) - Dart files linked from each rule and reference pattern
+- Guide sections: `§ Data Modeling`, `§ Writing Data`, `§ Transactions`, `§ Deletion and Storage Management`
+- Related skills: `query-sync` (DQL, subscriptions, observers), `storage-lifecycle` (DELETE, soft delete, EVICT), `transactions-attachments` (transactions, attachments), `performance-observability` (indexes, EXPLAIN, ADVISE)

@@ -16,8 +16,7 @@
 // a MAP read as a REGISTER) is missing from the copy. (With
 // DQL_STRICT_MODE = true, declare the MAP fields too.)
 //
-// Guide: .claude/guides/best-practices/ditto.md#ids-are-immutable,
-//   #delete-and-tombstones, #soft-delete
+// Guide: § IDs are immutable, § DELETE and Tombstones, § Soft Delete
 
 import 'package:ditto_live/ditto_live.dart';
 

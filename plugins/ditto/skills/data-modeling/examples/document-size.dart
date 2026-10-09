@@ -13,7 +13,7 @@
 // Design documents to stay well below 256 KiB; leave both limits at their
 // defaults.
 //
-// Guide: .claude/guides/best-practices/ditto.md#document-size-limits
+// Guide: § Document Size Limits
 
 import 'package:ditto_live/ditto_live.dart';
 

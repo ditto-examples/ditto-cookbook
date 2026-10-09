@@ -4,8 +4,8 @@
 //
 // EVICT with correct subscription management.
 //
-// Guide: .claude/guides/best-practices/ditto.md#evict
-//        .claude/guides/best-practices/ditto.md#cancelling-subscriptions-and-local-data
+// Guide: § EVICT
+//        § Cancelling subscriptions and local data
 //
 // Key rules:
 // - EVICT removes documents from this device only. If an active subscription

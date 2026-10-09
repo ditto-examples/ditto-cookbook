@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (JavaScript, @dittolive/ditto 5.1.0): Transaction anti-patterns
 //
-// Guide: .claude/guides/best-practices/ditto.md#transaction-rules
+// Guide: § Transaction Rules
 //
 // Every function below is valid JavaScript. The problems appear at runtime.
 // Unlike Flutter, the JavaScript SDK does not throw for the first two

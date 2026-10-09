@@ -8,7 +8,7 @@
 // stored timestamps as approximate, never as the deciding factor between
 // conflicting writes.
 //
-// Guide: .claude/guides/best-practices/ditto.md#timestamps
+// Guide: § Timestamps
 
 import 'package:ditto_live/ditto_live.dart';
 

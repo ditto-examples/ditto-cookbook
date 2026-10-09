@@ -1,6 +1,6 @@
 # Subscriptions and Observers Reference (SDK 5.1)
 
-Detailed rules behind the subscription and observer patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections [Sync and Subscriptions](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#sync-and-subscriptions) and [Observing Changes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#observing-changes).
+Detailed rules behind the subscription and observer patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections `§ Sync and Subscriptions` and `§ Observing Changes`.
 
 ## Table of Contents
 
@@ -46,13 +46,13 @@ Consequences:
 
 - Use the same subscriptions on peers in the same role so any of them can serve the others.
 - An intermediate device relays only documents in its local store: give relay or hub devices at least the subscriptions of the devices behind them.
-- A device accepts at most 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`, SDK 5.1.0). Extra clients of a TCP hub get no data and no error, only a `WARN ... at capacity` log line. On a hub with more clients, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open` and before `ditto.sync.start()`. Raising it after sync has started did not admit already rejected clients within 60 s. Guide: [Transport Configuration](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transport-configuration).
+- A device accepts at most 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`, SDK 5.1.0). Extra clients of a TCP hub get no data and no error, only a `WARN ... at capacity` log line. On a hub with more clients, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open` and before `ditto.sync.start()`. Raising it after sync has started did not admit already rejected clients within 60 s. Guide: `§ Transport Configuration`.
 - Keep predicates flat (`storeId = :storeId`); deeply nested `AND`/`OR` trees and deep paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` from Ditto Server.
 - Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below). In SDK 5.1.0, a document that stops matching becomes a **frozen copy**. The device receives the change that made it stop matching, and then no further edits and not even its deletion. Local queries keep showing it, so filter it out locally and evict it when it is no longer needed. When it matches again, it arrives in its latest state.
 - Soft delete: keep soft-deleted documents inside the subscription at least until every device has received the flag, and hide them locally with `coalesce(isDeleted, false) = false`. Two designs meet this requirement:
   - **Variant A** (whole-collection or whole-partition subscription): simplest; devices cannot `EVICT` old soft-deleted documents because they still match the subscription, so cleanup is a `DELETE` after the retention period, run on the Ditto Server or by another authorized peer, that syncs to every device.
   - **Variant B** (retention-window subscription, `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff`): devices evict documents deleted before the cutoff; the subscription is re-registered when the cutoff moves (at most about once a day). Choose a window longer than the longest expected offline period.
-  - See [Soft delete, subscriptions, and cleanup](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup).
+  - See `§ Soft delete, subscriptions, and cleanup`.
 - An unfiltered subscription is acceptable only for a small reference-data collection that every device needs.
 
 ## Subscription Lifecycle
@@ -115,9 +115,10 @@ The experimental APIs may change in a future release; the stable `registerObserv
 |---|---|
 | Without `onChange`, querying starts when `changes` is first listened to | A registered but unlistened observer does no work but holds resources until cancelled |
 | With `onChange`, the observer starts immediately | Results go to `onChange` and are also queued in `changes` |
-| `changes` is single-subscription | A second `listen()` throws `StateError`, even after the first was cancelled |
+| `changes` is single-subscription | A second `listen()` throws `StateError`, even after the first was cancelled; a `StreamBuilder` works if it stays mounted for the observer's lifetime |
 | Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` too |
 | `observer.cancel()` closes `changes` | A pending `await for` ends |
+| Cancelling the `StreamSubscription` of a `StoreObserverV2` (`registerObserverV2` or `registerObserverWithSignalNext`) also cancels the observer | Leaving an `await for` loop over `changes` does the same |
 | `await ditto.close()` marks observers cancelled but does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2` | Cancel observers explicitly before closing |
 | With `onChange`, events emitted before the first listener attaches are buffered | Listen right after registering |
 
@@ -128,7 +129,7 @@ Callback rules:
 - Keep listeners synchronous: copy values, map to models, call `setState`. Move heavy computation off the UI isolate (for example `compute()` on copied values).
 - Do not `await` network, file, or database work in a `registerObserver` listener; do not write to the observed collection without a guard.
 - Changes that arrive through sync are delivered in batches: expect fewer callbacks than remote writes (a remote transaction arrives as one callback), and do not count or log remote changes through callbacks.
-- How often observers on `system:data_sync_info` fire varies: the Ditto documentation describes a 500 ms interval, while with SDK 5.1.0 an idle observer fired only when the rows changed (about once every 10 seconds). Write code that works with either behavior: use one small observer and rebuild only when the derived value changes. See [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
+- How often observers on `system:data_sync_info` fire varies: the Ditto documentation describes a 500 ms interval, while with SDK 5.1.0 an idle observer fired only when the rows changed (about once every 10 seconds). Write code that works with either behavior: use one small observer and rebuild only when the derived value changes. See `§ Monitoring Sync Status`.
 - With state management libraries, let one provider or controller own each observer and cancel it in the provider's dispose hook. `item.value` creates a new `Map` per result, so map rows to immutable models with `==` if you rely on equality to skip rebuilds.
 
 ## Backpressure Behavior
@@ -154,6 +155,8 @@ Callback rules:
 | Swift | `registerObserver(query:arguments:deliverOn:handler:)` signals when the handler returns; main queue by default | `handlerWithSignalNext:`; `deliverOn:` to move heavy work off the main queue |
 | Kotlin | `registerObserver(query, args) { result -> }` with a suspending handler, or `observe(...)` returning a `Flow` (`.conflate()` for slow collectors) | No `signalNext`; `collect(query, args) { result -> }` requests the next event after the handler returns; release with `close()` |
 
+JavaScript passes arguments as the second positional parameter (`execute(query, { status: 'open' })`) and reads changed IDs with `mutatedDocumentIDsV2()`. See `§ Backpressure on other platforms`.
+
 Do not port Flutter observer code one-to-one.
 
 ## Differ
@@ -164,6 +167,8 @@ Do not port Flutter observer code one-to-one.
 | `deletions` | Indexes in the old list of removed items |
 | `updates` | Indexes in the new list of changed items |
 | `moves` | `DiffMove(from: oldIndex, to: newIndex)` |
+
+An observer delivers the full result every time. A plain `ListView.builder` with `ValueKey(_id)` does not need `Differ`; use it for `AnimatedList` or for processing only new items.
 
 - `diff()` takes a `List<QueryResultItem>` (`result.items.toList()`); the first call reports every item as inserted.
 - Identity is `_id`; values are compared deeply. A value that changed and changed back between two results is not an update.

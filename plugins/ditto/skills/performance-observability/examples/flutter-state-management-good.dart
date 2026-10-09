@@ -6,11 +6,11 @@
 // State Management with Ditto Observers (Correct Patterns)
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #store-observers-in-flutter
-// - #observer-lifecycle-and-cleanup
-// - #partial-ui-updates
-// - #working-with-query-results
+// Guide sections (../../guide/reference/ditto.md):
+// - § Store Observers in Flutter
+// - § Observer lifecycle and cleanup
+// - § Partial UI Updates
+// - § Working with Query Results
 //
 // This example uses only the Flutter SDK (ChangeNotifier, ValueNotifier) so it
 // works with any state management approach. The same rules apply to Riverpod,

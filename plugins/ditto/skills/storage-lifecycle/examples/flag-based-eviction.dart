@@ -5,7 +5,7 @@
 // Flag-based eviction: devices subscribe only to unflagged documents and
 // evict the flagged ones.
 //
-// Guide: .claude/guides/best-practices/ditto.md#flag-based-eviction
+// Guide: § Flag-based eviction
 //
 // Key rules:
 // - A central component decides what is no longer needed and sets

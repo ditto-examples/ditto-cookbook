@@ -6,11 +6,11 @@
 // Avoiding Unnecessary Writes (Correct Patterns)
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #on-id-conflict
-// - #prefer-field-level-updates-over-whole-document-rewrites
-// - #assigning-an-object-merges-it
-// - #prefer-field-level-updates
+// Guide sections (../../guide/reference/ditto.md):
+// - § ON ID CONFLICT
+// - § Prefer field-level updates over whole-document rewrites
+// - § Assigning an object merges it
+// - § Prefer field-level updates
 //
 // Ditto syncs changes at field level. Writing only what changed keeps sync
 // deltas small and reduces the chance that an unchanged value written by this

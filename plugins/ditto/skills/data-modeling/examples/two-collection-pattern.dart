@@ -7,8 +7,7 @@
 //   vehicles:         one bounded document per entity (real-time screens)
 //   vehiclePositions: one append-only document per change (analysis)
 //
-// Guide: .claude/guides/best-practices/ditto.md#event-history-and-audit-logs
-//   (Pattern 3), #transactions
+// Guide: § Event History and Audit Logs (Pattern 3), § Transactions
 
 import 'package:ditto_live/ditto_live.dart';
 

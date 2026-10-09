@@ -25,8 +25,8 @@
 // Initial documents are regular documents: whether they sync is decided by
 // subscriptions, not by INITIAL.
 //
-// Guide: .claude/guides/best-practices/ditto.md
-//   #default-data-with-initial-documents, #insert-and-conflict-handling
+// Guide: § Default Data with INITIAL Documents,
+//   § INSERT and Conflict Handling
 
 import 'package:ditto_live/ditto_live.dart';
 

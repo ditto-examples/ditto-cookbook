@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Attachments are immutable
 //
-// Guide: .claude/guides/best-practices/ditto.md#attachments-are-immutable
+// Guide: § Attachments Are Immutable
 //
 // Once created, an attachment's contents never change. To "edit" a file,
 // create a new attachment and replace the token in the document.

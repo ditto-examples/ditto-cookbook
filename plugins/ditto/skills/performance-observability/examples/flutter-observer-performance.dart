@@ -6,11 +6,11 @@
 // Store Observer Performance in Flutter
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #store-observers-in-flutter
-// - #stable-ordering
-// - #observer-lifecycle-and-cleanup
-// - #keep-observer-callbacks-fast
+// Guide sections (../../guide/reference/ditto.md):
+// - § Store Observers in Flutter
+// - § Stable ordering
+// - § Observer lifecycle and cleanup
+// - § Keep observer callbacks fast
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Recommended pattern: no onChange, consume `changes`, cancel both

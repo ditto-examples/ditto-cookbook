@@ -9,7 +9,7 @@
 // Snapshot values (the price at the time of sale) are facts, not derivations:
 // copy them into the document.
 //
-// Guide: .claude/guides/best-practices/ditto.md#document-structure
+// Guide: § Document Structure
 
 import 'package:ditto_live/ditto_live.dart';
 

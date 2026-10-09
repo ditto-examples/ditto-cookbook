@@ -14,7 +14,7 @@
 // This file declares the counter in every statement, which works with strict
 // mode on or off and keeps declarations consistent.
 //
-// Guide: .claude/guides/best-practices/ditto.md#counters
+// Guide: § Counters
 
 import 'package:ditto_live/ditto_live.dart';
 

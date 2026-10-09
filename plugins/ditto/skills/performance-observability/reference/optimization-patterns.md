@@ -1,10 +1,13 @@
 # Performance and Observability Reference (SDK 5.1.0)
 
-Detailed rules behind the [performance-observability skill](../SKILL.md). Everything here is extracted from the Ditto best practices guide (`.claude/guides/best-practices/ditto.md`); follow the links for full explanations and example output.
+Detailed rules behind the [performance-observability skill](../SKILL.md). Everything here is extracted from the Ditto best practices guide; `§ <Heading>` cites a section of [../../guide/reference/ditto.md](../../guide/reference/ditto.md) (find it with Grep for the heading text) for full explanations and example output.
 
 ## Table of Contents
 
 - [Observer Behavior](#observer-behavior)
+- [Observer Lifecycle in Flutter](#observer-lifecycle-in-flutter)
+- [Backpressure Example: registerObserverV2](#backpressure-example-registerobserverv2)
+- [Differ](#differ)
 - [Index Usage Rules](#index-usage-rules)
 - [Composite Indexes and Covering Scans](#composite-indexes-and-covering-scans)
 - [ADVISE](#advise)
@@ -20,7 +23,7 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 
 ## Observer Behavior
 
-**Guide**: [Observing Changes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#observing-changes)
+**Guide**: `§ Observing Changes`, `§ Store Observers in Flutter`, `§ Observer lifecycle and cleanup`, `§ Diffing Results`
 
 | API (Flutter) | Status | Returns | Backpressure |
 |---|---|---|---|
@@ -37,7 +40,7 @@ Behavior:
 - `registerObserverWithSignalNext`: one result, then nothing until `signalNext()`. Do not pause or resume its stream (the SDK logs a warning).
 - `Differ` keeps the previous result in memory, and diffing is computationally expensive; debounce updates for large or busy result sets and keep diffed queries bounded (for example, with `LIMIT`). `Differ` only accepts items produced by Ditto (test doubles throw an `ArgumentError`).
 
-Other platforms ([Backpressure on Other Platforms](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#backpressure-on-other-platforms)):
+Other platforms (`§ Backpressure on other platforms`):
 
 | Platform | Default observer | Backpressure |
 |---|---|---|
@@ -47,9 +50,79 @@ Other platforms ([Backpressure on Other Platforms](https://github.com/ditto-exam
 
 ---
 
+## Observer Lifecycle in Flutter
+
+**Guide**: `§ Observer lifecycle and cleanup`, `§ Resource Cleanup and Shutdown`
+
+| Behavior (`registerObserver`) | What to do |
+|---|---|
+| Without `onChange`, the query starts when `changes` is first listened to | Listen right after registering |
+| `changes` is single-subscription; a second `listen()` throws a `StateError` (`Bad state: Stream has already been listened to.`), even after the first subscription was cancelled | Hand the stream to exactly one listener or `StreamBuilder`, and keep that `StreamBuilder` mounted |
+| Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` as well |
+| `observer.cancel()` closes `changes` | A pending `await for` loop ends |
+| `await ditto.close()` does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2`, and `cancel()` does nothing once Ditto is closed | Cancel stream subscriptions and observers before closing |
+| Cancelling the stream subscription of a `StoreObserverV2` also cancels the observer | Still call `cancel()` in your cleanup path for clarity |
+
+**✅ DO:**
+- Register observers in `initState()` or in a service or controller, never in `build()`
+- Cancel the stream subscription **and** the observer in `dispose()`
+- Let observers follow screen scope; keep subscriptions at app or feature scope
+- Add `ORDER BY` whenever result order matters (use `_id` as a tie-breaker); without it the order of observer results is not guaranteed (`§ Stable ordering`)
+- Copy values out of the result (`item.value` or your own model objects) instead of keeping `QueryResult` or `QueryResultItem` objects in state or caches (`§ Working with Query Results`)
+
+**❌ DON'T:**
+- Create an observer per list item; observe the list once and pass values down
+- Rely on `ditto.close()` to end an `await for` loop over `registerObserver` results
+- Listen to `changes` twice; it is a single-subscription stream
+
+The full widget (`OrdersList`: `registerObserver` without `onChange` in `initState()`, one `StreamSubscription` that copies `item.value` into state inside `setState`, `ListView.builder` with `ValueKey(order['_id'])`, both cancelled in `dispose()`) is Pattern 1 of [../examples/flutter-observer-performance.dart](../examples/flutter-observer-performance.dart); the onChange-only anti-pattern is in the same file.
+
+---
+
+## Backpressure Example: registerObserverV2
+
+**Guide**: `§ Backpressure (SDK 5.1+)`, `§ registerObserverV2 (Experimental)`, `§ Choosing an observer API`
+
+```dart
+// ✅ GOOD: registerObserverV2 (Experimental) with await for: one update at a time.
+Future<void> exportOpenOrders(
+  Ditto ditto,
+  Future<void> Function(List<Map<String, dynamic>> orders) export,
+) async {
+  final observer = ditto.store.registerObserverV2(
+    'SELECT * FROM orders WHERE status = :status ORDER BY createdAt',
+    arguments: {'status': 'open'},
+  );
+  // await for pauses the stream while the body runs; Ditto holds back the next update.
+  await for (final result in observer.changes) {
+    await export(result.items.map((item) => item.value).toList());
+  }
+  // The loop ends when observer.cancel() is called elsewhere.
+}
+```
+
+- `signalNext()` has no effect on observers registered with `registerObserverV2`.
+- Results passed to `onChange` of either experimental API are also queued in `changes`; consume the stream.
+- The experimental APIs may change in a future release; `registerObserver` remains the default for UI code.
+
+---
+
+## Differ
+
+**Guide**: `§ Diffing Results`, `§ Animated lists`, `§ Partial UI Updates`
+
+- `diff()` takes a `List<QueryResultItem>` (pass `result.items.toList()`).
+- The first call reports every item as an insertion.
+- `deletions` index the **old** list; `insertions` and `updates` index the **new** list.
+- It does not give you the old items; keep previous values yourself.
+- `Differ` keeps the previous result in memory and diffing is expensive; use it only where you need to know what changed (for example `AnimatedList`), and keep diffed queries bounded with `LIMIT`. A `ListView.builder` with keys does not need it.
+- `item.value` creates a new `Map` for every result, and two maps with identical contents are never `==`; map results to immutable model classes that implement `==` if you rely on equality to skip rebuilds.
+
+---
+
 ## Index Usage Rules
 
-**Guide**: [Index Usage Rules](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#index-usage-rules)
+**Guide**: `§ Index Usage Rules`
 
 The planner chooses indexes by rules, not by statistics. `EXPLAIN` shows these plans:
 
@@ -73,7 +146,7 @@ The planner chooses indexes by rules, not by statistics. `EXPLAIN` shows these p
 | `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan | Element lookups cannot use an index |
 | `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan | Does not read documents |
 
-Constraints ([Creating Indexes](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#creating-indexes), [Strict Mode and Data Types](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#strict-mode-and-data-types)):
+Constraints (`§ Creating Indexes`, `§ Strict mode and data types`):
 - Expression, partial, and functional indexes are not supported.
 - `IF NOT EXISTS` checks only the index **name**; to change a definition, create it under a new name or drop and recreate it.
 - `DROP INDEX` requires `ON <collection>`.
@@ -92,7 +165,7 @@ SELECT * FROM system:indexes WHERE collection = :collection
 
 ## Composite Indexes and Covering Scans
 
-**Guide**: [Composite Indexes and Key Order (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#composite-indexes-and-key-order-sdk-51), [Covering Scans](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#covering-scans)
+**Guide**: `§ Composite indexes and key order (SDK 5.1+)`, `§ Covering scans`
 
 - Put **equality** fields first, then the **range** or **sort** field.
 - Match the **sort direction**: with an index on `(status, total DESC)`, `WHERE status = 'open' ORDER BY total DESC` uses the index without a separate sort, while `ORDER BY total ASC` needs an extra sort step.
@@ -110,7 +183,7 @@ SELECT _id, status FROM orders WHERE status = :status
 
 ## ADVISE
 
-**Guide**: [ADVISE (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#advise-sdk-51)
+**Guide**: `§ ADVISE (SDK 5.1+)`
 
 - `ADVISE <statement>` plans but does not execute; available on Small Peers for `SELECT`, `UPDATE`, `DELETE`, `EVICT`, and `INSERT ... SELECT`.
 - The result row has `advice.suggestedIndexes` (each with `collection`, `reason`, `statement`), `advice.existingIndexes` when related indexes exist, and `advice.outcome` when there is nothing to suggest (for example `optimal indexes already exist`, `no advice available for statement`, or `no keys to advise on` when every condition applies a function to the field).
@@ -120,13 +193,31 @@ SELECT _id, status FROM orders WHERE status = :status
 ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false ORDER BY createdAt DESC
 ```
 
-This statement filters with `isDeleted = false`, which is correct only when every document has the field; otherwise keep the `coalesce` form (see [Indexing soft-delete filters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#indexing-soft-delete-filters)).
+Development-only Dart helper that prints suggestions:
+
+```dart
+// ✅ GOOD: Development-only helper that prints index suggestions (SDK 5.1+).
+Future<void> printOrderIndexAdvice(Ditto ditto) async {
+  final result = await ditto.store.execute(
+    'ADVISE SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC',
+    arguments: {'status': 'open'},
+  );
+  final advice = result.items.first.value['advice'] as Map<String, dynamic>;
+  final suggested = (advice['suggestedIndexes'] as List<dynamic>?) ?? const [];
+  if (suggested.isEmpty) debugPrint('No suggestions: ${advice['outcome']}');
+  for (final index in suggested) {
+    debugPrint('${(index as Map<String, dynamic>)['statement']}');
+  }
+}
+```
+
+The `ADVISE` SQL statement above (not the Dart helper) filters with `isDeleted = false`, which is correct only when every document has the field; otherwise keep the `coalesce` form (see `§ Indexing soft-delete filters`).
 
 ---
 
 ## EXPLAIN and PROFILE
 
-**Guide**: [EXPLAIN and PROFILE](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#explain-and-profile)
+**Guide**: `§ EXPLAIN and PROFILE`, `§ Reading an EXPLAIN plan`
 
 | | `EXPLAIN` | `PROFILE` |
 |---|---|---|
@@ -158,7 +249,7 @@ EXPLAIN SELECT * FROM orders WHERE status = 'open'
 PROFILE SELECT * FROM orders WHERE total = 5
 ```
 
-Directives ([Directives](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#directives)) override the planner for one statement; use them only after `EXPLAIN` and `PROFILE` show the planner's choice is wrong. `USE INDEX 'name'` is silently ignored if the index does not exist or cannot serve the query, and `USE INDEX ''` requests a collection scan. Do not put directives in subscription queries; indexes and directives only affect local query execution.
+Directives (`§ Directives`) override the planner for one statement; use them only after `EXPLAIN` and `PROFILE` show the planner's choice is wrong. `USE INDEX 'name'` is silently ignored if the index does not exist or cannot serve the query, and `USE INDEX ''` requests a collection scan. Do not put directives in subscription queries; indexes and directives only affect local query execution.
 
 ```sql
 SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
@@ -168,7 +259,7 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 
 ## Query Scope
 
-**Guide**: [Query Scope and Execution](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#query-scope-and-execution), [Large results](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#large-results)
+**Guide**: `§ Query Scope and Execution`, `§ Large results`
 
 **✅ DO:**
 - Filter in `WHERE`, not in Dart
@@ -194,13 +285,13 @@ SELECT DISTINCT status FROM orders ORDER BY status
 SELECT * FROM orders WHERE _id IN :ids
 ```
 
-**Counting** ([Counting Documents](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#counting-documents)): a full-collection `COUNT(*)` is answered by a count scan (SDK 5.1+) without reading documents. Ditto's 5.1 benchmark reported about 167x faster full-collection counts and about 4.4x faster filtered counts, comparing median runtimes of SDK 5.0.3 and 5.1.0 on a single Android device (Orion O6) with one retail dataset of about 93,000 documents; results depend on device, data shape, indexes, and query mix. A filtered count still evaluates the filter, so index the filtered fields.
+**Counting** (`§ Counting documents`): a full-collection `COUNT(*)` is answered by a count scan (SDK 5.1+) without reading documents. Ditto's 5.1 benchmark reported about 167x faster full-collection counts and about 4.4x faster filtered counts, comparing median runtimes of SDK 5.0.3 and 5.1.0 on a single Android device (Orion O6) with one retail dataset of about 93,000 documents; results depend on device, data shape, indexes, and query mix. A filtered count still evaluates the filter, so index the filtered fields.
 
 ---
 
 ## Long-Running Requests and Execution Model
 
-**Guide**: [Long-Running Requests (SDK 5.1+)](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#long-running-requests-sdk-51), [Flutter Execution Model](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#flutter-execution-model)
+**Guide**: `§ Long-running requests (SDK 5.1+)`, `§ Flutter execution model`
 
 | Parameter | Default | Effect |
 |---|---|---|
@@ -221,7 +312,7 @@ On native platforms, `ditto.store.execute` runs on a long-lived worker isolate p
 
 ## Avoiding Unnecessary Writes
 
-**Guide**: [ON ID CONFLICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#on-id-conflict), [UPDATE](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#update), [Prefer field-level updates](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#prefer-field-level-updates)
+**Guide**: `§ ON ID CONFLICT`, `§ UPDATE`, `§ Prefer field-level updates over whole-document rewrites`, `§ Assigning an object merges it`, `§ Prefer field-level updates`
 
 | Policy | When the `_id` already exists locally |
 |---|---|
@@ -249,11 +340,16 @@ UPDATE orders UNSET discountCode, pricing.discount WHERE _id = :id
 
 An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers. Skip such writes with a `WHERE` condition (with `coalesce` so missing or `null` values stay eligible) or use `DO UPDATE_LOCAL_DIFF`.
 
+- Update nested fields individually (`SET address.city = :city`) instead of assigning the whole object.
+- Do not read a document, modify it in Dart, and write the whole map back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`: a stale value that differs from the stored one is written back.
+- Do not expect `DO UPDATE` or `SET obj = {...}` to replace an object; with the default strict mode they merge, and fields not supplied remain (remove keys with `UNSET`).
+- Why: Ditto syncs changes at field level. Rewriting a whole document makes the change larger, and an unchanged field written by this device can win a merge against a real concurrent change made on another device.
+
 ---
 
 ## Logging Details
 
-**Guide**: [Logging](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#logging)
+**Guide**: `§ Logging`, `§ Configuring logging in Flutter`, `§ Forwarding logs to your own pipeline`, `§ On-disk logs and exporting them`
 
 | `LogLevel` | Typical use |
 |---|---|
@@ -264,20 +360,21 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 | `verbose` | Very detailed tracing; can slow down replication |
 
 - `DittoLogger` members throw until the SDK is initialized; call `await Ditto.init()` before configuring logging, then `Ditto.open`.
-- `isEnabled` and `minimumLogLevel` control the logs Ditto emits at runtime, not the on-disk logs.
+- `isEnabled` and `minimumLogLevel` control the logs Ditto emits at runtime, not the on-disk logs. On-disk logs always include debug-level entries, so a `warning` console level in production does not reduce what support can retrieve.
+- Set the level explicitly: `warning` in production, `debug` while debugging; use `verbose` only for short, targeted investigations.
 - `customLogCallback` receives the log events that Ditto emits; keep it fast. `ditto.close()` resets it to `null` for the whole process, so set it again before every `Ditto.open()` (after `Ditto.init()`).
 - `DittoLogger.isDevtoolsLoggingEnabled = true` also sends Ditto logs to Flutter DevTools.
 - On-disk logs (debug level and above) are kept in the persistence directory of the most recently created `Ditto` instance, about 15 MB of compressed logs or 15 days of logs by default (older entries are discarded once one of these limits is reached). They rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`); leave them at their defaults unless Ditto support advises otherwise.
-- Retrieve on-disk logs from the Ditto Portal device dashboard or with `DittoLogger.exportLogs(path)` (gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count).
+- Retrieve on-disk logs from the Ditto Portal device dashboard or with `DittoLogger.exportLogs(path)` (gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count). Use a fresh, timestamped `.jsonl.gz` path.
 - Data bundles requested through the Ditto Portal include (SDK 5.1+) a `config_snapshot.json` file with the device's effective configuration.
 
 ---
 
 ## System Virtual Collections
 
-**Guide**: [System Virtual Collections](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#system-virtual-collections), [Request Diagnostics](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#request-diagnostics)
+**Guide**: `§ System Virtual Collections`, `§ Request diagnostics`
 
-Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; with SDK 5.1.0 an idle observer fired only when the rows changed, so do not rely on either behavior). For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#monitoring-sync-status).
+Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; with SDK 5.1.0 an idle observer fired only when the rows changed, so do not rely on either behavior). For live sync status, use a single observer with a trivial callback, as shown in `§ Monitoring Sync Status`.
 
 | Collection | Purpose |
 |---|---|
@@ -301,7 +398,7 @@ SELECT _id, text, state, times FROM system:active_requests
 
 ## System Parameters for Diagnostics
 
-**Guide**: [System Parameters Reference](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#system-parameters-reference)
+**Guide**: `§ System Parameters Reference`
 
 | Parameter | Default | Purpose |
 |---|---|---|
@@ -318,4 +415,4 @@ SHOW ALL LIKE 'dql_slow%'
 ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
 ```
 
-Settings are not persisted; apply them after every `Ditto.open`, before `ditto.sync.start()` ([Applying System Parameters](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#applying-system-parameters)).
+Settings are not persisted; apply them after every `Ditto.open`, before `ditto.sync.start()` (`§ Applying System Parameters`).

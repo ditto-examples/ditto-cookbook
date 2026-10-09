@@ -7,9 +7,8 @@
 // changed. DO UPDATE_LOCAL_DIFF suits upserts and re-imports of data that
 // another system owns; it does not protect a stale in-memory copy.
 //
-// Guide: .claude/guides/best-practices/ditto.md
-//   #local-write-semantics-you-must-know, #document-structure,
-//   #insert-and-conflict-handling
+// Guide: § Local write semantics you must know, § Document Structure,
+//   § INSERT and Conflict Handling
 
 import 'package:ditto_live/ditto_live.dart';
 

@@ -7,7 +7,7 @@
 //   Pattern 2: append-only event documents (unbounded or independently read)
 //   Pattern 3: current state plus history; see two-collection-pattern.dart
 //
-// Guide: .claude/guides/best-practices/ditto.md#event-history-and-audit-logs
+// Guide: § Event History and Audit Logs
 
 import 'package:ditto_live/ditto_live.dart';
 

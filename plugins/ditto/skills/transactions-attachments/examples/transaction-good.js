@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (JavaScript, @dittolive/ditto 5.1.0): Transaction patterns
 //
-// Guide: .claude/guides/best-practices/ditto.md#transactions-on-other-platforms
+// Guide: § Transactions on Other Platforms
 //
 // API (from the 5.1.0 type definitions):
 //   ditto.store.transaction(async (tx) => { ... }, { isReadOnly, hint })

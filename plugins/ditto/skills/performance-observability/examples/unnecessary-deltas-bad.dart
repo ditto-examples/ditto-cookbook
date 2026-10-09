@@ -6,10 +6,10 @@
 // Unnecessary Writes (Anti-Patterns)
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #on-id-conflict
-// - #prefer-field-level-updates-over-whole-document-rewrites
-// - #assigning-an-object-merges-it
+// Guide sections (../../guide/reference/ditto.md):
+// - § ON ID CONFLICT
+// - § Prefer field-level updates over whole-document rewrites
+// - § Assigning an object merges it
 //
 // Each function below compiles and runs, but writes more than it should.
 // Corrected versions are in unnecessary-deltas-good.dart.

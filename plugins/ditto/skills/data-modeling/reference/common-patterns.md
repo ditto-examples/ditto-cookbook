@@ -1,6 +1,6 @@
 # Data Modeling Common Patterns
 
-Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`. The source of truth is the [Data Modeling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#data-modeling) section of the guide.
+Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`. The source of truth is `§ Data Modeling` in the full guide (`../../guide/reference/ditto.md`).
 
 ## Table of Contents
 
@@ -49,12 +49,36 @@ Future<bool> importProduct(Ditto ditto, Map<String, dynamic> product) async {
 }
 ```
 
+To replace an object instead of merging into it, clear it and write it in one transaction (or declare the field `REGISTER`; see SKILL.md Rule 3):
+
+```dart
+// ✅ GOOD: Replace a MAP value: clear it, then write it, atomically.
+Future<void> replaceAddress(
+  Ditto ditto,
+  String customerId,
+  Map<String, dynamic> newAddress,
+) async {
+  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
+    await tx.execute(
+      'UPDATE customers UNSET address WHERE _id = :id',
+      arguments: {'id': customerId},
+    );
+    await tx.execute(
+      'UPDATE customers SET address = :address WHERE _id = :id',
+      arguments: {'id': customerId, 'address': newAddress},
+    );
+  });
+}
+```
+
+`UNSET` creates removal metadata. Unsetting a very large number of dynamically generated keys over time can degrade performance; unsetting the parent field (or deleting the document) mitigates the accumulation.
+
 **❌ DON'T:**
 - Save a stale in-memory copy with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`. `DO UPDATE` gives every supplied field a new timestamp; `DO UPDATE_LOCAL_DIFF` writes back any old value that differs from the stored one. Both can override a concurrent change from another device.
 - Use `DO UPDATE` for periodic re-upserts of unchanged data (for example, refreshing reference data from a backend).
 - Expect `DO UPDATE` to replace a document or an object: it merges.
 
-Guide: [INSERT and Conflict Handling](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#insert-and-conflict-handling), [Local write semantics you must know](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#local-write-semantics-you-must-know). Example: [field-level-updates.dart](../examples/field-level-updates.dart).
+Guide: `§ INSERT and Conflict Handling`, `§ Local write semantics you must know`. Example: [field-level-updates.dart](../examples/field-level-updates.dart).
 
 ---
 
@@ -87,7 +111,7 @@ ORDER BY occurredAt ASC, _id ASC
 
 A variant uses the status as the key and the timestamp as the value; it records whether and when a state happened, but keeps only the latest time for a state entered more than once.
 
-Guide: [Event History and Audit Logs](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#event-history-and-audit-logs), [EVICT](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#evict). Examples: [event-history.dart](../examples/event-history.dart), [two-collection-pattern.dart](../examples/two-collection-pattern.dart).
+Guide: `§ Event History and Audit Logs`, `§ EVICT`. Examples: [event-history.dart](../examples/event-history.dart), [two-collection-pattern.dart](../examples/two-collection-pattern.dart).
 
 ---
 
@@ -104,7 +128,7 @@ Guide: [Event History and Audit Logs](https://github.com/ditto-examples/ditto-co
 
 Every stored field costs storage and memory on every device that holds the document and adds to initial replication and merge cost.
 
-**❌ DON'T store in synced documents:** UI state (`isExpanded`, scroll positions), temporary flags (`isSaving`, `uploadProgress`), device-local data (file paths, cache locations), or derived values (totals, averages, "days until").
+**❌ DON'T store in synced documents:** UI state (`isExpanded`, scroll positions), temporary flags (`isSaving`, `uploadProgress`), device-local data (file paths, cache locations), or derived values (totals, line totals, remaining stock, averages, "days until"). A stored derived value is a separate register: devices recompute it from partial views, and after the merge it can match neither.
 
 **✅ DO:** keep UI and device-local state in widget state or local preferences, and initialize flags you will filter on (`isDeleted: false`), or filter with `coalesce(isDeleted, false) = false`. A missing field is `MISSING`, not `false`.
 
@@ -114,7 +138,7 @@ Every stored field costs storage and memory on every device that holds the docum
 - Quote field names that collide with DQL keywords or contain special characters with backticks (`` `value` ``).
 - Never name a collection `collection`; it is a DQL keyword.
 
-Guide: [Document Structure](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-structure), [MISSING and NULL](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#missing-and-null).
+Guide: `§ Document Structure`, `§ MISSING and NULL`.
 
 ---
 
@@ -123,7 +147,9 @@ Guide: [Document Structure](https://github.com/ditto-examples/ditto-cookbook/blo
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | Write succeeds; a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` / `UPDATE` fails; the stored document is unchanged |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
+
+The soft-limit warning reads `exceeds recommended limit`. **Note (SDK 5.1.0):** merges from other devices are not checked against the hard limit: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data.
 
 The limits apply to the size of each stored document. Size affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes more than 10 seconds to replicate the first time.
 
@@ -144,4 +170,4 @@ WHERE _id = :id
 
 **❌ DON'T:** embed base64-encoded files, append to a nested map forever, or raise the hard limit to make a large document fit. If you change either limit, change it on every peer in the same release.
 
-Guide: [Document Size Limits](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#document-size-limits), [Attachments](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#attachments). Example: [document-size.dart](../examples/document-size.dart).
+Guide: `§ Document Size Limits`, `§ Attachments`. Example: [document-size.dart](../examples/document-size.dart).

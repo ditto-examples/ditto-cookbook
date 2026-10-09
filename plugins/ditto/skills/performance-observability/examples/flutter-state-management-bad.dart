@@ -6,11 +6,11 @@
 // State Management Anti-Patterns with Ditto Observers
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #store-observers-in-flutter
-// - #observer-lifecycle-and-cleanup
-// - #keep-observer-callbacks-fast
-// - #partial-ui-updates
+// Guide sections (../../guide/reference/ditto.md):
+// - § Store Observers in Flutter
+// - § Observer lifecycle and cleanup
+// - § Keep observer callbacks fast
+// - § Partial UI Updates
 //
 // Every class below compiles, but each one shows a mistake. The fix for each
 // is in flutter-state-management-good.dart or flutter-observer-performance.dart.

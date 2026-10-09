@@ -5,8 +5,8 @@
 // EVICT anti-patterns. Every function below compiles and runs, but defeats
 // the purpose of eviction or removes nothing.
 //
-// Guide: .claude/guides/best-practices/ditto.md#evict
-//        .claude/guides/best-practices/ditto.md#eviction-frequency
+// Guide: § EVICT
+//        § Eviction frequency
 //
 // Corrected versions: evict-subscription-management-good.dart
 

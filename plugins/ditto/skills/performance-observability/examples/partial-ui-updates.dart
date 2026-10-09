@@ -6,10 +6,10 @@
 // Partial UI Updates and Diffing (Flutter)
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #partial-ui-updates
-// - #diffing-results
-// - #animated-lists
+// Guide sections (../../guide/reference/ditto.md):
+// - § Partial UI Updates
+// - § Diffing Results
+// - § Animated lists
 //
 // An observer delivers a new result for any change that affects its query.
 // Keep each observer narrow and attach it to the smallest widget that needs

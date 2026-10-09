@@ -1,6 +1,6 @@
 # Transactions and Attachments on JavaScript, Swift, and Kotlin (SDK 5.1)
 
-The patterns in [SKILL.md](../SKILL.md) apply to every platform; the API shapes differ. Signatures below were checked against the 5.1.0 SDK artifacts: the JavaScript type definitions (`@dittolive/ditto` 5.1.0), the Swift interface (`DittoSwift` 5.1.0), and the Kotlin sources (`com.ditto:ditto-kotlin` 5.1.0). Guide: [Transactions on Other Platforms](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#transactions-on-other-platforms) and [Platform Differences](https://github.com/ditto-examples/ditto-cookbook/blob/main/.claude/guides/best-practices/ditto.md#platform-differences).
+The patterns in [SKILL.md](../SKILL.md) apply to every platform; the API shapes differ. Signatures below were checked against the 5.1.0 SDK artifacts: the JavaScript type definitions (`@dittolive/ditto` 5.1.0), the Swift interface (`DittoSwift` 5.1.0), and the Kotlin sources (`com.ditto:ditto-kotlin` 5.1.0). Guide (`../guide/reference/ditto.md`): `§ Transactions on Other Platforms`, `§ Platform Differences`.
 
 ## Table of Contents
 
@@ -275,4 +275,4 @@ result.asCompleted()?.attachment?.use { fetched -> showImage(fetched.getData()) 
 | Swift | `try await newAttachment(path:metadata:)` / `newAttachment(data:metadata:)` | `try fetchAttachment(token:deliverOn:onFetchEvent:)` returns `DittoAttachmentFetcher` | `fetcher.stop()` |
 | Kotlin | `newAttachment(path, map)` / `newAttachment(inputStream, map)` (suspend) | `fetchAttachment(tokenMap) { downloaded, total -> }` (suspend) returns `DittoAttachmentFetchResult` | Not covered here |
 
-On every platform: declare the field as `ATTACHMENT` in the statement, fetch lazily, implement your own stall timeout (there is no fetch timeout or "not available" event), and replace rather than modify attachments. See [SKILL.md](../SKILL.md) patterns 6 to 11.
+On every platform: declare the field as `ATTACHMENT` in the statement, fetch lazily, implement your own stall timeout (there is no fetch timeout or "not available" event), and replace rather than modify attachments. See [SKILL.md](../SKILL.md) rules 3, 4, 7, 8, 10, and 11.

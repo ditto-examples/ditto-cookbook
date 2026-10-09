@@ -2,7 +2,7 @@
 paths:
   - .claude/guides/best-practices/ditto.md
   - plugins/ditto/**
-version: 1.3
+version: 1.4
 last_updated: 2026-10-09
 priority: CRITICAL
 ---
@@ -28,6 +28,10 @@ Ensures synchronization between the authoritative Ditto best practices guide and
   - `storage-lifecycle/SKILL.md` + examples + reference
   - `transactions-attachments/SKILL.md` + examples + reference
   - `performance-observability/SKILL.md` + examples + reference
+  - `sdk-setup/SKILL.md` + reference (setup, lifecycle, transports, presence, security)
+  - `testing/SKILL.md` + reference
+  - `audit/SKILL.md` + `scripts/scan.py` + `reference/scanner-rules.md` (generated)
+  - `guide/reference/ditto.md` is a symbolic link to the guide itself; Claude Code copies its content into installed copies of the plugin, so it needs no manual sync
 - **Derivative Content**: `.claude/guides/best-practices/human-friendly-docs/ditto-sdk-checklist/` (customer-facing checklist; see its [README](../../guides/best-practices/human-friendly-docs/ditto-sdk-checklist/README.md))
   - `ditto-implementation-checklist.md` (English) + `translations.json` and `code-translations.json` (Japanese)
   - `ditto-sdk-checklist.html` (generated with `uv run build-checklist.py`)
@@ -64,6 +68,10 @@ Review the edited sections and determine which skill files are affected:
 | Deletion/EVICT/storage changes | `storage-lifecycle/` | `SKILL.md`, `examples/*.dart`, `reference/*.md` |
 | Transaction/attachment changes | `transactions-attachments/` | `SKILL.md`, `examples/*.dart`, `reference/*.md` |
 | Performance/logging/observer changes | `performance-observability/` | `SKILL.md`, `examples/*.dart`, `reference/*.md` |
+| SDK setup, authentication, system parameters, sync start/stop, shutdown, transports, presence, security | `sdk-setup/` | `SKILL.md`, `reference/*.md` |
+| Testing strategies | `testing/` | `SKILL.md`, `reference/*.md` |
+| A new or changed anti-pattern that can be detected in source text, or a renamed heading cited by a scanner rule | `audit/` | `scripts/scan.py`, then regenerate `reference/scanner-rules.md` with `python3 scripts/scan.py --list-rules` |
+| A new top-level section | `guide/` | The section table in `SKILL.md` |
 | Any change to a rule, caveat, or code example that a checklist item covers, or a renamed heading that an item names under "Best-practices guide" | `human-friendly-docs/ditto-sdk-checklist/` | `ditto-implementation-checklist.md`, `translations.json`, `code-translations.json`, then rebuild `ditto-sdk-checklist.html` |
 
 ### Step 3: Update Skills
@@ -73,8 +81,9 @@ Propagate the changes to relevant SKILL.md files and example files:
 2. Update or add examples in `examples/` directory
 3. Update reference docs in `reference/` directory if needed
 4. Verify consistency across all affected files
-5. Bump `version` in `plugins/ditto/.claude-plugin/plugin.json` (patch for fixes and wording, minor for new or revised patterns) so that installed copies of the plugin receive the update, then run `claude plugin validate .` from the repository root
-6. For the checklist, update the English item, the Japanese entries at the same position, and the version and date in the checklist header, then rebuild; the build fails if the Japanese data no longer lines up with the English
+5. Keep the skill format: `name` and `description` only in the frontmatter, a description of at most about 450 characters, `SKILL.md` under 20,000 characters (about 5,000 tokens) with the most important rules first, and details in `reference/` files. Cite guide sections as `§ Heading` with the exact heading text
+6. Bump `version` in `plugins/ditto/.claude-plugin/plugin.json` (patch for fixes and wording, minor for new or revised patterns) so that installed copies of the plugin receive the update, then run `claude plugin validate .` from the repository root
+7. For the checklist, update the English item, the Japanese entries at the same position, and the version and date in the checklist header, then rebuild; the build fails if the Japanese data no longer lines up with the English
 
 ### Step 4: Skip if Unnecessary
 
@@ -119,8 +128,9 @@ After synchronization, verify:
 3. Examples compile and run (for code examples)
 4. No orphaned references to old patterns
 5. Cross-references between skills remain valid
-6. Links from the Skills to the main guide use absolute GitHub URLs, because an installed plugin does not include `.claude/guides/`
+6. `python3 .claude/scripts/checks/check-ditto-skills.py` passes: skill format, every `§ Heading` citation (a renamed heading breaks the citations that use it), relative links, and the generated scanner rules
 7. The plugin version has been bumped and `claude plugin validate .` passes
+8. For changes to rules or descriptions, the eval suite still passes (see `plugins/ditto/evals/README.md`)
 
 ## See Also
 

@@ -4,8 +4,8 @@
 //
 // Soft delete that propagates reliably through the mesh.
 //
-// Guide: .claude/guides/best-practices/ditto.md#soft-delete
-//        .claude/guides/best-practices/ditto.md#soft-delete-subscriptions-and-cleanup
+// Guide: § Soft Delete
+//        § Soft delete, subscriptions, and cleanup
 //
 // Key rules:
 // - Soft delete is an ordinary UPDATE, so it syncs like any other change and

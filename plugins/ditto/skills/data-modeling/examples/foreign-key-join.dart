@@ -15,9 +15,8 @@
 //   on its `_id`. Otherwise the query fails with
 //   `Joining to "..." disallowed without appropriate index support`.
 //
-// Guide: .claude/guides/best-practices/ditto.md
-//   #relationships-embedding-separate-collections-and-join,
-//   #joining-collections-sdk-51
+// Guide: § Relationships: Embedding, Separate Collections, and JOIN,
+//   § Joining Collections (SDK 5.1+)
 
 import 'dart:async';
 

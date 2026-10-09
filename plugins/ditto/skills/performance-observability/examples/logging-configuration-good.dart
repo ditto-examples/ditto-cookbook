@@ -6,13 +6,13 @@
 // Logging and Diagnostics Configuration (Correct Patterns)
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #logging
-// - #dittoopen-dittoopensync-and-dittoinit
-// - #forwarding-logs-to-your-own-pipeline
-// - #on-disk-logs-and-exporting-them
-// - #system-virtual-collections
-// - #long-running-requests-sdk-51
+// Guide sections (../../guide/reference/ditto.md):
+// - § Logging
+// - § Ditto.open, Ditto.openSync, and Ditto.init
+// - § Forwarding logs to your own pipeline
+// - § On-disk logs and exporting them
+// - § System Virtual Collections
+// - § Long-running requests (SDK 5.1+)
 //
 // Facts:
 // - Every DittoLogger member throws "Ditto not initialized" until the SDK is

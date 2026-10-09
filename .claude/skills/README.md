@@ -24,6 +24,10 @@ These Skills help you write high-quality Ditto SDK code across multiple platform
 | [**storage-lifecycle**](storage-lifecycle/) | DELETE, soft delete, EVICT, tombstones | CRITICAL |
 | [**transactions-attachments**](transactions-attachments/) | Transactions and attachments | CRITICAL |
 | [**performance-observability**](performance-observability/) | Performance and monitoring | HIGH |
+| [**sdk-setup**](sdk-setup/) | Setup, lifecycle, authentication, transports, security | CRITICAL |
+| [**testing**](testing/) | Testing code that uses Ditto | HIGH |
+| [**audit**](audit/) | Reviewing a Ditto codebase with the anti-pattern scanner | HIGH |
+| [**guide**](guide/) | Searching the complete best practices guide | - |
 
 **Edit the Skills in `plugins/ditto/skills/`**, not through these links. Claude Code protects `.claude/skills/` from writes, and keeping the source outside it lets the Skills be maintained and published like any other file.
 
@@ -42,13 +46,7 @@ You don't need to explicitly invoke Skills - Claude uses them when relevant.
 
 ### Platform Detection
 
-Ditto Skills automatically detect your platform:
-- **Flutter/Dart**: `*.dart` files with Ditto imports
-- **JavaScript**: `*.js` files with `@dittolive/ditto` imports
-- **Swift**: `*.swift` files with `import DittoSwift`
-- **Kotlin**: `*.kt` files with `import com.ditto.kotlin.*`
-
-Skills provide platform-specific guidance based on your code.
+Each Ditto Skill starts with a "Before You Apply" step: Claude checks the project's platform and Ditto SDK version (`pubspec.lock`, `package-lock.json`, `Package.resolved`, Gradle files). The examples are Flutter (Dart); for JavaScript, Swift, and Kotlin, the Skills point to the platform differences in the guide. Behavior marked **Note (SDK 5.1.0)** is verified before it is applied to another SDK version.
 
 ## Skill Structure
 
@@ -119,7 +117,8 @@ The main guide is the authoritative source. Skills focus on automatable, common 
 1. Update main guide first (`.claude/guides/best-practices/ditto.md`)
 2. Extract new critical patterns into Skills (in `plugins/ditto/skills/`)
 3. Update examples and references as needed
-4. Bump `version` in `plugins/ditto/.claude-plugin/plugin.json` and run `claude plugin validate .`
+4. Run `python3 .claude/scripts/checks/check-ditto-skills.py` (format, `§ Heading` citations, links)
+5. Bump `version` in `plugins/ditto/.claude-plugin/plugin.json` and run `claude plugin validate . --strict`
 
 ## Troubleshooting
 

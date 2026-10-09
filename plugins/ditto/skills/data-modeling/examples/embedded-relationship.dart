@@ -7,8 +7,7 @@
 // permissions, and edited by the same group of writers. Store embedded
 // collections as maps keyed by ID, never as arrays.
 //
-// Guide: .claude/guides/best-practices/ditto.md
-//   #relationships-embedding-separate-collections-and-join
+// Guide: § Relationships: Embedding, Separate Collections, and JOIN
 
 import 'package:ditto_live/ditto_live.dart';
 

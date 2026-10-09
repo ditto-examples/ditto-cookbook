@@ -11,7 +11,7 @@
 // integers/booleans/arrays (accepted, not recommended). Floats and null are
 // rejected.
 //
-// Guide: .claude/guides/best-practices/ditto.md#document-ids
+// Guide: § Document IDs
 
 import 'dart:math';
 

@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Transaction anti-patterns
 //
-// Guide: .claude/guides/best-practices/ditto.md#transaction-rules
+// Guide: § Transaction Rules
 //
 // Every function below compiles. The problems appear at runtime.
 //

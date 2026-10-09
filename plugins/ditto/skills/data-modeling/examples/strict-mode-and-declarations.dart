@@ -7,8 +7,7 @@
 // need whole-object replacement, declare those fields as REGISTER in every
 // statement that touches them.
 //
-// Guide: .claude/guides/best-practices/ditto.md#strict-mode,
-//   #keep-type-declarations-consistent
+// Guide: § Strict Mode, § Keep type declarations consistent
 
 import 'package:ditto_live/ditto_live.dart';
 

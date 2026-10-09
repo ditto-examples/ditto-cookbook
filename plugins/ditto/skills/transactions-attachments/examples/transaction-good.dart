@@ -1,6 +1,6 @@
 // Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Transaction patterns
 //
-// Guide: .claude/guides/best-practices/ditto.md#transactions
+// Guide: § Transactions
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Atomic multi-document change that uses only tx.execute

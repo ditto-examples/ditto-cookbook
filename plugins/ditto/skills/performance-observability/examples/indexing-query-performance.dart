@@ -6,14 +6,14 @@
 // Indexing and Query Performance
 // ============================================================================
 //
-// Guide sections (.claude/guides/best-practices/ditto.md):
-// - #creating-indexes
-// - #index-usage-rules
-// - #composite-indexes-and-key-order-sdk-51
-// - #strict-mode-and-data-types
-// - #advise-sdk-51
-// - #explain-and-profile
-// - #query-scope-and-execution
+// Guide sections (../../guide/reference/ditto.md):
+// - § Creating Indexes
+// - § Index Usage Rules
+// - § Composite indexes and key order (SDK 5.1+)
+// - § Strict mode and data types
+// - § ADVISE (SDK 5.1+)
+// - § EXPLAIN and PROFILE
+// - § Query Scope and Execution
 //
 // Facts:
 // - Indexes are local to each device, persist across restarts, and are used by
@@ -152,7 +152,7 @@ Future<int> countUrgentOrders(Ditto ditto) async {
 /// Do not run ADVISE AND PROVISION in production code paths; it creates
 /// indexes as a side effect.
 /// `isDeleted = false` is correct only when every document has the field;
-/// otherwise keep the coalesce form (see #indexing-soft-delete-filters).
+/// otherwise keep the coalesce form (see § Indexing soft-delete filters).
 Future<void> printOrderIndexAdvice(Ditto ditto) async {
   final result = await ditto.store.execute(
     'ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false '
