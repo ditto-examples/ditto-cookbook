@@ -116,11 +116,12 @@ SyncSubscription subscribeToEverything(Ditto ditto) {
 /// ❌ BAD: Filtering the subscription on fields that change often. Documents
 /// leave the subscription's scope when they change state, so devices and
 /// relays stop following them. Excluding soft-deleted documents has a similar
-/// effect: a document stops matching as soon as it is flagged, and the flagged
-/// copy is not removed from devices that already have it (local queries must
-/// still filter it). Keep soft-deleted documents in the
-/// subscription (Variant A) or use a retention window (Variant B), as described
-/// in the guide section "Soft delete, subscriptions, and cleanup".
+/// effect: devices that did not already hold a flagged document never store
+/// it, so they cannot relay the flag, and a cleanup DELETE does not reach the
+/// flagged copies that other devices keep (local queries must still filter
+/// them). Keep soft-deleted documents in the subscription (Variant A) or use a
+/// retention window (Variant B), as described in the guide section
+/// "Soft delete, subscriptions, and cleanup".
 SyncSubscription subscribeToOpenUndeletedOrders(Ditto ditto, String storeId) {
   return ditto.sync.registerSubscription(
     'SELECT * FROM orders WHERE storeId = :storeId AND status = :status '

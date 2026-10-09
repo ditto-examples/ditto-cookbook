@@ -743,7 +743,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
         </div>
       </div>
       <div class="metadata">
-        <span data-i18n="versionLabel">Version</span> 2.7 |
+        <span data-i18n="versionLabel">Version</span> 2.8 |
         <span data-i18n="lastUpdatedLabel">Last Updated:</span> 2026-10-09 |
         <span data-i18n="appliesToLabel">Applies to:</span> Ditto SDK 5.1.0 (Flutter <code>ditto_live</code> 5.1.0)
       </div>
@@ -2814,7 +2814,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
             <div class="detail-section">
               <div class="detail-heading what-heading">What this means</div>
               <div class="detail-content what-content">
-<p>Write <code>isDeleted: false</code> when you create a document, and set <code>isDeleted = true</code> and a UTC <code>deletedAt</code> when you delete it. Filter every query and observer with <code>coalesce(isDeleted, false) = false</code>. To benefit from an index, combine this filter with a selective indexed predicate such as <code>status = :status</code>.</p>
+<p>Write <code>isDeleted: false</code> when you create a document, and set <code>isDeleted = true</code> and a UTC <code>deletedAt</code> in the same <code>UPDATE</code> when you delete it. Filter every query and observer with <code>coalesce(isDeleted, false) = false</code>. To benefit from an index, combine this filter with a selective indexed predicate such as <code>status = :status</code>.</p>
               </div>
             </div>
             <div class="detail-section">
@@ -2861,24 +2861,25 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 
         <article class="item" data-item-index="51">
           <div class="item-header">
-            <input type="checkbox" class="item-checkbox" id="item-keep-soft-deleted-documents-in-the-subscription-until-every-device-has-the-flag">
-            <label class="item-title" for="item-keep-soft-deleted-documents-in-the-subscription-until-every-device-has-the-flag">Keep soft-deleted documents in the subscription until every device has the flag</label>
+            <input type="checkbox" class="item-checkbox" id="item-keep-soft-deleted-documents-in-the-subscriptions-of-devices-that-relay-data">
+            <label class="item-title" for="item-keep-soft-deleted-documents-in-the-subscriptions-of-devices-that-relay-data">Keep soft-deleted documents in the subscriptions of devices that relay data</label>
           </div>
           <div class="item-details">
             <div class="detail-section">
               <div class="detail-heading what-heading">What this means</div>
               <div class="detail-content what-content">
-<p>Do not exclude flagged documents from the subscription; hide them in local queries instead. To clean them up, choose one of two approaches:</p>
+<p>Do not exclude flagged documents from the subscriptions of devices that sync with other devices; hide them in local queries instead. To clean them up, choose one of two approaches:</p>
 <ul>
 <li>Subscribe to the whole collection (or partition), and after a retention period run a <code>DELETE</code> on Ditto Server or on an authorized peer</li>
 <li>Subscribe to active documents plus documents deleted within a retention window, and on each device evict exactly the older ones</li>
 </ul>
+<p>Subscribing to active documents only is acceptable when every device syncs directly with Ditto Server and evicts flagged documents itself.</p>
               </div>
             </div>
             <div class="detail-section">
               <div class="detail-heading why-heading">Why this matters</div>
               <div class="detail-content why-content">
-<p>A subscription that excludes flagged documents stops requesting a document as soon as it is flagged. In our testing with SDK 5.1.0, the flag still arrived, but later changes, including a restore, did not. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.</p>
+<p>In our testing with SDK 5.1.0, a device whose subscription excluded flagged documents still received the flag and a later restore for documents it already held. It did not store flagged documents that it did not already hold, so it could not pass the flag on to a device that had missed it, and a <code>DELETE</code> of a flagged document did not reach it. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.</p>
               </div>
             </div>
             <p class="guide-reference"><span class="guide-label">Best-practices guide:</span> Soft delete, subscriptions, and cleanup</p>
@@ -3991,7 +3992,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "Keep transactions short and do I/O outside them",
       "Choose between DELETE, soft delete, and EVICT deliberately",
       "Filter soft-deleted documents with coalesce(isDeleted, false) = false",
-      "Keep soft-deleted documents in the subscription until every device has the flag",
+      "Keep soft-deleted documents in the subscriptions of devices that relay data",
       "Avoid DELETE for concurrently edited data and long offline periods",
       "Target deletions and evictions with WHERE _id IN :ids",
       "Cancel or narrow subscriptions before EVICT",
@@ -4069,8 +4070,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>Inside the callback, run every statement through the <code>Transaction</code> passed in (<code>tx.execute</code>). Never call <code>ditto.store.execute</code> there, never start a read-write transaction inside another one, and never keep the <code>Transaction</code> object after the callback returns.</p>",
       "<p>A transaction should only read, decide, write, and return. Prepare network responses, files, user input, and attachments (<code>newAttachment</code>) before the transaction starts, and never make network calls, show dialogs, or await timers inside it. Track pending transactions and await them before <code>ditto.close()</code>.</p>",
       "<p>Each removal tool solves a different problem:</p>\n<ul>\n<li><code>DELETE</code>: removes documents on every peer and leaves a tombstone; suited to data that is rarely edited concurrently, in deployments where devices sync regularly</li>\n<li>Soft delete (<code>UPDATE ... SET isDeleted = true</code>): for shared records that several devices edit, or for long offline periods</li>\n<li><code>EVICT</code>: removes documents from this device only, to manage local storage</li>\n<li>In deployments with Small Peers only, contact Ditto support to review the design before relying on <code>DELETE</code></li>\n</ul>",
-      "<p>Write <code>isDeleted: false</code> when you create a document, and set <code>isDeleted = true</code> and a UTC <code>deletedAt</code> when you delete it. Filter every query and observer with <code>coalesce(isDeleted, false) = false</code>. To benefit from an index, combine this filter with a selective indexed predicate such as <code>status = :status</code>.</p>",
-      "<p>Do not exclude flagged documents from the subscription; hide them in local queries instead. To clean them up, choose one of two approaches:</p>\n<ul>\n<li>Subscribe to the whole collection (or partition), and after a retention period run a <code>DELETE</code> on Ditto Server or on an authorized peer</li>\n<li>Subscribe to active documents plus documents deleted within a retention window, and on each device evict exactly the older ones</li>\n</ul>",
+      "<p>Write <code>isDeleted: false</code> when you create a document, and set <code>isDeleted = true</code> and a UTC <code>deletedAt</code> in the same <code>UPDATE</code> when you delete it. Filter every query and observer with <code>coalesce(isDeleted, false) = false</code>. To benefit from an index, combine this filter with a selective indexed predicate such as <code>status = :status</code>.</p>",
+      "<p>Do not exclude flagged documents from the subscriptions of devices that sync with other devices; hide them in local queries instead. To clean them up, choose one of two approaches:</p>\n<ul>\n<li>Subscribe to the whole collection (or partition), and after a retention period run a <code>DELETE</code> on Ditto Server or on an authorized peer</li>\n<li>Subscribe to active documents plus documents deleted within a retention window, and on each device evict exactly the older ones</li>\n</ul>\n<p>Subscribing to active documents only is acceptable when every device syncs directly with Ditto Server and evicts flagged documents itself.</p>",
       "<p>Use <code>DELETE</code> only when both of these hold: no other device updates the same document concurrently, and every device connects within the tombstone TTL (<code>TOMBSTONE_TTL_HOURS</code>, 7 days by default on Small Peers). If you raise <code>TOMBSTONE_TTL_HOURS</code>, keep it at or below the Ditto Server tombstone TTL, and apply it after every open. Make the UI tolerate documents with <code>null</code> or missing fields.</p>",
       "<p>Remove specific documents with <code>WHERE _id = :id</code> or <code>WHERE _id IN :ids</code>; both are planned as an ID scan. Do not write <code>DELETE</code> or <code>EVICT</code> with <code>USE IDS</code> and no <code>WHERE</code> predicate, that is, without a <code>WHERE</code> clause or with <code>WHERE true</code>.</p>",
       "<p>Evict only documents that no active subscription matches. First cancel or narrow the affected subscriptions, then write the eviction as the exact complement of the new subscription: for example, subscribe to <code>createdAt &gt;= :cutoff</code> and evict <code>createdAt &lt; :cutoff</code>, with the same cutoff. Data that was already in transit can still arrive after you cancel. If the device must not keep it, run the eviction again later, for example on the next app start or in a periodic cleanup.</p>",
@@ -4149,7 +4150,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>While a read-write transaction runs, every other read-write transaction and plain write waits. Once a transaction has run for 10 seconds, Ditto logs a message about it every 5 seconds, starting at debug level and escalating to higher levels. <code>close()</code> does not wait for in-flight transactions.</p>",
       "<p>Picking the wrong tool leads to resurrected data, half-deleted documents, or devices that run out of storage. A deletion does not happen in one central place: offline devices can reintroduce data, deletions merge with concurrent edits, and local storage is finite.</p>",
       "<p><code>isDeleted != true</code> and <code>NOT isDeleted</code> silently exclude documents where the flag is missing or <code>null</code>, because comparisons with MISSING or NULL are never true. A <code>coalesce()</code> condition on the field cannot use an index by itself.</p>",
-      "<p>A subscription that excludes flagged documents stops requesting a document as soon as it is flagged. In our testing with SDK 5.1.0, the flag still arrived, but later changes, including a restore, did not. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.</p>",
+      "<p>In our testing with SDK 5.1.0, a device whose subscription excluded flagged documents still received the flag and a later restore for documents it already held. It did not store flagged documents that it did not already hold, so it could not pass the flag on to a device that had missed it, and a <code>DELETE</code> of a flagged document did not reach it. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.</p>",
       "<p>When a deletion merges with a concurrent update, the result is a husk document: the document is not deleted, even when the <code>DELETE</code> is the later write. The updated fields keep their values (or become <code>null</code> if the deletion was later), and all other fields become missing (SDK 5.1.0). A device that stays offline longer than the TTL can resurrect deleted data (zombie data). A Small Peer tombstone TTL above the Ditto Server tombstone TTL makes tombstones sync back to the server again and again.</p>",
       "<p>In SDK 5.1.0, such a statement completes without an error but removes nothing. The <code>WHERE _id</code> form is just as efficient and works reliably.</p>",
       "<p>If an active subscription still matches an evicted document, connected peers notice that it is missing and sync it straight back, so you pay the sync cost without freeing any space.</p>",
@@ -4305,7 +4306,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "トランザクションは短く保ち、I/Oはトランザクションの外で行う",
       "DELETE、ソフトデリート、EVICT を目的に応じて使い分ける",
       "ソフトデリートしたドキュメントは coalesce(isDeleted, false) = false で除外する",
-      "ソフトデリートしたドキュメントは、全デバイスにフラグが届くまでサブスクリプションの対象に残す",
+      "ソフトデリートしたドキュメントは、データを中継するデバイスのサブスクリプションの対象に残す",
       "並行して編集されるデータや、長期間オフラインになる環境では DELETE を避ける",
       "削除とevictionの対象は WHERE _id IN :ids で指定する",
       "EVICT の前にサブスクリプションをキャンセルするか範囲を狭める",
@@ -4383,8 +4384,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>コールバック内のステートメントは、すべて引数で渡された <code>Transaction</code> で実行します（<code>tx.execute</code>）。コールバック内で <code>ditto.store.execute</code> を呼ぶこと、読み書きトランザクションの中で別の読み書きトランザクションを開始すること、コールバックが戻った後も <code>Transaction</code> オブジェクトを保持することは、いずれも避けます。</p>",
       "<p>トランザクションでは、読み取り、判断、書き込みだけを行ってすぐに戻ります。ネットワークのレスポンス、ファイル、ユーザー入力、attachment（<code>newAttachment</code>）はトランザクションを始める前に用意し、トランザクション内ではネットワーク呼び出し、ダイアログの表示、タイマーの待機を行いません。実行中のトランザクションを把握しておき、<code>ditto.close()</code> の前に完了を待ちます。</p>",
       "<p>削除の手段は、それぞれ解決する問題が異なります。</p>\n<ul>\n<li><code>DELETE</code>: すべてのピアでドキュメントを削除し、tombstoneを残す。並行して編集されることがまれなデータで、デバイスが定期的に同期するデプロイに向いている</li>\n<li>ソフトデリート（<code>UPDATE ... SET isDeleted = true</code>）: 複数のデバイスが編集する共有レコードや、オフライン期間が長い場合に使う</li>\n<li><code>EVICT</code>: ローカルストレージを管理するために、このデバイスからだけドキュメントを削除する</li>\n<li>Small Peers Onlyのデプロイでは、<code>DELETE</code> を使う前にDittoサポートに設計のレビューを依頼する</li>\n</ul>",
-      "<p>ドキュメントの作成時に <code>isDeleted: false</code> を書き込み、削除時には <code>isDeleted = true</code> とUTCの <code>deletedAt</code> を設定します。すべてのクエリとオブザーバーで、<code>coalesce(isDeleted, false) = false</code> を条件に加えます。インデックスを効かせるには、<code>status = :status</code> のような絞り込み効果の高い、インデックス付きの条件と組み合わせます。</p>",
-      "<p>フラグの付いたドキュメントはサブスクリプションから除外せず、ローカルクエリで非表示にします。後片付けには次の2つの方法があります。</p>\n<ul>\n<li>コレクション全体（またはパーティション）を購読し、保持期間が過ぎたら、Ditto Serverまたは権限のあるピアで <code>DELETE</code> を実行する</li>\n<li>アクティブなドキュメントと、保持期間内に削除されたドキュメントを購読し、各デバイスで保持期間より古いものだけを正確にevictする</li>\n</ul>",
+      "<p>ドキュメントの作成時に <code>isDeleted: false</code> を書き込み、削除時には同じ <code>UPDATE</code> で <code>isDeleted = true</code> とUTCの <code>deletedAt</code> を設定します。すべてのクエリとオブザーバーで、<code>coalesce(isDeleted, false) = false</code> を条件に加えます。インデックスを効かせるには、<code>status = :status</code> のような絞り込み効果の高い、インデックス付きの条件と組み合わせます。</p>",
+      "<p>他のデバイスと同期するデバイスでは、フラグの付いたドキュメントをサブスクリプションから除外せず、ローカルクエリで非表示にします。後片付けには次の2つの方法があります。</p>\n<ul>\n<li>コレクション全体（またはパーティション）を購読し、保持期間が過ぎたら、Ditto Serverまたは権限のあるピアで <code>DELETE</code> を実行する</li>\n<li>アクティブなドキュメントと、保持期間内に削除されたドキュメントを購読し、各デバイスで保持期間より古いものだけを正確にevictする</li>\n</ul>\n<p>すべてのデバイスがDitto Serverと直接同期し、フラグの付いたドキュメントを各自でevictする場合に限り、アクティブなドキュメントだけを購読してもかまいません。</p>",
       "<p><code>DELETE</code> を使うのは、次の2つを満たす場合だけにします。他のデバイスが同じドキュメントを並行して更新しないこと、そしてすべてのデバイスがtombstoneのTTL（<code>TOMBSTONE_TTL_HOURS</code>、Small Peerではデフォルト7日間）以内に接続することです。<code>TOMBSTONE_TTL_HOURS</code> を延ばす場合は、Ditto ServerのtombstoneのTTL以下にとどめ、openのたびに適用します。UIは、フィールドが <code>null</code> のドキュメントや、フィールドが欠落したドキュメントでも表示できるようにします。</p>",
       "<p>特定のドキュメントを削除するときは、<code>WHERE _id = :id</code> または <code>WHERE _id IN :ids</code> を使います。どちらもIDスキャンとして計画されます。<code>DELETE</code> や <code>EVICT</code> では、<code>WHERE</code> の条件なし（<code>WHERE</code> 句がない、または <code>WHERE true</code>）で <code>USE IDS</code> を使うことは避けます。</p>",
       "<p>evictするのは、有効なサブスクリプションのどれにもマッチしないドキュメントだけにします。まず影響するサブスクリプションをキャンセルするか範囲を狭め、evictionの条件を新しいサブスクリプションのちょうど補集合にします。たとえば同じカットオフ値で、<code>createdAt &gt;= :cutoff</code> を購読し、<code>createdAt &lt; :cutoff</code> をevictします。キャンセルの時点で転送中だったデータは、その後に届くことがあります。デバイスに残してはならない場合は、次回のアプリ起動時や定期的なクリーンアップなどで、後からもう一度evictionを実行します。</p>",
@@ -4463,7 +4464,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>読み書きトランザクションの実行中は、他の読み書きトランザクションや通常の書き込みがすべて待たされます。実行が10秒を超えたトランザクションについて、Dittoは5秒ごとにログを出力します。ログレベルはdebugから始まり、徐々に上がっていきます。<code>close()</code> は実行中のトランザクションの完了を待ちません。</p>",
       "<p>手段を誤ると、削除したデータの復活、中途半端に削除されたドキュメント、ストレージの枯渇につながります。削除は1か所で完結するものではありません。オフラインのデバイスがデータを再び持ち込むことがあり、削除は並行した編集とマージされ、ローカルストレージには限りがあります。</p>",
       "<p><code>isDeleted != true</code> や <code>NOT isDeleted</code> では、フラグが存在しないか <code>null</code> のドキュメントが、エラーもなく除外されてしまいます。MISSINGやNULLとの比較は真にならないためです。フィールドに <code>coalesce()</code> を適用した条件は、それだけではインデックスを使えません。</p>",
-      "<p>フラグ付きのドキュメントを除外するサブスクリプションは、フラグが付いた時点でそのドキュメントを要求しなくなります。SDK 5.1.0でのテストでは、フラグ自体は届きましたが、復元を含むその後の変更は届きませんでした。また、サブスクリプションはローカルの結果に影響しません。キャンセルしたり範囲を狭めたりしてもローカルのデータは削除されず、フィルターでローカルのドキュメントが隠れることもありません。そのため、すべてのローカルクエリとオブザーバーで、フラグ付きのドキュメントを自分で除外する必要があります。</p>",
+      "<p>SDK 5.1.0でのテストでは、フラグ付きのドキュメントを除外するサブスクリプションを持つデバイスにも、すでに保持しているドキュメントについては、フラグとその後の復元が届きました。一方、保持していなかったフラグ付きのドキュメントは保存されないため、フラグを見逃したデバイスにフラグを中継できず、フラグ付きのドキュメントに対する <code>DELETE</code> もそのデバイスには届きませんでした。また、サブスクリプションはローカルの結果に影響しません。キャンセルしたり範囲を狭めたりしてもローカルのデータは削除されず、フィルターでローカルのドキュメントが隠れることもありません。そのため、すべてのローカルクエリとオブザーバーで、フラグ付きのドキュメントを自分で除外する必要があります。</p>",
       "<p>削除と並行した更新がマージされると、husk documentが生じます。<code>DELETE</code> の方が後に書き込まれた場合でも、ドキュメントは削除されません。更新されたフィールドは値を保ち（削除の方が後なら <code>null</code> になり）、それ以外のフィールドは欠落（MISSING）します（SDK 5.1.0）。TTLより長くオフラインだったデバイスは、削除済みのデータを復活させることがあります（zombie data）。また、Small PeerのtombstoneのTTLがDitto ServerのtombstoneのTTLを超えていると、tombstoneがサーバーへ何度も送り返されます。</p>",
       "<p>SDK 5.1.0では、このようなステートメントはエラーなしに完了しますが、何も削除しません。<code>WHERE _id</code> を使う形でも効率は変わらず、確実に動作します。</p>",
       "<p>evictしたドキュメントに有効なサブスクリプションがまだマッチしていると、接続中のピアが欠落に気付いてすぐに同期し直します。結果として、領域を解放できないまま同期のコストだけがかかります。</p>",

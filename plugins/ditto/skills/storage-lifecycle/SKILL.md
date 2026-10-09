@@ -19,7 +19,7 @@ Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings
 - Small Peer tombstone TTL (`TOMBSTONE_TTL_HOURS`) configured above the Ditto Server TTL
 - `DELETE`/`EVICT` with `USE IDS` and no `WHERE` predicate silently removing nothing (SDK 5.1.0)
 - Soft-delete filters (`isDeleted != true`) that hide documents where the flag is missing or `null`
-- Soft-deleted documents dropped from subscriptions, so later changes and restores never arrive
+- Soft-deleted documents excluded from subscriptions, so relays cannot pass the flag on
 - Evicted documents syncing straight back because a subscription still matches them
 - Husk documents caused by `DELETE` racing a concurrent `UPDATE`
 - Evicting too often and overloading connected peers with resyncs
@@ -49,7 +49,7 @@ With a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typ
 - [ ] Pick DELETE, soft delete, or EVICT with the table above
 - [ ] DELETE: target with WHERE _id IN :ids; every device connects within the tombstone TTL
 - [ ] Soft delete: set isDeleted + deletedAt; filter with coalesce(isDeleted, false) = false
-- [ ] Soft delete: keep flagged documents in the subscription; choose Variant A or B cleanup
+- [ ] Soft delete: keep flagged documents in the subscriptions of relaying devices; choose Variant A or B cleanup
 - [ ] EVICT: cancel/narrow subscriptions, evict the exact complement, re-subscribe with the same cutoff
 - [ ] Schedule eviction at most about once per day; batch large runs with LIMIT
 - [ ] Verify with system:system_info (on demand) and deletion tests
@@ -121,7 +121,7 @@ In DQL, a comparison with a missing or `null` field never passes a `WHERE` claus
 | `coalesce(isDeleted, false) = false` | `false`, `null`, missing |
 
 **✅ DO**:
-- Soft delete with `UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id`; `deletedAt` is UTC ISO-8601 with a zone designator, from the same fixed-precision helper as `createdAt` (it is compared with cleanup cutoffs).
+- Soft delete with `UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id`, both fields in one statement; `deletedAt` is UTC ISO-8601 with a zone designator, from the same fixed-precision helper as `createdAt`. Cleanup cutoffs never match a flag without `deletedAt`.
 - Write `isDeleted: false` when you create documents.
 - Filter with `coalesce(isDeleted, false) = false`.
 - Restore with `UPDATE orders SET isDeleted = false UNSET deletedAt WHERE _id = :id`.
@@ -134,17 +134,17 @@ In DQL, a comparison with a missing or `null` field never passes a `WHERE` claus
 
 ### 4. Keep Soft-Deleted Documents in Subscriptions (CRITICAL)
 
-The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. In SDK 5.1.0 the flagging update itself still reached such devices, but later changes to the flagged document, including a restore (`isDeleted = false`), did not; keep restorable documents inside the subscription. Devices that already have the document keep it (cancelling or narrowing a subscription never deletes local data), and a subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
+A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) still delivers the flag and a later restore for documents the device holds (SDK 5.1.0), but the device cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. Details: [reference/deletion-patterns.md](reference/deletion-patterns.md#cleaning-up-soft-deleted-documents). A subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
 
 **✅ DO**:
-- Keep soft-deleted documents inside the subscription at least until every device has received the flag.
+- Keep soft-deleted documents in the subscriptions of devices that relay data to others, at least for as long as a device may stay offline.
 - Hide them in local queries and observers with `coalesce(isDeleted, false) = false`. Observers use the `changes` stream pattern (register without `onChange`, listen to `changes`, cancel both in `dispose()`); see `§ Store Observers in Flutter`.
 - Choose one subscription design and clean up accordingly:
   - **Variant A (whole collection or partition)**: subscribe with `SELECT * FROM orders WHERE storeId = :storeId` (includes flagged documents), owned by a long-lived service. Clean up after the retention period, once flagged documents are no longer edited, with a `DELETE` that syncs to every device, run on the Ditto Server (for example through its HTTP API) or by another authorized peer: `DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000`.
-  - **Variant B (retention window)**: subscribe with `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff` and evict exactly the complement (`isDeleted = true AND deletedAt < :cutoff`), cancelling the old subscription first and re-registering it with the moved cutoff. Choose a window longer than the longest expected offline period, and move the cutoff only when you run cleanup, not on every screen change.
+  - **Variant B (retention window)**: subscribe with `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff` and evict exactly the complement (`isDeleted = true AND deletedAt < :cutoff`), cancelling the old subscription first and re-registering it with the moved cutoff. Choose a window longer than the longest expected offline period, so that other devices can still relay the flag, and move the cutoff only when you run cleanup, not on every screen change.
 
 **❌ DON'T**:
-- Subscribe with `WHERE coalesce(isDeleted, false) = false` (or any filter on the flag) alone.
+- Subscribe with `WHERE coalesce(isDeleted, false) = false` (or any filter on the flag) alone, unless every device syncs directly with the Ditto Server and evicts flagged documents itself.
 - Evict old soft-deleted documents on a device while a subscription still matches them (Variant A); they sync back.
 
 Trade-offs and the full comparison: [reference/deletion-patterns.md](reference/deletion-patterns.md#cleaning-up-soft-deleted-documents).
@@ -250,7 +250,7 @@ DELETE:
 Soft delete:
 - [ ] Sets `isDeleted` and `deletedAt` (UTC, with zone); new documents get `isDeleted: false`
 - [ ] Filters with `coalesce(isDeleted, false) = false` (or the index-friendly `IS MISSING OR IS NULL OR = false` form)
-- [ ] Subscriptions keep flagged documents (Variant A: whole collection or partition; Variant B: retention window)
+- [ ] Subscriptions of relaying devices keep flagged documents (Variant A: whole collection or partition; Variant B: retention window)
 - [ ] Old flagged documents are cleaned up (Variant A: synced `DELETE`; Variant B: device-side `EVICT` of the complement)
 
 EVICT:

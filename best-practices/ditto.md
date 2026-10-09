@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 2.6
+> **Version**: 2.7
 > **Last Updated**: 2026-10-09
 > **Applies to**: Ditto SDK 5.1.0 (Flutter `ditto_live` 5.1.0; notes for JavaScript, Swift, and Kotlin where behavior differs)
 
@@ -4205,7 +4205,7 @@ The same limit applies to transactions: a device connected only through a relay 
 
 > **Note (SDK 5.1.0):** A document that stops matching a subscription becomes a **frozen copy** on the device. In our testing, the device received the change that made the document stop matching (for example, `status: 'closed'`) but nothing after it: neither later edits nor the deletion of the document arrived. Local queries keep returning the stale copy. When the document matches again, it arrives in its latest state. Filter such documents out locally, and evict them when the device no longer needs them.
 
-**Soft delete:** Keep soft-deleted documents inside the subscription at least until every device has received the flag, and filter them out in local queries. See [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup) for the two subscription variants and how each affects cleanup.
+**Soft delete:** A device whose subscription excludes soft-deleted documents still receives the flag and a later restore for documents it holds, but it cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document does not reach it. Keep soft-deleted documents in the subscriptions of devices that relay data, and filter them out in local queries. See [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup) for the subscription variants and how each affects cleanup.
 
 ### Sync Scopes
 
@@ -5682,20 +5682,20 @@ There is no `DROP COLLECTION` statement. `DELETE FROM orders` without a `WHERE` 
 A soft delete marks a document as deleted with an ordinary `UPDATE` instead of removing it. Because the flag is just a field, it syncs like any other change and has none of the tombstone limitations:
 
 - **No TTL dependency:** the flag stays on the document, so a device that was offline for weeks still learns that the document is deleted.
-- **No husk documents:** a concurrent update merges with the flag instead of resurrecting a partially deleted document.
-- **Recoverable:** setting the flag back to `false` restores the document.
+- **No husk documents:** a concurrent update merges with the flag instead of resurrecting a partially deleted document. In our testing, an edit made offline on another device was kept, and the document stayed flagged.
+- **Recoverable:** setting the flag back to `false` restores the document. If one device soft-deletes a document while another restores it, the later write wins.
 
 The trade-off is that soft-deleted documents still occupy storage and must be filtered out of every query, so you need a cleanup step (see [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)).
 
 **✅ DO:**
-- Set both a flag and a timestamp: `isDeleted = true` and `deletedAt` as a UTC ISO-8601 string written by the same timestamp helper everywhere (see [Timestamps](#timestamps)).
+- Set the flag and a timestamp in the same `UPDATE`: `isDeleted = true` and `deletedAt` as a UTC ISO-8601 string written by the same timestamp helper everywhere (see [Timestamps](#timestamps)). Cleanup conditions such as `deletedAt < :cutoff` never match a flagged document that has no `deletedAt`.
 - Write `isDeleted: false` when you create documents.
 - Filter with `coalesce(isDeleted, false) = false`, which also matches documents where the field is missing or `null`.
-- Keep soft-deleted documents inside your subscriptions at least until every device has received the flag, and filter them out in local queries and observers.
+- Keep soft-deleted documents in the subscriptions of devices that relay data to other devices, and filter them out in local queries and observers.
 
 **❌ DON'T:**
 - Filter with `isDeleted != true` or `NOT isDeleted`; both silently exclude documents where `isDeleted` is missing or `null`.
-- Remove soft-deleted documents from a subscription the moment they are flagged.
+- Exclude soft-deleted documents from every subscription when devices sync through other Small Peers. A device that subscribes only to active documents cannot relay the flag for documents it did not already hold, and a cleanup `DELETE` does not reach it.
 
 ```dart
 // ✅ GOOD: Soft delete, restore, and query helpers for an orders collection.
@@ -5768,13 +5768,21 @@ WHERE isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false
 
 #### Soft delete, subscriptions, and cleanup
 
-The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. In our testing with SDK 5.1.0, the update that set the flag still reached such devices, even after they had been offline. Later changes to the flagged document did not reach them, including a **restore** (`isDeleted = false`). Keep in mind:
+The deletion flag is an ordinary update, but a subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) changes which documents a device receives and stores. In our testing with SDK 5.1.0, a device with such a subscription received these changes to a document it already held:
 
-- The flagged document is **not removed** from the devices that already have it; cancelling or narrowing a subscription never deletes local data.
-- If flagged documents can be restored or edited, keep them inside the subscription; otherwise devices that hold the flagged version never see the restore.
+| Change made on another peer | Reached the device |
+|---|---|
+| The update that sets the flag | ✅ From any peer that held the flagged version, also after the device had been offline or restarted |
+| Edits to the document while it is flagged | ❌ The device kept the copy as it was when it was flagged (a frozen copy; see [Multi-hop relay](#multi-hop-relay)) |
+| A restore (`isDeleted = false`) | ✅ Together with the edits made while the document was flagged |
+| A `DELETE` of the flagged document (cleanup) | ❌ The device kept the flagged copy until it evicted it |
+
+Such a device does not receive soft-deleted documents that it did not already hold, for example because it joined the mesh later or evicted them, so it cannot pass the flag for those documents on to other devices. In our testing, a device that had missed the flag kept showing the document as active while it synced only with such a peer. When that peer subscribed to the whole collection or to a retention window, the flag arrived. Keep in mind:
+
 - A subscription filter does not hide documents in local results. Every local query and observer must filter flagged documents itself, for example with `coalesce(isDeleted, false) = false`.
+- Cancelling or narrowing a subscription never deletes local data; only `DELETE` and `EVICT` remove documents.
 
-Therefore, keep soft-deleted documents inside the subscription at least until every device has received the flag. Two subscription designs meet this requirement; they differ in how soft-deleted documents are eventually removed:
+Therefore, keep soft-deleted documents in the subscriptions of the devices that relay data to others, at least for as long as a device may stay offline. Two subscription designs meet this requirement; they differ in how soft-deleted documents are eventually removed:
 
 | | Variant A: whole-collection subscription | Variant B: retention-window subscription |
 |---|---|---|
@@ -5782,7 +5790,7 @@ Therefore, keep soft-deleted documents inside the subscription at least until ev
 | Cleanup | A `DELETE` after the retention period, executed on the Ditto Server or by another authorized peer, that syncs to every device | Each device evicts documents deleted before the cutoff; the record stays on the Ditto Server until it is deleted there |
 | Device-side `EVICT` of old soft-deleted documents | ❌ They still match the subscription and sync back | ✅ They are outside the subscription |
 | Subscription changes | None | Re-registered when the cutoff moves (for example once a day) |
-| Trade-offs | Simplest design. Soft-deleted documents use storage on every device until the `DELETE` runs, and the `DELETE` is subject to the tombstone rules (see [DELETE and Tombstones](#delete-and-tombstones)) | More moving parts. Choose a window longer than the longest expected offline period, so that every device receives the flag while the document is still inside its subscription |
+| Trade-offs | Simplest design. Soft-deleted documents use storage on every device until the `DELETE` runs, and the `DELETE` is subject to the tombstone rules (see [DELETE and Tombstones](#delete-and-tombstones)) | More moving parts. Choose a window longer than the longest expected offline period, so that other devices still hold the flagged document and can relay the flag when a device that missed it comes back |
 
 **Variant A:** subscribe to the whole collection (here, one store's partition of it) and filter locally.
 
@@ -5867,7 +5875,9 @@ class OrderSoftDeleteRetention {
 }
 ```
 
-**Why:** In Variant B, the eviction condition (`isDeleted = true AND deletedAt < :cutoff`) never matches a document that the new subscription covers, so evicted documents do not sync back. In Variant A, every soft-deleted document stays inside the subscription, so devices cannot evict them; the `DELETE` removes them everywhere instead. Because the cutoff is part of the Variant B subscription, move it only when you run cleanup, not on every screen change (see [Subscription Lifecycle](#subscription-lifecycle)).
+**Why:** In Variant B, the eviction condition (`isDeleted = true AND deletedAt < :cutoff`) never matches a document that the new subscription covers, so evicted documents do not sync back. If an evicted document is restored later, it matches the subscription again and syncs back in its latest state. A flagged document without `deletedAt` matches neither condition, so it is never evicted and stays on the device as a frozen copy; set both fields in the same `UPDATE`. In Variant A, every soft-deleted document stays inside the subscription, so devices cannot evict them; the `DELETE` removes them everywhere instead. Because the cutoff is part of the Variant B subscription, move it only when you run cleanup, not on every screen change (see [Subscription Lifecycle](#subscription-lifecycle)).
+
+**Subscribing to active documents only:** Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) also describes subscribing to documents that are not deleted and evicting the deleted ones. This is [flag-based eviction](#flag-based-eviction) with `isDeleted` as the flag: it needs no cutoff, and devices can evict flagged documents without re-registering the subscription. Use it only when every device syncs directly with a peer that subscribes to the whole collection, such as the Ditto Server. Devices with this subscription cannot relay the flag for documents they did not already hold, and a `DELETE` on the Ditto Server does not remove the flagged copies they hold, so each device must evict them itself.
 
 ### EVICT
 
@@ -7685,6 +7695,7 @@ Scenarios worth covering (with the helpers above, or on real devices):
 - Two devices edit **different fields** and the **same field** of one document while offline, then reconnect.
 - Two devices add, edit, and remove entries of the same map (and, for comparison, the same array) while offline.
 - One device deletes a document while another updates it (expect a [husk document](#husk-documents)), and the same with a soft delete.
+- A device that missed a soft delete while offline and then syncs only through a relay (see [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)).
 - A counter that one device recounts with `RESTART WITH` while another keeps incrementing it (see [RESTART](#restart)).
 - A device behind a relay with narrower subscriptions (see [Multi-hop relay](#multi-hop-relay)).
 - Attachments created offline and fetched by other peers later (see [Availability](#availability)).
@@ -7747,7 +7758,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Re-registering subscriptions when the user changes a filter, search term, or sort order, or changing subscriptions more often than about every 15 minutes → [Filter locally instead of re-registering](#filter-locally-instead-of-re-registering), [Subscription Lifecycle](#subscription-lifecycle)
 - [ ] Projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, or `USE IDS` in subscriptions (rejected), or disabling `DQL_RESTRICT_SUBSCRIPTIONS` to use `LIMIT` and `ORDER BY` (stateful subscriptions; `LIMIT` bounds only the initial download) → [Subscription Rules](#subscription-rules)
 - [ ] Subscription filters on mutable fields (`status`, `assignee`), or relay devices with narrower subscriptions than the devices behind them → [Multi-hop relay](#multi-hop-relay)
-- [ ] Soft-deleted documents dropped from the subscription before every device has received the flag, or evicted while the subscription still matches them → [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)
+- [ ] Soft-deleted documents excluded from the subscriptions of devices that relay data to others, or evicted while the subscription still matches them → [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)
 - [ ] Evicting documents that an active subscription still matches (they sync straight back) → [EVICT](#evict)
 - [ ] Evicting more than about once per day → [Eviction frequency](#eviction-frequency)
 - [ ] A Small Peer tombstone TTL (`TOMBSTONE_TTL_HOURS`) above the Ditto Server tombstone TTL → [Tombstone TTL and reaping](#tombstone-ttl-and-reaping)
@@ -7821,7 +7832,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 **Writes, deletion, and storage** ([Transactions](#transactions), [Deletion and Storage Management](#deletion-and-storage-management))
 - ✅ Keep transactions short, use only `tx.execute`, and give them a `hint`.
 - ✅ Track a `commitID` for upload progress only when `mutatedDocumentIDs()` is not empty; use presence for live connection status.
-- ✅ Prefer soft delete for shared records, keep soft-deleted documents in the subscription until every device has the flag, and target deletions with `WHERE _id IN :ids`.
+- ✅ Prefer soft delete for shared records, keep soft-deleted documents in the subscriptions of devices that relay data, and target deletions with `WHERE _id IN :ids`.
 - ✅ Cancel or narrow subscriptions before `EVICT`, and evict at most about once per day.
 
 **Security** ([Security](#security))

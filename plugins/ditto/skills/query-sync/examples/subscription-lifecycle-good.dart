@@ -94,7 +94,8 @@ Future<List<SyncSubscription>> switchStore(
 
 /// ✅ GOOD (soft delete, Variant A): Soft-deleted documents stay in the
 /// subscription; local queries hide them with coalesce(isDeleted, false) = false.
-/// The deletion flag is a change every device must receive. Old flagged
+/// Every device stores flagged documents, so any device can relay the flag to
+/// one that missed it. Old flagged
 /// documents are removed by a synced DELETE (for example on the Ditto Server);
 /// for device-side EVICT, use a retention-window subscription (Variant B, see
 /// the storage-lifecycle skill).

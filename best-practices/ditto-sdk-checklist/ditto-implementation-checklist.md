@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.7
+> **Version**: 2.8
 > **Last Updated**: 2026-10-09
 > **Applies to**: Ditto SDK 5.1.0 (Flutter `ditto_live` 5.1.0)
 >
@@ -1156,7 +1156,7 @@ Future<void> checkout(
 
 ### ☐ Filter soft-deleted documents with coalesce(isDeleted, false) = false
 
-**What this means:** Write `isDeleted: false` when you create a document, and set `isDeleted = true` and a UTC `deletedAt` when you delete it. Filter every query and observer with `coalesce(isDeleted, false) = false`. To benefit from an index, combine this filter with a selective indexed predicate such as `status = :status`.
+**What this means:** Write `isDeleted: false` when you create a document, and set `isDeleted = true` and a UTC `deletedAt` in the same `UPDATE` when you delete it. Filter every query and observer with `coalesce(isDeleted, false) = false`. To benefit from an index, combine this filter with a selective indexed predicate such as `status = :status`.
 
 **Why this matters:** `isDeleted != true` and `NOT isDeleted` silently exclude documents where the flag is missing or `null`, because comparisons with MISSING or NULL are never true. A `coalesce()` condition on the field cannot use an index by itself.
 
@@ -1190,13 +1190,15 @@ Future<List<Map<String, dynamic>>> activeOrders(Ditto ditto, String status) asyn
 }
 ```
 
-### ☐ Keep soft-deleted documents in the subscription until every device has the flag
+### ☐ Keep soft-deleted documents in the subscriptions of devices that relay data
 
-**What this means:** Do not exclude flagged documents from the subscription; hide them in local queries instead. To clean them up, choose one of two approaches:
+**What this means:** Do not exclude flagged documents from the subscriptions of devices that sync with other devices; hide them in local queries instead. To clean them up, choose one of two approaches:
 - Subscribe to the whole collection (or partition), and after a retention period run a `DELETE` on Ditto Server or on an authorized peer
 - Subscribe to active documents plus documents deleted within a retention window, and on each device evict exactly the older ones
 
-**Why this matters:** A subscription that excludes flagged documents stops requesting a document as soon as it is flagged. In our testing with SDK 5.1.0, the flag still arrived, but later changes, including a restore, did not. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.
+Subscribing to active documents only is acceptable when every device syncs directly with Ditto Server and evicts flagged documents itself.
+
+**Why this matters:** In our testing with SDK 5.1.0, a device whose subscription excluded flagged documents still received the flag and a later restore for documents it already held. It did not store flagged documents that it did not already hold, so it could not pass the flag on to a device that had missed it, and a `DELETE` of a flagged document did not reach it. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.
 
 **Best-practices guide:** Soft delete, subscriptions, and cleanup
 

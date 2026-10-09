@@ -133,7 +133,16 @@ Guide: `§ Indexing soft-delete filters`
 
 ## Cleaning Up Soft-Deleted Documents
 
-How soft-deleted documents are eventually removed depends on the subscription design (both keep flagged documents inside the subscription until every device has received the flag):
+What a device whose subscription excludes soft-deleted documents (`WHERE coalesce(isDeleted, false) = false`) received for a document it already held, in testing with SDK 5.1.0:
+
+| Change made on another peer | Reached the device |
+|---|---|
+| The update that sets the flag | ✅ From any peer that held the flagged version, also after the device had been offline or restarted |
+| Edits while the document is flagged | ❌ The copy stays as it was when flagged |
+| A restore (`isDeleted = false`) | ✅ Together with the edits made while flagged |
+| A `DELETE` of the flagged document | ❌ The flagged copy stays until the device evicts it |
+
+Such a device does not receive flagged documents it did not already hold (it joined later or evicted them), so it cannot relay the flag: a device that missed the flag and syncs only with it keeps showing the document as active. Keep flagged documents in the subscriptions of devices that relay data. How they are eventually removed depends on the subscription design:
 
 | | Variant A: whole-collection subscription | Variant B: retention-window subscription |
 |---|---|---|
@@ -141,7 +150,7 @@ How soft-deleted documents are eventually removed depends on the subscription de
 | Cleanup | A `DELETE` after the retention period, on the Ditto Server or by another authorized peer, that syncs to every device | Each device evicts the complement of its subscription; the record stays on the Ditto Server until it is deleted there |
 | Device-side `EVICT` | ❌ Evicted documents still match the subscription and sync back | ✅ Evicted documents are outside the subscription |
 | Subscription changes | None | Re-registered when the cutoff moves (for example once a day) |
-| Trade-offs | Simplest design. Soft-deleted documents use storage on every device until the `DELETE` runs, and the `DELETE` is subject to the tombstone rules | More moving parts. Choose a window longer than the longest expected offline period, so that every device receives the flag while the document is still inside its subscription |
+| Trade-offs | Simplest design. Soft-deleted documents use storage on every device until the `DELETE` runs, and the `DELETE` is subject to the tombstone rules | More moving parts. Choose a window longer than the longest expected offline period, so that other devices still hold the flagged document and can relay the flag when a device that missed it comes back |
 
 Variant A cleanup (run once flagged documents are no longer edited, to avoid husk documents):
 
@@ -155,7 +164,9 @@ Variant B device-side cleanup, the complement of the retention-window subscripti
 EVICT FROM orders WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff
 ```
 
-In Variant B, cancel the old subscription before evicting, use the same cutoff value for the eviction and the new subscription, and choose a retention window longer than the longest expected offline period. See [examples/soft-delete-relay.dart](../examples/soft-delete-relay.dart).
+In Variant B, cancel the old subscription before evicting, use the same cutoff value for the eviction and the new subscription, and choose a retention window longer than the longest expected offline period. A flagged document without `deletedAt` matches neither condition and is never evicted, so set both fields in one `UPDATE`. An evicted document that is restored later matches the subscription again and syncs back. See [examples/soft-delete-relay.dart](../examples/soft-delete-relay.dart).
+
+Subscribing to active documents only and evicting flagged ones (flag-based eviction with `isDeleted` as the flag, as in Ditto's deletion documentation) needs no cutoff. Use it only when every device syncs directly with a peer that subscribes to the whole collection, such as the Ditto Server, and have each device evict flagged documents, because a `DELETE` on the server does not reach them.
 
 Guide: `§ Soft delete, subscriptions, and cleanup`
 

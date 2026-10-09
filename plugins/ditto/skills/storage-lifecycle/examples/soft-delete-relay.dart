@@ -1,6 +1,6 @@
 // SDK Version: ditto_live 5.1.0
 // Platform: Flutter (the DQL applies to all SDKs)
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-09
 //
 // Soft delete that propagates reliably through the mesh.
 //
@@ -12,8 +12,11 @@
 //   does not depend on the tombstone TTL.
 // - Filter with coalesce(isDeleted, false) = false. `isDeleted != true` and
 //   `NOT isDeleted` silently drop documents where the field is missing or null.
-// - Keep flagged documents in the subscription at least until every device
-//   (including relays) has received the flag. Two designs:
+// - Keep flagged documents in the subscriptions of devices that relay data.
+//   A device that subscribes only to active documents still receives the flag
+//   and a restore for documents it holds, but it cannot relay the flag for
+//   documents it did not already hold, and a cleanup DELETE never reaches it.
+//   Two designs:
 //   Variant A: subscribe to the whole collection or partition; clean up with a
 //   DELETE on the Ditto Server (or another authorized peer) that syncs to
 //   every device. Device-side EVICT does not work here (documents sync back).
@@ -181,9 +184,10 @@ class OrderSoftDeleteRetention {
   void dispose() => _subscription?.cancel();
 }
 
-/// ❌ BAD: A flagged document leaves the subscription immediately. Keep flagged
-/// documents in the subscription until every device (including relays) has
-/// received the flag.
+/// ❌ BAD (in a mesh where devices sync through each other): Flagged documents
+/// leave the subscription immediately. A device that joins later never stores
+/// them, so it cannot relay the flag to a device that missed it, and a cleanup
+/// DELETE does not reach devices that hold a flagged copy.
 SyncSubscription subscribeToActiveOrdersOnly(Ditto ditto) {
   return ditto.sync.registerSubscription(
     'SELECT * FROM orders WHERE coalesce(isDeleted, false) = false',

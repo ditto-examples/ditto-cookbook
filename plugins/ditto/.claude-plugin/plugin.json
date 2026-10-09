@@ -1,6 +1,6 @@
 {
   "name": "ditto",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Agent Skills for Ditto SDK 5.1 best practices: DQL and sync, CRDT-safe data modeling, deletion and eviction, transactions and attachments, performance, SDK setup and security, testing, a code audit with an anti-pattern scanner, and the full best practices guide.",
   "author": {
     "name": "Ditto Examples"

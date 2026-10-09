@@ -412,8 +412,9 @@ collections:
 # menuItems: soft delete.
 #   UPDATE menuItems SET isDeleted = true, deletedAt = :deletedAt,
 #     updatedAt = :updatedAt WHERE _id = :id
-#   - The subscription includes soft-deleted items, so every device receives
-#     the flag; local queries hide them with coalesce(isDeleted, false) = false.
+#   - The subscription includes soft-deleted items, so every device can relay
+#     the flag to devices that missed it; local queries hide them with
+#     coalesce(isDeleted, false) = false.
 #   - Final cleanup (after a retention period) runs as a DELETE on Ditto
 #     Server, which syncs to every device.
 #

@@ -216,6 +216,7 @@ With the helpers above, or on real devices:
 - One device deletes a document while another updates it (expect a husk document, `§ Husk documents`), and the same with a soft delete.
 - A counter that one device recounts with `RESTART WITH` while another keeps incrementing it (`§ RESTART`).
 - A device behind a relay with narrower subscriptions (`§ Multi-hop relay`).
+- A device that missed a soft delete while offline and then syncs only through a relay (`§ Soft delete, subscriptions, and cleanup`).
 - Attachments created offline and fetched by other peers later (`§ Availability`).
 - Each transport your users rely on, including Bluetooth LE as the only transport (on real devices).
 

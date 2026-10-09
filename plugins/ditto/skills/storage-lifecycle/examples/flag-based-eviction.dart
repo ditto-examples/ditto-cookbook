@@ -1,6 +1,6 @@
 // SDK Version: ditto_live 5.1.0
 // Platform: Flutter (the DQL applies to all SDKs)
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-09
 //
 // Flag-based eviction: devices subscribe only to unflagged documents and
 // evict the flagged ones.
@@ -18,9 +18,10 @@
 // - Because the subscription never matches flagged documents, it does not
 //   need to be cancelled and re-registered before each eviction.
 // - Do not confuse this with soft delete: an eviction flag means "this device
-//   no longer needs it" and SHOULD leave the subscription; a deletion flag
-//   must stay in the subscription at least until every device has received it
-//   (see soft-delete-relay.dart for Variant A and Variant B).
+//   no longer needs it" and SHOULD leave the subscription; soft-deleted
+//   documents stay in the subscriptions of devices that relay data, so they
+//   can pass the deletion flag on (see soft-delete-relay.dart for Variant A
+//   and Variant B).
 
 import 'package:ditto_live/ditto_live.dart';
 

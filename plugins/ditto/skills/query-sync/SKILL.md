@@ -84,7 +84,7 @@ Keep `DQL_RESTRICT_SUBSCRIPTIONS` at its default (`true`): `false` allows `LIMIT
 **✅ DO**: filter by stable partition keys (tenant, store, region, team); use the same subscriptions on peers in the same role; keep predicates flat; give relay devices at least the subscriptions of the devices behind them.
 **❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for a small reference-data collection every device needs); filter subscriptions on fields that change often (`status`, `assignee`).
 
-Soft delete: keep soft-deleted documents in the subscription until every device has the flag; hide them locally with `coalesce(isDeleted, false) = false` (variants: `storage-lifecycle`).
+Soft delete: relaying devices keep flagged documents in their subscriptions to pass the flag on; hide them locally with `coalesce(isDeleted, false) = false` (variants: `storage-lifecycle`).
 
 `§ Subscription Rules`, `§ Scope Balancing`, `§ Soft delete, subscriptions, and cleanup`
 

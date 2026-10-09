@@ -185,7 +185,7 @@ The in-process setup shares one clock (no clock skew) and exercises only TCP. Bl
 - **Sync through Ditto Server** needs a Ditto Server test database. Use separate databases (apps) for development, staging, and production, or one per developer; developers who share one can prefix collection names. There is no Ditto Server mock for CI.
 - **Offline scenarios:** to simulate a Ditto Server outage while keeping peer-to-peer sync, let the app authenticate first, then block the Ditto Server host at the network level; blocking it before authentication makes sync fail entirely.
 
-Scenarios worth covering: different fields and the same field edited offline on two devices; map (and, for comparison, array) entries added, edited, and removed on two devices; delete racing an update (expect a husk document), also with soft delete; a counter recounted with `RESTART WITH` while another device increments it; a device behind a relay with narrower subscriptions; attachments created offline and fetched later.
+Scenarios worth covering: different fields and the same field edited offline on two devices; map (and, for comparison, array) entries added, edited, and removed on two devices; delete racing an update (expect a husk document), also with soft delete; a counter recounted with `RESTART WITH` while another device increments it; a device behind a relay with narrower subscriptions; a soft delete that reaches a device only through a relay; attachments created offline and fetched later.
 
 `§ Testing on Multiple Devices`, `§ Husk documents`, `§ RESTART`, `§ Multi-hop relay`, `§ Availability` · [reference/multi-peer-tests.md](reference/multi-peer-tests.md#scenarios-worth-covering)
 

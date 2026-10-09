@@ -205,8 +205,9 @@ class PosService {
   }
 
   /// The menu is small reference data: subscribe to the whole store
-  /// partition, including soft-deleted items, so that every device receives
-  /// the deletion flag. Local queries hide soft-deleted items.
+  /// partition, including soft-deleted items, so that every device can relay
+  /// the deletion flag to devices that missed it and the final DELETE on
+  /// Ditto Server reaches every device. Local queries hide soft-deleted items.
   SyncSubscription _subscribeToMenu() => ditto.sync.registerSubscription(
         'SELECT * FROM menuItems WHERE storeId = :storeId',
         arguments: {'storeId': storeId},
