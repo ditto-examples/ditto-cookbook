@@ -1,7 +1,7 @@
 # Ditto SDK Best Practices
 
-> **Version**: 2.3
-> **Last Updated**: 2026-10-08
+> **Version**: 2.5
+> **Last Updated**: 2026-10-09
 > **Applies to**: Ditto SDK 5.1.0 (Flutter `ditto_live` 5.1.0; notes for JavaScript, Swift, and Kotlin where behavior differs)
 
 This guide collects best practices and anti-patterns for building offline-first applications with the Ditto SDK. It focuses on decisions that are hard to change later (data modeling, sync scope, deletion strategy) and on mistakes that silently cause data loss, unexpected merges, memory growth, or excessive sync traffic.
@@ -15,7 +15,7 @@ Upgrading an existing application from SDK v4? Follow the [migration guides](htt
 - **(SDK 5.1+)**: Marks features introduced in Ditto SDK 5.1. Everything else is available in 5.0 and later.
 - **(Experimental)** / **(Beta)**: Marks APIs that the SDK itself marks as experimental or beta. Their signatures or behavior may change in a future release.
 - **Note (SDK 5.1.0)**: Describes SDK 5.1.0 behavior that can silently produce wrong results, crash, or block, together with the recommended pattern that avoids it.
-- **Verification**: The Dart examples in this guide were compiled against `ditto_live` 5.1.0, and the DQL statements were validated against Ditto SDK 5.1.0. Placeholders such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
+- **Verification**: The Dart examples in this guide were compiled against `ditto_live` 5.1.0, and the DQL statements were validated against Ditto SDK 5.1.0. Statements about what happens between devices (merges of concurrent edits, deletions, relay, subscriptions) that say "in tests" were observed with two or more SDK 5.1.0 peers syncing over TCP on one machine (JavaScript SDK on Node.js; the key cases also with Flutter on macOS); they describe 5.1.0 behavior, not a documented guarantee. Placeholders such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
 - **Finding topics**: Start from the [Quick Reference](#quick-reference) or the [Anti-Pattern Checklist](#anti-pattern-checklist), which link to the detailed sections; each section is written to be read on its own. To jump to a topic directly, search for the exact API name, DQL keyword, system parameter, or error message, or for "Note (SDK 5.1.0)" to find behavior that needs a specific pattern.
 
 ## Table of Contents
@@ -312,7 +312,7 @@ There are two connection modes:
 |---|---|---|---|
 | `DittoConfigConnectServer(url: ...)` | Devices sync through Ditto Server (and with each other) | Required: set an expiration handler and log in (see [Authentication](#authentication)) | TLS |
 | `DittoConfigConnectSmallPeersOnly(privateKey: key)` | Devices sync only with each other using a shared key | Shared key: every peer that holds the key is trusted (no server) | TLS 1.3 |
-| `DittoConfigConnectSmallPeersOnly()` | Local store tests, and development with an offline license token | None | **None** |
+| `DittoConfigConnectSmallPeersOnly()` | Local store tests, and development with an offline license token | **None**: any device with the SDK, the Database ID, and a license token can connect | **Not to rely on**: the SDK documents it as unencrypted (see below) |
 
 **✅ DO:**
 - Copy the Server URL from the Ditto Portal exactly as shown. Do not build it from the Database ID.
@@ -320,10 +320,10 @@ There are two connection modes:
 - Obtain an **offline license token** from Ditto for small-peers-only deployments and set it with `ditto.setOfflineOnlyLicenseToken(token)` before calling `ditto.sync.start()`.
 
 **❌ DON'T:**
-- Ship `DittoConfigConnectSmallPeersOnly()` without a `privateKey` to production: traffic between peers is **not encrypted in transit** in that mode.
+- Ship `DittoConfigConnectSmallPeersOnly()` without a `privateKey` to production. Peers do not authenticate each other in that mode: any device that runs the SDK with the same Database ID (and a valid offline license token) can connect, read, and write. The SDK's API documentation describes the mode as using no encryption in transit; in SDK 5.1.0 tests over TCP the traffic was still TLS-wrapped, but without a secret, so it gives no protection you can rely on.
 - Hardcode the shared key in the app binary (see [Small-Peers-Only Deployments](#small-peers-only-deployments)).
 
-**Why:** In small-peers-only mode, `ditto.sync.start()` throws (`The operation failed because the Ditto instance is not yet activated`) until a valid offline license token has been set, regardless of whether a private key is used. The local store works without a license, which is why tests can open Ditto without one as long as they do not start sync.
+**Why:** In small-peers-only mode, `ditto.sync.start()` throws (`The operation failed because the Ditto instance is not yet activated`) until a valid offline license token has been set, regardless of whether a private key is used. An invalid token makes `setOfflineOnlyLicenseToken()` itself throw (`The license failed verification`). A peer without a valid token is invisible to the other peers. The local store works without a license, which is why tests can open Ditto without one as long as they do not start sync.
 
 ```dart
 // ✅ GOOD: Small-peers-only deployment. The shared key and the offline license
@@ -363,7 +363,7 @@ For generating, distributing, and storing the shared key, see [Small-Peers-Only 
 Future<Ditto> openWithoutAwaitingOpen() async {
   await Ditto.init();
   // connect is omitted for brevity. The default, DittoConfigConnectSmallPeersOnly()
-  // without a key, does not encrypt traffic; see DittoConfig above.
+  // without a key, does not authenticate peers; see DittoConfig above.
   return Ditto.openSync(const DittoConfig(databaseID: 'YOUR_DATABASE_ID'));
 }
 ```
@@ -639,7 +639,8 @@ To restore a default, use `ALTER SYSTEM RESET <parameter>`. To list everything, 
 
 - `ditto.sync.start()` and `ditto.sync.stop()` return `void`. Do not `await` them (`await ditto.sync.start()` is a compile error in Dart). `start()` throws if sync cannot start, for example when the expiration handler or the offline license token is missing. Calling `start()` while sync is active does nothing. <!-- lint-ignore -->
 - `ditto.sync.isActive` tells you whether sync is running.
-- After `stop()`, the local store remains fully usable; only network sync stops.
+- After `stop()`, the local store remains fully usable; only network sync stops. `stop()` closes all connections right away, on both sides. Subscriptions stay registered, and changes made on either side while sync was stopped are exchanged after `start()`.
+- Subscriptions can be registered before `start()` or while sync is stopped; they take effect when sync runs.
 
 Start sync **after** the expiration handler is set (server connections) or the offline license token is set (small-peers-only), and after system parameters have been applied.
 
@@ -780,7 +781,7 @@ A new Ditto instance enables the peer-to-peer transports that are stable on the 
 
 **❌ DON'T:**
 - Build a `TransportConfig()` from scratch and assign it: a new `TransportConfig` has **every transport disabled**, including the peer-to-peer transports that a default instance enables.
-- Treat `global.syncGroup` as a security boundary. It is an optimization only.
+- Treat `global.syncGroup` as a security boundary. It is an optimization only: in tests, devices in different sync groups still synced when they were connected explicitly (`connect.tcpServers` or `TRANSPORTS_DISCOVERED_PEERS`).
 
 ```dart
 // ✅ GOOD: Adjust the current configuration with the builder.
@@ -812,7 +813,28 @@ void connectToHub(Ditto ditto) {
 }
 ```
 
-Configuration changes are applied asynchronously while sync is running, and invalid values do not throw. You can also point devices at a known peer with the `TRANSPORTS_DISCOVERED_PEERS` system parameter, which takes effect while sync is active (unlike startup parameters such as `DQL_STRICT_MODE`, which belong before `ditto.sync.start()`). Like every system parameter, it is not persisted, so apply it again after each open:
+> **Note (SDK 5.1.0):** A device accepts a limited number of connections per transport. For TCP, the limit is 6 by default (system parameter `MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In tests with a TCP hub and 8 clients, the hub accepted 6, and the other 2 received no data at all. No API reported this; only the log showed a `WARN` line, `failed to connect to peer error=... at capacity for this transport`. Rejected devices retry with an increasing backoff. Ditto does not document the parameter, so treat the value as subject to change.
+>
+> If more than six devices connect to one hub, raise the limit **on the hub** after `Ditto.open` and **before** `ditto.sync.start()`. Raising it while sync was already running did not let the rejected clients in within 60 s.
+
+```dart
+// ✅ GOOD: A hub that serves up to 12 TCP clients. Apply on every open,
+// before ditto.sync.start() (system parameters are not persisted).
+Future<void> startHub(Ditto ditto) async {
+  await ditto.store.execute(
+    'ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = 12',
+  );
+  ditto.updateTransportConfig((config) {
+    config.listen.tcp
+      ..isEnabled = true
+      ..interfaceIP = '[::]'
+      ..port = 4040;
+  });
+  ditto.sync.start();
+}
+```
+
+Configuration changes are applied asynchronously while sync is running, and invalid values do not throw: an invalid `connect.tcpServers` entry or listen address only produces a log line (for example `Failed to start TCP server error=Bind address could not be parsed`). You can also point devices at a known peer with the `TRANSPORTS_DISCOVERED_PEERS` system parameter, which can be set before or after `ditto.sync.start()` and is validated (`type` is optional and must be `'force'` or `'candidate'`). It works only while the LAN transport (`peerToPeer.lan`) is enabled on the device that sets it, which is the default; with peer-to-peer transports disabled, the value is stored but nothing connects, so use `connect.tcpServers` instead. Like every system parameter, it is not persisted, so apply it again after each open:
 
 ```dart
 Future<void> connectToKnownPeer(Ditto ditto) async {
@@ -854,10 +876,10 @@ Multicast is an opt-in transport that sends each update once to a multicast grou
 
 `ditto.presence` shows which peers this device can see and how it is connected to them, which is useful for connection indicators and diagnostics.
 
-- `ditto.presence.observe((graph) { ... })` returns a `PresenceObserver`. The callback is called with the current graph shortly after `observe()` returns (asynchronously), and again whenever peers appear, disappear, or change their connections. Call `stop()` on the observer when you no longer need it.
-- `graph.localPeer` describes this device, and `graph.remotePeers` is a `Set<Peer>` of the other known peers. Each `Peer` has `peerKey`, `deviceName`, `isConnectedToDittoServer`, `connections`, and `peerMetadata`.
+- `ditto.presence.observe((graph) { ... })` returns a `PresenceObserver`. The callback is called with the current graph shortly after `observe()` returns (asynchronously), and again whenever peers appear, disappear, or change their connections. Updates are batched: in tests, a change reached the callback after about 0.5–1 second, and one callback can cover several changes. Call `stop()` on the observer when you no longer need it.
+- `graph.localPeer` describes this device, and `graph.remotePeers` is a `Set<Peer>` of the other known peers, including peers that are reachable only through other peers. Each `Peer` has `peerKey`, `deviceName`, `isConnectedToDittoServer`, `connections`, and `peerMetadata`. To tell direct neighbors apart, check whether one of a peer's `connections` has this device's `peerKey` as `peer1` or `peer2`.
 - `ditto.presence.graph` returns the current graph once, without observing.
-- `ditto.presence.peerMetadata` sets metadata for this device (a JSON object of at most 4 KB when encoded).
+- `ditto.presence.peerMetadata` sets metadata for this device (a JSON object of at most 4096 bytes when encoded; larger values throw). It reaches every peer in the mesh, but a peer that has just appeared can show empty `peerMetadata` until its metadata arrives.
 
 **✅ DO:**
 - Stop presence observers when the screen or feature that uses them goes away.
@@ -1043,7 +1065,7 @@ When you do write values inline (constants such as `'open'`, or examples in the 
 | Literal | Syntax | Notes |
 |---|---|---|
 | String | `'open'` or `"open"` | Single and double quotes both delimit strings. Double quotes never refer to a field. |
-| Escapes in strings | `'line1\nline2'`, `'it\'s'`, `'caf\u00e9'` | JSON escape sequences are interpreted in both quote styles. `'it''s'` (doubled quote) is a syntax error. An unknown escape such as `\q` drops the backslash. A literal backslash must be written `\\`. |
+| Escapes in strings | `'line1\nline2'`, `'it\'s'`, `'caf\u00e9'` | JSON escape sequences are interpreted in both quote styles. `'it''s'` (doubled quote) is a syntax error. An unknown escape such as `\q` drops the backslash. A literal backslash must be written `\\`. This changed in 5.1.0: on 5.0.x, `''` was the escape for `'` and backslashes were not interpreted, so string literals written for 5.0.x can fail or change meaning after an upgrade. |
 | Identifier | `` `my field` ``, `` `collection` `` | Backticks quote field names, aliases, and collection names that contain special characters or are reserved words. |
 | Number | `42`, `-1`, `2.5`, `1e3` | `1e3` is a float. Integer division stays integer: `5 / 2` is `2`, `5.0 / 2` is `2.5`. |
 | Hexadecimal | `0xFF` | Integer constant (`255`). |
@@ -1553,7 +1575,7 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 }
 ```
 
-> **Note (SDK 5.1.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. See [ANY and EVERY](#any-and-every). <!-- lint-ignore -->
+> **Note (SDK 5.1.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a 5.1.0 regression; 5.0.x returned the matching documents. A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](#any-and-every). <!-- lint-ignore -->
 
 ### Joining Collections (SDK 5.1+)
 
@@ -1948,7 +1970,7 @@ Future<void> replaceAddress(
 
 **❌ DON'T:**
 - Read a document, modify it in Dart, and write the whole map back with `INSERT ... ON ID CONFLICT DO UPDATE`.
-- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result).
+- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result). It is also synced: in tests, a `SELECT *` observer on another device fired for it as well.
 
 ```dart
 // ❌ BAD: Read-modify-write of the whole document
@@ -2067,7 +2089,7 @@ Date functions accept either **ISO-8601 strings with a time zone** (`2026-03-15T
 | `date_format(date, format[, tz])` | Format, optionally converting to a time zone | `date_format('2026-03-15T10:30:45Z', 'YYYY-MM-DD hh:mm', 'Asia/Tokyo')` → `'2026-03-15 19:30'` |
 | `date_cast(string[, format])` | Parse to epoch ms; date-only strings need a format | `date_cast('15/03/2026', '%d/%m/%Y')` → `1773532800000` |
 | `date_range(start, end, part, count[, format[, tz]])` | Array of dates from `start` (inclusive) to `end` (exclusive) | `date_range('2026-03-01T00:00:00Z', '2026-03-04T00:00:00Z', 'day', 1)` → 3 dates |
-| `tz_offset(string[, format])` | The time zone offset **in minutes** of a date string, or of a zone name when the format `'TZN'` is passed (it does not convert dates) | `tz_offset('2026-03-15T10:30:45+09:00')` → `540`; `tz_offset('Asia/Tokyo', 'TZN')` → `540` |
+| `tz_offset(string[, format])` | The time zone offset **in minutes** of a date string, or of a zone name when the format `'TZN'` is passed (it does not convert dates) | `tz_offset('2026-03-15T10:30:45+09:00')` → `540`; `tz_offset('Asia/Tokyo', 'TZN')` → `540`. With `'TZN'`, the result is the offset in force on **1970-01-01**, not today's: `tz_offset('America/New_York', 'TZN')` → `-300` even during daylight saving time, and `tz_offset('Asia/Kathmandu', 'TZN')` → `330` (today +345) |
 
 **Parts** for `date_add`, `date_sub`, `date_diff`, and `date_trunc`: `year`, `mon`/`month`, `day`, `hour`, `min`/`minute`, `sec`/`second`, `ms`/`millis`/`millisecond`. `date_part` additionally accepts `weekday` (ISO-8601: Monday = 1, Sunday = 7), `monthname`, and `tz`/`timezone`. Other part names (`week`, `quarter`, `dow`, `doy`) return MISSING.
 
@@ -2297,7 +2319,7 @@ FROM orders
 WHERE status = 'open'
 ```
 
-> **Note (SDK 5.1.0):** Do not use `ANY` or `EVERY` over a parameter or literal array in a `WHERE` clause, such as `WHERE ANY s IN :statuses SATISFIES s = status END`: it returns no rows. Use `status IN :statuses` instead. `ANY` and `EVERY` over a document's own array field work in `WHERE`; for a plain element test, `:value IN arrayField` or `array_contains(arrayField, :value)` is the simpler choice. <!-- lint-ignore -->
+> **Note (SDK 5.1.0):** Do not use `ANY` or `EVERY` over a parameter or literal array in a `WHERE` clause, such as `WHERE ANY s IN :statuses SATISFIES s = status END`: it returns no rows. Use `status IN :statuses` instead. `ANY` and `EVERY` over a document's own array field work in `WHERE`; for a plain element test, `:value IN arrayField` or `array_contains(arrayField, :value)` is the simpler choice. The bug affects local queries and observers; subscriptions with the same predicate sync correctly, so the data arrives but an observer with the same statement stays empty. 5.0.x was not affected. <!-- lint-ignore -->
 
 ### ARRAY and OBJECT Transformations
 
@@ -2369,7 +2391,7 @@ Each field value in a document is stored as one of the following CRDT types:
 |---|---|---|
 | `REGISTER` | Any single value: string, number, boolean, null, array, or an object kept as one value | Last-writer-wins (LWW), decided by a Hybrid Logical Clock (HLC) timestamp |
 | `MAP` | An object whose keys merge independently | Add-wins: concurrent additions of different keys are all kept; each nested value merges by its own type |
-| `COUNTER` | An integer | Increments and decrements from all peers are combined; `RESTART` operations are last-writer-wins |
+| `COUNTER` | An integer | Increments and decrements from all peers are combined; `RESTART` operations are last-writer-wins, and a `RESTART` discards concurrent increments (see [RESTART](#restart)) |
 | `ATTACHMENT` | A token that references binary data stored outside the document | Last-writer-wins |
 
 `PN_COUNTER` also exists as a legacy counter type. Use `COUNTER` for all new fields (see [Counters](#counters)).
@@ -2394,10 +2416,30 @@ Ditto's [CRDT documentation](https://docs.ditto.live/key-concepts/syncing-data#c
 - **REGISTER (last-writer-wins).** When two devices write the same register concurrently, the write with the later HLC timestamp wins on every device. The losing write is discarded silently: there is no error and no notification.
 - **MAP (add-wins).** When two devices add different keys to the same map, both keys survive. Each scalar inside a map entry is its own register, so two devices that edit *different fields* of the same entry both keep their changes. Two devices that edit the *same* field fall back to last-writer-wins for that field.
 - **Arrays.** An array is a register. If one device appends an element and another device removes a different element at the same time, the merged document contains one of the two arrays, not a combination.
-- **COUNTER.** Increments and decrements from every device are combined. Concurrent `RESTART` operations resolve by last-writer-wins.
+- **COUNTER.** Increments and decrements from every device are combined. Concurrent `RESTART` operations resolve by last-writer-wins. A `RESTART` also discards every increment that the restarting device had not yet received, even increments made later by the clock (see [RESTART](#restart)).
 - **Consistency guarantee.** Ditto guarantees causal consistency across documents and collections within the same database.
 
 Because a MAP merges at every level, a single document can hold many independently editable sub-entities. Nesting carries no special performance penalty; CRDT maps work the same way at every level.
+
+#### What concurrent edits produce
+
+The table shows how two devices' edits to the same document merged in tests with SDK 5.1.0. Both devices were offline when they wrote, and they synced afterwards. Every result was the same on both devices and did not depend on which device wrote first unless the table says so. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
+
+| Device A | Device B | Result after sync |
+|---|---|---|
+| `SET status = 'A'` | `SET status = 'B'` (later) | `'B'`: the later write wins on every device, even milliseconds apart |
+| `SET obj.a = 2` | `SET obj.b = 3` | `{"a": 2, "b": 3}`: different keys of a map both survive |
+| `SET obj = {'a': 10}` | `SET obj.b = 20` | `{"a": 10, "b": 20}`: assigning an object merges; it does not replace (see [Assigning an object merges it](#assigning-an-object-merges-it)) |
+| `UNSET obj` | `SET obj.c = 5` | `{"c": 5}`: the removed keys stay removed, the new key survives |
+| `` UNSET items.`item-1` `` | `` SET items.`item-1`.quantity = 5 `` | The entry survives: `{"quantity": 5}` if the removal was first, `{"quantity": null}` if it was later (see [Arrays and Maps](#arrays-and-maps)) |
+| `SET tags = [1, 2, 3]` | `SET tags = [0, 1, 2]` (later) | `[0, 1, 2]`: the whole array is one value; A's change is lost |
+| `APPLY n INCREMENT BY 5` | `APPLY n INCREMENT BY 7` | Both are added |
+| `APPLY n RESTART WITH 100` | `APPLY n INCREMENT BY 5` (before or after) | `100`: the increment is discarded (see [RESTART](#restart)) |
+| `DELETE` | `UPDATE ... SET color = 'blue'` (later) | The document survives with `color = 'blue'`; other fields are missing (see [Husk documents](#husk-documents)) |
+| `UPDATE ... SET color = 'blue'` | `DELETE` (later) | The document survives with `color = null`; other fields are missing |
+| `INSERT` of a new document | `INSERT` with the same `_id` (for example, a sequential ID) | One document with combined fields; a field both set keeps the later value (see [Document IDs](#document-ids)) |
+| Adds a 3 MiB field | Adds another 3 MiB field | A 6 MiB document on both devices, above the hard limit; every later `UPDATE` of it fails (see [Document Size Limits](#document-size-limits)) |
+| `INSERT ... INITIAL DOCUMENTS` | Same `_id`, different content | Fields are combined; a field both set is decided by its value, not by time (see [Default Data with INITIAL Documents](#default-data-with-initial-documents)) |
 
 #### Local write semantics you must know
 
@@ -2416,7 +2458,7 @@ Several MAP behaviors differ from what developers expect from a JSON document st
 **✅ DO:**
 - Update individual fields with `UPDATE ... SET obj.field = :value`.
 - Remove keys explicitly with `UNSET`.
-- When an object must be replaced as a whole, either declare it as a register (`COLLECTION orders (shippingAddress REGISTER)`) or run `UNSET` followed by `SET` in one transaction. Only the register guarantees that concurrent edits never mix two versions: with `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object.
+- When an object must be replaced as a whole, either declare it as a register (`COLLECTION orders (shippingAddress REGISTER)`) or run `UNSET` followed by `SET` in one transaction. Only the register guarantees that concurrent edits never mix two versions: with `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object. It can even bring back a key that the replacement removed: in tests, replacing `{street, city, zip}` with `{street, city}` while another device set `zip` kept `zip`.
 
 **❌ DON'T:**
 - Assume `SET obj = {...}` or `ON ID CONFLICT DO UPDATE` removes keys that you left out.
@@ -2568,7 +2610,11 @@ Future<void> applyDataModelSettings(Ditto ditto) async {
 
 #### Peers with different settings
 
-Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. The remedies are to use the same setting on all peers (recommended) or to declare the fields as `MAP` on the strict peers.
+Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. In SDK 5.1.0 tests with one strict and one non-strict peer, the effects were these:
+- A nested update such as `SET obj.a = 2` on the strict peer failed with `Unsupported DML operation on REGISTER field "obj"` when `obj` had been written as an object by a strict peer.
+- After concurrent edits, an undeclared `SELECT *` kept showing different values for the same document on the two peers.
+
+The remedies are to use the same setting on all peers (recommended) or to declare the fields as `MAP` on the strict peers.
 
 **✅ DO:**
 - Use the same `DQL_STRICT_MODE` value on every peer, in every app and backend integration that writes to the same database.
@@ -2702,6 +2748,13 @@ Future<void> removeOrderItem(
 }
 ```
 
+> **Note (SDK 5.1.0):** Removing an entry does not win over a concurrent edit of that entry. In tests, one device ran `` UNSET items.`item-1` `` while another device changed `` items.`item-1`.quantity ``:
+> - **Removal first, edit later:** the entry stays with only the edited fields, for example `{"quantity": 5}`.
+> - **Edit first, removal later:** the entry stays with the edited fields set to `null`, for example `{"quantity": null}`.
+> - **Whole entry rewritten after the removal** (`` SET items.`item-1` = :item `` or `DO UPDATE`): the full entry comes back.
+>
+> These are "husk" entries, like [husk documents](#husk-documents). When devices may edit an entry while another removes it, mark it removed instead (`` SET items.`item-1`.removed = true ``). Either way, make readers skip entries whose required fields are missing or `null` (see `orderSubtotalCents` in [Do not store derived values that can diverge](#do-not-store-derived-values-that-can-diverge)).
+
 **Why:** Splicing unchecked input into a query enables DQL injection. A strict allow-list pattern for map keys keeps the path safe, and all other values still travel as parameters (see [Parameters and Literals](#parameters-and-literals)).
 
 #### Working with arrays
@@ -2778,7 +2831,7 @@ Both shapes are valid; choose by how the data is edited and read:
 
 #### Do not store derived values that can diverge
 
-A stored value computed from other fields (a line total, an order total, a remaining stock level) is a separate register. Two devices can update the inputs concurrently, and each recomputes the total from its own partial view. After the merge, the stored total may match neither device's inputs. Compute derived values when you read them.
+A stored value computed from other fields (a line total, an order total, a remaining stock level) is a separate register. Two devices can update the inputs concurrently, and each recomputes the total from its own partial view. After the merge, the stored total keeps one device's partial result and disagrees with the merged inputs. In tests, the line items merged to 800 while the stored subtotal stayed at 600. Compute derived values when you read them.
 
 ```json
 // ❌ BAD: subtotal and total are derived. After concurrent edits to items they
@@ -2794,14 +2847,18 @@ A stored value computed from other fields (a line total, an order total, a remai
 ```
 
 ```dart
-// ✅ GOOD: Store the source data; derive totals at read time.
+// ✅ GOOD: Store the source data; derive totals at read time. Entries with a
+// missing or null price or quantity (an entry removed on one device while
+// another device edited it) are skipped instead of crashing the screen.
 int orderSubtotalCents(Map<String, dynamic> order) {
   final items = (order['items'] as Map<String, dynamic>?) ?? const {};
   var subtotal = 0;
   for (final entry in items.values) {
-    final item = entry as Map<String, dynamic>;
-    subtotal +=
-        (item['unitPriceCents'] as int) * (item['quantity'] as int);
+    if (entry is! Map<String, dynamic>) continue;
+    final price = entry['unitPriceCents'];
+    final quantity = entry['quantity'];
+    if (price is! int || quantity is! int) continue;
+    subtotal += price * quantity;
   }
   return subtotal;
 }
@@ -2842,7 +2899,7 @@ Ditto enforces two thresholds on the **size of each stored document**:
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | The write succeeds and a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements that would exceed it **fail**; the stored document is unchanged |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Merges from other devices are not checked (see below) |
 
 Log and error messages:
 
@@ -2854,13 +2911,15 @@ Query failed: DQL Internal execution error: Insert failed: <store> Document `_id
 
 In Flutter, a failed statement throws a `DittoException`; catch it like any other DQL error.
 
+> **Note (SDK 5.1.0):** The hard limit is checked only when a device writes, not when changes from other devices merge. In tests, two devices each added a 3 MiB field to the same document while offline. After sync, both devices stored the 6 MiB document; nothing reported an error, and no log line mentioned the merged size. From then on, **every `UPDATE` of that document failed on every device** with `exceeds limit of 5242880 bytes`, until an `UNSET` removed enough data. The same happens when devices use different hard limits: a device with a lower limit receives larger documents from other devices but cannot update them. Keep large or growing data out of documents (attachments, separate collections), so that even combined offline additions stay far below the limit.
+
 **Why the limits matter:** Size affects local storage and memory on every device holding the document, serialization time, CRDT merge cost (which scales with document size, not change size), and initial replication. Over Bluetooth LE (roughly 20 KB/s in practice), a 256 KiB document takes more than 10 seconds to replicate the first time. Later edits sync only the changed fields.
 
 **✅ DO:**
 - Design documents to stay well below 256 KiB.
 - Store images, PDFs, and other binary content as attachments; attachments are fetched separately and do not count toward the document size (see [Attachments](#attachments)).
 - Move data that grows without bound (order history, readings, comments) into its own collection.
-- Leave both limits at their defaults. If you change them, change them on every peer in the same release.
+- Leave both limits at their defaults. If you change them, change them on every peer in the same release: a device with a lower hard limit cannot update documents that arrive larger than its limit. (A hard limit set below the soft limit was not enforced in 5.1.0.)
 
 **❌ DON'T:**
 - Embed base64-encoded files in documents.
@@ -3304,9 +3363,17 @@ WHERE _id = :id
 
 #### RESTART
 
-`RESTART WITH n` sets the counter to a specific value and `RESTART` sets it to zero. When devices perform `RESTART` operations concurrently, the last write wins. Do not rely on a precise result when one device increments a counter while another device restarts it. Use `RESTART` for occasional corrections made by one authority, such as recalibrating stock after a physical count.
+`RESTART WITH n` sets the counter to a specific value and `RESTART` sets it to zero. When devices perform `RESTART` operations concurrently, the last write wins.
+
+> **Note (SDK 5.1.0):** A `RESTART` discards **every increment that the restarting device had not received when it ran the restart**. That includes increments that other devices make *after* the restart (by the clock) until the restart reaches them. Only increments made after a device has received the restart are added to the new value. In tests with two peers, a counter at 10 was restarted with 100 on one peer while the other peer incremented it by 5. The result was 100 in every order and role (32 trials). When the restart had already synced before the increment, the result was 105.
+
+A typical consequence: a stock recount with `RESTART WITH :counted` silently erases the sales that offline devices record until they receive the recount.
+
+Use `RESTART` only for occasional corrections made by one authority while no other device is incrementing the same counter unsynced, for example a recount done while every till is online and in sync. If devices keep recording changes offline during a recount, keep the recounts and the changes as separate event documents and derive the stock from them (see [When counters are appropriate](#when-counters-are-appropriate)).
 
 ```dart
+// Run only while every device that increments stockCount is online and in
+// sync; increments that this device has not received yet are discarded.
 Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
   await ditto.store.execute(
     '''
@@ -3326,12 +3393,13 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
 | Likes, votes, view counts | **Unique sequence numbers** (invoice or ticket numbers): two offline devices both read 41 and both produce 42. Use UUIDs plus a display label (see [Document IDs](#document-ids)) |
 | Usage metrics and tallies from many devices | **Balances that must be validated** (account balances, "never below zero"): a counter cannot enforce a constraint, and concurrent decrements can drive it negative. Record transactions as events and validate when you derive the balance |
 | Inventory adjustments where every device records its own sales or receipts | **Values derivable from documents you already store** (number of open orders): compute them with a query such as `SELECT COUNT(*) ...` |
-| Values recalibrated occasionally with `RESTART WITH` | **Fractional amounts**: `COUNTER` is integer-only (`INCREMENT BY 1.5` fails with `Expected 1.5 to be an integer value`). Count in minor units such as cents |
+| Values recalibrated occasionally with `RESTART WITH`, while all devices that change them are in sync | **Fractional amounts**: `COUNTER` is integer-only (`INCREMENT BY 1.5` fails with `Expected 1.5 to be an integer value`). Count in minor units such as cents |
 
 **❌ DON'T:**
 - Initialize a counter with an undeclared `INSERT`.
 - Overwrite a counter with `SET`; use `RESTART WITH`.
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
+- Use `RESTART WITH` to recalibrate a counter that other devices keep changing while offline.
 
 **Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. Everything else (registers, map entries) keeps one of the concurrent values, so `SET stock = stock - 1` on two devices loses one of the decrements.
 
@@ -3549,6 +3617,10 @@ Behavior on a device:
 | The document was evicted earlier on this device | The document is inserted again |
 | Combined with `ON ID CONFLICT ...` | Parser error; the conflict policy cannot be changed |
 
+Across devices, the same rules apply when the deletion came from another device. In SDK 5.1.0 tests, the effects were these:
+- **A seed for an `_id` that another device deleted** stays deleted if its content is identical. If its content differs, it becomes a document with `null` fields **on every device**. This also happens when a newly installed device seeds before it first connects.
+- **Two devices that seed the same `_id` with different content** are merged field by field: `{v: 'A', onlyA: 1}` and `{v: 'B', onlyB: 1}` became `{v: 'B', onlyA: 1, onlyB: 1}`. A field that both seeds set is decided by its value, not by which device seeded later. A regular `INSERT` of the same `_id` wins over the seed.
+
 ```dart
 // Default categories that every device creates at startup. Running this on
 // every launch is safe: existing documents, including edited ones, are untouched.
@@ -3575,7 +3647,7 @@ INITIAL DOCUMENTS (:item)
 
 **✅ DO:**
 - Use fixed, well-known `_id` values for seed data so that every device creates the same documents.
-- Ship identical seed content in every app version that seeds the same IDs. Do not rely on how peers reconcile initial documents with *different* content for the same `_id`.
+- Ship identical seed content in every app version that seeds the same IDs. Do not rely on how peers reconcile initial documents with *different* content for the same `_id`: a key removed from the seed in a new version comes back from devices that still run the old version, and a changed seed turns IDs deleted elsewhere into documents with `null` fields.
 - Use soft delete (an `isArchived` flag) for seed documents that users may remove if the seed content may change in a later app version: seeding a deleted ID with different content leaves a document with `null` fields.
 
 **❌ DON'T:**
@@ -3659,7 +3731,7 @@ Remove old-version documents with `EVICT` (local only, per device) or `DELETE` (
 
 #### Changing CRDT types
 
-Changing how a field is typed (an array or a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). Introduce a new field with the new type instead (`stockCount` as a COUNTER next to the old `stock` register) and migrate readers as described above.
+Changing how a field is typed (an array or a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). In tests, an old app version wrote `SET stock = 9` while a new version concurrently ran `APPLY stock INCREMENT BY -1` as a COUNTER. After sync, an undeclared `SELECT` returned a stock of `-1` on both versions, because the new counter started at 0; only a statement that declared the field as `REGISTER` still returned `9`. Introduce a new field with the new type instead (`stockCount` as a COUNTER next to the old `stock` register) and migrate readers as described above.
 
 ### Timestamps
 
@@ -3821,6 +3893,8 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 
 **Keep the default.** A subscription with `LIMIT` (or `LIMIT` with `ORDER BY`) is a *stateful subscription*: the sync engine must track which documents currently fall inside the limit boundary. Whenever a document inside the boundary is deleted, stops matching the `WHERE` clause, or moves under the `ORDER BY`, Ditto has to invalidate its cache and re-evaluate the query, which degrades sync performance. If you must use one, avoid filtering (`WHERE`) or sorting (`ORDER BY`) on mutable fields when `LIMIT` is used. In most apps, a subscription scoped by a stable key plus a local `ORDER BY ... LIMIT` query gives the same UI without these costs.
 
+> **Note (SDK 5.1.0):** `LIMIT` in a subscription bounds **only the initial download**. In tests, the first sync delivered exactly the top N documents. After that, every new or changed document that matched the `WHERE` clause was synced, whether or not it ranked inside the window, including documents that never did. Documents already received stayed and kept receiving updates. Only documents that existed but were not changed after the subscription started stayed away. A "sync only the latest 50 orders" subscription therefore ends up syncing every matching order that is created or edited later. Bound the synced set with a `WHERE` on a stable key or a time window instead, keep `ORDER BY ... LIMIT` in the local query, and evict what the device no longer needs (see [EVICT](#evict)). `DQL_RESTRICT_SUBSCRIPTIONS` is checked only on the device that registers the subscription; the setting on the device that serves the data makes no difference.
+
 #### Scope subscriptions to what the device needs
 
 **✅ DO:**
@@ -3851,7 +3925,7 @@ SyncSubscription subscribeToStore(Ditto ditto, String storeId) {
 
 ### Subscription Lifecycle
 
-Registering, cancelling, or changing a subscription makes peers across the mesh re-evaluate what they owe the device. Doing this often degrades sync throughput and can interrupt in-flight transfers. **Avoid changing subscriptions more often than about every 15 minutes.**
+Registering, cancelling, or changing a subscription makes peers across the mesh re-evaluate what they owe the device. Ditto advises against doing this often. **Avoid changing subscriptions more often than about every 15 minutes.** In SDK 5.1.0 tests, the network cost of a change itself was small: documents the device already held were not downloaded again. An identical second registration transferred nothing, and re-registering after a cancel fetched only what had changed in between (1.6 KB, against 210 KB for the first download). Each registration is a separate object, though: data keeps syncing until **every** copy of an identical subscription is cancelled.
 
 **✅ DO:**
 - Register subscriptions when the data first becomes relevant: at app start, after login, or when the user enters a workspace (store, region, team).
@@ -4007,8 +4081,9 @@ class _OrdersByStatusState extends State<OrdersByStatus> {
 
 #### Cancelling subscriptions and local data
 
-- **Cancelling does not delete local data.** Documents already received stay in the local store and remain visible to local queries; they simply stop receiving updates from other peers. To free storage, evict them explicitly (see [EVICT](#evict)).
-- **Cancel before you evict.** Evicting documents that still match an active subscription is futile: connected peers notice that the device is missing documents it subscribes to and send them back. Stop the affected subscriptions *before* calling `EVICT`.
+- **Cancelling does not delete local data.** Documents already received stay in the local store and remain visible to local queries. They stop receiving updates, new documents, and **deletions** from other peers, so a document deleted elsewhere after the cancel stays on this device. To free storage, evict them explicitly (see [EVICT](#evict)).
+- **Overlapping subscriptions add up.** A device receives the union of all its active subscriptions. Cancelling one of them leaves the documents that another one still matches in sync.
+- **Cancel before you evict.** Evicting documents that still match an active subscription is futile: connected peers notice that the device is missing documents it subscribes to and send them back. Stop the affected subscriptions *before* calling `EVICT`, including every overlapping subscription that also matches the documents: in tests, a document that another active subscription still matched was synced back right after the `EVICT`.
 - **Late arrivals:** Data that was already being transferred when you cancelled can still arrive afterwards. If the device must not keep the old store's data, run the eviction again later (for example, on the next app start or in a periodic cleanup).
 
 ```dart
@@ -4074,12 +4149,15 @@ The same limit applies to transactions: a device connected only through a relay 
 **✅ DO:**
 - Give devices in the same role the same subscriptions, so that each of them can serve the others.
 - On devices that act as relays or hubs (for example, a fixed tablet that many handhelds connect to), subscribe to at least everything the devices behind them need.
+- On a hub that more than six devices connect to over TCP, raise the per-transport connection limit before starting sync (see [Transport Configuration](#transport-configuration)).
 - Filter subscriptions on stable fields that do not change during a document's lifetime (`storeId`, `tenantId`, `region`).
 - Ensure sufficient connectivity with peers that have broader subscription sets.
 
 **❌ DON'T:**
 - Give a relay device a narrower subscription than the devices that depend on it.
 - Filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states (soft-delete flags are a special case; see the next paragraph).
+
+> **Note (SDK 5.1.0):** A document that stops matching a subscription becomes a **frozen copy** on the device. In tests, the device received the change that made the document stop matching (for example `status: 'closed'`), and then nothing more: later edits, and even the deletion of the document, did not arrive. Local queries keep returning the stale copy. When the document matches again, it arrives in its latest state. Filter such documents out locally, and evict them when the device no longer needs them.
 
 **Soft delete:** Keep soft-deleted documents inside the subscription at least until every device has received the flag, and filter them out in local queries. See [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup) for the two subscription variants and how each affects cleanup.
 
@@ -4110,7 +4188,8 @@ Future<void> applySyncScopesAndStart(Ditto ditto) async {
 
 **✅ DO:**
 - Set `USER_COLLECTION_SYNC_SCOPES` after every `Ditto.open` and **before** `ditto.sync.start()`; `ALTER SYSTEM` settings are not persisted, and setting scopes late can let data sync unintentionally (see [Applying System Parameters](#applying-system-parameters)).
-- Apply the same sync scopes on **every** device that can store the collection (devices that write it, subscribe to it, or relay it); a scope is checked by the device that sends the data, so a device without the setting can send the collection to Ditto Server.
+- Apply the same sync scopes on **every** device that can store the collection (devices that write it, subscribe to it, or relay it); a scope is checked by the device that sends the data, so a device without the setting can send the collection to Ditto Server. A scope also does not stop a device from *receiving* the collection from devices without it.
+- Remember that a scope set while sync is running applies to later changes immediately, without a restart. Copies that other devices already received stay there as frozen copies: in tests, they received no further updates.
 - Quote the collection names (map keys) in the literal, or build the statement from a reviewed constant.
 - List every scoped collection in one statement: each `ALTER SYSTEM SET USER_COLLECTION_SYNC_SCOPES` replaces the whole map, so collections left out of a later statement lose their scope.
 
@@ -4138,6 +4217,10 @@ Ditto is offline-first, so there is no single "synced" state. You can still show
 
 A local write has reached a peer when that peer's `synced_up_to_local_commit_id` is greater than or equal to the write's `commitID`.
 
+> **Note (SDK 5.1.0):** A statement that changes nothing still returns a `commitID`. Examples are `ON ID CONFLICT DO NOTHING` or `DO UPDATE_LOCAL_DIFF` on an existing document, and an `UPDATE` whose `WHERE` matches nothing. Peers do not confirm such an empty commit by itself; `synced_up_to_local_commit_id` passes it only with the next commit that syncs. Besides your own writes, Ditto makes an internal commit about every 30 seconds, so a wait on such an ID ends after up to about 30 seconds instead of immediately. Track a `commitID` only when `mutatedDocumentIDs()` is not empty.
+
+> **Note (SDK 5.1.0):** `sync_session_status` reacts slowly to disconnections. In tests, a peer's row stayed `"Connected"` for about 73 seconds after the other peer had closed Ditto or called `ditto.sync.stop()`, on both devices, while the presence graph dropped the peer immediately. Use `sync_session_status` for upload progress, and use [Presence](#presence) for "connected now" indicators.
+
 ```sql
 SELECT * FROM system:data_sync_info WHERE is_ditto_server = true
 ```
@@ -4147,9 +4230,10 @@ SELECT * FROM system:data_sync_info WHERE is_ditto_server = true
 - Query `system:data_sync_info` with `execute` when you need a snapshot (for example, when the user opens a status screen).
 - Keep observer callbacks on `system:data_sync_info` trivial and update the UI only when the derived value actually changes.
 - Track only the commit IDs that matter (payments, submitted forms) and forget them once confirmed.
+- Check `mutatedDocumentIDs()` before tracking a `commitID`; skip statements that changed nothing.
 
 **❌ DON'T:**
-- Register observers on `system:data_sync_info` in many widgets: these observers fire on a **fixed 500 ms interval, even when nothing changed**.
+- Register observers on `system:data_sync_info` in many widgets. Each one re-reads the sync state of every connection, and Ditto's documentation describes them as firing on a fixed 500 ms interval. (In SDK 5.1.0 tests on Flutter and JavaScript, an idle observer fired only when the rows changed, about once in 10 seconds, so do not rely on either a timer or a quiet observer.)
 - Do heavy work (JSON decoding of large structures, database writes, network calls) in such an observer.
 - Register subscriptions on `system:data_sync_info`; it is local-only, so such a subscription is accepted but has no effect.
 - Expect `system:data_sync_info` on platforms with in-memory storage such as web browsers.
@@ -4178,7 +4262,7 @@ class _UploadStatusIconState extends State<UploadStatusIcon> {
   @override
   void initState() {
     super.initState();
-    // Fires every 500 ms even without changes, so keep the callback trivial.
+    // May fire often (documented as every 500 ms), so keep the callback trivial.
     _observer = widget.ditto.store.registerObserver(
       'SELECT * FROM system:data_sync_info WHERE is_ditto_server = true',
     );
@@ -4219,13 +4303,28 @@ Future<int?> submitOrder(Ditto ditto, Map<String, dynamic> order) async {
 }
 ```
 
-**Why:** `system:data_sync_info` is cheap to read, but observers on it are timer-driven. A single small observer per relevant screen is fine; dozens of observers that rebuild widgets twice per second are not. For connectivity information (which peers are nearby, whether Ditto Server is connected), use the presence API instead (see [Presence](#presence)).
+```dart
+// ✅ GOOD: An upsert may change nothing; only then is there nothing to track.
+Future<int?> saveSettings(Ditto ditto, Map<String, dynamic> settings) async {
+  final result = await ditto.store.execute(
+    'INSERT INTO settings DOCUMENTS (:settings) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
+    arguments: {'settings': settings},
+  );
+  // An unchanged document still gets a commitID, but peers confirm it only
+  // with a later commit (up to about 30 seconds later).
+  return result.mutatedDocumentIDs().isEmpty ? null : result.commitID;
+}
+```
+
+**Why:** `system:data_sync_info` is cheap to read, but Ditto documents observers on it as timer-driven. A single small observer per relevant screen is fine; dozens of observers that may rebuild widgets twice per second are not. For connectivity information (which peers are nearby, whether Ditto Server is connected), use the presence API instead (see [Presence](#presence)).
 
 ---
 
 ## Observing Changes
 
 A **store observer** is a live local query. Ditto re-runs it whenever a local write or an incoming sync changes its result, and delivers the new result to your code. Observers never cause data to sync; pair them with a subscription (see [Sync and Subscriptions](#sync-and-subscriptions)).
+
+Changes that arrive through sync are delivered in batches, not one callback per remote write. In SDK 5.1.0 tests, 20 documents written one by one on another device arrived in two callbacks, and 20 quick updates of one document arrived in two or three, ending at the latest value. A transaction from another device arrived as one callback that contained all of its documents, never a partial state. Do not use observer callbacks to count or log every remote change; intermediate states can be skipped.
 
 Flutter offers three ways to register an observer:
 
@@ -4572,7 +4671,8 @@ Facts to keep in mind:
 
 - `diff()` takes a `List<QueryResultItem>`; pass `result.items.toList()` (`items` is an `Iterable`).
 - The first call reports every item as an insertion.
-- Identity is `_id`; values are compared deeply. A value that changed and changed back between two results is not reported as an update.
+- Identity is `_id`; values are compared deeply. A value that changed and changed back between two results is not reported as an update; the observer may still deliver the unchanged result, which then produces an empty diff.
+- `moves` can list every item whose position shifted, not just the one that was moved: in tests, moving one item to the top reported three moves for a three-item list, plus an update for the moved item.
 - `Differ` keeps the previous result in memory and diffing is computationally expensive. Debounce updates for large or busy result sets, and keep diffed queries bounded (for example, with `LIMIT`).
 - `Differ` does not give you the old items. Keep the previous values (or at least their IDs) yourself.
 - `Differ` only accepts items produced by Ditto; passing test doubles throws an `ArgumentError`.
@@ -4978,7 +5078,7 @@ class TransactionTracker {
 
 ### Transactions and Sync
 
-Atomicity is guaranteed on the device that commits the transaction. For replication, the [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes two limits:
+Atomicity is guaranteed on the device that commits the transaction. In SDK 5.1.0 tests, receiving devices also applied a transaction all at once when their subscriptions (and those of every relay in between) covered all of its documents. That held for transactions of up to 10,000 documents, both directly and through a relay. Neither an observer nor a read on the receiving device ever saw part of a transaction. A device that had been offline received the backlog of several transactions as one step, so its observers saw the latest state, not each transaction. For replication, the [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes two limits, and both were confirmed in tests:
 
 - A peer whose subscriptions cover only part of a transaction's documents receives only that part. If it later broadens its subscriptions, the remaining changes arrive only when replication catches up.
 - A peer that relays changes can forward only what it has. A device connected only through a relay with narrower subscriptions may receive an incomplete transaction (see [Multi-hop relay](#multi-hop-relay)). For example, Peer 1 changes documents A and B in one transaction, Peer 2 subscribes only to A, and Peer 3 is connected only to Peer 2 but subscribes to both A and B. Peer 3 receives only the change to A, because Peer 2 never had the change to B.
@@ -5075,7 +5175,7 @@ Read the token from the document, then call `ditto.store.fetchAttachment(token, 
 |---|---|---|
 | `AttachmentFetchEventProgress` | Zero or more times | `downloadedBytes`, `totalBytes` |
 | `AttachmentFetchEventCompleted` | At most once | `attachment` (read the bytes with `await attachment.data`) |
-| `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched |
+| `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched (not observed in SDK 5.1.0 tests: when the referencing document was deleted while no peer could deliver the blob, the fetch simply stayed pending, so keep a stall timeout) |
 
 | `AttachmentFetcher` member | Meaning |
 |---|---|
@@ -5227,7 +5327,7 @@ Map<String, dynamic>? imageToken(Map<String, dynamic> photo) {
 
 ### Attachments Are Immutable
 
-Once created, an attachment's contents never change. To "edit" a file, create a new attachment and replace the token in the document. The old blob is removed by garbage collection once no document on the device references it.
+Once created, an attachment's contents never change. To "edit" a file, create a new attachment and replace the token in the document. The old blob is removed by garbage collection once no document on the device references it (in tests, on the device that replaced it and on the devices that had fetched it). An `Attachment` object your app still holds in memory also kept its blob from being collected (observed in the JavaScript SDK), so do not cache `Attachment` objects longer than you need them.
 
 ```dart
 // ✅ GOOD: Replace an attachment by creating a new one and updating the token field.
@@ -5343,7 +5443,7 @@ An attachment can only be fetched while a peer that **holds the blob** is reacha
 - A blob exists on a device only if that device created it or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) describes that Ditto Server can hold a document with an attachment token but not the blob, for example when Small Peers replicate the document among themselves without fetching the attachment.
 - An interrupted transfer resumes from where it stopped, from the same peer or from another peer that has the blob.
 - The fetch API has no "not available" event: while no peer can deliver the blob, the fetch simply makes no progress. Handle this with a timeout and a retry in the UI (see the `AttachmentImage` example).
-- Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available (for example, a product image), make sure a well-connected device or Ditto Server fetches it.
+- Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available (for example, a product image), make sure a well-connected device or Ditto Server fetches it. In SDK 5.1.0 tests with three devices in a line (A–B–C), C could not fetch a blob that only A held until B had fetched it itself. That held for 1 KB and 300 KB attachments and a 60-second wait, although B subscribed to the documents. Once B had the blob, C's fetch completed in milliseconds.
 
 **✅ DO:**
 - Show a placeholder with the attachment's metadata while the blob is unavailable.
@@ -5406,9 +5506,9 @@ DELETE FROM orders WHERE _id = :orderId
 What happens when a document is deleted:
 
 - **The values are removed.** Ditto keeps a small *tombstone* that consists of the document ID, metadata such as the deletion time, and the field names the document had at the time of deletion. All values are removed. Tombstones are internal and cannot be queried.
-- **The tombstone propagates.** Peers learn about the deletion through the tombstone. Tombstones are only shared with peers that have seen the document before it was deleted; a peer never receives a tombstone for a document it never knew about.
+- **The tombstone propagates.** Peers learn about the deletion through the tombstone. Tombstones are only shared with peers that have seen the document before it was deleted; a peer never receives a tombstone for a document it never knew about. As a consequence, in tests a device that never had the document accepted a stale copy from a device that had been offline, and passed it on, until it met a peer that held the tombstone.
 - **The document disappears locally at once.** After `DELETE`, the document no longer appears in `SELECT`, is not counted by `COUNT(*)`, and an `UPDATE` no longer matches it.
-- **The ID can be reused.** A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear.
+- **The ID can be reused.** A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear, unless another device edited the old document concurrently: in tests, such offline edits merged into the new document (see [Husk documents](#husk-documents)).
 
 **✅ DO:**
 - Target documents by ID with `WHERE _id = :id` or `WHERE _id IN :ids` (both are planned as an ID scan).
@@ -5476,7 +5576,7 @@ Consequences for your design:
 
 - **A device that is offline for longer than the TTL can resurrect deleted data.** If it reconnects after every other peer has already reaped the tombstone, nobody can tell it the document was deleted, and it shares its old copy again. This is known as "zombie data".
 - **The TTL is measured from the deleting device's clock.** A device with an inaccurate clock can make tombstones expire earlier or later than expected.
-- **Very short TTLs can make deletions fail to propagate**, because the tombstone may expire before it reaches the other peers.
+- **Very short TTLs can make deletions fail to propagate**, because the tombstone may expire before it reaches the other peers. (`TOMBSTONE_TTL_HOURS` accepts values from 1 hour; `ALTER SYSTEM` rejects 0.)
 - **Never configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) to exceed the Ditto Server TTL.** The Ditto Server always syncs documents, so a Small Peer tombstone that outlives the Ditto Server's own tombstone is sent back to the server repeatedly, which wastes resources. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
 
 If devices can legitimately stay offline longer than 7 days, you can raise `TOMBSTONE_TTL_HOURS` (staying at or below the Ditto Server TTL), or prefer a soft delete for that data. `ALTER SYSTEM` settings are not persisted, so apply them after every open (see [Applying System Parameters](#applying-system-parameters)):
@@ -5490,14 +5590,26 @@ Reaping can be expensive on devices with very many tombstones. The parameters `E
 
 #### Husk documents
 
-When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) describes the result as a *husk document*: the fields written by the update keep their new values, all other fields are `null`, and the document is **not** deleted.
+When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. The result is a *husk document*, and the document is **not** deleted. In SDK 5.1.0, the husk's shape depends on which operation was written first:
 
 ```text
 Initial:            {"_id": "abc123", "color": "red", "make": "Toyota", "year": 2020}
+
 Device A:           DELETE FROM cars WHERE _id = 'abc123'
+Device B (offline, later): UPDATE cars SET color = 'blue' WHERE _id = 'abc123'
+After merge:        {"_id": "abc123", "color": "blue"}      // make, year: MISSING
+
 Device B (offline): UPDATE cars SET color = 'blue' WHERE _id = 'abc123'
-After merge:        {"_id": "abc123", "color": "blue", "make": null, "year": null}
+Device A (later):   DELETE FROM cars WHERE _id = 'abc123'
+After merge:        {"_id": "abc123", "color": null}        // make, year: MISSING
 ```
+
+- **The document survives even when the DELETE is the later write.** In that case, the updated fields are `null` too, so the document is visible but holds no values.
+- **Fields the update did not touch are MISSING, not `null`.** `make IS NULL` is `false` and `make IS MISSING` is `true`. Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) shows them as `null`, which does not match 5.1.0.
+- Husks count in `SELECT COUNT(*)`, but a value filter such as `WHERE year >= 2000` excludes them.
+- Running the `DELETE` again after the merge removes the husk on every device.
+
+Tests with two peers produced these shapes in every trial, whichever device deleted. The test covered both orders, with 3 trials each in two runs.
 
 A related effect can occur on a single device: inserting a document with `INITIAL DOCUMENTS` for an `_id` that was previously deleted can produce a document whose fields are all `null`, because the tombstone is newer than the "initial" data (see [Default Data with INITIAL Documents](#default-data-with-initial-documents) for when this happens).
 
@@ -5507,7 +5619,7 @@ To avoid husk documents:
 2. Manage edge storage with [EVICT](#evict) and perform permanent deletion on the Ditto Server (for example through its HTTP API).
 3. Coordinate your workflow so that the same document is not deleted and updated at the same time.
 
-If husk documents are possible in your data, make your UI tolerate documents whose fields are `null`.
+If husk documents are possible in your data, make your UI tolerate documents whose fields are `null` **or missing**. To keep husks out of lists, filter on a field that every live document has, and test for both cases: `WHERE make IS NOT MISSING AND make IS NOT NULL`. `IS NOT NULL` alone is `true` for a missing field (see [MISSING and NULL](#missing-and-null)). <!-- lint-ignore -->
 
 #### Deleting on the Ditto Server
 
@@ -5610,9 +5722,10 @@ WHERE isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false
 
 #### Soft delete, subscriptions, and cleanup
 
-The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. Keep in mind:
+The deletion flag is itself a change that every device must receive. A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) stops requesting a document as soon as it is flagged. In SDK 5.1.0 tests, the update that set the flag still reached such devices, even after they had been offline. Later changes to the flagged document did not, and that includes a **restore** (`isDeleted = false`). Keep in mind:
 
 - The flagged document is **not removed** from the devices that already have it; cancelling or narrowing a subscription never deletes local data.
+- If flagged documents can be restored or edited, keep them inside the subscription; otherwise devices that hold the flagged version never see the restore.
 - A subscription filter does not hide documents in local results. Every local query and observer must filter flagged documents itself, for example with `coalesce(isDeleted, false) = false`.
 
 Therefore keep soft-deleted documents inside the subscription at least until every device has received the flag. Two subscription designs meet this requirement; they differ in how soft-deleted documents are eventually removed:
@@ -5722,7 +5835,7 @@ What eviction does and does not do:
 
 - The documents are removed from this device immediately and disappear from local queries.
 - The removal is not propagated to other peers and no tombstone is created. The documents remain on every other peer, including the Ditto Server. (Each eviction still triggers a resync with every connected peer; see the **Why** below.)
-- The same `_id` can be inserted again later without a conflict.
+- The same `_id` can be inserted again later without a conflict. The new insert is not a new document across the mesh: in tests, it merged with the copies that other peers still held, so fields from both appeared.
 - **If an active subscription on this device still matches an evicted document, connected peers notice that it is missing and sync it back.** This can turn into a loop of evicting and re-syncing.
 
 **✅ DO:**
@@ -6510,7 +6623,7 @@ The `system:` namespace contains virtual collections that describe the local dev
 | `system:active_requests` | DQL requests that are executing right now, with their plan and timings |
 | `system:request_history` | Recently completed DQL requests that matched the history qualifiers (in memory, not persisted) |
 | `system:shared_statements` | The prepared-statement cache, with per-statement execution statistics |
-| `system:metrics` | SDK metrics. Disabled by default (`METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` is `false`); when disabled, it returns a single row with `"status": "disabled"` |
+| `system:metrics` | SDK metrics. Disabled by default (`METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` is `false`); when disabled, it returns a single row with `"status": "disabled"`. The parameter takes effect only at process start: `ALTER SYSTEM` after `Ditto.open` sets it but does not enable the collection. Setting the environment variable `DITTO_METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED=true` before the process starts works (verified with the JavaScript SDK on Node.js) |
 
 `system:vitals` (query engine summary statistics) and `system:collections` (collection list) also exist.
 
@@ -6519,7 +6632,7 @@ The `system:` namespace contains virtual collections that describe the local dev
 - Project only the keys you need from `system:system_info`.
 
 **❌ DON'T:**
-- Register long-lived observers on `system:system_info`, or observers on `system:data_sync_info` in many places; such observers fire every 500 ms regardless of whether anything changed. For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](#monitoring-sync-status).
+- Register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed; 20 callbacks in 10 idle seconds in tests), or observers on `system:data_sync_info` in many places. For live sync status, use a single observer with a trivial callback, as shown in [Monitoring Sync Status](#monitoring-sync-status).
 
 #### system:system_info
 
@@ -6620,7 +6733,8 @@ Parameters most relevant to app developers:
 | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | `262144` (256 KiB) | Documents above this size log a warning | [Document Size Limits](#document-size-limits) |
 | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `5242880` (5 MiB) | Writes that make a document larger than this fail | [Document Size Limits](#document-size-limits) |
 | `PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED` (SDK 5.1+) | `true` | Certificate revocation checks for peer connections | [Certificate Revocation (SDK 5.1+)](#certificate-revocation-sdk-51) |
-| `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables the `system:metrics` virtual collection | [System Virtual Collections](#system-virtual-collections) |
+| `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables the `system:metrics` virtual collection; only at process start (environment variable `DITTO_METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED`) | [System Virtual Collections](#system-virtual-collections) |
+| `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` | `6` | Connections a device accepts over TCP (other transports were not tested); set it on a hub before `ditto.sync.start()` | [Transport Configuration](#transport-configuration) |
 | `ROTATING_LOG_FILE_MAX_SIZE_MB` / `ROTATING_LOG_FILE_MAX_AGE_H` / `ROTATING_LOG_FILE_MAX_FILES_ON_DISK` | `1` / `24` / `15` | On-disk log rotation; leave at defaults unless Ditto support advises otherwise | [On-disk logs and exporting them](#on-disk-logs-and-exporting-them) |
 
 `SHOW ALL` lists several hundred parameters. Most of them are internal tuning knobs for transports, sync, and storage. Do not change parameters that are not documented for your use case without guidance from Ditto support.
@@ -6662,7 +6776,7 @@ Ditto syncs data directly between devices, so security decisions apply to every 
 | Layer | How Ditto protects it |
 |---|---|
 | Peer identity | Each authenticated peer holds a certificate issued for its identity. With a shared key, each peer issues a self-signed certificate with the shared private key. |
-| Encryption in transit | TLS 1.3 between peers (mutual TLS) and TLS between peers and Ditto Server. **Exception:** `DittoConfigConnectSmallPeersOnly()` without a `privateKey` does not encrypt traffic in transit. |
+| Encryption in transit | TLS 1.3 between peers (mutual TLS) and TLS between peers and Ditto Server. **Exception:** `DittoConfigConnectSmallPeersOnly()` without a `privateKey` has no secret: peers do not authenticate each other, and the SDK documents the mode as unencrypted (see [Small-Peers-Only Deployments](#small-peers-only-deployments)). |
 | Authorization | Read and write permissions returned by your authentication webhook, enforced by Ditto Server and by every participating device. |
 | Revocation | Certificates issued to server-authenticated peers can be revoked centrally (SDK 5.1+). |
 | Data at rest | Not encrypted by Ditto. Rely on OS protections and application-level encryption (see [Data at Rest](#data-at-rest)). |
@@ -6694,7 +6808,8 @@ The client-side setup (expiration handler, `login`, `AuthResponse.exception`, `l
 `DittoConfigConnectSmallPeersOnly(privateKey: key)` lets devices sync without Ditto Server, for example in air-gapped or closed networks. All peers share one private key and trust any peer that holds it.
 
 **✅ DO:**
-- Always pass a `privateKey` in production. Without it, traffic is **not encrypted in transit**.
+- Always pass a `privateKey` in production. Without it, peers do not authenticate each other: any device that runs the SDK with your Database ID (and a valid offline license token) can join the mesh and read and write all data. The SDK's API documentation describes this mode as using no encryption in transit. In SDK 5.1.0 tests over TCP, the bytes were still TLS-wrapped, but with no secret involved, so treat the mode as unprotected.
+- Roll out a new key to all devices together. Peers with different keys, or a peer with a key and one without, never connect. No API reports this; only `WARN` log lines appear on every retry (`invalid peer certificate: BadSignature`, or `DecryptError`).
 - Distribute the key through a controlled channel, such as mobile device management (MDM) or secure provisioning, and keep it in secure storage on the device.
 - Generate the key with Ditto's `ditto-authtool` or OpenSSL as described in the [authentication documentation](https://docs.ditto.live/key-concepts/authentication-and-authorization).
 - Set the offline license token from Ditto with `ditto.setOfflineOnlyLicenseToken()` before `ditto.sync.start()`.
@@ -6727,8 +6842,9 @@ Future<Ditto> openProvisionedSmallPeer({
 ```
 
 ```dart
-// ❌ BAD: No privateKey means no encryption in transit, and a key in source
-// code would be visible to anyone who decompiles the app.
+// ❌ BAD: No privateKey means peers are not authenticated (and the SDK
+// documents the mode as unencrypted); a key in source code would be visible
+// to anyone who decompiles the app.
 Future<Ditto> openUnprotectedSmallPeer() {
   return Ditto.open(
     const DittoConfig(
@@ -6838,16 +6954,29 @@ See the [revocations documentation](https://docs.ditto.live/cloud/revocations) f
 
 ### Controlling Incoming Connections
 
-You can decide per connection whether to accept a peer, for example based on the signed `identityServiceMetadata`. The handler must return `allow` or `deny`. A handler that throws, or whose `Future` fails, denies the connection immediately. A handler that does not respond within about 10 seconds also denies the connection, so keep it fast.
+You can decide per connection whether to accept a peer, for example based on the signed `identityServiceMetadata`. The handler must return `allow` or `deny`. A handler that does not respond within about 10 seconds denies the connection, so keep it fast.
+
+In SDK 5.1.0 tests, the handler behaved as follows:
+- **Both directions:** despite the section title, the handler also runs for connections that this device initiates, and `deny` blocks them too.
+- **New connections only:** switching the handler to `deny` does not drop existing connections. Setting it back to `null` lets peers in again.
+- **Retries:** a denied peer retries about once per second, so the handler runs about once per second for each rejected peer. The rejected peer gets no API signal; only an error appears in its log.
+- **Errors:** a handler that throws, or whose `Future` fails, denies the connection, but only after the 10-second timeout (observed in the JavaScript SDK). Catch errors and return `deny` explicitly.
+- **Small-peers-only mode:** `identityServiceMetadata` is always empty, because there is no authentication webhook. `peerMetadata` is available, but each peer sets its own, so it is not a security check.
 
 ```dart
 // ✅ GOOD: Accept only peers whose signed metadata belongs to this store.
+// Requires DittoConfigConnectServer: identityServiceMetadata comes from your
+// authentication webhook and is empty in small-peers-only mode.
 void restrictConnectionsToStore(Ditto ditto, String storeId) {
   ditto.presence.connectionRequestHandler = (request) async {
-    final metadata = request.identityServiceMetadata;
-    return metadata['storeId'] == storeId
-        ? ConnectionRequestAuthorization.allow
-        : ConnectionRequestAuthorization.deny;
+    try {
+      final metadata = request.identityServiceMetadata;
+      return metadata['storeId'] == storeId
+          ? ConnectionRequestAuthorization.allow
+          : ConnectionRequestAuthorization.deny;
+    } catch (_) {
+      return ConnectionRequestAuthorization.deny; // decide now, not after the timeout
+    }
   };
 }
 ```
@@ -6941,13 +7070,14 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 
 ## Testing Strategies
 
-Many problems in Ditto apps come from the data model and the queries: a write that replaces a map instead of updating one entry, a soft-delete filter that hides documents without the flag, an observer that is never cancelled. These are cheap to catch in automated tests that run against a **real local Ditto store** on a single device. Multi-device behavior (concurrent edits, deletions that meet updates, multi-hop relay) needs a separate, smaller set of tests with real sync.
+Many problems in Ditto apps come from the data model and the queries: a write that replaces a map instead of updating one entry, a soft-delete filter that hides documents without the flag, an observer that is never cancelled. These are cheap to catch in automated tests that run against a **real local Ditto store** on a single device. Multi-device behavior (concurrent edits, deletions that meet updates, multi-hop relay) needs a separate, smaller set of tests with real sync; most of them can run as several Ditto instances in one test process (see [Several peers in one test process](#several-peers-in-one-test-process)).
 
 | Test layer | What it covers | Ditto instance | License or server needed |
 |---|---|---|---|
 | Unit tests with a mock | UI and business logic that only needs your repository interface | None (mock your own interface) | No |
 | Local store tests | Your DQL statements, write shapes, soft-delete filters, observer and subscription lifecycle | Real, small-peers-only, sync never started | No |
-| Multi-device tests | Concurrent edits and merges, deletion propagation, relay, attachments across peers | Real, with sync | Yes: an offline license token, or a Ditto Server test database |
+| Multi-peer tests in one process | Concurrent edits and merges, deletion propagation, relay, attachments across peers | Several real instances syncing over TCP on localhost | Yes: an offline license token |
+| Tests on real devices | Transports (Bluetooth LE, P2P Wi-Fi, LAN), permissions, Ditto Server, real clocks | Your app on devices | An offline license token, or a Ditto Server test database |
 
 **✅ DO:**
 - Keep Ditto behind a repository or service interface in your app, so widgets and business logic can be unit-tested with a mock.
@@ -7309,19 +7439,206 @@ During development, `ADVISE` (SDK 5.1+) suggests the indexes these statements ne
 
 ### Testing on Multiple Devices
 
-Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment fetching across peers can only be tested with sync running between real instances:
+Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment fetching across peers can only be tested with sync running between real Ditto instances. Most of these tests do not need several physical devices: several instances in one test process can sync with each other over TCP on localhost (see the next section).
 
-- **Small-peers-only sync** requires an **offline license token** from Ditto: `ditto.sync.start()` throws until `ditto.setOfflineOnlyLicenseToken(token)` has been called with a valid token (see [Initializing Ditto](#initializing-ditto)). Without a token, tests are limited to a single local store.
+- **Small-peers-only sync** requires an **offline license token** from Ditto: `ditto.sync.start()` throws until `ditto.setOfflineOnlyLicenseToken(token)` has been called with a valid token (see [Initializing Ditto](#initializing-ditto)). Without a token, tests are limited to a single local store. Keep the token out of source control; pass it to tests from a CI secret.
 - **Sync through Ditto Server** requires a Ditto Server database for testing. Use separate databases (apps) for development, staging, and production, or one database per developer; developers who share a database can prefix collection names to isolate their test data. There is no Ditto Server mock for CI, so run these tests against a test database.
 - **Offline scenarios**: To simulate a Ditto Server outage while keeping peer-to-peer sync, let the app authenticate first and then block the Ditto Server host at the network level; blocking it before authentication makes sync fail entirely.
 
-Scenarios worth covering on real devices:
+#### Several peers in one test process
+
+The helpers below open several small peers in one `integration_test` process and connect them over TCP on `127.0.0.1` only:
+- Each peer has its own persistence directory, and all peers share one database ID.
+- Peer-to-peer transports are disabled, so a test never connects to devices nearby.
+- `whileDisconnected` stops sync on every peer, runs the writes, and reconnects the peers. Writes made inside it are concurrent, like edits on devices that are offline at the same time. Writes made while the peers are connected reach the other peers within milliseconds and do not test a merge.
+- `waitForConvergence` waits, with a timeout, until every peer returns the same rows.
+
+The file was verified with `ditto_live` 5.1.0 and `flutter test integration_test/multipeer_test.dart -d macos --dart-define-from-file=license.json`, where `license.json` (not committed) contains `{"DITTO_LICENSE_TOKEN": "..."}`.
+
+```dart
+// integration_test/multipeer_test.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:ditto_live/ditto_live.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+
+/// Offline license token, passed with --dart-define (never commit it).
+const licenseToken = String.fromEnvironment('DITTO_LICENSE_TOKEN');
+
+/// Opens [count] peers in this process that sync with each other over TCP on
+/// localhost only: peer 0 listens, the others connect to it. A device accepts
+/// at most 6 TCP connections by default, so keep [count] at 7 or below.
+Future<List<Ditto>> openSyncedPeers(
+  int count, {
+  int port = 4041,
+  Future<void> Function(Ditto ditto)? configure,
+}) async {
+  final peers = <Ditto>[];
+  for (var i = 0; i < count; i++) {
+    final directory = await Directory.systemTemp.createTemp('ditto_peer${i}_');
+    final ditto = await Ditto.open(
+      DittoConfig(
+        // All peers must use the same database ID to sync.
+        databaseID: '00000000-0000-4000-8000-000000000002',
+        persistenceDirectory: directory.path,
+      ),
+    );
+    addTearDown(() async {
+      await ditto.close();
+      try {
+        await directory.delete(recursive: true);
+      } on FileSystemException {
+        // Best effort.
+      }
+    });
+    ditto.setOfflineOnlyLicenseToken(licenseToken);
+    ditto.updateTransportConfig((config) {
+      config.setAllPeerToPeerEnabled(false); // no Bluetooth, LAN, or AWDL
+      if (i == 0) {
+        config.listen.tcp
+          ..isEnabled = true
+          ..interfaceIP = '127.0.0.1'
+          ..port = port;
+      } else {
+        config.connect.tcpServers = {'127.0.0.1:$port'};
+      }
+    });
+    await configure?.call(ditto); // system parameters, as in the app
+    ditto.sync.start();
+    peers.add(ditto);
+  }
+  await _waitUntil(() => peers.every(_isConnected));
+  return peers;
+}
+
+bool _isConnected(Ditto ditto) => ditto.presence.graph.remotePeers.isNotEmpty;
+
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 15),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw TimeoutException('Condition not met', timeout);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+}
+
+/// Stops sync on every peer, runs [writes] while the peers are disconnected,
+/// then reconnects them, so the writes are concurrent.
+Future<void> whileDisconnected(
+  List<Ditto> peers,
+  Future<void> Function() writes,
+) async {
+  for (final peer in peers) {
+    peer.sync.stop();
+  }
+  await _waitUntil(() => peers.every((peer) => !_isConnected(peer)));
+  await writes();
+  for (final peer in peers) {
+    peer.sync.start();
+  }
+  await _waitUntil(() => peers.every(_isConnected));
+}
+
+/// Waits until [query] returns the same rows on every peer and [until] holds
+/// for them, then returns the rows.
+Future<List<Map<String, dynamic>>> waitForConvergence(
+  List<Ditto> peers,
+  String query, {
+  Map<String, dynamic> arguments = const {},
+  bool Function(List<Map<String, dynamic>> rows)? until,
+  Duration timeout = const Duration(seconds: 15),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (true) {
+    final results = <List<Map<String, dynamic>>>[];
+    for (final peer in peers) {
+      final result = await peer.store.execute(query, arguments: arguments);
+      results.add(result.items.map((item) => item.value).toList());
+    }
+    final first = jsonEncode(results.first);
+    final same = results.every((rows) => jsonEncode(rows) == first);
+    if (same && (until == null || until(results.first))) return results.first;
+    if (DateTime.now().isAfter(deadline)) {
+      throw TimeoutException('Peers did not converge: $results', timeout);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+}
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final skip = licenseToken.isEmpty ? 'Needs DITTO_LICENSE_TOKEN' : null;
+
+  test('concurrent edits of different line items both survive', () async {
+    final [tablet, phone] = await openSyncedPeers(2);
+    for (final peer in [tablet, phone]) {
+      peer.sync.registerSubscription('SELECT * FROM orders');
+    }
+    await tablet.store.execute(
+      'INSERT INTO orders DOCUMENTS (:order)',
+      arguments: {
+        'order': {
+          '_id': 'order-1',
+          'items': {
+            'item-1': {'productId': 'p1', 'quantity': 1},
+          },
+        },
+      },
+    );
+    await waitForConvergence(
+      [tablet, phone],
+      'SELECT * FROM orders',
+      until: (rows) => rows.length == 1,
+    );
+
+    // The code under test would be the app's repository functions.
+    await whileDisconnected([tablet, phone], () async {
+      await tablet.store.execute(
+        'UPDATE orders SET items.`item-1`.quantity = 3 WHERE _id = :id',
+        arguments: {'id': 'order-1'},
+      );
+      await phone.store.execute(
+        'UPDATE orders SET items.`item-2` = :item WHERE _id = :id',
+        arguments: {
+          'id': 'order-1',
+          'item': {'productId': 'p2', 'quantity': 1},
+        },
+      );
+    });
+
+    final rows = await waitForConvergence(
+      [tablet, phone],
+      'SELECT * FROM orders WHERE _id = :id',
+      arguments: {'id': 'order-1'},
+      until: (rows) => (rows.single['items'] as Map).length == 2,
+    );
+    final items = rows.single['items'] as Map;
+    expect(items['item-1']['quantity'], 3);
+    expect(items['item-2']['productId'], 'p2');
+  }, skip: skip);
+}
+```
+
+What this setup does not cover, so keep a few tests on real devices:
+- All peers share one clock. Clock skew between devices is not simulated.
+- Only TCP is exercised. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, and app lifecycle need real devices.
+- A listening peer accepts at most 6 TCP connections by default (see [Transport Configuration](#transport-configuration)). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
+
+Scenarios worth covering (with the helpers above, or on real devices):
 - Two devices edit **different fields** and the **same field** of one document while offline, then reconnect.
 - Two devices add, edit, and remove entries of the same map (and, for comparison, the same array) while offline.
 - One device deletes a document while another updates it (expect a [husk document](#husk-documents)), and the same with a soft delete.
+- A counter that one device recounts with `RESTART WITH` while another keeps incrementing it (see [RESTART](#restart)).
 - A device behind a relay with narrower subscriptions (see [Multi-hop relay](#multi-hop-relay)).
 - Attachments created offline and fetched by other peers later (see [Availability](#availability)).
-- Each transport your users rely on, including Bluetooth LE only.
+- Each transport your users rely on, including Bluetooth LE only (real devices).
 
 See the [testing guide](https://docs.ditto.live/sdk/latest/deployment/testing) for environment setup and offline simulation.
 
@@ -7337,15 +7654,17 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Arrays for line items, participants, or other lists that several devices edit (one device's change is lost) → [Arrays and Maps](#arrays-and-maps)
 - [ ] Expecting `SET obj = {...}` or `ON ID CONFLICT DO UPDATE` to remove keys that were left out → [Assigning an object merges it](#assigning-an-object-merges-it)
 - [ ] `SET stock = stock - 1` on values that several devices change instead of a `COUNTER` → [Counters](#counters)
+- [ ] `RESTART WITH` to recalibrate a counter that other devices keep changing while offline (their unsynced increments are discarded, even later ones) → [RESTART](#restart)
 - [ ] Sequential or timestamp-only document IDs (offline devices create the same ID, and the documents merge) → [Never use sequential or timestamp-only IDs](#never-use-sequential-or-timestamp-only-ids)
 - [ ] Soft-delete filters written as `isDeleted != true` or `NOT isDeleted` (documents without the flag disappear) → [Soft Delete](#soft-delete) <!-- lint-ignore -->
 - [ ] `IN (:values)` with an array parameter (matches nothing) → [Parameters and Literals](#parameters-and-literals)
-- [ ] `ANY` or `EVERY ... SATISFIES ... END` over a parameter or literal array in `WHERE`, such as `ANY s IN :statuses SATISFIES s = status END` (returns no rows in 5.1.0; use `status IN :statuses`) → [Filtering by Membership](#filtering-by-membership) <!-- lint-ignore -->
+- [ ] `ANY` or `EVERY ... SATISFIES ... END` over a parameter or literal array in `WHERE`, such as `ANY s IN :statuses SATISFIES s = status END` (returns no rows in local queries and observers in 5.1.0, although the subscription syncs the documents; use `status IN :statuses`) → [Filtering by Membership](#filtering-by-membership) <!-- lint-ignore -->
 - [ ] `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) (removes nothing in 5.1.0; use `WHERE _id IN :ids`) → [DELETE and EVICT](#delete-and-evict)
-- [ ] `DELETE` for documents that other devices may update concurrently (husk documents) → [Husk documents](#husk-documents)
+- [ ] `DELETE` for documents that other devices may update concurrently (husk documents: not deleted even when the `DELETE` is later; untouched fields become missing) → [Husk documents](#husk-documents)
 - [ ] `DELETE` when devices can stay offline longer than the tombstone TTL (deleted data comes back) → [Tombstone TTL and reaping](#tombstone-ttl-and-reaping)
 - [ ] `DELETE` used to free storage on one device (it removes the documents for every peer; use `EVICT`) → [DELETE and Tombstones](#delete-and-tombstones), [EVICT](#evict)
 - [ ] A plain `INSERT` or `ON ID CONFLICT DO UPDATE` for default data that every device creates (the second run fails with an ID conflict, or users' edits are overwritten) → [Default Data with INITIAL Documents](#default-data-with-initial-documents)
+- [ ] Different `INITIAL DOCUMENTS` content for the same `_id` across app versions (removed keys come back from old versions; IDs deleted elsewhere become documents with `null` fields) → [Default Data with INITIAL Documents](#default-data-with-initial-documents)
 - [ ] `DQL_STRICT_MODE = true` without understanding the consequences: fields written as MAP, COUNTER, or ATTACHMENT become invisible unless declared, and the SDK 5.1.0 planner does not use secondary indexes → [Strict Mode](#strict-mode)
 - [ ] Different type declarations (or none) for the same field in different statements → [Keep type declarations consistent](#keep-type-declarations-consistent)
 - [ ] Assuming `ALTER SYSTEM` settings persist (strict mode, sync scopes, and TTLs silently revert after a restart), or changing parameters such as `DQL_STRICT_MODE` after sync has started or queries and observers have run → [Applying System Parameters](#applying-system-parameters)
@@ -7355,7 +7674,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Documents that can grow toward the 5 MiB hard limit (writes fail) → [Document Size Limits](#document-size-limits)
 - [ ] Throwing inside the authentication expiration handler, including rethrowing `response.exception` → [Authentication](#authentication)
 - [ ] The development provider or development token in a production build → [Authentication in Production](#authentication-in-production)
-- [ ] `DittoConfigConnectSmallPeersOnly()` without a `privateKey` outside development and tests (no encryption in transit) → [Small-Peers-Only Deployments](#small-peers-only-deployments)
+- [ ] `DittoConfigConnectSmallPeersOnly()` without a `privateKey` outside development and tests (peers are not authenticated; documented as unencrypted) → [Small-Peers-Only Deployments](#small-peers-only-deployments)
 - [ ] Shared keys, tokens, or API keys hardcoded in the app → [Small-Peers-Only Deployments](#small-peers-only-deployments)
 - [ ] Secrets, tokens, or personal data in peer metadata or in the `identityServiceMetadata` returned by the authentication webhook (shared with every peer in the mesh) → [Presence](#presence), [Identity metadata is visible to the mesh](#identity-metadata-is-visible-to-the-mesh)
 - [ ] Revocation checking (`PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED`) disabled in production → [Certificate Revocation (SDK 5.1+)](#certificate-revocation-sdk-51)
@@ -7366,6 +7685,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] A second `Ditto.open()` on a persistence directory that is already open (in Flutter, may never complete) → [One instance per persistence directory](#one-instance-per-persistence-directory)
 - [ ] `ditto.close()` when the app moves to the background (`AppLifecycleState.paused`) (every later call on that instance throws `DittoClosedException`) → [Starting and Stopping Sync](#starting-and-stopping-sync)
 - [ ] A `TransportConfig()` built from scratch and assigned (every transport, including peer-to-peer, is disabled; use `updateTransportConfig()`) → [Transport Configuration](#transport-configuration)
+- [ ] A hub that more than six devices connect to over TCP without raising `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` before `ditto.sync.start()` (the extra devices get no data and no error) → [Transport Configuration](#transport-configuration)
 - [ ] Reading `queryArguments` or `queryArgumentsJsonString` from elements of `ditto.sync.subscriptions` for subscriptions registered without arguments (can terminate the app in 5.1.0) → [Sync stop, close, and inspection](#sync-stop-close-and-inspection)
 - [ ] Access control that relies on mutable fields, `syncGroup`, sync scopes, or client-side checks → [Permissions](#permissions), [Sync Scopes](#sync-scopes)
 
@@ -7375,7 +7695,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Flutter observers registered with `onChange` while the `changes` stream is never listened to, or `registerObserverV2` observers whose `changes` stream is not listened to right after registration (memory grows with every update in 5.1.0) → [Store Observers in Flutter](#store-observers-in-flutter)
 - [ ] Unfiltered subscriptions on large collections on every device → [Scope subscriptions to what the device needs](#scope-subscriptions-to-what-the-device-needs)
 - [ ] Re-registering subscriptions when the user changes a filter, search term, or sort order, or changing subscriptions more often than about every 15 minutes → [Filter locally instead of re-registering](#filter-locally-instead-of-re-registering), [Subscription Lifecycle](#subscription-lifecycle)
-- [ ] Projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, or `USE IDS` in subscriptions (rejected), or disabling `DQL_RESTRICT_SUBSCRIPTIONS` to use `LIMIT` and `ORDER BY` (stateful subscriptions) → [Subscription Rules](#subscription-rules)
+- [ ] Projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, or `USE IDS` in subscriptions (rejected), or disabling `DQL_RESTRICT_SUBSCRIPTIONS` to use `LIMIT` and `ORDER BY` (stateful subscriptions; `LIMIT` bounds only the initial download) → [Subscription Rules](#subscription-rules)
 - [ ] Subscription filters on mutable fields (`status`, `assignee`), or relay devices with narrower subscriptions than the devices behind them → [Multi-hop relay](#multi-hop-relay)
 - [ ] Soft-deleted documents dropped from the subscription before every device has received the flag, or evicted while the subscription still matches them → [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)
 - [ ] Evicting documents that an active subscription still matches (they sync straight back) → [EVICT](#evict)
@@ -7393,7 +7713,8 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Slow or asynchronous work inside a `registerObserver` listener → [Keep observer callbacks fast](#keep-observer-callbacks-fast)
 - [ ] Writes to the observed collection from inside its own observer without a guard (each write triggers the observer again) → [Keep observer callbacks fast](#keep-observer-callbacks-fast)
 - [ ] One observer of a whole collection that rebuilds the entire screen → [Partial UI Updates](#partial-ui-updates)
-- [ ] Observers on `system:data_sync_info` in many widgets, or long-lived observers on `system:system_info` (they fire every 500 ms, even when nothing changed) → [Monitoring Sync Status](#monitoring-sync-status), [System Virtual Collections](#system-virtual-collections)
+- [ ] Observers on `system:data_sync_info` in many widgets, or long-lived observers on `system:system_info` (it fires every 500 ms, even when nothing changed) → [Monitoring Sync Status](#monitoring-sync-status), [System Virtual Collections](#system-virtual-collections)
+- [ ] Waiting on the `commitID` of a statement that changed nothing (`mutatedDocumentIDs()` is empty; confirmation takes up to about 30 s), or `sync_session_status` used as a live connection indicator (it lags about 73 s) → [Monitoring Sync Status](#monitoring-sync-status)
 - [ ] `LogLevel.verbose` in production → [Log levels](#log-levels)
 
 ### Medium (maintainability)
@@ -7429,7 +7750,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 
 **Data modeling** ([Data Modeling](#data-modeling))
 - ✅ Update fields, not whole documents; use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts.
-- ✅ Use maps keyed by ID for items that several devices edit; use `COUNTER` for concurrent tallies.
+- ✅ Use maps keyed by ID for items that several devices edit; use `COUNTER` for concurrent tallies, and recalibrate with `RESTART WITH` only while every device that changes the counter is in sync.
 - ✅ Use UUIDs (or composite IDs with a UUID) for `_id`; put permission scopes in `_id`.
 - ✅ Keep documents well below 256 KiB; store binary data as attachments.
 - ✅ Store timestamps as UTC ISO-8601 strings with `Z` produced by one fixed-precision helper, or as epoch milliseconds.
@@ -7443,11 +7764,13 @@ A condensed summary of the main recommendations. Follow the links for the reason
 
 **Sync and observers** ([Sync and Subscriptions](#sync-and-subscriptions), [Observing Changes](#observing-changes))
 - ✅ Scope subscriptions by stable partition keys (tenant, store, user), keep them stable and owned by an app- or feature-level service, and filter UI views locally instead of re-registering.
-- ✅ Use `SELECT * FROM <collection> [WHERE ...]` for subscriptions; subscribe to every collection a JOIN reads.
+- ✅ Use `SELECT * FROM <collection> [WHERE ...]` for subscriptions; subscribe to every collection a JOIN reads. Bound what syncs with `WHERE`, not `LIMIT`.
+- ✅ On a TCP hub with more than six clients, raise `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` before `ditto.sync.start()`.
 - ✅ In Flutter, register observers without `onChange`, consume `changes`, and cancel both in `dispose()`.
 
 **Writes, deletion, and storage** ([Transactions](#transactions), [Deletion and Storage Management](#deletion-and-storage-management))
 - ✅ Keep transactions short, use only `tx.execute`, and give them a `hint`.
+- ✅ Track a `commitID` for upload progress only when `mutatedDocumentIDs()` is not empty; use presence for live connection status.
 - ✅ Prefer soft delete for shared records, keep soft-deleted documents in the subscription until every device has the flag, and target deletions with `WHERE _id IN :ids`.
 - ✅ Cancel or narrow subscriptions before `EVICT`, and evict at most about once per day.
 
@@ -7683,7 +8006,7 @@ Definitions as used in this guide. For the complete list of Ditto terms, see the
 | **EVICT** | A DQL statement that removes documents from the local store only. The removal is not propagated to other peers, and no tombstone is created. See [EVICT](#evict). |
 | **Expiration handler** | The callback registered with `ditto.auth.setExpirationHandler()` that logs the device in to Ditto Server when it needs to authenticate and when credentials are about to expire. See [Authentication](#authentication). |
 | **EXPLAIN / PROFILE** | DQL prefixes that show a statement's query plan without running it (`EXPLAIN`) or run it and report timings per step (`PROFILE`). See [EXPLAIN and PROFILE](#explain-and-profile). |
-| **Husk document** | The result of a deletion on one device merging with a concurrent update on another: the updated fields keep their values, all other fields are `null`, and the document is not deleted. See [Husk documents](#husk-documents). |
+| **Husk document** | The result of a deletion on one device merging with a concurrent update on another: the document is not deleted; the updated fields keep their values (or become `null` if the deletion was later), all other fields are missing. See [Husk documents](#husk-documents). |
 | **Hybrid Logical Clock (HLC)** | The clock Ditto uses to decide which of two concurrent register writes is the latest. |
 | **Index** | A per-device data structure that lets queries find documents without scanning the whole collection. Indexes persist, but are not synced. See [Indexing and Query Performance](#indexing-and-query-performance). |
 | **INITIAL DOCUMENTS** | An `INSERT` form for default data that every peer may create independently; existing documents are never overwritten. See [Default Data with INITIAL Documents](#default-data-with-initial-documents). |
