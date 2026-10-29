@@ -1,6 +1,6 @@
 # Ditto Cookbook
 
-Best practices, a review checklist, example code, and Claude Code Agent Skills for building offline-first applications with the [Ditto SDK](https://docs.ditto.live). Everything targets Ditto SDK 5.1. Flutter (Dart) is the primary platform, with notes for JavaScript, Swift, and Kotlin where they differ.
+Best practices, a review checklist, example code, and Claude Code Agent Skills for building offline-first applications with the [Ditto SDK](https://docs.ditto.live). Everything targets Ditto SDK 5.2. Flutter (Dart) is the primary platform, with notes for JavaScript, Swift, and Kotlin where they differ.
 
 ## Contents
 

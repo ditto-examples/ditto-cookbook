@@ -1,4 +1,4 @@
-// Subscription anti-patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// Subscription anti-patterns for Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // Every example compiles and runs, but wastes bandwidth and storage, churns
 // the mesh, or leaks subscriptions. The corrected versions are in

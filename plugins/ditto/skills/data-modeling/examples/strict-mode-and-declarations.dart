@@ -1,4 +1,4 @@
-// Ditto SDK: 5.1.0 (Flutter package ditto_live)
+// Ditto SDK: 5.2.0 (Flutter package ditto_live)
 //
 // Strict mode and type declarations
 //
@@ -97,17 +97,22 @@ Future<void> mixedDeclarations(Ditto ditto) async {
 /// for almost every object and you will declare every MAP, COUNTER, and
 /// ATTACHMENT field in every statement. Trade-offs:
 /// - Undeclared MAP/COUNTER/ATTACHMENT fields are invisible to SELECT/WHERE.
-/// - Note (SDK 5.1.0): with strict mode on, the query planner does not use
-///   secondary indexes (EXPLAIN shows a collection scan); ID lookups and
-///   full-collection COUNT(*) are not affected.
+/// - Note (SDK 5.1.0 and 5.2.0): with strict mode on, the query planner
+///   does not use secondary indexes (EXPLAIN shows a collection scan); ID
+///   lookups and full-collection COUNT(*) are not affected.
 /// - Each peer interprets data with its own setting: use the same value on
 ///   every peer.
 ///
-/// ALTER SYSTEM settings are not persisted: apply this after every
-/// Ditto.open, before ditto.sync.start(), queries, and observers.
-Future<void> applyStrictMode(Ditto ditto) async {
-  await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = true');
-}
+/// System parameters are not persisted: open Ditto with this configuration
+/// every time (SDK 5.2+), so that strict mode is in effect before any query,
+/// observer, or sync runs. On SDK 5.1, run
+/// `ALTER SYSTEM SET DQL_STRICT_MODE = true` after every Ditto.open, before
+/// ditto.sync.start(), queries, and observers.
+const strictModeConfig = DittoConfig(
+  databaseID: 'YOUR_DATABASE_ID',
+  connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
+  systemParameters: {'DQL_STRICT_MODE': true},
+);
 
 /// With strict mode on, a nested update requires a MAP declaration.
 Future<void> updateMetadataInStrictMode(

@@ -1,5 +1,5 @@
-// Handling QueryResult and QueryResultItem in Ditto SDK 5.1.0
-// (Flutter, ditto_live 5.1.0).
+// Handling QueryResult and QueryResultItem in Ditto SDK 5.2.0
+// (Flutter, ditto_live 5.2.0).
 //
 // Rules:
 // - items is an Iterable, not a List. Each pass creates new QueryResultItem

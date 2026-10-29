@@ -1,4 +1,4 @@
-// Recommended store observer patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// Recommended store observer patterns for Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // The recommended pattern registers the observer WITHOUT onChange, consumes
 // the single-subscription `changes` stream with one StreamSubscription, and

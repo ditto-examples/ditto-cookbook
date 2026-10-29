@@ -5,11 +5,11 @@ description: Ditto SDK data removal and local storage management covering DELETE
 
 # Ditto Storage Lifecycle
 
-Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings, and keeping local storage bounded. Targets Ditto SDK 5.1.0; examples are Flutter (Dart), and the DQL rules apply to every SDK.
+Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings, and keeping local storage bounded. Targets Ditto SDK 5.2.0; examples are Flutter (Dart), and the DQL rules apply to every SDK.
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
 - `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
@@ -59,14 +59,14 @@ With a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typ
 
 ### 1. Target DELETE and EVICT with WHERE (CRITICAL)
 
-> **Note (SDK 5.1.0):** `DELETE` and `EVICT` statements that use `USE IDS` without a `WHERE` predicate (no `WHERE` clause, or `WHERE true`) complete without an error but remove nothing. Use `WHERE _id IN :ids` instead; it is planned as an ID scan, so it is just as efficient.
+`WHERE _id IN :ids` is planned as an ID scan and works on every release. On SDK 5.1.0, `DELETE` and `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) complete without an error but remove nothing (`§ Known Issues in SDK 5.1.0`).
 
 **✅ DO**:
 - Target documents with `WHERE _id = :id` or `WHERE _id IN :ids`.
-- Add `RETURNING` (SDK 5.1+) when you need the removed content (undo banner, audit record). It returns the removed content from the same atomic statement; the tombstone keeps no values. Read the removed documents from `result.items` (each holds the document as it was before deletion), not from `mutatedDocumentIDs()`.
+- Add `RETURNING` (SDK 5.1+) when you need the removed content (undo banner, audit record); the tombstone keeps no values. Read it from `result.items` (each document as it was before deletion), not from `mutatedDocumentIDs()`.
 
 **❌ DON'T**:
-- Write `DELETE FROM orders USE IDS LIST :ids` or `EVICT FROM orders USE IDS 'a'`.
+- Write `DELETE FROM orders USE IDS LIST :ids` or `EVICT FROM orders USE IDS 'a'` while any device runs SDK 5.1.0.
 - Use `DELETE` to free space on one device; it removes the data for every peer.
 
 ```dart
@@ -97,13 +97,13 @@ Inspect with `SHOW ALL LIKE '%tombstone%'`.
 
 **✅ DO**:
 - Make sure every device connects within the tombstone TTL, or use a soft delete for that data.
-- If devices can legitimately stay offline longer than 7 days, raise `TOMBSTONE_TTL_HOURS` on the device, staying at or below the Ditto Server TTL (for 14 days: `ALTER SYSTEM SET TOMBSTONE_TTL_HOURS = 336`).
-- Apply `ALTER SYSTEM` settings after every `Ditto.open` and before `ditto.sync.start()`; they are not persisted.
+- If devices can legitimately stay offline longer than 7 days, raise `TOMBSTONE_TTL_HOURS` on the device, staying at or below the Ditto Server TTL (for 14 days: `DittoConfig(systemParameters: {'TOMBSTONE_TTL_HOURS': 336})`).
+- Pass system parameters in `DittoConfig.systemParameters` (SDK 5.2+) on every open; they are not persisted. On SDK 5.1, run `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()`.
 
 **❌ DON'T**:
 - Configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) above the Ditto Server TTL. The Ditto Server always syncs documents, so tombstones that outlive its copy are sent back to it repeatedly. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
 - Choose a very short TTL; the tombstone can expire before it reaches the other peers.
-- Look for a tombstone-lifetime method on the SDK: the TTL is a system parameter, set with `ALTER SYSTEM`.
+- Look for a tombstone-lifetime method on the SDK: the TTL is a system parameter.
 
 Clock skew, off-hours reaping, and what else `DELETE` leaves behind (re-insert, `INITIAL DOCUMENTS`): [reference/deletion-patterns.md](reference/deletion-patterns.md#what-delete-leaves-behind).
 
@@ -134,7 +134,7 @@ In DQL, a comparison with a missing or `null` field never passes a `WHERE` claus
 
 ### 4. Keep Soft-Deleted Documents in Subscriptions (CRITICAL)
 
-A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) still delivers the flag and a later restore for documents the device holds (SDK 5.1.0), but the device cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. Details: [reference/deletion-patterns.md](reference/deletion-patterns.md#cleaning-up-soft-deleted-documents). A subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
+A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) still delivers the flag and a later restore for documents the device holds (SDK 5.1.0), but the device cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. A subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
 
 **✅ DO**:
 - Keep soft-deleted documents in the subscriptions of devices that relay data to others, at least for as long as a device may stay offline.
@@ -244,7 +244,7 @@ DELETE:
 - [ ] Uses `RETURNING` (SDK 5.1+) when the removed content is needed
 - [ ] Not used for shared records edited concurrently (husk documents)
 - [ ] Every device connects within the tombstone TTL (7 days by default), or the data uses soft delete
-- [ ] `TOMBSTONE_TTL_HOURS` on devices never exceeds the Ditto Server TTL; applied after every `Ditto.open`
+- [ ] `TOMBSTONE_TTL_HOURS` on devices never exceeds the Ditto Server TTL; set on every open
 - [ ] Large deletions on the Ditto Server run in batches of 30,000 documents or fewer
 
 Soft delete:

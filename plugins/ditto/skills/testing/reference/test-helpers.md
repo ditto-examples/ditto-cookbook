@@ -13,7 +13,7 @@ The helper and test file skeleton from `§ A Test Helper for a Local Store` (ver
 
 - Opens a small-peers-only instance (the default `connect` mode, `DittoConfigConnectSmallPeersOnly()`) in its own temporary directory, and closes it automatically when the test ends (`addTearDown`), even when the test fails.
 - Never starts sync, so it needs no license token and no network, and can run in CI. The local store works without a license; in small-peers-only mode `ditto.sync.start()` throws without an offline license token (`§ Initializing Ditto`).
-- Takes a `configure` callback to apply the same system parameters and indexes that your app applies at startup (system parameters are not persisted; `§ Applying System Parameters`).
+- Takes the same `systemParameters` that your app passes in its `DittoConfig` (SDK 5.2+), and a `configure` callback for the indexes your app creates at startup (system parameters are not persisted; `§ Applying System Parameters`).
 - Gives every test an empty store. Never share one persistence directory between tests or open it twice; in Flutter, a second `Ditto.open()` on an open directory may never complete (`§ One instance per persistence directory`).
 - As your suite grows, move the helper into a shared file under `integration_test/`.
 
@@ -30,6 +30,7 @@ import 'package:integration_test/integration_test.dart';
 /// Opens a Ditto instance for one test. Sync is never started, so no
 /// license token or network connection is needed.
 Future<Ditto> openTestDitto({
+  Map<String, Object> systemParameters = const {},
   Future<void> Function(Ditto ditto)? configure,
 }) async {
   final directory = await Directory.systemTemp.createTemp('ditto_test_');
@@ -38,6 +39,8 @@ Future<Ditto> openTestDitto({
       // Any UUID works for local tests; each test gets its own directory.
       databaseID: '00000000-0000-4000-8000-000000000001',
       persistenceDirectory: directory.path,
+      // The same parameters as the app's DittoConfig (SDK 5.2+).
+      systemParameters: systemParameters,
     ),
   );
 
@@ -51,7 +54,7 @@ Future<Ditto> openTestDitto({
     }
   });
 
-  // Apply the app's system parameters and indexes, as at app startup.
+  // Create the app's indexes, as at app startup.
   await configure?.call(ditto);
   return ditto;
 }
@@ -62,8 +65,8 @@ void main() {
   // Every test starts with an empty store.
   late Ditto ditto;
   setUp(() async {
-    // Pass `configure:` with the setup your app runs after Ditto.open
-    // (system parameters, indexes); see "Applying System Parameters".
+    // Pass `systemParameters:` and `configure:` with the settings and
+    // indexes your app uses; see "Applying System Parameters".
     ditto = await openTestDitto();
   });
 

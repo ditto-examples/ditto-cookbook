@@ -5,11 +5,11 @@ description: Ditto SDK store observer performance and diagnostics, covering the 
 
 # Ditto Performance and Observability
 
-Keeps Ditto apps responsive and diagnosable: observers and backpressure, narrow rebuilds, redundant writes, indexes, logging, and diagnostics. Targets Ditto SDK 5.1.0; examples are Flutter (Dart).
+Keeps Ditto apps responsive and diagnosable: observers and backpressure, narrow rebuilds, redundant writes, indexes, logging, and diagnostics. Targets Ditto SDK 5.2.0; examples are Flutter (Dart).
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
 - `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
@@ -34,7 +34,6 @@ Adding a screen that shows live data:
 - [ ] Subscription exists at app or feature scope (observers do not sync data)
 - [ ] Observer registered in initState() without onChange, with ORDER BY
 - [ ] changes consumed by exactly one listener or StreamBuilder
-- [ ] Values copied into plain maps or model objects
 - [ ] Each region (badge, list, detail) has its own narrow observer
 - [ ] Stream subscription and observer cancelled in dispose()
 - [ ] Indexes for the observer's WHERE/ORDER BY created at startup
@@ -48,7 +47,7 @@ Investigating a slow query:
 - [ ] ADVISE (SDK 5.1+) for suggested indexes; add them to startup code
 - [ ] PROFILE: compare documentsIn and documentsOut of filter steps
 - [ ] Narrow the query: WHERE, projection, ORDER BY ... LIMIT
-- [ ] During development, lower DQL_SLOW_REQUEST_WARN_SECONDS (SDK 5.1+) after every open
+- [ ] During development, lower DQL_SLOW_REQUEST_WARN_SECONDS (SDK 5.1+) in DittoConfig.systemParameters
 ```
 
 ## Rules
@@ -57,7 +56,7 @@ Investigating a slow query:
 
 Register the observer **without** `onChange`, consume `changes` with exactly one `StreamSubscription` (or one mounted `StreamBuilder`), and copy plain values out of each result. The `query-sync` skill owns the full observer pattern.
 
-> **Note (SDK 5.1.0):** When an observer is registered with `onChange`, every result is **also** queued in its `changes` stream. If nothing listens to `changes`, those queued results stay in memory for the lifetime of the observer, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` stream right after registering it. If you need `onChange`, also drain the stream, for example with `observer.changes.listen((_) {})`.
+> **Note (SDK 5.1.0):** When an observer is registered with `onChange`, every result is **also** queued in its `changes` stream. If nothing listens to `changes`, those queued results stay in memory for the lifetime of the observer, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` stream right after registering it. If you need `onChange`, also drain the stream, for example with `observer.changes.listen((_) {})`. The `ditto_live` 5.2.0 source registers observers the same way.
 
 **Detection**: `onChange:` with no `.changes.listen` / `await for` on the same observer; `QueryResult` or `QueryResultItem` objects in state or caches; displayed lists without `ORDER BY`.
 
@@ -159,8 +158,6 @@ UPDATE orders SET status = :status WHERE _id = :id AND coalesce(status, :none) !
 **✅ DO**: use `DO UPDATE_LOCAL_DIFF` for upserts and re-imports; `SET` only changed fields, nested ones individually (`SET address.city = :city`); use `coalesce` in skip conditions so missing or `null` fields stay eligible; check `result.mutatedDocumentIDs().isNotEmpty` to see whether anything was written.
 **❌ DON'T**: read a document, modify it in Dart, and write the whole map back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (stale values are written back); expect `DO UPDATE` or `SET obj = {...}` to replace an object (in default strict mode they merge; remove keys with `UNSET`).
 
-**Why**: Ditto syncs changes at field level. Rewriting a whole document makes the change larger, and an unchanged field written by this device can win a merge against a real concurrent change made on another device.
-
 `§ ON ID CONFLICT`, `§ Prefer field-level updates over whole-document rewrites`, `§ Assigning an object merges it` · Examples: [examples/unnecessary-deltas-good.dart](examples/unnecessary-deltas-good.dart), [examples/unnecessary-deltas-bad.dart](examples/unnecessary-deltas-bad.dart)
 
 ### 7. Create the indexes your queries need (HIGH)
@@ -177,8 +174,8 @@ SELECT * FROM orders WHERE customerId = :customerId AND createdAt >= :since ORDE
 
 - Index scans: `=`, `IN :values`, ranges, prefix `LIKE 'abc%'`, `!=`, `IS MISSING`
 - **Collection scans**: any function applied to the field (`lower(name) = ...`, `starts_with(...)`, `coalesce(isDeleted, false) = false`), element lookups (`array_contains(tags, 'x')`), and `OR` when any branch is not indexed
-- Match the sort direction of a composite index to avoid an extra sort step
-- With `DQL_STRICT_MODE` set to `true`, the 5.1.0 planner does **not** use secondary indexes (ID lookups and full-collection `COUNT(*)` are not affected, and `ADVISE` returns no suggestions); keep the default (`false`) if you rely on indexes
+- Match the sort direction of a composite index to avoid an extra sort step. On SDK 5.1.0, keep all keys in one direction (`(customerId, createdAt)`), also for `ADVISE` suggestions: mixed `ASC`/`DESC` keys return wrong order there (`§ Known Issues in SDK 5.1.0`)
+- With `DQL_STRICT_MODE` set to `true`, the planner of SDK 5.1.0 and 5.2.0 does **not** use secondary indexes (ID lookups and full-collection `COUNT(*)` are not affected, and `ADVISE` returns no suggestions); keep the default (`false`) if you rely on indexes
 - Keep a field's type declarations consistent: only its most recently written CRDT type is indexed, so a field written as both REGISTER and MAP can return incorrect or mis-ordered index results
 
 **✅ DO**: create indexes at startup with `CREATE INDEX IF NOT EXISTS`, after `Ditto.open` and before queries and observers start; run `ADVISE` (SDK 5.1+) for important queries during development and copy the suggested statements into startup code; use `EXPLAIN` to check the access path and `PROFILE` to measure.
@@ -192,17 +189,6 @@ Index usage table, `ADVISE` helper, `EXPLAIN`/`PROFILE` output, directives, quer
 
 Every `DittoLogger` member throws `Ditto not initialized` until the SDK is initialized. Call `await Ditto.init()` first, then configure `DittoLogger`, then `Ditto.open`, so startup is logged with your settings.
 
-```dart
-import 'package:flutter/foundation.dart';
-
-// ✅ GOOD: Call before Ditto.open().
-Future<void> configureDittoLogging() async {
-  await Ditto.init(); // DittoLogger throws until Ditto is initialized.
-  DittoLogger.isEnabled = true;
-  DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;
-}
-```
-
 - `LogLevel`: `error`, `warning`, `info`, `debug`, `verbose`; default `info`. Use `warning` in production, `debug` while debugging; `verbose` can significantly slow down replication.
 - `ditto.close()` resets `DittoLogger.customLogCallback` to `null` for the whole process. Set the callback again before every `Ditto.open()` (after `Ditto.init()`), so logs emitted while Ditto opens are forwarded too.
 - `DittoLogger.exportLogs(path)` fails if the file exists or its directory does not; use a fresh, timestamped `.jsonl.gz` path. On-disk log details: [reference/optimization-patterns.md](reference/optimization-patterns.md#logging-details).
@@ -215,12 +201,12 @@ Future<void> configureDittoLogging() async {
 
 `system:` virtual collections (`system:system_info`, `system:indexes`, `system:data_sync_info`, `system:active_requests`, and others) are local, read only, and snapshot-based. Query them with `execute` when needed.
 
-**✅ DO**: for live sync status, use one observer with a trivial callback; apply diagnostic parameters (`ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10`) after every `Ditto.open`, before `ditto.sync.start()` (they are not persisted).
+**✅ DO**: for live sync status, use one observer with a trivial callback; pass diagnostic parameters in `DittoConfig.systemParameters` on every open (not persisted; on SDK 5.1, `ALTER SYSTEM` after open, before sync) and use `ALTER SYSTEM` for run-time changes such as a support session; include `system:sync_degradations` (SDK 5.2+) in diagnostics; create support bundles with `EXECUTE FUNCTION system_request_support_bundle()` (SDK 5.2+).
 **❌ DON'T**: register long-lived observers on `system:system_info`, or observers on `system:data_sync_info` in many places.
 
 Collections, sample queries, and diagnostic parameters: [reference/optimization-patterns.md](reference/optimization-patterns.md#system-virtual-collections).
 
-`§ System Virtual Collections`, `§ Monitoring Sync Status`, `§ System Parameters Reference` · Example: [examples/logging-configuration-good.dart](examples/logging-configuration-good.dart)
+`§ System Virtual Collections`, `§ Monitoring Sync Status`, `§ System Parameters Reference`, `§ Support bundles (SDK 5.2+)` · Example: [examples/logging-configuration-good.dart](examples/logging-configuration-good.dart)
 
 ## Checklist
 
@@ -229,7 +215,6 @@ Collections, sample queries, and diagnostic parameters: [reference/optimization-
 - [ ] Observers registered outside `build()`, one per region, not per item
 - [ ] `StreamSubscription.cancel()` and `observer.cancel()` in `dispose()`
 - [ ] No slow `await` inside `registerObserver` listeners
-- [ ] No writes to the observed collection from inside its own observer without a guard
 - [ ] `registerObserverV2` / `registerObserverWithSignalNext` labeled **(Experimental)**; `signalNext()` in `finally`
 - [ ] Observer result sets bounded with `WHERE` and `LIMIT`; `Differ` only on bounded results
 - [ ] `DO UPDATE_LOCAL_DIFF` for upserts; field-level `UPDATE` with `coalesce` skip conditions

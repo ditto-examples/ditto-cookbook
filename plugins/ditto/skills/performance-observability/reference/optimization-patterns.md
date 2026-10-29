@@ -1,4 +1,4 @@
-# Performance and Observability Reference (SDK 5.1.0)
+# Performance and Observability Reference (SDK 5.2.0)
 
 Detailed rules behind the [performance-observability skill](../SKILL.md). Everything here is extracted from the Ditto best practices guide; `§ <Heading>` cites a section of [../../guide/reference/ditto.md](../../guide/reference/ditto.md) (find it with Grep for the heading text) for full explanations and example output.
 
@@ -18,6 +18,7 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 - [Logging Details](#logging-details)
 - [System Virtual Collections](#system-virtual-collections)
 - [System Parameters for Diagnostics](#system-parameters-for-diagnostics)
+- [Support Bundles](#support-bundles)
 
 ---
 
@@ -38,6 +39,8 @@ Behavior:
 - With `onChange`, events emitted before the first listener attaches are buffered; listen right after registering. `registerObserverV2` starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` right away.
 - `registerObserverV2`: while the stream is paused, Ditto stops delivering after the update that arrived at the pause; on resume, that update and the latest state are delivered. Leaving an `await for` loop cancels the subscription and the observer; `ditto.close()` does not end the loop, so cancel the observer before closing.
 - `registerObserverWithSignalNext`: one result, then nothing until `signalNext()`. Do not pause or resume its stream (the SDK logs a warning).
+- Since SDK 5.2, an observer no longer re-runs its query after writes to collections it does not observe (in testing with the JavaScript SDK, 50 writes to another collection caused no re-runs), and observers hold less memory between updates, so splitting observers by collection costs less than before (`§ Query Scope and Execution`).
+- `ditto.store.observers` (SDK 5.2+) returns the uncancelled observers registered with `registerObserver` (not those from `registerObserverV2` or `registerObserverWithSignalNext`), and `ditto.store.attachmentFetchers` the active fetchers. A count that keeps growing while the user moves between screens points to an observer that is never cancelled (`§ Resource Cleanup and Shutdown`).
 - `Differ` keeps the previous result in memory, and diffing is computationally expensive; debounce updates for large or busy result sets and keep diffed queries bounded (for example, with `LIMIT`). `Differ` only accepts items produced by Ditto (test doubles throw an `ArgumentError`).
 
 Other platforms (`§ Backpressure on other platforms`):
@@ -150,7 +153,7 @@ Constraints (`§ Creating Indexes`, `§ Strict mode and data types`):
 - Expression, partial, and functional indexes are not supported.
 - `IF NOT EXISTS` checks only the index **name**; to change a definition, create it under a new name or drop and recreate it.
 - `DROP INDEX` requires `ON <collection>`.
-- With `DQL_STRICT_MODE` set to `true`, the SDK 5.1.0 planner uses no secondary indexes; queries that would use an index scan fall back to a collection scan. ID lookups and full-collection `COUNT(*)` are not affected, and `ADVISE` returns no suggestions.
+- With `DQL_STRICT_MODE` set to `true`, the planner of SDK 5.1.0 and 5.2.0 uses no secondary indexes; queries that would use an index scan fall back to a collection scan. ID lookups and full-collection `COUNT(*)` are not affected, and `ADVISE` returns no suggestions.
 - Only the most recently written CRDT type of a field is indexed. If the same field is written with different type declarations (for example `REGISTER` and `MAP`), an index on it can return incorrect or mis-ordered results; keep type declarations consistent, and do not index fields written with more than one type.
 
 ```sql
@@ -169,6 +172,7 @@ SELECT * FROM system:indexes WHERE collection = :collection
 
 - Put **equality** fields first, then the **range** or **sort** field.
 - Match the **sort direction**: with an index on `(status, total DESC)`, `WHERE status = 'open' ORDER BY total DESC` uses the index without a separate sort, while `ORDER BY total ASC` needs an extra sort step.
+- On SDK 5.1.0, do not mix `ASC` and `DESC` keys in one index: such an index skips the sort but returns the results in the wrong order, and with `LIMIT` the wrong documents. Use `(status, total)` there and accept the extra sort step. Also on 5.1.0, an indexed query that projects fields and sorts by one of them can return the rows in the wrong order (use `SELECT *` or sort in your code), and a comparison with the constant on the left (`1 < a`) can return wrong results through an index (write `a > 1`). See `§ Known Issues in SDK 5.1.0`.
 - Queries that do not constrain the leading field benefit less.
 - When a query projects only indexed fields (plus `_id`), `EXPLAIN` shows `"covering": true` and no `fetch` step.
 
@@ -188,6 +192,7 @@ SELECT _id, status FROM orders WHERE status = :status
 - `ADVISE <statement>` plans but does not execute; available on Small Peers for `SELECT`, `UPDATE`, `DELETE`, `EVICT`, and `INSERT ... SELECT`.
 - The result row has `advice.suggestedIndexes` (each with `collection`, `reason`, `statement`), `advice.existingIndexes` when related indexes exist, and `advice.outcome` when there is nothing to suggest (for example `optimal indexes already exist`, `no advice available for statement`, or `no keys to advise on` when every condition applies a function to the field).
 - `ADVISE AND PROVISION` also creates the suggested indexes (`createdIndexes`, `failedIndexes`). Keep it out of production code paths.
+- For the statement below, SDK 5.1.0 and 5.2.0 suggest the same index, `(isDeleted ASC, status ASC, createdAt DESC)`, which mixes `ASC` and `DESC` keys. On 5.1.0, do not create such a suggestion as given: indexes that mix directions return the results in the wrong order there (`§ Known Issues in SDK 5.1.0`).
 
 ```sql
 ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false ORDER BY createdAt DESC
@@ -304,7 +309,7 @@ ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10
 ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS = 30
 ```
 
-System parameters are not persisted: apply them after every `Ditto.open`, before `ditto.sync.start()`. Before enabling a timeout in production, handle the resulting error for every query.
+`ALTER SYSTEM` changes these values while the app runs, for example when support asks for slow-request warnings on a device in the field. System parameters are not persisted: for settings the app always needs, pass them in `DittoConfig.systemParameters` on every open (SDK 5.2+; on SDK 5.1, `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()`). Before enabling a timeout in production, handle the resulting error for every query.
 
 On native platforms, `ditto.store.execute` runs on a long-lived worker isolate per `Ditto` instance, so a slow query does not block the UI isolate. `Store.experimentalSkipExecuteIsolateOffload` **(Experimental)** runs `execute` inline on the calling isolate; any slow query then blocks that isolate (usually the UI). Use it only after measuring a real throughput problem with many very small queries.
 
@@ -374,7 +379,7 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 
 **Guide**: `§ System Virtual Collections`, `§ Request diagnostics`
 
-Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire every 500 ms regardless of whether anything changed), or observers on `system:data_sync_info` in many places (documented as firing every 500 ms; with SDK 5.1.0 an idle observer fired only when the rows changed, so do not rely on either behavior). For live sync status, use a single observer with a trivial callback, as shown in `§ Monitoring Sync Status`.
+Local only, read only, and snapshot-based. Query them with `execute`; do not register long-lived observers on `system:system_info` (they fire often even when nothing changed: every 500 ms in SDK 5.1.0, and in testing with 5.2.0 about twice per second, mostly with identical results), or observers on `system:data_sync_info` in many places (with SDK 5.1.0 an idle observer fired only when the rows changed; older Ditto documentation described a 500 ms interval, so do not rely on either behavior). For live sync status, use a single observer with a trivial callback, as shown in `§ Monitoring Sync Status`.
 
 | Collection | Purpose |
 |---|---|
@@ -384,7 +389,9 @@ Local only, read only, and snapshot-based. Query them with `execute`; do not reg
 | `system:active_requests` | DQL requests executing now |
 | `system:request_history` | Recently completed requests matching the history qualifiers (in memory) |
 | `system:shared_statements` | Prepared-statement cache with execution statistics |
-| `system:metrics` | SDK metrics; disabled by default, and can be enabled only at process start (see the parameter below) |
+| `system:metrics` | SDK metrics; disabled by default, and enabled only at startup (see the parameter below). SDK 5.2 adds query metrics (`ditto.query.requests`, `ditto.query.failed`, `ditto.query.execution_time`), `ditto.store.observer.retained_bytes`, `ditto.store.database.sync_degraded_document_count`, SQLite WAL values, and transport counters |
+| `system:sync_degradations` (SDK 5.2+) | Documents whose sync is degraded on this device, with the reason (currently `documentTooBig`, see `§ Document Size Limits`). Include it in diagnostics so that a document that stopped syncing is found before a user reports it |
+| `system:support_bundles` (SDK 5.2+) | Support bundles stored on this device (see [Support Bundles](#support-bundles)) |
 
 ```sql
 SELECT key, value FROM system:system_info WHERE namespace = 'logs'
@@ -392,7 +399,14 @@ SELECT key, value FROM system:system_info WHERE namespace = 'logs'
 SELECT key, value FROM system:system_info WHERE key LIKE 'non_default_system_parameter%'
 
 SELECT _id, text, state, times FROM system:active_requests
+
+SELECT * FROM system:sync_degradations
+
+-- SQLite write-ahead log (SDK 5.2+): wal_current_size_bytes, wal_peak_size_bytes, ...
+SELECT key, value FROM system:system_info WHERE namespace = 'backend_sqlite3'
 ```
+
+The last query reads the WAL values. Since SDK 5.2, Small Peers keep the WAL in check and reclaim free disk space automatically, and Ditto logs a warning when the WAL grows past `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (1 GiB by default); the usual cause is a read transaction that stays open for a long time (`§ Monitoring Storage`).
 
 ---
 
@@ -402,12 +416,14 @@ SELECT _id, text, state, times FROM system:active_requests
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| `DQL_STRICT_MODE` | `false` | When `true`, the 5.1.0 planner uses no secondary index scans |
+| `DQL_STRICT_MODE` | `false` | When `true`, the planner (5.1.0 and 5.2.0) uses no secondary index scans |
 | `DQL_SLOW_REQUEST_WARN_SECONDS` (SDK 5.1+) | `60` | Slow-request warning threshold; `0` disables |
 | `DQL_REQUEST_TIMEOUT_SECONDS` (SDK 5.1+) | `0` | Request timeout; `0` disables |
-| `DQL_REQUEST_HISTORY_SIZE` | `4096` | Entries kept in `system:request_history` |
+| `DQL_REQUEST_HISTORY_SIZE` | `128` (`4096` in 5.1) | Entries kept in `system:request_history`; set it explicitly if your diagnostics read more of the history |
 | `DQL_DEFAULT_DIRECTIVES` | `{}` | Default directives for every statement |
-| `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables `system:metrics`, only at process start: `ALTER SYSTEM` after `Ditto.open` has no effect; the environment variable `DITTO_METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED=true` works (verified on Node.js) |
+| `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED` | `false` | Enables `system:metrics`; read only at startup, so `ALTER SYSTEM` after `Ditto.open` has no effect. Pass it in `DittoConfig.systemParameters` (SDK 5.2+) or set the environment variable `DITTO_METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED=true` before the process starts (both verified with the JavaScript SDK on Node.js). Once enabled, it stays enabled for every `Ditto` instance in the process |
+| `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (SDK 5.2+) | `1073741824` (1 GiB) | WAL size above which Ditto logs a warning |
+| `SUPPORT_BUNDLE_REQUEST_RATE` / `SUPPORT_BUNDLE_REQUEST_TIMEOUT` / `SUPPORT_BUNDLE_RETENTION_LIMIT` (SDK 5.2+) | `3` / `30` / `10` | Support bundle requests per rolling 10 minutes (`0` turns bundles off), seconds per bundle, and bundles kept |
 
 ```sql
 SHOW ALL LIKE 'dql_slow%'
@@ -415,4 +431,20 @@ SHOW ALL LIKE 'dql_slow%'
 ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
 ```
 
-Settings are not persisted; apply them after every `Ditto.open`, before `ditto.sync.start()` (`§ Applying System Parameters`).
+Settings are not persisted. Pass the ones your app always needs in `DittoConfig.systemParameters` on every open (SDK 5.2+), and use `ALTER SYSTEM` for changes while the app runs; on SDK 5.1, run `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()` (`§ Applying System Parameters`, `§ Applying parameters at startup`). Example: `appSystemParameters` and `logNonDefaultParameters` in [logging-configuration-good.dart](../examples/logging-configuration-good.dart).
+
+---
+
+## Support Bundles
+
+**Guide**: `§ Support bundles (SDK 5.2+)`
+
+A support bundle packages the device's on-disk logs, its effective configuration, and runtime telemetry into one `tar` archive for Ditto support. Since SDK 5.2, the app can create one on the device with DQL, without a connection to Ditto Server (native platforms only, not the Web), for example from an admin screen or a "Send diagnostics" button:
+
+```sql
+EXECUTE FUNCTION system_request_support_bundle({'metadata': {'requested_by': 'support'}})
+
+SELECT * FROM system:support_bundles ORDER BY _id.created_at DESC
+```
+
+The function returns one document with `_id` (the peer key and the capture time), `reason` (`USER_INITIATED`), and `file`, an attachment token for the archive; fetch it with `fetchAttachment()` (Dart: `saveSupportBundle` in [logging-configuration-good.dart](../examples/logging-configuration-good.dart)). A request over `SUPPORT_BUNDLE_REQUEST_RATE` fails with `support bundle request rate exceeded`, and the count survives restarts. The log export contains the full peer keys of other devices and absolute file paths on the device: review a bundle before you share it beyond Ditto support. Bundles stay on the device until the app fetches and shares them.

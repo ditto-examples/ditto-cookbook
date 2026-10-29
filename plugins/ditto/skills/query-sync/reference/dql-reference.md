@@ -1,4 +1,4 @@
-# DQL Reference for Queries and Writes (SDK 5.1)
+# DQL Reference for Queries and Writes (SDK 5.2)
 
 Detailed rules behind the patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections `§ DQL Fundamentals`, `§ Reading Data with SELECT`, and `§ Writing Data`.
 
@@ -91,7 +91,7 @@ Related behavior:
 | Array field contains a value | `:tag IN tags` / `array_contains(tags, :tag)` | ✅ No index |
 | Array parameter in parentheses | `status IN (:statuses)` | ❌ Matches nothing |
 
-> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`). The bug (new in 5.1.0) affects local queries and observers; a subscription with the same predicate syncs correctly.
+> **Note (SDK 5.1.0 and 5.2.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`). The bug (new in 5.1.0, not fixed in 5.2.0) affects local queries and observers; a subscription with the same predicate syncs correctly. `ANY` and `EVERY` over a document's own array field work in `WHERE`; on SDK 5.1.0, only when the condition checks a single property (a condition on several properties of an element matches every document; see `§ Known Issues in SDK 5.1.0`).
 
 | `USE IDS` form | Behavior |
 |---|---|
@@ -106,7 +106,7 @@ SELECT * FROM orders USE IDS 'order-1', 'order-2'
 SELECT * FROM orders USE IDS LIST :ids
 ```
 
-`WHERE _id = :id` and `WHERE _id IN :ids` are also planned as direct ID lookups and are the simplest choice. For `DELETE` and `EVICT`, always use the `WHERE` form.
+`WHERE _id = :id` and `WHERE _id IN :ids` are also planned as direct ID lookups and are the simplest choice. For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing.
 
 ## Projections, DISTINCT, and Aggregates
 
@@ -294,6 +294,6 @@ DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
 | `DELETE FROM c WHERE ...` | Deletes on all peers; leaves a tombstone that syncs the deletion |
 | `EVICT FROM c WHERE ...` | Removes from this device only; can sync back while a matching subscription is active |
 
-> **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
+To select documents by ID, use `WHERE _id = :id` or `WHERE _id IN :ids`; it is planned as an ID lookup and works on every release. On SDK 5.1.0, `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing (`§ Known Issues in SDK 5.1.0`).
 
 Choosing between them, soft delete, and tombstones: `§ Deletion and Storage Management`.

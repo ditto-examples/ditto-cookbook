@@ -1,6 +1,6 @@
-# Flutter Code for Transactions and Attachments (SDK 5.1.0)
+# Flutter Code for Transactions and Attachments (SDK 5.2.0)
 
-Complete Flutter (`ditto_live` 5.1.0) versions of the snippets that [SKILL.md](../SKILL.md) shortens. The rule numbers match SKILL.md. `utcTimestamp()` stands for a fixed-precision timestamp helper (`§ Timestamps` in `../guide/reference/ditto.md`). For widget-level code, see the [examples](../examples/).
+Complete Flutter (`ditto_live` 5.2.0) versions of the snippets that [SKILL.md](../SKILL.md) shortens. The rule numbers match SKILL.md. `utcTimestamp()` stands for a fixed-precision timestamp helper (`§ Timestamps` in `../guide/reference/ditto.md`). For widget-level code, see the [examples](../examples/).
 
 ## Table of Contents
 

@@ -1,6 +1,6 @@
-// SDK Version: Ditto SDK 5.1.0 (ditto_live 5.1.0)
+// SDK Version: Ditto SDK 5.2.0 (ditto_live 5.2.0)
 // Platform: Flutter (DQL applies to all platforms)
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // ============================================================================
 // Unnecessary Writes (Anti-Patterns)

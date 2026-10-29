@@ -1,6 +1,6 @@
-// SDK Version: Ditto SDK 5.1.0 (ditto_live 5.1.0)
+// SDK Version: Ditto SDK 5.2.0 (ditto_live 5.2.0)
 // Platform: Flutter (DQL applies to all platforms)
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // ============================================================================
 // Indexing and Query Performance
@@ -51,6 +51,9 @@ Future<void> ensureIndexes(Ditto ditto) async {
 
   try {
     // Composite index (SDK 5.1+): equality field first, then range/sort field.
+    // On SDK 5.1.0, keep all keys in one direction, for example
+    // (status, createdAt): indexes that mix ASC and DESC keys return results
+    // in the wrong order there (§ Known Issues in SDK 5.1.0).
     await ditto.store.execute(
       'CREATE INDEX IF NOT EXISTS idx_orders_status_createdAt '
       'ON orders (status, createdAt DESC)',

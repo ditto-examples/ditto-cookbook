@@ -76,13 +76,13 @@ The checklist is customer-facing. Keep the text short and concrete in both langu
 
 - One idea per sentence. Split long sentences instead of stacking clauses and parentheticals.
 - "What this means" starts with the action to take. "Why this matters" starts with what goes wrong, then explains why.
-- Keep every fact, number, and marker that qualifies a statement: "(SDK 5.1.0)", "SDK 5.1+", and "In our testing with SDK 5.1.0".
+- Keep every fact, number, and marker that qualifies a statement: "(SDK 5.1.0)", "(SDK 5.1.0 and 5.2.0)", "SDK 5.1+", and "In our testing with SDK 5.1.0".
 
 Conventions for the Japanese text:
 
 - Write natural technical Japanese (です・ます in paragraphs, plain form such as 「〜する」 in list items and titles), not a word-for-word translation.
 - Keep product and DQL terms such as Ditto Server, Small Peer, CRDT, REGISTER, MISSING, attachment, sync scope, and tombstone in English.
-- Write "in our testing" as 「テストでは」 and keep the "(SDK 5.1.0)" markers.
+- Write "in our testing" as 「テストでは」 and keep the "(SDK 5.1.0)" and "(SDK 5.1.0 and 5.2.0)" markers.
 - Put a half-width space around `<code>` elements and around code identifiers in titles (「ditto.sync.start() より前に」). Do not put a space between Japanese and other Latin words or numbers (「SDKのバージョン」).
 - Label code comments 「良い例」 / 「悪い例」.
 
@@ -153,4 +153,4 @@ The page stores two `localStorage` entries: `ditto-checklist-state-v2` (the IDs 
 
 ---
 
-**Last Updated**: 2026-10-09
+**Last Updated**: 2026-10-30

@@ -1,4 +1,4 @@
-// Observer backpressure in Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// Observer backpressure in Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // registerObserver (stable) has no backpressure: results are delivered as soon
 // as they are ready, even while an async listener is still busy. For slow or

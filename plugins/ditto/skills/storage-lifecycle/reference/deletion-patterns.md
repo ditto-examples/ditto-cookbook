@@ -23,7 +23,7 @@ Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The autho
 - A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear, unless another device edited the old document concurrently (those edits merge into the new document). Re-inserting an *evicted* `_id` merges with the copies other peers still hold.
 - Inserting with `INITIAL DOCUMENTS` for an `_id` that was previously deleted on this device does not bring the document back: the deletion wins. If the seed is identical to the `INITIAL` insert that created the document, the document stays deleted; if the content differs, or the document was originally created with a regular `INSERT`, a document remains whose fields are all `null`. The same applies when the deletion came from another device, and the `null` document then appears on every device (SDK 5.1.0).
 - The tombstone TTL is measured from the deleting device's clock, so inaccurate clocks make tombstones expire earlier or later than expected.
-- Scheduling reaping during off-hours (`ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING`, `REAPER_PREFERRED_HOUR`) requires environment variables set before Ditto starts and is not supported on WASM-based platforms; contact Ditto support before relying on it.
+- Scheduling reaping during off-hours (`ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING`, `REAPER_PREFERRED_HOUR`): Ditto reads these parameters only at startup, so `ALTER SYSTEM` accepts new values but does not apply them. Set them through environment variables before the process starts, or (SDK 5.2+) in `DittoConfig.systemParameters`, which the release notes describe as the way to set startup-only parameters (the effect on reaping is not verified). WASM-based platforms do not support them; contact Ditto support before relying on them.
 
 Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md rule 2](../SKILL.md#2-respect-the-tombstone-ttl-critical) and `§ Tombstone TTL and reaping`.
 
@@ -252,6 +252,13 @@ Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
 }
 ```
 
-**❌ DON'T** register a long-lived observer on `system:system_info`: such observers run every 500 ms regardless of whether anything changed.
+**SQLite write-ahead log (SDK 5.2+)**: Small Peers keep the WAL in check and reclaim free disk space automatically (`BACKEND_SQLITE3_ENABLE_WAL_SIZE_MONITOR` and `BACKEND_SQLITE3_ENABLE_INCREMENTAL_VACUUM_RECLAIM`, both on by default). Ditto logs a warning when the WAL grows past `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (1 GiB by default); the usual cause is a read transaction that stays open for a long time. Read the current values on demand:
+
+```sql
+-- wal_current_size_bytes, wal_peak_size_bytes, checkpoint_busy_percent, auto_vacuum
+SELECT key, value FROM system:system_info WHERE namespace = 'backend_sqlite3'
+```
+
+**❌ DON'T** register a long-lived observer on `system:system_info`: it fires often even when nothing changed (every 500 ms in SDK 5.1.0; in testing with 5.2.0, about twice per second, mostly with identical results).
 
 Guide: `§ Monitoring Storage`

@@ -1,4 +1,4 @@
-// Ditto SDK: 5.1.0 (Flutter package ditto_live)
+// Ditto SDK: 5.2.0 (Flutter package ditto_live)
 //
 // Field-level updates and MAP merge semantics (default DQL_STRICT_MODE = false)
 //

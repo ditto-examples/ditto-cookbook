@@ -1,4 +1,4 @@
-// Diffing observer results with Differ in Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// Diffing observer results with Differ in Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // An observer delivers the complete result every time. Differ compares
 // successive results by _id and reports index sets:

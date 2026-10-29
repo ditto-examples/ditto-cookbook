@@ -1,4 +1,4 @@
-// Store observer anti-patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// Store observer anti-patterns for Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // Every example compiles, but leaks memory, never cleans up, throws at
 // runtime, or rebuilds far more UI than needed. The corrected versions are in

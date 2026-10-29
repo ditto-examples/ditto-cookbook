@@ -46,7 +46,7 @@ You don't need to explicitly invoke Skills - Claude uses them when relevant.
 
 ### Platform Detection
 
-Each Ditto Skill starts with a "Before You Apply" step: Claude checks the project's platform and Ditto SDK version (`pubspec.lock`, `package-lock.json`, `Package.resolved`, Gradle files). The examples are Flutter (Dart); for JavaScript, Swift, and Kotlin, the Skills point to the platform differences in the guide. Behavior marked **Note (SDK 5.1.0)** is verified before it is applied to another SDK version.
+Each Ditto Skill starts with a "Before You Apply" step: Claude checks the project's platform and Ditto SDK version (`pubspec.lock`, `package-lock.json`, `Package.resolved`, Gradle files). The examples are Flutter (Dart); for JavaScript, Swift, and Kotlin, the Skills point to the platform differences in the guide. A **Note (SDK ...)** names the releases on which the behavior was observed, and is verified before it is applied to another SDK version.
 
 ## Skill Structure
 

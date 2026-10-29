@@ -1,10 +1,13 @@
-// Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Attachment fetch timeouts
+// Ditto SDK 5.2 (Flutter, ditto_live 5.2.0): Attachment fetch timeouts
 //
 // Guides: § Fetching Attachments
 //         § Availability
 //
 // Ditto has no fetch timeout and no "not available" event. While no
 // reachable peer can deliver the blob, the fetch simply makes no progress.
+// (According to the 5.2.0 release notes, a fetch of an attachment that no
+// document references anymore now ends with AttachmentFetchEventDeleted
+// instead of retrying forever; keep the stall timeout on every release.)
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Stall timeout: restart a timer on every progress event

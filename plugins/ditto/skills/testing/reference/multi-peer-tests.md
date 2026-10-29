@@ -1,6 +1,6 @@
 # Multi-Peer Sync Tests
 
-Testing concurrent edits, merges, deletion propagation, relay, and attachments across peers, from `§ Testing on Multiple Devices` and `§ Several peers in one test process`. The test file was verified with `ditto_live` 5.1.0.
+Testing concurrent edits, merges, deletion propagation, relay, and attachments across peers, from `§ Testing on Multiple Devices` and `§ Several peers in one test process`. The test file was verified with `ditto_live` 5.1.0 and has not yet been run with 5.2.0.
 
 ## Contents
 
@@ -81,7 +81,9 @@ Future<List<Ditto>> openSyncedPeers(
         config.connect.tcpServers = {'127.0.0.1:$port'};
       }
     });
-    await configure?.call(ditto); // system parameters, as in the app
+    // App setup after open, such as indexes. On SDK 5.2+, pass system
+    // parameters in the DittoConfig above instead.
+    await configure?.call(ditto);
     ditto.sync.start();
     peers.add(ditto);
   }
@@ -206,7 +208,7 @@ void main() {
 Keep a few tests on real devices for these:
 - All peers share one clock. Clock skew between devices is not simulated.
 - Only TCP is exercised. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, and app lifecycle need real devices.
-- A listening peer accepts at most 6 TCP connections by default (`§ Transport Configuration`). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
+- A listening peer accepts at most 6 TCP connections by default (observed with 5.1.0; 5.2.0 counts accepted and outgoing connections together, see `§ Transport Configuration`). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
 
 ## Scenarios worth covering
 

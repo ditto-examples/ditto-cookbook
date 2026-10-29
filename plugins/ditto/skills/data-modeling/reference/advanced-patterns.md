@@ -1,6 +1,6 @@
 # Data Modeling Advanced Patterns
 
-Less frequent patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`. The source of truth is `§ Data Modeling` in the full guide (`../../guide/reference/ditto.md`).
+Less frequent patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.2.0 with the default `DQL_STRICT_MODE = false`. The source of truth is `§ Data Modeling` in the full guide (`../../guide/reference/ditto.md`).
 
 ## Table of Contents
 

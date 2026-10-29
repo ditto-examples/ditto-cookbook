@@ -1,4 +1,4 @@
-# Query Optimization (SDK 5.1)
+# Query Optimization (SDK 5.2)
 
 How to keep local queries and observers fast. Extracted from the guide sections `§ Working with Query Results`, `§ Reading Data with SELECT`, and `§ Indexing and Query Performance`. Index creation, `ADVISE`, `EXPLAIN`, and `PROFILE` are covered in the performance-observability skill.
 
@@ -118,12 +118,12 @@ The planner chooses indexes by rules, not data statistics. `EXPLAIN` shows these
 
 - Index the full nested path you filter on (`address.city`).
 - Keep type declarations consistent: only the most recently written CRDT type of a field is indexed, so a field written with different declarations (for example once as `REGISTER` and once as `MAP`) can give incorrect or mis-ordered index results. Do not index fields that are written with more than one type.
-- With `DQL_STRICT_MODE = true`, the SDK 5.1.0 planner does not use secondary indexes (queries fall back to a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default (`false`) if you rely on indexes.
+- With `DQL_STRICT_MODE = true`, the planner of SDK 5.1.0 and 5.2.0 does not use secondary indexes (queries fall back to a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default (`false`) if you rely on indexes.
 - In-memory stores (Flutter Web) do not support indexes.
 
 ## Composite Indexes and Covering Scans
 
-Composite indexes (SDK 5.1+): put equality fields first and the range or sort field last, and match the sort direction.
+Composite indexes (SDK 5.1+): put equality fields first and the range or sort field last, and match the sort direction. On SDK 5.1.0, keep all keys of an index in one direction: with an index that mixes `ASC` and `DESC` keys, such as the one below, 5.1.0 returns the results in the wrong order (and the wrong documents with `LIMIT`). Use `(customerId, createdAt)` there and accept the extra sort step (`§ Known Issues in SDK 5.1.0`).
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_orders_customer_createdAt ON orders (customerId, createdAt DESC)
@@ -141,6 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)
 
 SELECT _id, status FROM orders WHERE status = :status
 ```
+
+On SDK 5.1.0, an indexed query that projects fields and sorts by one of them can return the rows in the wrong order; use `SELECT *` for sorted queries that use an index there, or sort in your code. Other planner issues of 5.1.0 that 5.2.0 fixes: a comparison with the constant on the left (`1 < a`) can return wrong results through an index, so write the field on the left (`a > 1`); and long `AND` or `OR` chains in `WHERE` can crash the app, so use `IN :values` for long lists of alternatives. See `§ Known Issues in SDK 5.1.0`.
 
 Create indexes once at startup with `CREATE INDEX IF NOT EXISTS`; indexes persist and are local to each device. See `§ Creating Indexes` and `§ Index Usage Rules`.
 

@@ -1,4 +1,4 @@
-// Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Attachments are immutable
+// Ditto SDK 5.2 (Flutter, ditto_live 5.2.0): Attachments are immutable
 //
 // Guide: § Attachments Are Immutable
 //

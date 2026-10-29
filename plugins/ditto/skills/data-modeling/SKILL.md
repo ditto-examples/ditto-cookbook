@@ -5,11 +5,11 @@ description: Designs CRDT-safe Ditto documents, covering merge behavior, maps vs
 
 # Ditto Data Modeling
 
-How to shape Ditto documents so concurrent offline edits merge correctly. Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`; examples are Flutter (Dart), and the rules are the same on every platform.
+How to shape Ditto documents so concurrent offline edits merge correctly. Targets Ditto SDK 5.2.0 with the default `DQL_STRICT_MODE = false`; examples are Flutter (Dart), and the rules are the same on every platform.
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
 - `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
@@ -73,7 +73,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 
 **❌ DON'T**:
 - Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out, or clear a map with `SET obj = {}` or by assigning a scalar.
-- Write back a stale in-memory copy with `DO UPDATE` (rewrites every supplied field) or `DO UPDATE_LOCAL_DIFF` (writes every field that differs locally, including an old value another device already changed). Either overrides a concurrent change.
+- Write back a stale in-memory copy with `DO UPDATE` (every supplied field) or `DO UPDATE_LOCAL_DIFF` (every field that differs locally, including old values): either overrides a concurrent change.
 
 `§ CRDT Types and Merge Behavior`, `§ Local write semantics you must know`, `§ Document Structure` · Example: [examples/field-level-updates.dart](examples/field-level-updates.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, replacing an object, `UNSET` metadata)
 
@@ -114,9 +114,9 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 | `SELECT` / `WHERE` on undeclared MAP / COUNTER / ATTACHMENT fields | Visible | **Invisible** |
 | Secondary index use | Used | Not used (see the note) |
 
-**Note (SDK 5.1.0)**: with `DQL_STRICT_MODE = true` the planner does not use secondary indexes (`EXPLAIN` shows a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default if you rely on indexes.
+**Note (SDK 5.1.0 and 5.2.0)**: with `DQL_STRICT_MODE = true` the planner does not use secondary indexes (`EXPLAIN` shows a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default if you rely on indexes.
 
-Choose `true` only when nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. `ALTER SYSTEM` is not persisted: apply it after every `Ditto.open`, before `ditto.sync.start()`, queries, and observers, with the same value on every peer (each peer interprets synced data with its own setting).
+Choose `true` only when nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. Set it on every open in `DittoConfig.systemParameters` (SDK 5.2+; on 5.1, `ALTER SYSTEM` after `Ditto.open`, before sync, queries, and observers), with the same value on every peer (each peer interprets synced data with its own setting).
 
 **✅ DO**: for a few replace-as-a-whole objects, keep the default and declare `REGISTER` **in every statement** on the field, reads included: `UPDATE COLLECTION customers (shippingAddress REGISTER) SET shippingAddress = :address WHERE _id = :id` and `SELECT * FROM COLLECTION customers (shippingAddress REGISTER) WHERE _id = :id`. Keep the statements in one repository class.
 
@@ -177,7 +177,7 @@ Embed sub-entities as maps keyed by ID. `JOIN` **(SDK 5.1+)** removes the main r
 
 Concurrent edits alone are **not** a reason to split: map entries merge.
 
-**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key (`CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)`), or join on its `_id`. Without a usable index the JOIN fails with `Joining to "<alias>" disallowed without appropriate index support`.
+**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions (`Unsupported feature: Joining`) or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key (`CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)`), or join on its `_id`. Without a usable index the JOIN fails with `Joining to "<alias>" disallowed without appropriate index support`.
 
 **✅ DO**:
 - Subscribe to every joined collection (app or feature scope); copy the filter key (`storeId`) into children, since subscriptions filter only on their own fields.
@@ -186,7 +186,6 @@ Concurrent edits alone are **not** a reason to split: map entries merge.
 - Copy a value only when it is a snapshot (price at time of sale) or a subscription filter key; otherwise reference by ID and JOIN at read time.
 
 **❌ DON'T**:
-- Put a JOIN in `registerSubscription` (rejected: `Unsupported feature: Joining`).
 - Silence the index error with `USE INDEX ''` on a large collection.
 - Split a small, bounded, single-owner sub-entity only because JOIN exists.
 
@@ -209,7 +208,7 @@ A stored total is a separate register that devices recompute from partial views;
 | Soft limit | 256 KiB | Write succeeds; warning `exceeds recommended limit` is logged |
 | Hard limit | 5 MiB | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
 
-**Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data.
+**Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data. The 5.2.0 release notes say receivers drop such changes instead (not verified; see the reference).
 
 **✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate, so leave headroom; to shrink an oversized document, move large values out and `UNSET` them.
 
@@ -244,8 +243,7 @@ String utcTimestamp([DateTime? time]) {
 - [ ] Embedded by default; separate collections justified by the decision guide
 - [ ] JOINs: inner join key indexed (or `_id`), each joined collection subscribed, no JOIN in subscriptions
 - [ ] No stored derived values; snapshot values copied deliberately
-- [ ] Concurrent tallies use `COUNTER` with `APPLY`
-- [ ] Counters recalibrated with `RESTART WITH` only while every device that changes them is in sync
+- [ ] Concurrent tallies use `COUNTER` with `APPLY`; `RESTART WITH` only while every device is in sync
 - [ ] UUID (or composite / natural) IDs; display numbers separate from `_id`
 - [ ] Shared defaults seeded with `INITIAL DOCUMENTS` (not `INSERT` or `DO UPDATE`), identical in every app version
 - [ ] Documents well under 256 KiB; binaries as attachments
@@ -256,5 +254,4 @@ String utcTimestamp([DateTime? time]) {
 - Reference: [reference/common-patterns.md](reference/common-patterns.md) - conflict policies, event history and audit logs, document structure, field names, document size
 - Reference: [reference/advanced-patterns.md](reference/advanced-patterns.md) - current state plus history, `INITIAL DOCUMENTS`, schema evolution, IDs, JOIN
 - Examples: [examples/](examples/) - Dart files linked from each rule and reference pattern
-- Guide sections: `§ Data Modeling`, `§ Writing Data`, `§ Transactions`, `§ Deletion and Storage Management`
 - Related skills: `query-sync` (DQL, subscriptions, observers), `storage-lifecycle` (DELETE, soft delete, EVICT), `transactions-attachments` (transactions, attachments), `performance-observability` (indexes, EXPLAIN, ADVISE)

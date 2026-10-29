@@ -1,5 +1,5 @@
 # ============================================================================
-# Ditto Database Schema: Minimal POS + KDS Application (Ditto SDK 5.1)
+# Ditto Database Schema: Minimal POS + KDS Application (Ditto SDK 5.2)
 # ============================================================================
 #
 # Data model for a combined Point-of-Sale (POS) and Kitchen Display System
@@ -10,7 +10,7 @@
 # Guide:          best-practices/ditto.md
 #
 # DESIGN PRINCIPLES:
-# - Default settings: DQL_STRICT_MODE = false (no ALTER SYSTEM statements).
+# - Default settings: DQL_STRICT_MODE = false (no system parameters set).
 #   Objects are stored as CRDT maps and the query planner uses indexes.
 # - Line items edited by several devices live in a MAP keyed by a UUID,
 #   never in an array (an array is one register: concurrent edits lose data).
@@ -348,7 +348,8 @@ collections:
 #   idx_menuItems_storeId_category  ON menuItems (storeId, category)
 #
 # Composite indexes are SDK 5.1+: equality fields first, then the range or
-# sort field. The soft-delete condition coalesce(isDeleted, false) = false
+# sort field. On SDK 5.1.0, an index that mixes ASC and DESC keys returns
+# results in the wrong order; on that release, use (storeId, createdAt). The soft-delete condition coalesce(isDeleted, false) = false
 # cannot use an index by itself; it is applied as a filter after the storeId
 # index scan.
 #

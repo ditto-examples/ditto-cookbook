@@ -1,9 +1,9 @@
-// SDK Version: ditto_live 5.1.0
+// SDK Version: ditto_live 5.2.0
 // Platform: Flutter (the DQL applies to all SDKs)
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // EVICT anti-patterns. Every function below compiles and runs, but defeats
-// the purpose of eviction or removes nothing.
+// the purpose of eviction or, on SDK 5.1.0, removes nothing.
 //
 // Guide: § EVICT
 //        § Eviction frequency
@@ -114,11 +114,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
 }
 
 // ============================================================================
-// ❌ Anti-pattern 5: USE IDS without WHERE
+// ❌ Anti-pattern 5: USE IDS without WHERE while devices run SDK 5.1.0
 // ============================================================================
 
-/// ❌ BAD (SDK 5.1.0): Completes without an error but evicts nothing.
-/// ✅ FIX: `EVICT FROM orders WHERE _id IN :ids`.
+/// ❌ BAD where any device still runs SDK 5.1.0: there it completes without an
+/// error but evicts nothing (SDK 5.2.0 evicts the listed documents; see
+/// § Known Issues in SDK 5.1.0).
+/// ✅ FIX: `EVICT FROM orders WHERE _id IN :ids`, which works on every release.
 Future<void> evictWithUseIds(Ditto ditto, List<String> orderIds) async {
   await ditto.store.execute(
     'EVICT FROM orders USE IDS LIST :ids',

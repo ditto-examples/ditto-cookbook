@@ -5,17 +5,17 @@ description: Ditto SDK transactions and attachments: ditto.store.transaction wit
 
 # Ditto Transactions and Attachments
 
-Atomic multi-statement writes with `ditto.store.transaction`, and binary files stored, synced, and displayed as attachments. Targets Ditto SDK 5.1.0; examples are Flutter (Dart).
+Atomic multi-statement writes with `ditto.store.transaction`, and binary files stored, synced, and displayed as attachments. Targets Ditto SDK 5.2.0; examples are Flutter (Dart).
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
 - `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
 ## Key Facts
 
-| Topic | Flutter 5.1.0 behavior |
+| Topic | Flutter behavior |
 |---|---|
 | Transaction API | `ditto.store.transaction(hint: 'name', isReadOnly: false, (tx) async {...})` returns `Future<T>` |
 | Inside the callback | Use only `tx.execute(...)`. `ditto.store.execute(...)` throws a `DittoException` |
@@ -30,7 +30,7 @@ Atomic multi-statement writes with `ditto.store.transaction`, and binary files s
 ## Prevents
 
 - `ditto.store.execute` inside a transaction (throws in Flutter, can deadlock in JavaScript, Swift, and Kotlin)
-- Nested read-write transactions (deadlock in Flutter and JavaScript, can deadlock in Swift and Kotlin; the SDK does not detect it)
+- Nested read-write transactions (can deadlock; the SDK does not detect it)
 - Network calls, dialogs, or timers inside a transaction, blocking all other writes
 - Caught statement errors that silently commit the rest of a transaction
 - `ditto.close()` while transactions are still running (`close()` does not wait)
@@ -62,7 +62,7 @@ While a read-write transaction runs, every other read-write transaction waits, a
 **✅ DO**:
 - Read, decide, write, return
 - Prepare network responses, files, user input, and attachments (`newAttachment`) **before** the transaction
-- Give every transaction a `hint`: after 10 seconds Ditto logs a message that includes it every 5 seconds, starting at debug level and escalating to higher levels (thresholds: system parameters `TRANSACTION_DURATION_BEFORE_LOGGING_MS` and `TRANSACTION_TRACE_INTERVAL_MS`)
+- Give every transaction a `hint`: Ditto logs it, at rising levels, while a transaction runs longer than 10 seconds (thresholds: `TRANSACTION_DURATION_BEFORE_LOGGING_MS`, `TRANSACTION_TRACE_INTERVAL_MS`)
 - Use `isReadOnly: true` for transactions that only read; a mutating statement inside one throws
 
 **❌ DON'T**:
@@ -109,7 +109,7 @@ Subscriptions never download blobs; a token is not image data. Fetching every at
 | `AttachmentFetchEventCompleted` | At most once | `attachment` (read bytes with `await attachment.data`) |
 | `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched |
 
-**Note (SDK 5.1.0)**: `AttachmentFetchEventDeleted` was not observed in our testing: when the document was deleted while no peer could deliver the blob, the fetch stayed pending; keep a stall timeout.
+**Note (SDK 5.1.0)**: `AttachmentFetchEventDeleted` was not observed in our testing: when the document was deleted while no peer could deliver the blob, the fetch stayed pending. The 5.2.0 release notes say a fetch of an attachment that no document references now ends with this event; keep a stall timeout (rule 7) on both releases.
 
 `AttachmentFetcher`: `stop()` cancels an in-flight fetch (not needed after completion); `isStopped`; `attachment` is a `Future<Attachment?>` that never completes after `stop()`, so do not await it once you have stopped the fetcher. `ditto.store.attachmentFetchers` lists active fetchers. Attachments already in the local blob store complete right away, typically without progress events.
 
@@ -261,5 +261,4 @@ Attachments:
 - Reference: [reference/flutter-code.md](reference/flutter-code.md) - complete Flutter code for the shortened snippets
 - Reference: [reference/platform-specific.md](reference/platform-specific.md) - JavaScript, Swift, and Kotlin 5.1 transaction and attachment APIs
 - Examples: [examples/](examples/) - Dart and JavaScript transactions (good/bad), lazy loading (good/bad), fetch timeout, immutability, thumbnails
-- Guide sections: `§ Transactions`, `§ Transactions on Other Platforms`, `§ Attachments`, `§ Resource Cleanup and Shutdown`, `§ Platform Differences`
 - Related skills: `query-sync` (subscriptions and store observers), `storage-lifecycle` (EVICT and storage management), `data-modeling` (CRDT types, strict mode, document size)

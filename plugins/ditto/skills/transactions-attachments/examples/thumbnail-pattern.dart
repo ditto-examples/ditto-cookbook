@@ -1,4 +1,4 @@
-// Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Thumbnail pattern
+// Ditto SDK 5.2 (Flutter, ditto_live 5.2.0): Thumbnail pattern
 //
 // Guide: § Thumbnail Pattern
 //

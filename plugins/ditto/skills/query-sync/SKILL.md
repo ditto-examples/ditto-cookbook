@@ -5,11 +5,11 @@ description: Ditto SDK DQL reads and writes, subscriptions, and store observers:
 
 # Ditto Query and Sync Patterns
 
-DQL statements, subscriptions, and store observers: what syncs, what a query sees, and cheap observers and upserts. Targets Ditto SDK 5.1.0; examples are Flutter (Dart).
+DQL statements, subscriptions, and store observers: what syncs, what a query sees, and cheap observers and upserts. Targets Ditto SDK 5.2.0; examples are Flutter (Dart).
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
 - `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
@@ -71,7 +71,7 @@ A comparison with a missing or null field is neither true nor false, so the row 
 
 ### 3. Subscribe with SELECT * and stable partition keys (CRITICAL)
 
-A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. `registerSubscription` rejects the features below with an error, even before sync starts. Subscriptions on `system:` collections (such as `system:data_sync_info`) are accepted but have no effect.
+A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. `registerSubscription` rejects the features below with an error, even before sync starts.
 
 | Rejected in subscriptions | Do instead |
 |---|---|
@@ -127,7 +127,7 @@ class OrderSync {
 
 `ditto.sync.stop()` pauses subscriptions (resumed by `start()`); `await ditto.close()` marks them cancelled.
 
-> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate the app. Read only `queryString` and `isCancelled` there, and keep your own references.
+> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate a Flutter app. Read only `queryString` and `isCancelled` there, and keep your own references.
 
 `§ Subscription Lifecycle` · Examples: [subscription-lifecycle-good.dart](examples/subscription-lifecycle-good.dart), [subscription-lifecycle-bad.dart](examples/subscription-lifecycle-bad.dart)
 
@@ -163,7 +163,7 @@ class _OrdersListState extends State<OrdersList> {
 }
 ```
 
-> **Note (SDK 5.1.0):** With `onChange`, every result is also queued in `changes`; if nothing listens, those results stay in memory for the observer's lifetime. `registerObserverV2` starts observing on registration, with or without `onChange`: listen to its `changes` right away. If you need `onChange`, also drain the stream (`observer.changes.listen((_) {})`).
+> **Note (SDK 5.1.0):** With `onChange`, every result is also queued in `changes`; if nothing listens, those results stay in memory for the observer's lifetime. `registerObserverV2` starts observing on registration, with or without `onChange`: listen to its `changes` right away. If you need `onChange`, also drain the stream (`observer.changes.listen((_) {})`). The `ditto_live` 5.2.0 source registers observers the same way.
 
 Lifecycle: `changes` is single-subscription (a second `listen()` throws, even after cancelling the first). Cancelling the `StreamSubscription` does not cancel a `StoreObserver`, and `await ditto.close()` does not close its `changes` stream: call `observer.cancel()` before closing. `registerObserver` has no backpressure, so keep its listener synchronous and short.
 **✅ DO**: register in `initState()` or a service; when inputs change (`didUpdateWidget`), cancel and re-register; give each screen region its own small observer; use `COUNT(*)` for badges.
@@ -180,7 +180,7 @@ Lifecycle: `changes` is single-subscription (a second `listen()` throws, even af
 | Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` (no index) |
 | ❌ Array parameter in parentheses | `status IN (:statuses)` matches nothing |
 
-> **Note (SDK 5.1.0):** `ANY ... SATISFIES ... END` in `WHERE` over a parameter or literal array returns no rows (5.0.x returned matches). Use `status IN :statuses` or `array_contains(:statuses, status)`. Only local queries and observers are affected; a subscription with the same predicate syncs the documents, so the data arrives but the list shows empty.
+> **Note (SDK 5.1.0 and 5.2.0):** `ANY ... SATISFIES ... END` in `WHERE` over a parameter or literal array returns no rows (5.0.x returned matches). Use `status IN :statuses` or `array_contains(:statuses, status)`. Only local queries and observers are affected; a subscription with the same predicate syncs the documents, so the data arrives but the list shows empty.
 
 `§ Filtering by Membership`
 
@@ -201,7 +201,7 @@ Lifecycle: `changes` is single-subscription (a second `listen()` throws, even af
 ### 8. Index the inner collection of a JOIN (SDK 5.1+) (HIGH)
 
 Joins (`INNER`, `LEFT`, `RIGHT` as first join only) run on local data. The inner collection's join key needs an index, or the join must be on its `_id`; otherwise the query fails with `Joining to "c" disallowed without appropriate index support`.
-**✅ DO**: `CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)` for `... JOIN orders o ON o.customerId = c._id`; qualify every field with its alias and alias colliding fields; subscribe to each joined collection separately; filter the outer collection selectively; run `ADVISE` for index recommendations.
+**✅ DO**: `CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)` for `... JOIN orders o ON o.customerId = c._id`; qualify every field with its alias and alias colliding fields; subscribe to each joined collection separately; filter the outer collection selectively.
 **❌ DON'T**: use `JOIN` in subscriptions or on Ditto Server; use `USE INDEX ''` on large collections to silence the index error.
 
 `§ Joining Collections (SDK 5.1+)`
@@ -236,7 +236,7 @@ INSERT INTO orders DOCUMENTS ({_id: 'order-1', status: 'open'})
 
 ### 12. Delete and evict by ID with WHERE (HIGH)
 
-> **Note (SDK 5.1.0):** `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing. Use `WHERE _id = :id` or `WHERE _id IN :ids`.
+Select by ID with `WHERE _id = :id` or `WHERE _id IN :ids`: planned as an ID lookup, it works on every release. On SDK 5.1.0, `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) removes nothing, without an error (`§ Known Issues in SDK 5.1.0`).
 
 `DELETE` removes on all peers (tombstone); `EVICT` on this device only. Strategy: `storage-lifecycle`.
 
@@ -262,7 +262,7 @@ INSERT INTO orders DOCUMENTS ({_id: 'order-1', status: 'open'})
 
 ### 16. Hand slow observer work to performance-observability (MEDIUM)
 
-For slow or `async` per-update work, use `registerObserverV2` or `registerObserverWithSignalNext` **(Experimental, SDK 5.1+)**; details in `performance-observability`. JavaScript, Swift, and Kotlin observers differ ([reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md#other-platforms)).
+For slow or `async` per-update work, use `registerObserverV2` or `registerObserverWithSignalNext` **(Experimental, SDK 5.1+)**; details in `performance-observability`. Other platforms differ: [reference](reference/subscriptions-and-observers.md#other-platforms).
 
 `§ Backpressure (SDK 5.1+)`, `§ Backpressure on other platforms`, `§ Partial UI Updates` · Example: [observer-backpressure.dart](examples/observer-backpressure.dart)
 
@@ -279,7 +279,6 @@ For slow or `async` per-update work, use `registerObserverV2` or `registerObserv
 - [ ] `DELETE` / `EVICT` by ID use `WHERE _id IN :ids`
 - [ ] Subscriptions: `SELECT *` on stable partition keys, owned by a service, cancelled on logout and before evicting, not re-registered for UI filters
 - [ ] Observers registered in `initState()` or a service, without `onChange`; stream subscription and observer cancelled in `dispose()`
-- [ ] Slow async observer work uses `registerObserverV2` or `registerObserverWithSignalNext` (Experimental), with `signalNext()` in `finally`
 - [ ] Listener copies `item.value` into plain data; no `QueryResult` retained
 
 ## More

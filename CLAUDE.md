@@ -43,9 +43,9 @@ This project is managed by a corporate entity. All language must be professional
 
 ## Best Practices and Technology Updates
 
-- Check the latest official documentation for Ditto, Flutter, and Claude Code before writing guidance or code; the guide and the Skills target Ditto SDK 5.1.0.
+- Check the latest official documentation for Ditto, Flutter, and Claude Code before writing guidance or code; the guide and the Skills target Ditto SDK 5.2.0.
 - Consult [best-practices/ditto.md](best-practices/ditto.md) for Ditto code and [best-practices/flutter.md](best-practices/flutter.md) for Flutter code.
-- Mark behavior that is specific to one SDK release, for example **Note (SDK 5.1.0)**.
+- Mark behavior with the SDK releases on which it was observed, for example **Note (SDK 5.1.0 and 5.2.0)**, and collect issues that a later release fixed in the guide's "Known Issues in SDK 5.1.0" section.
 
 ## Security Guidelines
 

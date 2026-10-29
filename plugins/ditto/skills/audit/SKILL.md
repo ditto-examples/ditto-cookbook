@@ -5,11 +5,11 @@ description: Reviews code that uses the Ditto SDK against the Ditto best practic
 
 # Ditto Code Audit
 
-A repeatable review of an app that uses the Ditto SDK. It combines a fast pattern scan with a manual checklist, and relies on the topic skills for the rules. Targets Ditto SDK 5.1.0; the scanner reads Dart, JavaScript/TypeScript, Swift, and Kotlin.
+A repeatable review of an app that uses the Ditto SDK. It combines a fast pattern scan with a manual checklist, and relies on the topic skills for the rules. Targets Ditto SDK 5.2.0; the scanner reads Dart, JavaScript/TypeScript, Swift, and Kotlin.
 
 ## Before You Apply
 
-- Check the Ditto SDK version the project uses (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). The rules were verified against 5.1.0. Items marked **Note (SDK 5.1.0)** describe 5.1.0 behavior that a later release may change; on another version, confirm them (release notes, docs.ditto.live) before reporting them as defects. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the Ditto SDK version the project uses (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). The rules target 5.2.0, checked on one device with the JavaScript SDK (system parameters, DQL, observers, diagnostics); Flutter and multi-peer behavior were observed with 5.1.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks behavior observed on 5.1.0 and not yet repeated on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
 - `§ <Heading>` cites a section of the full guide: find it with Grep for the heading text in `../guide/reference/ditto.md`.
 - Review only; do not change code unless the user asks for fixes.
 
@@ -42,7 +42,8 @@ Every hit is a candidate, not a finding. The scanner matches lines; it cannot te
 For each hit:
 1. Read the surrounding function and its callers.
 2. Open the rule in the skill the hit names (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`) and check whether the code really breaks it.
-3. Keep confirmed hits; drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
+3. For a hit whose message says it applies to SDK 5.1.0 only (fixed in 5.2.0), such as `delete-evict-use-ids` and `composite-index-mixed-direction`, check the version from step 2. If the project uses 5.1.0, or the version is unknown, report it at its severity. If it uses 5.2.0, keep it as a lower-severity note that the code breaks on devices still running 5.1.0 (the code cannot show which releases run in the field), and say so in the finding.
+4. Keep confirmed hits; drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
 
 ### Step 5: Manual review
 
@@ -56,10 +57,11 @@ The scanner cannot see design and lifecycle problems. Check each area that the a
 | Deletion | Strategy per collection (DELETE, soft delete, EVICT); offline periods vs tombstone TTL; eviction complementary to subscriptions, at most daily | `storage-lifecycle` |
 | Transactions | Only `tx.execute` inside; no nesting, including through helper methods; no I/O or dialogs inside; pending work awaited before `close()` | `transactions-attachments` |
 | Attachments | Explicit, lazy, cancellable fetches with a stall timeout; ATTACHMENT declarations; no binaries in documents | `transactions-attachments` |
-| Startup and lifecycle | One instance per persistence directory; auth handler set before `sync.start()` and never throwing; system parameters applied on every open; no `close()` on background; transports changed with `updateTransportConfig()` | `sdk-setup` |
+| Startup and lifecycle | One instance per persistence directory; auth handler set before `sync.start()` and never throwing; system parameters passed in `DittoConfig.systemParameters` on every open (SDK 5.2+; on 5.1, `ALTER SYSTEM` after open and before `sync.start()`); no `close()` on background; transports changed with `updateTransportConfig()` | `sdk-setup` |
 | Security | No development token or keyless small-peers mode in production; no hardcoded keys; permissions in the webhook based on immutable `_id` fields; nothing sensitive in peer metadata | `sdk-setup` |
-| Indexes and queries | Indexes created at startup for hot filters, sorts, and JOIN keys; no functions on indexed fields; `ORDER BY` with a tie-breaker where order matters | `performance-observability` |
+| Indexes and queries | Indexes created at startup for hot filters, sorts, and JOIN keys; no mixed `ASC`/`DESC` composite keys while devices run 5.1.0; no functions on indexed fields; `ORDER BY` with a tie-breaker where order matters | `performance-observability` |
 | Tests | Local-store tests for DQL statements, soft-delete filters, observer cleanup, and subscription registration | `testing` |
+| SDK version | Where devices still run 5.1.0: `USE IDS` in `DELETE`/`EVICT`, mixed-direction composite indexes (including ones from `ADVISE`), `ANY ... SATISFIES` on several properties, sorted index queries with projections, constants on the left of comparisons; values that Kotlin, Java, Swift, or C# stored incorrectly before 5.2 (`§ Known Issues in SDK 5.1.0`) | `guide` |
 
 The complete severity-ranked list is the guide's `§ Anti-Pattern Checklist`; the security-specific list is `§ Security Checklist`.
 
@@ -74,7 +76,7 @@ Fix: <the concrete change, with a short code or DQL snippet if useful>
 Reference: <skill name> / § <guide heading>
 ```
 
-End with: the SDK version and platforms reviewed, the areas checked with no findings, and anything not checked (for example code that was not available, or behavior that needs a multi-device test). Mark findings that depend on a **Note (SDK 5.1.0)** behavior as version-specific.
+End with: the SDK version and platforms reviewed, the areas checked with no findings, and anything not checked (for example code that was not available, or behavior that needs a multi-device test). Mark findings that depend on a **Note (SDK ...)** behavior or on `§ Known Issues in SDK 5.1.0` as version-specific, and name the releases they apply to.
 
 ## Scanner Limits
 

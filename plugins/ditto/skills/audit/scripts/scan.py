@@ -87,6 +87,12 @@ def rx(pattern: str, flags: int = re.IGNORECASE) -> re.Pattern:
     return re.compile(pattern, flags)
 
 
+# A system parameter being set: `ALTER SYSTEM SET NAME = value` or `... TO value`,
+# or a map entry in DittoConfig.systemParameters (SDK 5.2+), such as
+# 'NAME': value (Dart, Swift, JavaScript) or "NAME" to value (Kotlin).
+SETS = r"['\"]?\s*(?:=|:|\bTO\b)\s*"
+
+
 LINE_RULES: List[LineRule] = [
     # --- CRITICAL: wrong results, data loss, crashes, security ---
     LineRule(
@@ -112,7 +118,7 @@ LINE_RULES: List[LineRule] = [
         "CRITICAL",
         rx(r"\b(ANY|EVERY)\s+\w+\s+IN\s+(:\w+|\[|\()"),
         "ANY/EVERY ... SATISFIES over a parameter or literal array returns no rows in "
-        "local queries and observers (SDK 5.1.0); use field IN :values",
+        "local queries and observers (SDK 5.1.0 and 5.2.0); use field IN :values",
         "query-sync",
         "Filtering by Membership",
     ),
@@ -129,11 +135,21 @@ LINE_RULES: List[LineRule] = [
         "delete-evict-use-ids",
         "CRITICAL",
         rx(r"\b(DELETE|EVICT)\s+FROM\s+\S+\s+USE\s+IDS\b"),
-        "DELETE/EVICT with USE IDS and no WHERE predicate removes nothing (SDK 5.1.0); "
-        "use WHERE _id IN :ids",
+        "DELETE/EVICT with USE IDS and no WHERE predicate removes nothing in SDK 5.1.0 "
+        "(fixed in 5.2.0); use WHERE _id IN :ids while any device runs 5.1.0",
         "storage-lifecycle",
-        "DELETE and EVICT",
+        "Known Issues in SDK 5.1.0",
         unless=rx(r"\bWHERE\s+(?!true\b)"),
+    ),
+    LineRule(
+        "composite-index-mixed-direction",
+        "CRITICAL",
+        rx(r"\bCREATE\s+INDEX\b[^(]*\((?=[^)]*\bDESC\b)(?=[^)]*(?<!DESC)(?<=[\w\x60\"])\s*[,)])"),
+        "Composite index that mixes ASC and DESC keys returns results in the wrong order "
+        "in SDK 5.1.0 (fixed in 5.2.0); keep all keys in one direction while any device "
+        "runs 5.1.0",
+        "performance-observability",
+        "Known Issues in SDK 5.1.0",
     ),
     LineRule(
         "unquoted-object-literal-key",
@@ -199,7 +215,7 @@ LINE_RULES: List[LineRule] = [
     LineRule(
         "revocation-check-disabled",
         "CRITICAL",
-        rx(r"PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED\s*=\s*false"),
+        rx(r"PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED" + SETS + r"false"),
         "Certificate revocation checking disabled",
         "sdk-setup",
         "Certificate Revocation (SDK 5.1+)",
@@ -217,16 +233,17 @@ LINE_RULES: List[LineRule] = [
     LineRule(
         "strict-mode-enabled",
         "HIGH",
-        rx(r"DQL_STRICT_MODE\s*=\s*true"),
+        rx(r"DQL_STRICT_MODE" + SETS + r"true"),
         "Strict mode hides undeclared MAP/COUNTER/ATTACHMENT fields and disables "
-        "secondary index use in SDK 5.1.0; confirm it is intended and applied on every open",
+        "secondary index use (SDK 5.1.0 and 5.2.0); confirm it is intended and set on "
+        "every open (DittoConfig.systemParameters in SDK 5.2+)",
         "data-modeling",
         "Strict Mode",
     ),
     LineRule(
         "restrict-subscriptions-disabled",
         "HIGH",
-        rx(r"DQL_RESTRICT_SUBSCRIPTIONS\s*=\s*false"),
+        rx(r"DQL_RESTRICT_SUBSCRIPTIONS" + SETS + r"false"),
         "Stateful LIMIT/ORDER BY subscriptions degrade sync; LIMIT bounds only the "
         "initial download",
         "query-sync",
@@ -236,8 +253,8 @@ LINE_RULES: List[LineRule] = [
         "subscription-query-arguments",
         "CRITICAL",
         rx(r"\bqueryArguments(JsonString)?\b", 0),
-        "Reading queryArguments from ditto.sync.subscriptions can terminate the app for "
-        "subscriptions without arguments (SDK 5.1.0); keep your own references",
+        "Reading queryArguments from ditto.sync.subscriptions can terminate a Flutter app "
+        "for subscriptions without arguments (SDK 5.1.0); keep your own references",
         "query-sync",
         "Sync stop, close, and inspection",
     ),
@@ -261,9 +278,9 @@ LINE_RULES: List[LineRule] = [
     LineRule(
         "tombstone-ttl-change",
         "HIGH",
-        rx(r"TOMBSTONE_TTL_HOURS\s*="),
+        rx(r"TOMBSTONE_TTL_HOURS" + SETS),
         "Tombstone TTL on a device must not exceed the Ditto Server TTL, and must be "
-        "applied after every open",
+        "set on every open (DittoConfig.systemParameters in SDK 5.2+)",
         "storage-lifecycle",
         "Tombstone TTL and reaping",
     ),
@@ -398,7 +415,7 @@ def scan_observers(path: str, language: str, lines: List[str]) -> Iterable[Findi
         if has_on_change and not consumes_changes:
             yield Finding(path, index + 1, "HIGH", "observer-onchange-only",
                           "Observer registered with onChange and no `changes` stream consumed "
-                          "nearby; unconsumed results stay in memory (SDK 5.1.0)",
+                          "nearby; unconsumed results stay in memory",
                           "query-sync", "Store Observers in Flutter", line.strip())
 
 

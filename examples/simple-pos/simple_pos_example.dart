@@ -1,5 +1,5 @@
 // ============================================================================
-// Simple POS Example - Ditto SDK 5.1 for Flutter (ditto_live 5.1.0)
+// Simple POS Example - Ditto SDK 5.2 for Flutter (ditto_live 5.2.0)
 // ============================================================================
 //
 // A minimal Point-of-Sale (POS) and Kitchen Display System (KDS) for one
@@ -136,9 +136,10 @@ class PosService {
       //    sync.start().
       await _configureAuthentication(ditto);
 
-      // 4. No ALTER SYSTEM statements: this example relies on the defaults.
-      //    With DQL_STRICT_MODE = false, objects are stored as CRDT maps
-      //    (needed for the line item map) and the query planner uses indexes.
+      // 4. No system parameters: this example relies on the defaults, so
+      //    DittoConfig.systemParameters is not set. With
+      //    DQL_STRICT_MODE = false, objects are stored as CRDT maps (needed
+      //    for the line item map) and the query planner uses indexes.
 
       // 5. Indexes persist; IF NOT EXISTS makes this safe on every start.
       await _createIndexes(ditto);
@@ -190,6 +191,8 @@ class PosService {
     try {
       // Composite index (SDK 5.1+): equality on storeId, range and sort on
       // createdAt. Used by the recent-orders query and the KDS observer.
+      // On SDK 5.1.0, an index that mixes ASC and DESC keys returns results
+      // in the wrong order; on that release, use (storeId, createdAt).
       await ditto.store.execute(
         'CREATE INDEX IF NOT EXISTS idx_orders_storeId_createdAt '
         'ON orders (storeId, createdAt DESC)',

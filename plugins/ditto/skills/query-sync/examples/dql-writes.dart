@@ -1,4 +1,4 @@
-// DQL write patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// DQL write patterns for Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // Covers: INSERT with parameters, ON ID CONFLICT policies, field-level UPDATE,
 // UNSET, object merge semantics (default DQL_STRICT_MODE = false),
@@ -250,9 +250,10 @@ Future<void> deleteOrders(Ditto ditto, List<String> ids) async {
   );
 }
 
-/// ❌ BAD: DELETE (or EVICT) with USE IDS and no WHERE predicate (no WHERE
-/// clause, or WHERE true) completes without an error but removes nothing in
-/// SDK 5.1.0.
+/// ❌ BAD while any device runs SDK 5.1.0: there, DELETE (or EVICT) with
+/// USE IDS and no WHERE predicate (no WHERE clause, or WHERE true) completes
+/// without an error but removes nothing (SDK 5.2.0 removes the listed
+/// documents). WHERE _id IN :ids works on every release.
 Future<void> deleteOrderWithUseIds(Ditto ditto) async {
   await ditto.store.execute("DELETE FROM orders USE IDS 'order-1'");
 }

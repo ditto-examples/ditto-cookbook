@@ -1,6 +1,6 @@
 # Ditto Startup and Lifecycle Reference
 
-Requirements, initialization, authentication, system parameters, sync start and stop, and shutdown for Ditto SDK 5.1.0 (Flutter). Copied from `§ SDK Setup and Lifecycle` in `../guide/reference/ditto.md`.
+Requirements, initialization, authentication, system parameters, sync start and stop, and shutdown for Ditto SDK 5.2.0 (Flutter). Copied from `§ SDK Setup and Lifecycle` in `../guide/reference/ditto.md`.
 
 ## Contents
 
@@ -21,7 +21,7 @@ Requirements, initialization, authentication, system parameters, sync start and 
 
 ## Requirements
 
-Ditto SDK 5.1.0 for Flutter (`ditto_live` 5.1.0) has the following requirements:
+Ditto SDK 5.2.0 for Flutter (`ditto_live` 5.2.0) has the following requirements:
 
 | Item | Requirement |
 |---|---|
@@ -40,7 +40,7 @@ Pin the SDK version in `pubspec.yaml` so every developer and CI build uses the s
 
 ```yaml
 dependencies:
-  ditto_live: 5.1.0   # or ^5.1.0 to accept compatible 5.x updates
+  ditto_live: 5.2.0   # or ^5.2.0 to accept compatible 5.x updates
 ```
 
 **Platform setup**: Peer-to-peer sync needs platform permissions and configuration, such as Bluetooth and local network usage descriptions in `Info.plist` on iOS and macOS, and Bluetooth, Wi-Fi, and nearby-device permissions in `AndroidManifest.xml` on Android. Follow the [Flutter install guide](https://docs.ditto.live/sdk/latest/install-guides/flutter) for the current list, and request runtime permissions (for example with the `permission_handler` package) before starting sync.
@@ -64,7 +64,10 @@ A Ditto instance is created from an immutable `DittoConfig`:
 |---|---|---|---|
 | `databaseID` | `String?` | All-zero UUID | Your Database ID. It must be a valid UUID. Do not rely on `Ditto.open()` to reject an invalid value; check that no placeholder is left in your configuration. |
 | `connect` | `DittoConfigConnect` | `DittoConfigConnectSmallPeersOnly()` | `DittoConfigConnectServer(url: ...)` or `DittoConfigConnectSmallPeersOnly(privateKey: ...)`. |
-| `persistenceDirectory` | `String?` | `null` | `null` uses `ditto-<databaseID>` inside `Ditto.defaultRootDirectory` (the app documents directory). A relative path is resolved against the same directory. |
+| `persistenceDirectory` | `String?` | `null` | `null` uses `ditto-<databaseID>` inside `Ditto.defaultRootDirectory`. A relative path is resolved against the application support directory (`getApplicationSupportDirectory()`). |
+| `systemParameters` (SDK 5.2+) | `Map<String, Object>` | `{}` | System parameters applied before Ditto starts (see [Applying System Parameters](#applying-system-parameters)). |
+
+**Default location (SDK 5.2+)**: `Ditto.defaultRootDirectory` now resolves to the application support directory instead of the documents directory; the release notes describe the move for desktop platforms. With `persistenceDirectory: null`, Ditto still finds a database in the previous default location after the upgrade. That fallback applies only to `null`. If your app passes a relative path, check on every platform you ship that an upgraded installation still opens its existing data before you release 5.2.
 
 There are two connection modes:
 
@@ -162,7 +165,7 @@ Future<List<Map<String, dynamic>>> loadOrders() async {
 
 ## Complete app startup
 
-The following example shows the recommended order: initialize, configure logging, open, set the authentication handler, apply system parameters, create indexes, register long-lived subscriptions, and start sync.
+The following example shows the recommended order: initialize, configure logging, open with your system parameters, set the authentication handler, create indexes, register long-lived subscriptions, and start sync.
 
 ```dart
 // ✅ GOOD: Complete startup sequence for a Ditto Server connection.
@@ -188,12 +191,17 @@ class DittoService {
     DittoLogger.minimumLogLevel =
         kReleaseMode ? LogLevel.warning : LogLevel.debug;
 
-    // 3. Open the single shared instance.
+    // 3. Open the single shared instance. System parameters are not
+    //    persisted, so pass them on every open; Ditto applies them before
+    //    it starts (SDK 5.2+).
     final ditto = await Ditto.open(
-      const DittoConfig(
+      DittoConfig(
         databaseID: 'YOUR_DATABASE_ID',
         // Copy the URL from the Ditto Portal exactly as shown.
-        connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
+        connect: const DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
+        systemParameters: {
+          if (enableStrictMode) 'DQL_STRICT_MODE': true,
+        },
       ),
     );
 
@@ -216,13 +224,7 @@ class DittoService {
         }
       });
 
-      // 5. System parameters are not persisted: apply them on every open,
-      //    before sync starts.
-      if (enableStrictMode) {
-        await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = true');
-      }
-
-      // 6. Create the indexes your queries need before queries and observers
+      // 5. Create the indexes your queries need before queries and observers
       //    run. Indexes persist, and IF NOT EXISTS makes this safe on every
       //    start. The in-browser store on the Web does not support indexes.
       if (!kIsWeb) {
@@ -231,7 +233,7 @@ class DittoService {
         );
       }
 
-      // 7. Register long-lived subscriptions, then start sync.
+      // 6. Register long-lived subscriptions, then start sync.
       final subscriptions = [
         ditto.sync.registerSubscription(
           'SELECT * FROM orders WHERE storeId = :storeId',
@@ -257,7 +259,7 @@ class DittoService {
 }
 ```
 
-Step 6 creates one index as an example; see `§ Creating Indexes` for which indexes to create.
+Step 5 creates one index as an example; see `§ Creating Indexes` for which indexes to create.
 
 `§ Complete app startup`
 
@@ -347,39 +349,59 @@ Future<void> configureAuthenticationBadly(Ditto ditto) async {
 
 **Logging out**: `await ditto.auth.logout()` clears the credentials and **stops sync**. Call `ditto.sync.start()` again after the next successful login if the device should resume syncing. `ditto.auth.status` exposes `isAuthenticated` and `userID`.
 
+To remove local data as part of logging out, pass a `cleanup` callback (SDK 5.2+): `await ditto.auth.logout(cleanup: (ditto) async { ... })`. It runs after sync has stopped, and `logout()` completes only after it finishes. After logout the instance may no longer write, except for `EVICT`, so the callback can evict sensitive documents. Exceptions thrown by the callback are logged and do not reach the caller, so check the result yourself (for example with a `SELECT COUNT(*)`) when the cleanup must succeed. Concurrent `logout()` calls collapse into one, and only the first caller's `cleanup` runs.
+
 `§ Authentication`
 
 ## Applying system parameters
 
-System parameters (`ALTER SYSTEM SET ...`) change SDK behavior at runtime. **They are kept in memory only and are not persisted**: after the app restarts, or after closing and reopening Ditto, every parameter is back at its default value.
+System parameters change SDK behavior. **They are kept in memory only and are not persisted**: after the app restarts, or after closing and reopening Ditto, every parameter is back at its default value. There are two ways to set them:
+
+| | `DittoConfig.systemParameters` (SDK 5.2+) | `ALTER SYSTEM SET ...` |
+|---|---|---|
+| When it applies | Before Ditto starts, as part of `Ditto.open()` | After `Ditto.open()` returns, while Ditto runs |
+| Parameters that Ditto reads only at startup | Take effect | Are stored but have no effect (for example `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED`) |
+| Unknown name or wrong type | `Ditto.open()` fails with a `DittoException` (an `ArgumentError` for a value that Dart cannot represent) | The statement fails |
+| Use it for | Every setting your app always needs | Changing a value while the app runs, for example during a support session |
+
+In our testing with the JavaScript SDK 5.2.0, a parameter passed in the configuration was in effect when `Ditto.open()` returned, and lowercase names (`dql_strict_mode`) worked as well as uppercase ones.
 
 **✅ DO:**
-- Apply your system parameters every time you open Ditto, after `Ditto.open()` and before `ditto.sync.start()`, running queries, or registering observers (subscriptions may be registered first).
-- Keep them in one function that runs as part of startup.
+- Pass the settings your app always needs in `DittoConfig.systemParameters`, on every open. Keep the map in one place, next to the rest of your configuration.
+- Use `ALTER SYSTEM` only for values you change while the app runs.
 - Read the current value with `SHOW <parameter>` when you need to confirm a setting.
 
 **❌ DON'T:**
 - Run `ALTER SYSTEM` once (for example in a migration) and assume it stays in effect.
 - Change parameters such as `DQL_STRICT_MODE` after sync has started or after queries and observers have run.
 
-`DQL_STRICT_MODE` defaults to `false`. Apply it only if your app deliberately opts into strict mode; see `§ Strict Mode` for the trade-offs.
+`DQL_STRICT_MODE` defaults to `false`. Set it only if your app deliberately opts into strict mode; see `§ Strict Mode` for the trade-offs.
 
 ```dart
-// ✅ GOOD: Apply settings on every open, before sync starts.
-Future<void> applySystemParameters(
-  Ditto ditto, {
+// ✅ GOOD: Pass settings on every open. Ditto applies them before it starts,
+// and a misspelled name or a wrong type makes Ditto.open() fail.
+Future<Ditto> openWithSystemParameters({
   required bool strictMode, // true only for apps that opt into strict mode
 }) async {
-  if (strictMode) {
-    await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = true');
-  }
+  final ditto = await Ditto.open(
+    DittoConfig(
+      databaseID: 'YOUR_DATABASE_ID',
+      connect: const DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
+      systemParameters: {
+        if (strictMode) 'DQL_STRICT_MODE': true,
+      },
+    ),
+  );
 
   // Confirm the effective value. SHOW returns one row keyed by the
   // lowercase parameter name.
   final result = await ditto.store.execute('SHOW DQL_STRICT_MODE');
   debugPrint('dql_strict_mode = ${result.items.first.value['dql_strict_mode']}');
+  return ditto;
 }
 ```
+
+**SDK 5.1**: `DittoConfig` has no `systemParameters`. Run `ALTER SYSTEM SET ...` every time you open Ditto, after `Ditto.open()` and before `ditto.sync.start()`, running queries, or registering observers (subscriptions may be registered first). Parameters that Ditto reads only at startup cannot be set this way.
 
 To restore a default, use `ALTER SYSTEM RESET <parameter>`. To list everything, use `SHOW ALL` (optionally filtered, for example `SHOW ALL LIKE 'dql%'`). The parameters most relevant to app developers are listed in `§ System Parameters Reference`; others are described in the section that uses them.
 
@@ -481,6 +503,8 @@ Ditto objects hold native resources. Always release these objects explicitly; do
 | `AttachmentFetcher` | `fetcher.stop()` | Only needed to cancel a fetch in progress |
 | Connection request handler | `ditto.presence.connectionRequestHandler = null` | |
 
+To find what is still registered, `ditto.store.observers` (SDK 5.2+) returns the `StoreObserver`s registered with `registerObserver` that have not been cancelled (observers from `registerObserverV2` and `registerObserverWithSignalNext` are not included), and `ditto.store.attachmentFetchers` returns the active fetchers. A count that keeps growing while the user moves between screens points to an observer that is never cancelled.
+
 `ditto.close()` behavior:
 - **Idempotent**: calling it twice is safe. Use `ditto.isClosed` to check.
 - **Stops sync** and releases observers, subscriptions, and other resources. Afterwards, observers and subscriptions report `isCancelled == true`, `cancel()` and `stop()` do nothing, and every other API call throws `DittoClosedException`.
@@ -532,10 +556,13 @@ The concepts are the same on every platform, but some APIs behave differently. K
 
 | Topic | Flutter | JavaScript | Swift | Kotlin |
 |---|---|---|---|---|
-| Create / open | `await Ditto.open(DittoConfig(...))` | `await Ditto.open(new DittoConfig(id, { mode: 'server', url }))`; on the Web, call `await init()` first | `try await Ditto.open(config:)` | `DittoFactory.create(config)` |
+| Create / open | `await Ditto.open(DittoConfig(...))` | `await Ditto.open(new DittoConfig(id, { mode: 'server', url }))`, or `new DittoConfig({ databaseID, connect, ... })` (SDK 5.2+); on the Web, call `await init()` first | `try await Ditto.open(config:)` | `DittoFactory.create(config)` |
+| System parameters at open (SDK 5.2+) | `DittoConfig(systemParameters: {...})` | `systemParameters` in the `DittoConfig` options | `DittoConfig(..., systemParameters: [...])` | `DittoConfig(..., systemParameters = mapOf(...))` |
 | Start sync | `ditto.sync.start()` (`void`, throws on failure) | `ditto.sync.start()` | `try ditto.sync.start()` | `ditto.sync.start()` (throws on failure) |
-| Close | `await ditto.close()` | `await ditto.close()` | No public `close()`; release all references and the instance shuts down when deallocated | `ditto.close()` |
+| Close | `await ditto.close()` | `await ditto.close()` | `Ditto.close()` (SDK 5.2+). In 5.1 there is no public `close()`: release all references, and the instance shuts down when deallocated | `ditto.close()` |
+| Delete the local store (SDK 5.2+) | No API; evict data in `logout(cleanup:)` | No API | `Ditto.deleteStore(databaseID:persistenceDirectory:)` | `DittoFactory.deleteStore(databaseId, persistenceDirectory)` |
+| Encryption at rest (SDK 5.2+) | Not available | Not available | `DittoConfig.encryptionKey` | `DittoConfig.encryptionKey` |
 | Login failure | Returns `AuthResponse` with `exception`; does not throw | Returns a result with `error`; does not throw | Reported to the completion handler as `error` | **Throws** |
 | Release observers and subscriptions | `cancel()` | `cancel()` | `cancel()` | `close()` |
 
-The full table (observer backpressure, transactions) is in `§ Platform Differences`.
+The full table (observer backpressure, transactions) is in `§ Platform Differences`. Kotlin, Java, Swift, and C# stored some values incorrectly before SDK 5.2, and the stored data is not corrected by the upgrade; see `§ Known Issues in SDK 5.1.0`.

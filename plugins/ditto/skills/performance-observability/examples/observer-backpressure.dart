@@ -1,6 +1,6 @@
-// SDK Version: Ditto SDK 5.1.0 (ditto_live 5.1.0)
+// SDK Version: Ditto SDK 5.2.0 (ditto_live 5.2.0)
 // Platform: Flutter
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // ============================================================================
 // Observer Backpressure in Flutter (SDK 5.1+, Experimental)
@@ -12,8 +12,8 @@
 // - § registerObserverWithSignalNext (Experimental)
 // - § Choosing an observer API
 //
-// registerObserverV2 and registerObserverWithSignalNext are marked
-// @experimental in ditto_live 5.1.0 and may change in a future release. Both
+// registerObserverV2 and registerObserverWithSignalNext (SDK 5.1+) are
+// marked @experimental and may change in a future release. Both
 // return a StoreObserverV2. While your code is busy, Ditto holds back further
 // updates and later delivers the latest state, so intermediate results are
 // merged instead of queued. For widgets that only copy values and call

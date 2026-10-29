@@ -49,7 +49,7 @@ Edit the Markdown and JSON sources and rebuild the HTML, as described in [best-p
 - **English** for all files, code comments, and commit messages. The Japanese text of the checklist lives only in its translation files.
 - **Professional language** suitable for a corporate project.
 - **No credentials.** Use placeholders such as `YOUR_DATABASE_ID` in examples.
-- **Readable, accurate examples.** Code in this repository is copied by readers. Prefer clarity over cleverness, and mark behavior specific to one SDK release, for example **Note (SDK 5.1.0)**.
+- **Readable, accurate examples.** Code in this repository is copied by readers. Prefer clarity over cleverness, and mark behavior with the SDK releases on which it was observed, for example **Note (SDK 5.1.0 and 5.2.0)**.
 - **Changelog.** Add user-visible changes to [CHANGELOG.md](CHANGELOG.md) under `Unreleased`.
 
 ## Pull Requests

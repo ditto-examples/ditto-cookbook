@@ -1,6 +1,6 @@
 # Ditto Transports and Presence Reference
 
-Transport configuration, TCP hubs, known peers, transport diagnostics, multicast, and presence for Ditto SDK 5.1.0 (Flutter). Copied from `§ Transport Configuration` and `§ Presence` in `../guide/reference/ditto.md`.
+Transport configuration, TCP hubs, known peers, transport diagnostics, multicast, and presence for Ditto SDK 5.2.0 (Flutter). Copied from `§ Transport Configuration` and `§ Presence` in `../guide/reference/ditto.md`.
 
 ## Contents
 
@@ -68,17 +68,25 @@ void connectToHub(Ditto ditto) {
 
 ## TCP connection limit per hub
 
-> **Note (SDK 5.1.0):** A device accepts a limited number of connections per transport. For TCP, the limit is 6 by default (system parameter `MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In our testing with a TCP hub and eight clients, the hub accepted six, and the remaining two received no data at all. No API reported this; only the log showed a `WARN` line, `failed to connect to peer error=... at capacity for this transport`. Rejected devices retry with an increasing backoff. The parameter is not part of the documented configuration, so its name and default may change in a later release; confirm the setting with Ditto support before you rely on it in production.
+> **Note (SDK 5.1.0):** A device accepts a limited number of connections per transport. For TCP, the limit is 6 by default (system parameter `MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In our testing with a TCP hub and eight clients, the hub accepted six, and the remaining two received no data at all. No API reported this; only the log showed a `WARN` line, `failed to connect to peer error=... at capacity for this transport`. Rejected devices retry with an increasing backoff.
 >
-> If more than six devices connect to one hub, raise the limit **on the hub** after `Ditto.open` and **before** `ditto.sync.start()`. In our testing, raising it after sync had started did not admit the rejected clients, even after 60 seconds.
+> According to the 5.2.0 release notes, the limit now counts accepted and outgoing LAN connections together (before, a peer could hold about twice the configured number), and when `MESH_CHOOSER_AT_CAPACITY_ACTION` is set to drop the oldest or the newest peer, Ditto waits until a new peer has finished connecting before it drops an existing one. The default is still 6 in 5.2.0. We have not yet repeated the hub test on 5.2.0, so check how many clients your hub admits before you rely on the limit in production, and confirm the setting with Ditto support.
+>
+> If more than six devices connect to one hub, raise the limit **on the hub** so that it is in effect **before** `ditto.sync.start()`: pass it in `DittoConfig.systemParameters` (SDK 5.2+), or on SDK 5.1 run `ALTER SYSTEM` after `Ditto.open` and before `ditto.sync.start()`. In our testing, raising it after sync had started did not admit the rejected clients, even after 60 seconds.
 
 ```dart
-// ✅ GOOD: A hub that serves up to 12 TCP clients. Apply on every open,
-// before ditto.sync.start() (system parameters are not persisted).
-Future<void> startHub(Ditto ditto) async {
-  await ditto.store.execute(
-    'ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = 12',
-  );
+// ✅ GOOD: A hub that serves up to 12 TCP clients. The limit is part of the
+// hub's configuration, so it is applied on every open, before sync starts
+// (SDK 5.2+).
+DittoConfig hubConfig(DittoConfigConnect connect) => DittoConfig(
+      databaseID: 'YOUR_DATABASE_ID',
+      connect: connect,
+      systemParameters: const {'MESH_CHOOSER_MAX_WLAN_CONNECTIONS': 12},
+    );
+
+// Call with an instance opened from hubConfig(), after the authentication
+// handler or the offline license token is set.
+void startHub(Ditto ditto) {
   ditto.updateTransportConfig((config) {
     config.listen.tcp
       ..isEnabled = true
@@ -91,7 +99,7 @@ Future<void> startHub(Ditto ditto) async {
 
 ## Invalid values and known peers
 
-Configuration changes are applied asynchronously while sync is running, and invalid values do not throw: an invalid `connect.tcpServers` entry or listen address only produces a log line (for example `Failed to start TCP server error=Bind address could not be parsed`). You can also point devices at a known peer with the `TRANSPORTS_DISCOVERED_PEERS` system parameter, which can be set before or after `ditto.sync.start()` and is validated (`type` is optional and must be `'force'` or `'candidate'`). It works only while the LAN transport (`peerToPeer.lan`) is enabled on the device that sets it, which is the default; with peer-to-peer transports disabled, the value is stored but nothing connects, so use `connect.tcpServers` instead. Like every system parameter, it is not persisted, so apply it again after each open:
+Configuration changes are applied asynchronously while sync is running, and invalid values do not throw: an invalid `connect.tcpServers` entry or listen address only produces a log line (for example `Failed to start TCP server error=Bind address could not be parsed`). You can also point devices at a known peer with the `TRANSPORTS_DISCOVERED_PEERS` system parameter, which can be set before or after `ditto.sync.start()` and is validated (`type` is optional and must be `'force'` or `'candidate'`). It works only while the LAN transport (`peerToPeer.lan`) is enabled on the device that sets it, which is the default; with peer-to-peer transports disabled, the value is stored but nothing connects, so use `connect.tcpServers` instead. Like every system parameter, it is not persisted: pass a fixed address in `DittoConfig.systemParameters` (SDK 5.2+), or set it with `ALTER SYSTEM` after each open, for example when the address is discovered at run time:
 
 ```dart
 Future<void> connectToKnownPeer(Ditto ditto) async {
@@ -109,7 +117,7 @@ WebSocket sync between Small Peers (accepting WebSocket connections on the HTTP 
 
 Because configuration changes do not throw, `ditto.observeTransportConditions()` is the way to see why a transport is not working: missing Bluetooth permissions, Bluetooth or Wi-Fi turned off, no BLE hardware, the app being in the background, mDNS or TCP listen failures, and so on. Call `stop()` on the returned observer when you no longer need it.
 
-On Android, `DittoSyncPermissions` reports which runtime permissions Ditto needs and which are missing. It returns empty lists on other platforms. Request the permissions with a package such as `permission_handler`.
+On Android, `DittoSyncPermissions` reports which runtime permissions Ditto needs and which are missing. It returns empty lists on other platforms. Request the permissions with a package such as `permission_handler`. Since SDK 5.2, `requiredPermissions()` and `missingPermissions()` cover only the generally available transports; the permissions for multicast are returned separately (see [Multicast (Beta) (SDK 5.1+)](#multicast-beta-sdk-51)).
 
 ```dart
 // ✅ GOOD: Surface transport problems and missing permissions.
@@ -131,7 +139,7 @@ Future<TransportConditionsObserver> watchTransports(Ditto ditto) async {
 
 ## Multicast (Beta) (SDK 5.1+)
 
-Multicast is an opt-in transport that sends each update once to a multicast group instead of once per connection, which reduces connection overhead in dense deployments. It is a private beta feature: **use it only in coordination with Ditto support**. It is configured through `peerToPeer.multicastBeta` and requires additional platform entitlements and permissions (for example the multicast entitlement on iOS and `CHANGE_WIFI_MULTICAST_STATE` on Android). It is not available on the Web or on Windows, and changes made while sync is active take effect only after sync is stopped and started again.
+Multicast is an opt-in transport that sends each update once to a multicast group instead of once per connection, which reduces connection overhead in dense deployments. It is a private beta feature: **use it only in coordination with Ditto support**. It is configured through `peerToPeer.multicastBeta` and requires additional platform entitlements and permissions (for example the multicast entitlement on iOS and `CHANGE_WIFI_MULTICAST_STATE` on Android). It is not available on the Web or on Windows, and changes made while sync is active take effect only after sync is stopped and started again. On Android with SDK 5.2+, get its permissions with `await DittoSyncPermissions().requiredMulticastPermissions()` and check them with `missingPermissions(multicastPermissions)`; `requiredPermissions()` no longer includes them.
 
 `§ Multicast (Beta) (SDK 5.1+)`
 

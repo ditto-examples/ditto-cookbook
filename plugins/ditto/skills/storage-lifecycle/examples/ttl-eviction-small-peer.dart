@@ -1,9 +1,9 @@
-// SDK Version: ditto_live 5.1.0
+// SDK Version: ditto_live 5.2.0
 // Platform: Flutter (the DQL applies to all SDKs)
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // Device-local, time-based retention on a Small Peer, plus tombstone TTL
-// settings applied at startup.
+// settings passed when Ditto opens.
 //
 // Guide: § Time-based eviction
 //        § Batching evictions
@@ -13,9 +13,11 @@
 // - Retention window (app logic): how long documents stay on this device.
 //   Implemented with a time-scoped subscription and EVICT of the complement.
 // - Tombstone TTL (system parameter TOMBSTONE_TTL_HOURS, default 168 = 7 days):
-//   how long DELETE tombstones are kept before reaping. It is set with
-//   ALTER SYSTEM (there is no SDK method for it), is not persisted, and must
-//   never exceed the Ditto Server tombstone TTL.
+//   how long DELETE tombstones are kept before reaping. It is set in
+//   DittoConfig.systemParameters (SDK 5.2+; on SDK 5.1, with ALTER SYSTEM
+//   after every open and before sync.start()). There is no SDK method for it,
+//   it is not persisted, and it must never exceed the Ditto Server tombstone
+//   TTL.
 
 import 'package:ditto_live/ditto_live.dart';
 import 'package:flutter/foundation.dart';
@@ -36,23 +38,22 @@ String utcTimestamp([DateTime? time]) {
 Future<String> fetchAuthToken() async => 'YOUR_AUTH_TOKEN';
 
 // ============================================================================
-// Startup: apply system parameters after every open, before sync.start()
+// Startup: pass system parameters on every open (SDK 5.2+)
 // ============================================================================
 
 /// Example only: raise the tombstone TTL to 14 days because devices in this
 /// deployment may stay offline for up to two weeks. Keep it at or below the
 /// Ditto Server TTL; changes on the server side go through Ditto support.
-Future<void> applyStorageParameters(Ditto ditto) async {
-  await ditto.store.execute('ALTER SYSTEM SET TOMBSTONE_TTL_HOURS = 336');
-}
+/// System parameters are not persisted, so this configuration is used for
+/// every open; Ditto applies them before it starts.
+const storageConfig = DittoConfig(
+  databaseID: 'YOUR_DATABASE_ID',
+  connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
+  systemParameters: {'TOMBSTONE_TTL_HOURS': 336},
+);
 
 Future<(Ditto, OrderRetention)> startDitto() async {
-  final ditto = await Ditto.open(
-    DittoConfig(
-      databaseID: 'YOUR_DATABASE_ID',
-      connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
-    ),
-  );
+  final ditto = await Ditto.open(storageConfig);
 
   await ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) async {
     final response = await ditto.auth.login(
@@ -64,9 +65,6 @@ Future<(Ditto, OrderRetention)> startDitto() async {
       debugPrint('Login failed: ${response.exception}');
     }
   });
-
-  // ALTER SYSTEM settings are reset on every open.
-  await applyStorageParameters(ditto);
 
   final retention = OrderRetention(ditto)..start();
   ditto.sync.start();

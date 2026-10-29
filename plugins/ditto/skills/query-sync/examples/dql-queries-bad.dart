@@ -1,4 +1,4 @@
-// DQL read anti-patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// DQL read anti-patterns for Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // Every function below compiles and runs, but returns wrong results, is
 // unsafe, or wastes resources. The corrected versions are in
@@ -42,7 +42,7 @@ Future<List<Map<String, dynamic>>> findByStatusesWrong(
 }
 
 /// ❌ BAD: ANY ... SATISFIES over a parameter in WHERE returns no rows in
-/// SDK 5.1.0. Use status IN :statuses.
+/// SDK 5.1.0 and 5.2.0. Use status IN :statuses.
 Future<List<Map<String, dynamic>>> findByStatusesWithAny(
   Ditto ditto,
   List<String> statuses,

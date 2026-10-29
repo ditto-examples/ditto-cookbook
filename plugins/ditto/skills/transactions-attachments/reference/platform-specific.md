@@ -245,7 +245,7 @@ suspend fun fetchAttachment(
 ```
 
 - `newAttachment(path, ...)` is not a `suspend` function; the `InputStream` overload is.
-- The metadata parameter is typed `Map<String, Any?>`, but use string values only, as on every other platform.
+- The metadata parameter is typed `Map<String, Any?>`, but use string values only, as on every other platform. In SDK 5.2, the overloads that take `Map<String, Any?>` metadata are deprecated and throw `IllegalArgumentException` for values that are not strings; use the `Map<String, String>` overloads (`§ Changes in SDK 5.2.0`).
 - `fetchAttachment` is a `suspend` function that returns a result instead of delivering completion events. Progress arrives through `onFetchProgress`. Launch it in a coroutine scope tied to the screen that shows the attachment.
 - `DittoAttachment` is `AutoCloseable`; read it inside `use { }`.
 

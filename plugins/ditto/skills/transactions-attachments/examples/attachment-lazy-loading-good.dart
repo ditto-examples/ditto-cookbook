@@ -1,4 +1,4 @@
-// Ditto SDK 5.1 (Flutter, ditto_live 5.1.0): Lazy attachment loading
+// Ditto SDK 5.2 (Flutter, ditto_live 5.2.0): Lazy attachment loading
 //
 // Guide: § Fetching Attachments
 //

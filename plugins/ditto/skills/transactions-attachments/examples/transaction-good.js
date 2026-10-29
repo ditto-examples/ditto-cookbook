@@ -1,4 +1,4 @@
-// Ditto SDK 5.1 (JavaScript, @dittolive/ditto 5.1.0): Transaction patterns
+// Ditto SDK 5.2 (JavaScript, @dittolive/ditto 5.2.0): Transaction patterns
 //
 // Guide: § Transactions on Other Platforms
 //

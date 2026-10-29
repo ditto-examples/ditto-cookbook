@@ -5,11 +5,11 @@ description: "Ditto SDK testing strategies: local-store test helper, tests for D
 
 # Ditto Testing Strategies
 
-How to test code that uses Ditto: a real local store per test for DQL, write shapes, filters, and lifecycle, and several synced peers in one process for merges. Targets Ditto SDK 5.1.0; examples are Flutter (Dart).
+How to test code that uses Ditto: a real local store per test for DQL, write shapes, filters, and lifecycle, and several synced peers in one process for merges. Targets Ditto SDK 5.2.0; examples are Flutter (Dart).
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target 5.2.0, checked on one device with the JavaScript SDK (system parameters, DQL, observers, diagnostics); Flutter and multi-peer behavior were observed with 5.1.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each comes with its safe pattern. Where any device still runs 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. On a later version, confirm a note (release notes, docs.ditto.live) first. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
 - `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
@@ -17,7 +17,7 @@ How to test code that uses Ditto: a real local store per test for DQL, write sha
 
 - DQL statements that fail to parse or plan only at runtime, and hot queries that silently lose their index scan
 - Soft-delete filters that hide documents where the flag is missing or null
-- `DELETE`/`EVICT` statements that complete without removing anything (`USE IDS` without a `WHERE` predicate, SDK 5.1.0)
+- `DELETE`/`EVICT` statements that complete without removing anything (for example `USE IDS` without a `WHERE` predicate on devices that run SDK 5.1.0)
 - Write shapes that merge badly (whole-document rewrites, arrays instead of maps, `SET` that keeps old map keys) introduced by a refactoring
 - Upserts that rewrite unchanged data
 - Observers and stream subscriptions that are never cancelled
@@ -30,7 +30,7 @@ How to test code that uses Ditto: a real local store per test for DQL, write sha
 ```
 Adding tests to a Ditto app:
 - [ ] 1. Put Ditto behind a repository or service interface; unit-test widgets and business logic with a mock
-- [ ] 2. Add the local store helper (openTestDitto) under integration_test/, with configure = the app's startup setup
+- [ ] 2. Add the local store helper (openTestDitto) under integration_test/, with the app's systemParameters and configure = its index setup
 - [ ] 3. Run every app DQL statement through EXPLAIN; assert index scans for hot queries
 - [ ] 4. Test filters with the flag true, false, null, and missing
 - [ ] 5. Test merge-sensitive writes (map keys kept, no-op re-upserts, object replacement)
@@ -56,8 +56,8 @@ Test layers (`§ Testing Strategies`):
 Many problems in Ditto apps come from the data model and the queries, and are cheap to catch against a **real local store** on one device. Open a small-peers-only instance (the default `connect`, `DittoConfigConnectSmallPeersOnly()`) in a fresh temporary persistence directory per test, and close it in `tearDown`/`addTearDown`. The local store works without a license, so such tests need no token and no network and can run in CI.
 
 **✅ DO**:
-- Use the `openTestDitto` helper: temporary directory, `addTearDown` that closes Ditto and deletes the directory, optional `configure` callback.
-- Apply the same system parameters (for example `DQL_STRICT_MODE`) and indexes as the app, through `configure`; system parameters change how statements behave and are not persisted.
+- Use the `openTestDitto` helper: temporary directory, `addTearDown` that closes Ditto and deletes the directory, optional `systemParameters` and `configure` callback.
+- Use the same system parameters (for example `DQL_STRICT_MODE`) as the app, through `systemParameters` (SDK 5.2+; on 5.1, `ALTER SYSTEM` in `configure`), and the same indexes, through `configure`; system parameters change how statements behave and are not persisted.
 
 **❌ DON'T**:
 - Share one persistence directory between tests or open it twice. **Note (SDK 5.1.0):** in Flutter, a second `Ditto.open()` on an open directory may never complete.
@@ -101,12 +101,12 @@ expect(
 
 ### 5. Assert how many documents a DELETE or EVICT removed (CRITICAL)
 
-A deletion statement can complete without removing anything. Assert `mutatedDocumentIDs()` and the remaining rows. This also catches the **Note (SDK 5.1.0)** behavior where `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) removes nothing.
+A deletion statement can complete without removing anything. Assert `mutatedDocumentIDs()` and the remaining rows. This also catches SDK 5.1.0, where `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) removes nothing (`§ Known Issues in SDK 5.1.0`). Run the same tests on every SDK release that devices in the field use.
 
 **✅ DO**: `DELETE FROM orders WHERE _id IN :ids`, then `expect(deleted.mutatedDocumentIDs(), hasLength(2))`.
 **❌ DON'T**: Assume a statement that did not throw removed the documents.
 
-Tombstone expiry, husk documents, and "zombie data" from devices offline longer than the tombstone TTL involve several peers; cover them in multi-peer tests (rule 10). `§ Testing Deletion and Soft Delete`, `§ DELETE and Tombstones`
+Tombstone expiry, husk documents, and "zombie data" from devices offline longer than the tombstone TTL involve several peers; cover them in multi-peer tests (rule 10). `§ Testing Deletion and Soft Delete`, `§ DELETE and Tombstones`, `§ Known Issues in SDK 5.1.0`
 
 ### 6. Test the write shape of merge-sensitive writes (HIGH)
 
@@ -134,7 +134,7 @@ final plan = await ditto.store.execute(
 expect(jsonEncode(plan.items.first.value), contains('indexScan'));
 ```
 
-A later change to the query or to strict mode (which disables index scans in 5.1.0) then fails the test. During development, `ADVISE` (SDK 5.1+) suggests the indexes these statements need.
+A later change to the query or to strict mode (which disables index scans in 5.1.0 and 5.2.0) then fails the test. During development, `ADVISE` (SDK 5.1+) suggests the indexes these statements need.
 
 `§ Validating DQL in Tests`, `§ EXPLAIN and PROFILE`, `§ Strict Mode`, `§ ADVISE (SDK 5.1+)` · Example: [reference/local-store-tests.md](reference/local-store-tests.md#validating-dql-with-explain)
 
@@ -174,7 +174,7 @@ Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment 
 - Small-peers-only sync needs an **offline license token**: `ditto.sync.start()` throws until `ditto.setOfflineOnlyLicenseToken(token)` is called with a valid token. Without one, tests are limited to a single local store.
 - **✅ DO**: Make the concurrent writes inside `whileDisconnected` (stop sync on every peer, write, reconnect), then `waitForConvergence` with a timeout until every peer returns the same rows.
 - **❌ DON'T**: Write while the peers are connected and call it a merge test; the writes reach the other peers within milliseconds.
-- A device accepts at most 6 TCP connections by default (SDK 5.1.0 default of `MESH_CHOOSER_MAX_WLAN_CONNECTIONS`), so keep the peer count at 7 or below. For a relay test, chain the peers: A listens, B listens and connects to A, C connects to B.
+- A listening peer accepted at most 6 TCP connections by default in testing with SDK 5.1.0 (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`; the 5.2.0 release notes say accepted and outgoing connections now count together), so keep the peer count at 7 or below. The multi-peer test file was verified with `ditto_live` 5.1.0 and has not yet been run with 5.2.0. For a relay test, chain the peers: A listens, B listens and connects to A, C connects to B.
 
 `§ Testing on Multiple Devices`, `§ Several peers in one test process`, `§ Transport Configuration` · Helpers and test: [reference/multi-peer-tests.md](reference/multi-peer-tests.md)
 

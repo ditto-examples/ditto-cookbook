@@ -1,6 +1,6 @@
 # Ditto Security Reference
 
-Security model, production authentication, small-peers-only key handling, permissions, revocation, connection control, input validation, data at rest, and webhook security for Ditto SDK 5.1.0. Copied from `§ Security` in `../guide/reference/ditto.md`.
+Security model, production authentication, small-peers-only key handling, permissions, revocation, connection control, input validation, data at rest, and webhook security for Ditto SDK 5.2.0. Copied from `§ Security` in `../guide/reference/ditto.md`.
 
 ## Contents
 
@@ -31,7 +31,7 @@ Ditto syncs data directly between devices, so security decisions apply to every 
 | Encryption in transit | TLS 1.3 between peers (mutual TLS) and TLS between peers and Ditto Server. **Exception:** `DittoConfigConnectSmallPeersOnly()` without a `privateKey` has no secret: peers do not authenticate each other, and the SDK documents the mode as unencrypted (see [Small-peers-only deployments](#small-peers-only-deployments)). |
 | Authorization | Read and write permissions returned by your authentication webhook, enforced by Ditto Server and by every participating device. |
 | Revocation | Certificates issued to server-authenticated peers can be revoked centrally (SDK 5.1+). |
-| Data at rest | Not encrypted by Ditto. Rely on OS protections and application-level encryption (see [Data at rest](#data-at-rest)). |
+| Data at rest | Encrypted with an app-provided key on Swift and Kotlin (SDK 5.2+). On Flutter, JavaScript, and the other SDKs, not encrypted by Ditto: rely on OS protections and application-level encryption (see [Data at rest](#data-at-rest)). |
 
 `§ Security Model Overview`
 
@@ -292,7 +292,11 @@ Future<void> findOrdersByName(Ditto ditto, String name) async {
 
 ## Data at rest
 
-The Ditto SDK does **not** encrypt its local database at rest, and there is no supported API to enable it.
+Since SDK 5.2, the **Swift and Kotlin** SDKs can encrypt the local store, including attachments, with a 32-byte key that your app generates and passes in `DittoConfig.encryptionKey` on every open. Ditto does not store or manage the key: keep it outside the persistence directory, in the Keychain or the Android Keystore. Ditto does not convert an existing store in place, so switching between encrypted and unencrypted storage means deleting the local store (`Ditto.deleteStore` or `DittoFactory.deleteStore`) and syncing it again. The **Flutter**, JavaScript, and other SDKs do not encrypt the local database at rest, and have no API to enable it; see the [encryption at rest documentation](https://docs.ditto.live/sdk/latest/sync/encryption-at-rest).
+
+Every SDK reports a typed error when a store cannot be opened for an encryption reason (in Flutter, a `DittoEncryptionException` whose `reason` is `keyRequired`, `keyUnexpected`, `keyInvalid`, `unsupportedScheme`, or `metadataCorrupt`). In Flutter, `DittoConfigExperimental.passphrase` remains only for compatibility: `Ditto.open()` rejects any value other than `null`.
+
+The rest of this section applies wherever Ditto does not encrypt the store.
 
 **✅ DO:**
 - Rely on OS-level protection (iOS Data Protection, Android file-based encryption). These require a passcode or screen lock, and with the default settings they protect data mainly while the device is powered off or has not been unlocked since it started; they do not protect data on a device that has been unlocked since boot.
@@ -330,7 +334,7 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 - Reject identities in the webhook before creating a revocation, and keep revocation checking enabled.
 - Always use a `privateKey` in small-peers-only deployments, and provision it securely.
 - Validate input and pass all values as DQL parameters.
-- Protect sensitive data at rest with OS protections and application-level encryption.
+- Protect sensitive data at rest: with `DittoConfig.encryptionKey` on Swift and Kotlin (SDK 5.2+), and elsewhere with OS protections and application-level encryption.
 - Verify webhook signatures.
 
 **❌ DON'T:**

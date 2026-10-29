@@ -5,11 +5,11 @@ description: Ditto SDK setup, lifecycle, and production security: DittoConfig, D
 
 # Ditto SDK Setup, Lifecycle, and Security
 
-Opening Ditto, authenticating, starting and stopping sync, shutting down, transports and presence, and securing a production deployment. Targets Ditto SDK 5.1.0; examples are Flutter (Dart).
+Opening Ditto, authenticating, starting and stopping sync, shutting down, transports and presence, and securing a production deployment. Targets Ditto SDK 5.2.0; examples are Flutter (Dart).
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files); these rules were verified with 5.1.0. **Note (SDK 5.1.0)** marks easy-to-miss 5.1.0 behavior (wrong results, lost data, crashes, hangs) and its safe pattern; on another version, confirm it (release notes, docs.ditto.live) first. **(SDK 5.1+)** marks features introduced in 5.1.
+- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target 5.2.0, checked on one device with the JavaScript SDK (system parameters, DQL, observers, diagnostics); Flutter and multi-peer behavior were observed with 5.1.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each comes with its safe pattern. Where any device still runs 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. On a later version, confirm a note (release notes, docs.ditto.live) first. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
 - `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
 
@@ -19,7 +19,7 @@ Opening Ditto, authenticating, starting and stopping sync, shutting down, transp
 - Keyless `DittoConfigConnectSmallPeersOnly()` in production (peers not authenticated)
 - Hardcoded keys or tokens; the development provider or token in a release build
 - Throwing inside the authentication expiration handler
-- `ALTER SYSTEM` settings assumed to persist, or changed after sync has started
+- System parameters assumed to persist, set with `ALTER SYSTEM` after open instead of in `DittoConfig.systemParameters`, or changed after sync has started
 - `ditto.close()` on `AppLifecycleState.paused`
 - A `TransportConfig()` built from scratch (every transport disabled)
 - TCP hubs with more than six clients whose extra clients silently get no data
@@ -34,13 +34,13 @@ App startup order (complete `DittoService`: [reference/startup-and-lifecycle.md]
 Startup:
 - [ ] 1. await Ditto.init() - only if DittoLogger or Ditto.openSync is used before open
 - [ ] 2. DittoLogger settings (after init, before open)
-- [ ] 3. await Ditto.open(DittoConfig(...)) once; share the instance
+- [ ] 3. await Ditto.open(DittoConfig(..., systemParameters: {...})) once; share the instance
 - [ ] 4. Server: await ditto.auth.setExpirationHandler(...) | Small peers: ditto.setOfflineOnlyLicenseToken(token)
-- [ ] 5. ALTER SYSTEM SET ... for every system parameter (not persisted)
-- [ ] 6. CREATE INDEX IF NOT EXISTS ... (skip on the Web)
-- [ ] 7. Long-lived ditto.sync.registerSubscription(...)
-- [ ] 8. ditto.sync.start() - returns void; do not await
+- [ ] 5. CREATE INDEX IF NOT EXISTS ... (skip on the Web)
+- [ ] 6. Long-lived ditto.sync.registerSubscription(...)
+- [ ] 7. ditto.sync.start() - returns void; do not await
 - [ ] If a step after 3 fails: await ditto.close(), then rethrow
+- [ ] SDK 5.1: ALTER SYSTEM SET ... after step 4, before step 7
 ```
 
 ## Rules
@@ -93,18 +93,18 @@ await ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) async {
 });
 ```
 
-`await ditto.auth.logout()` **stops sync**; call `sync.start()` after the next login. `ditto.auth.status` has `isAuthenticated` and `userID`.
+`await ditto.auth.logout()` **stops sync**; call `sync.start()` after the next login. `ditto.auth.status` has `isAuthenticated` and `userID`. `logout(cleanup:)` (SDK 5.2+) runs after sync stops and may only `EVICT`; it swallows exceptions, so verify the result.
 
 `§ Authentication`, `§ Authentication in Production` · Details: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#authentication)
 
-### 4. Apply system parameters on every open, before sync starts (CRITICAL)
+### 4. Pass system parameters in DittoConfig on every open (CRITICAL)
 
-`ALTER SYSTEM SET` values are in memory only and reset on restart or reopen.
+System parameters are in memory only and reset on restart or reopen. `DittoConfig.systemParameters` (SDK 5.2+) applies them before Ditto starts, so startup-only parameters take effect, and an unknown name or a wrong type makes `Ditto.open()` fail (`DittoException`; `ArgumentError` for a value Dart cannot represent). Startup-only parameters set with `ALTER SYSTEM` after open have no effect.
 
-**✅ DO**: apply them in one startup function after `Ditto.open()` and before `sync.start()`, queries, or observers (subscriptions may come first); confirm with `SHOW <parameter>`; reset with `ALTER SYSTEM RESET`.
+**✅ DO**: pass the app's settings in one map on every open (`{if (strictMode) 'DQL_STRICT_MODE': true}`); use `ALTER SYSTEM` only to change a value while the app runs; confirm with `SHOW <parameter>`. On SDK 5.1: `ALTER SYSTEM` after `Ditto.open()` and before `sync.start()`, queries, or observers (subscriptions may come first).
 **❌ DON'T**: run `ALTER SYSTEM` once in a migration; change `DQL_STRICT_MODE` (default `false`) after sync, queries, or observers have run.
 
-`§ Applying System Parameters`, `§ System Parameters Reference`, `§ Strict Mode`
+`§ Applying System Parameters`, `§ System Parameters Reference`, `§ Strict Mode` · Example: `openWithSystemParameters` in [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#applying-system-parameters)
 
 ### 5. Start sync after its prerequisites; never close on background (CRITICAL)
 
@@ -130,12 +130,12 @@ Invalid values do not throw; they only log. WebSocket sync between Small Peers i
 
 ### 7. Raise the TCP connection limit on hubs with more than six clients (CRITICAL)
 
-> **Note (SDK 5.1.0):** A device accepts 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In testing, extra clients got no data and no API error; only a `WARN` log `... at capacity for this transport`. The parameter is undocumented; confirm it with Ditto support before relying on it in production.
+> **Note (SDK 5.1.0):** A device accepts 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In testing, extra clients got no data and no API error; only a `WARN` log `... at capacity for this transport`. Per the 5.2.0 release notes, accepted and outgoing LAN connections now count together (default still 6); not re-tested on 5.2.0, so check what your hub admits and confirm with Ditto support.
 
-**✅ DO**: on the hub, `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = 12` (or as needed) after `Ditto.open` and **before** `sync.start()`, on every open.
+**✅ DO**: on the hub, pass `'MESH_CHOOSER_MAX_WLAN_CONNECTIONS': 12` in `DittoConfig.systemParameters` on every open (SDK 5.2+); on SDK 5.1, `ALTER SYSTEM` after `Ditto.open` and **before** `sync.start()`.
 **❌ DON'T**: raise it after sync started (rejected clients stayed out in testing).
 
-`§ Transport Configuration` · Example: `startHub` in [reference/transports-and-presence.md](reference/transports-and-presence.md#tcp-connection-limit-per-hub)
+`§ Transport Configuration` · Example: `hubConfig` and `startHub` in [reference/transports-and-presence.md](reference/transports-and-presence.md#tcp-connection-limit-per-hub)
 
 ### 8. Keep peer metadata and identity metadata non-sensitive (CRITICAL)
 
@@ -150,7 +150,7 @@ Invalid values do not throw; they only log. WebSocket sync between Small Peers i
 
 The webhook returns per-collection `read` and `write` rules (each with `everything` and `queriesByCollection`) that can reference only `_id`, in legacy syntax (`_id.storeId == 'store-1'`; `"true"` matches all), not DQL.
 
-**✅ DO**: encode access boundaries (user, store, organization) in a structured `_id` before shipping; grant the narrowest rules per role; reject unknown users with `{"authenticated": false}`; keep `expirationSeconds` moderate so permission changes arrive on re-authentication; account for relaying: data travelling peer-to-peer requires mutual write permission, so read-only roles cannot relay it (see Ditto's data authorization docs).
+**✅ DO**: encode access boundaries (user, store, organization) in a structured `_id` before shipping; grant the narrowest rules per role; reject unknown users with `{"authenticated": false}`; keep `expirationSeconds` moderate so permission changes arrive on re-authentication; account for relaying: data travelling peer-to-peer requires mutual write permission, so read-only roles cannot relay it.
 **❌ DON'T**: rely on mutable fields, `syncGroup`, sync scopes, or client checks; embed long-lived secrets to mint tokens on the device.
 
 `§ Permissions`, ``§ Design `_id` for permission scoping``, `§ Write authority and peer-to-peer relaying` · Details: [reference/security.md](reference/security.md#permissions)
@@ -168,16 +168,16 @@ Certificate revocation (SDK 5.1+) covers server-authenticated identities only an
 
 Release explicitly: `cancel()` observers and subscriptions, `stop()` presence and transport-condition observers and fetchers, `connectionRequestHandler = null`. `ditto.close()` is idempotent, stops sync, and releases resources (later calls throw `DittoClosedException`), but it **does not** wait for in-flight `execute()` or transactions, **does not** end `changes` streams, and **resets** `DittoLogger.customLogCallback`.
 
-**✅ DO**: await pending work, cancel `StreamSubscription`s and observers, then `close()`; set the log callback again before reopening.
+**✅ DO**: await pending work, cancel `StreamSubscription`s and observers, then `close()`; set the log callback again before reopening. `ditto.store.observers` (SDK 5.2+; `registerObserver` only) growing across screens reveals observers never cancelled.
 **❌ DON'T**: rely on garbage collection; send `Ditto` or `Store` to another isolate.
 
 `§ Resource Cleanup and Shutdown`, `§ Forwarding logs to your own pipeline` · Example: `AppShutdown` in [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#resource-cleanup-and-shutdown)
 
 ### 12. Validate input, protect data at rest, secure the webhook (HIGH)
 
-The local database is **not** encrypted at rest.
+Only Swift and Kotlin can encrypt the local store at rest (SDK 5.2+): a 32-byte key in `DittoConfig.encryptionKey` on every open, kept in the Keychain or Android Keystore; switching an existing store means deleting it (`deleteStore`) and syncing again.
 
-**✅ DO**: validate before writes and pass values as `:parameters`; treat peer documents as untrusted; rely on OS protection and encrypt sensitive fields in the app (keys in secure storage); serve the webhook over HTTPS, validate tokens, and verify the `ditto-signature` header.
+**✅ DO**: validate before writes and pass values as `:parameters`; treat peer documents as untrusted; without Ditto encryption, rely on OS protection and encrypt sensitive fields in the app (keys in secure storage); serve the webhook over HTTPS, validate tokens, and verify the `ditto-signature` header.
 **❌ DON'T**: interpolate input into DQL; store tokens or keys in documents.
 
 `§ Input Validation and Query Parameters`, `§ Data at Rest`, `§ Webhook Security` · Details: [reference/security.md](reference/security.md#data-at-rest)
@@ -192,14 +192,15 @@ The local database is **not** encrypted at rest.
 
 ### 14. Plan for platform requirements and Web limits (MEDIUM)
 
-Pin `ditto_live` in `pubspec.yaml`; request Bluetooth, Wi-Fi, local network, and nearby-device permissions before sync. Flutter Web: memory-only store, WebSocket sync to Ditto Server only, no peer-to-peer or license token effect, no indexes (`if (!kIsWeb)`).
+Pin `ditto_live` in `pubspec.yaml`; request Bluetooth, Wi-Fi, local network, and nearby-device permissions before sync. Android, SDK 5.2+: multicast permissions come from `requiredMulticastPermissions()`, not `requiredPermissions()`. Since 5.2 the default root is application support; with a relative `persistenceDirectory`, check that upgraded installs open their data. Flutter Web: memory-only store, WebSocket sync to Ditto Server only, no peer-to-peer or license token effect, no indexes (`if (!kIsWeb)`).
 
-`§ Requirements` · Details: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#requirements)
+`§ Requirements`, `§ DittoConfig`, `§ Upgrading from SDK 5.1` · Details: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#requirements)
 
 ## Diagnose: Sync Never Starts or Devices Do Not Connect
 
 | Symptom | Cause |
 |---|---|
+| `Ditto.open()` throws with `systemParameters` | Unknown name or wrong type (rule 4) |
 | `start()`: "an authentication expiration handler has not yet been set" | No handler (rule 3) |
 | `start()`: "...not yet activated" | No offline license token (small peers) |
 | "The license failed verification" | `setOfflineOnlyLicenseToken()` throws: invalid token; a peer without a valid token is invisible |
@@ -219,17 +220,17 @@ Pin `ditto_live` in `pubspec.yaml`; request Bluetooth, Wi-Fi, local network, and
 - [ ] Server + webhook, or small peers with provisioned `privateKey` and license token
 - [ ] No keys, tokens, or development provider in release builds
 - [ ] Expiration handler awaited before `sync.start()`; checks `response.exception`; never throws
-- [ ] System parameters applied on every open, before sync
+- [ ] System parameters in `DittoConfig.systemParameters` on every open (5.1: `ALTER SYSTEM` before sync)
 - [ ] `sync.start()` not awaited; no `close()` on `paused`
 - [ ] Pending work awaited and observers cancelled before `close()`
 - [ ] Transports via `updateTransportConfig()`; hub TCP limit raised before sync
 - [ ] No secrets in peer or identity metadata
 - [ ] Permissions scoped by `_id`, narrowest per role; revocation checking on
-- [ ] Inputs parameterized; sensitive fields encrypted; webhook signatures verified
+- [ ] Inputs parameterized; sensitive data encrypted (store key on Swift/Kotlin, or fields); webhook signatures verified
 
 ## More
 
-- Reference: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md) - requirements, Web limits, `DittoConfig`, complete startup, auth, system parameters, lifecycle, shutdown, platform differences
+- Reference: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md) - requirements, Web limits, `DittoConfig`, complete startup, auth and logout cleanup, system parameters, lifecycle, shutdown, platform differences
 - Reference: [reference/transports-and-presence.md](reference/transports-and-presence.md) - transports, TCP hub and limit, known peers, diagnostics, multicast, presence
 - Reference: [reference/security.md](reference/security.md) - security model, shared keys, webhook response, `_id` design, revocation, connection handler, data at rest, webhook security, checklist
-- Related skills: `query-sync` (subscriptions, parameters), `performance-observability` (logging details), `storage-lifecycle` (tombstone system parameters), `testing` (local store tests), `audit` (whole-app review)
+- Related skills: `query-sync` (subscriptions), `performance-observability` (logging, diagnostics), `storage-lifecycle` (tombstone parameters), `testing` (local store tests), `audit` (whole-app review)

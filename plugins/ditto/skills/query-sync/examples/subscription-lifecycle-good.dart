@@ -1,4 +1,4 @@
-// Recommended subscription patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// Recommended subscription patterns for Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // Rules:
 // - A subscription query is SELECT * FROM <collection> [WHERE <condition>].
@@ -198,7 +198,8 @@ class _OrdersByStatusState extends State<OrdersByStatus> {
 /// ✅ GOOD: Inspect active subscriptions for debugging only. Read queryString
 /// and isCancelled. Note (SDK 5.1.0): do not read queryArguments or
 /// queryArgumentsJsonString here; for subscriptions registered without
-/// arguments this can terminate the app. Keep your own references instead.
+/// arguments this can terminate a Flutter app. Keep your own references
+/// instead.
 void logActiveSubscriptions(Ditto ditto) {
   for (final subscription in ditto.sync.subscriptions) {
     debugPrint('subscription: ${subscription.queryString} '

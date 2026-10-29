@@ -1,6 +1,6 @@
-// SDK Version: Ditto SDK 5.1.0 (ditto_live 5.1.0)
+// SDK Version: Ditto SDK 5.2.0 (ditto_live 5.2.0)
 // Platform: Flutter
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // ============================================================================
 // Logging and Diagnostics Configuration (Correct Patterns)
@@ -13,6 +13,8 @@
 // - § On-disk logs and exporting them
 // - § System Virtual Collections
 // - § Long-running requests (SDK 5.1+)
+// - § Applying parameters at startup
+// - § Support bundles (SDK 5.2+)
 //
 // Facts:
 // - Every DittoLogger member throws "Ditto not initialized" until the SDK is
@@ -30,8 +32,10 @@
 // 2. ✅ Forwarding warnings and errors, re-installed before every open
 // 3. ✅ Exporting on-disk logs for a "Send diagnostics" action
 // 4. ✅ Temporary verbose logging for a targeted investigation
-// 5. ✅ Slow-request warnings during development (SDK 5.1+)
+// 5. ✅ System parameters passed in DittoConfig on every open (SDK 5.2+),
+//    here the slow-request warning (SDK 5.1+)
 // 6. ✅ On-demand diagnostics snapshot from system: virtual collections
+// 7. ✅ Support bundle created on the device (SDK 5.2+)
 //
 // ============================================================================
 
@@ -55,8 +59,9 @@ Future<void> configureDittoLogging() async {
   DittoLogger.minimumLogLevel = kReleaseMode ? LogLevel.warning : LogLevel.debug;
 }
 
-/// ✅ GOOD: Logging and log forwarding first, then open, then everything that
-/// depends on the instance (system parameters, auth handler, sync).
+/// ✅ GOOD: Logging and log forwarding first, then open with the app's system
+/// parameters, then everything that depends on the instance (auth handler,
+/// sync).
 Future<Ditto> startDitto(void Function(String line) report) async {
   await configureDittoLogging();
   installDittoLogForwarding(report); // Forwards logs emitted while Ditto opens.
@@ -65,10 +70,12 @@ Future<Ditto> startDitto(void Function(String line) report) async {
     const DittoConfig(
       databaseID: 'YOUR_DATABASE_ID',
       connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
+      // Not persisted: pass on every open; applied before Ditto starts.
+      systemParameters: appSystemParameters,
     ),
   );
 
-  await applyDiagnosticsParameters(ditto);
+  if (!kReleaseMode) await logNonDefaultParameters(ditto);
 
   await ditto.auth.setExpirationHandler((ditto, timeUntilExpiration) async {
     final response = await ditto.auth.login(
@@ -153,18 +160,24 @@ Future<T> withVerboseLogging<T>(Future<T> Function() investigate) async {
 }
 
 // ============================================================================
-// PATTERN 5: Slow-request warnings (SDK 5.1+)
+// PATTERN 5: System parameters and slow-request warnings
 // ============================================================================
 
-/// ✅ GOOD: System parameters are not persisted. Apply them after every
-/// Ditto.open() and before ditto.sync.start(), then read back the
-/// non-default parameters to confirm.
-Future<void> applyDiagnosticsParameters(Ditto ditto) async {
-  if (!kReleaseMode) {
-    // Default is 60 seconds; a lower threshold surfaces slow queries early.
-    await ditto.store.execute('ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10');
-  }
+/// ✅ GOOD: This app's system parameters, passed in DittoConfig.systemParameters
+/// on every open (SDK 5.2+). System parameters are not persisted; Ditto applies
+/// these before it starts, and a misspelled name or a wrong type makes
+/// Ditto.open() fail. On SDK 5.1, run ALTER SYSTEM after every Ditto.open()
+/// and before ditto.sync.start() instead. Use ALTER SYSTEM on 5.2 only to
+/// change a value while the app runs, for example during a support session.
+const appSystemParameters = <String, Object>{
+  // Default is 60 seconds; a lower threshold surfaces slow queries early
+  // (SDK 5.1+).
+  if (!kReleaseMode) 'DQL_SLOW_REQUEST_WARN_SECONDS': 10,
+};
 
+/// ✅ GOOD: Logs the parameters that differ from their defaults, for example
+/// after Ditto.open() in debug builds, to confirm the configuration.
+Future<void> logNonDefaultParameters(Ditto ditto) async {
   final result = await ditto.store.execute(
     "SELECT key, value FROM system:system_info "
     "WHERE key LIKE 'non_default_system_parameter%'",
@@ -199,6 +212,11 @@ Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
   final activeRequests = await ditto.store.execute(
     'SELECT _id, text, state, times FROM system:active_requests',
   );
+  // Documents that stopped syncing on this device (SDK 5.2+), for example
+  // because a change would have pushed them over the hard size limit.
+  final syncDegradations = await ditto.store.execute(
+    'SELECT * FROM system:sync_degradations',
+  );
 
   return {
     'core': values(core),
@@ -206,7 +224,29 @@ Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
     'syncConnections': values(syncConnections),
     'indexes': values(indexes),
     'activeRequests': values(activeRequests),
+    'syncDegradations': values(syncDegradations),
   };
+}
+
+// ============================================================================
+// PATTERN 7: Support bundle (SDK 5.2+)
+// ============================================================================
+
+/// ✅ GOOD: Create a support bundle (on-disk logs, effective configuration,
+/// and runtime telemetry in one tar archive) and save it, for example to share
+/// it with Ditto support. Works without a connection to Ditto Server, on
+/// native platforms only. SUPPORT_BUNDLE_REQUEST_RATE limits requests (3 per
+/// rolling 10 minutes by default). The archive contains peer keys of other
+/// devices and absolute file paths: review it before sharing it beyond Ditto
+/// support. [path] must not exist yet.
+Future<void> saveSupportBundle(Ditto ditto, String path) async {
+  final result = await ditto.store.execute(
+    "EXECUTE FUNCTION system_request_support_bundle()",
+  );
+  final token = Map<String, dynamic>.from(result.items.single.value['file'] as Map);
+  final fetcher = ditto.store.fetchAttachment(token, (event) {});
+  final attachment = await fetcher.attachment;
+  await attachment!.copyToPath(path);
 }
 
 /// Placeholder for fetching an authentication token from your backend.

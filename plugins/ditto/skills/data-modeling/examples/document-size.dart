@@ -1,4 +1,4 @@
-// Ditto SDK: 5.1.0 (Flutter package ditto_live)
+// Ditto SDK: 5.2.0 (Flutter package ditto_live)
 //
 // Document size limits
 //
@@ -9,7 +9,9 @@
 //     the stored document is unchanged. It is checked only for local writes:
 //     concurrent offline additions on two devices can merge into a larger
 //     document, after which every UPDATE of it fails until UNSET removes data
-//     (SDK 5.1.0).
+//     (SDK 5.1.0). According to the 5.2.0 release notes, a receiving device
+//     on 5.2.0 instead drops a change that would exceed its hard limit and
+//     lists the document in system:sync_degradations (not yet verified).
 // Design documents to stay well below 256 KiB; leave both limits at their
 // defaults.
 //

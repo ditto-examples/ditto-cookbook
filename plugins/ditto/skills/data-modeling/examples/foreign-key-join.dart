@@ -1,4 +1,4 @@
-// Ditto SDK: 5.1.0 (Flutter package ditto_live)
+// Ditto SDK: 5.2.0 (Flutter package ditto_live)
 //
 // Separate collections with foreign keys and JOIN (SDK 5.1+)
 //

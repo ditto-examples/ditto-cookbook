@@ -1,4 +1,4 @@
-// Ditto SDK: 5.1.0 (Flutter package ditto_live)
+// Ditto SDK: 5.2.0 (Flutter package ditto_live)
 //
 // Arrays vs maps keyed by ID
 //

@@ -1,4 +1,4 @@
-// Recommended DQL read patterns for Ditto SDK 5.1.0 (Flutter, ditto_live 5.1.0).
+// Recommended DQL read patterns for Ditto SDK 5.2.0 (Flutter, ditto_live 5.2.0).
 //
 // Covers: parameters, membership filters, quoted object keys, MISSING/NULL,
 // ORDER BY / LIMIT / keyset pagination, projections, aggregates, GROUP BY,

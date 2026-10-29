@@ -1,4 +1,4 @@
-# Subscriptions and Observers Reference (SDK 5.1)
+# Subscriptions and Observers Reference (SDK 5.2)
 
 Detailed rules behind the subscription and observer patterns in [SKILL.md](../SKILL.md). Extracted from the guide sections `§ Sync and Subscriptions` and `§ Observing Changes`.
 
@@ -46,7 +46,7 @@ Consequences:
 
 - Use the same subscriptions on peers in the same role so any of them can serve the others.
 - An intermediate device relays only documents in its local store: give relay or hub devices at least the subscriptions of the devices behind them.
-- A device accepts at most 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`, SDK 5.1.0). Extra clients of a TCP hub get no data and no error, only a `WARN ... at capacity` log line. On a hub with more clients, run `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open` and before `ditto.sync.start()`. Raising it after sync has started did not admit already rejected clients within 60 s. Guide: `§ Transport Configuration`.
+- A device accepts a limited number of connections per transport; for TCP, 6 by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In testing with SDK 5.1.0, extra clients of a TCP hub got no data and no error, only a `WARN ... at capacity` log line. According to the 5.2.0 release notes, accepted and outgoing LAN connections now count together; the hub test has not been repeated on 5.2.0, so check how many clients your hub admits. On a hub with more clients, raise the limit so that it is in effect before `ditto.sync.start()`: in `DittoConfig.systemParameters` (SDK 5.2+), or on SDK 5.1 with `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open`. Raising it after sync had started did not admit already rejected clients within 60 s. Guide: `§ Transport Configuration`.
 - Keep predicates flat (`storeId = :storeId`); deeply nested `AND`/`OR` trees and deep paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` from Ditto Server.
 - Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below). In SDK 5.1.0, a document that stops matching becomes a **frozen copy**. The device receives the change that made it stop matching, and then no further edits and not even its deletion. Local queries keep showing it, so filter it out locally and evict it when it is no longer needed. When it matches again, it arrives in its latest state.
 - Soft delete: keep soft-deleted documents in the subscriptions of devices that relay data, and hide them locally with `coalesce(isDeleted, false) = false`. A device that subscribes only to active documents still receives the flag and a restore for documents it holds (SDK 5.1.0), but it cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. Two designs meet this requirement:
@@ -65,7 +65,7 @@ Consequences:
 - `ditto.sync.stop()` pauses all subscriptions; `start()` resumes them. `await ditto.close()` marks them cancelled; `cancel()` afterwards is a no-op.
 - `ditto.sync.subscriptions` is for debugging: read `queryString` and `isCancelled` only.
 
-> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate the app. Keep your own references when you need the arguments.
+> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate a Flutter app (in testing, the JavaScript SDK 5.1.0 and 5.2.0 returned `null` instead). Keep your own references when you need the arguments.
 
 ```dart
 // ✅ GOOD: Switching stores: cancel, evict the old store's data, subscribe again.
@@ -121,15 +121,17 @@ The experimental APIs may change in a future release; the stable `registerObserv
 | Cancelling the `StreamSubscription` of a `StoreObserverV2` (`registerObserverV2` or `registerObserverWithSignalNext`) also cancels the observer | Leaving an `await for` loop over `changes` does the same |
 | `await ditto.close()` marks observers cancelled but does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2` | Cancel observers explicitly before closing |
 | With `onChange`, events emitted before the first listener attaches are buffered | Listen right after registering |
+| `ditto.store.observers` (SDK 5.2+) lists the uncancelled observers from `registerObserver` (not `registerObserverV2` or `registerObserverWithSignalNext`) | A count that keeps growing while the user moves between screens points to an observer that is never cancelled |
 
-> **Note (SDK 5.1.0):** With `onChange` and an unconsumed `changes` stream, every delivered result stays in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` right after registering it. Register without `onChange` and consume `changes`; if `onChange` is required, also drain the stream.
+> **Note (SDK 5.1.0):** With `onChange` and an unconsumed `changes` stream, every delivered result stays in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` right after registering it. Register without `onChange` and consume `changes`; if `onChange` is required, also drain the stream. The `ditto_live` 5.2.0 source registers observers the same way, so expect the same behavior there.
 
 Callback rules:
 - `registerObserver` has no backpressure: it never waits for your code, and pausing its stream only queues results.
 - Keep listeners synchronous: copy values, map to models, call `setState`. Move heavy computation off the UI isolate (for example `compute()` on copied values).
 - Do not `await` network, file, or database work in a `registerObserver` listener; do not write to the observed collection without a guard.
+- Since SDK 5.2, an observer no longer re-runs its query after writes to collections it does not observe (in testing with the JavaScript SDK, 50 writes to another collection caused no re-runs), and observers hold less memory between updates, so splitting observers by collection costs less than before.
 - Changes that arrive through sync are delivered in batches: expect fewer callbacks than remote writes (a remote transaction arrives as one callback), and do not count or log remote changes through callbacks.
-- How often observers on `system:data_sync_info` fire varies: the Ditto documentation describes a 500 ms interval, while with SDK 5.1.0 an idle observer fired only when the rows changed (about once every 10 seconds). Write code that works with either behavior: use one small observer and rebuild only when the derived value changes. See `§ Monitoring Sync Status`.
+- How often observers on `system:data_sync_info` fire varies: with SDK 5.1.0 an idle observer fired only when the rows changed (about once every 10 seconds), and for SDK 5.2 the Ditto documentation no longer lists it among the collections whose observers run on a timer (older documentation described a 500 ms interval). Write code that works with either behavior: use one small observer and rebuild only when the derived value changes. See `§ Monitoring Sync Status`.
 - With state management libraries, let one provider or controller own each observer and cancel it in the provider's dispose hook. `item.value` creates a new `Map` per result, so map rows to immutable models with `==` if you rely on equality to skip rebuilds.
 
 ## Backpressure Behavior

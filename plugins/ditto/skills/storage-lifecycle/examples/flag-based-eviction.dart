@@ -1,6 +1,6 @@
-// SDK Version: ditto_live 5.1.0
+// SDK Version: ditto_live 5.2.0
 // Platform: Flutter (the DQL applies to all SDKs)
-// Last Updated: 2026-10-09
+// Last Updated: 2026-10-30
 //
 // Flag-based eviction: devices subscribe only to unflagged documents and
 // evict the flagged ones.

@@ -1,6 +1,6 @@
 # Data Modeling Common Patterns
 
-Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.1.0 with the default `DQL_STRICT_MODE = false`. The source of truth is `§ Data Modeling` in the full guide (`../../guide/reference/ditto.md`).
+Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditto SDK 5.2.0 with the default `DQL_STRICT_MODE = false`. The source of truth is `§ Data Modeling` in the full guide (`../../guide/reference/ditto.md`).
 
 ## Table of Contents
 
@@ -149,7 +149,7 @@ Guide: `§ Document Structure`, `§ MISSING and NULL`.
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | Write succeeds; a warning is logged |
 | Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
 
-The soft-limit warning reads `exceeds recommended limit`. **Note (SDK 5.1.0):** merges from other devices are not checked against the hard limit: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data.
+The soft-limit warning reads `exceeds recommended limit`. **Note (SDK 5.1.0):** merges from other devices are not checked against the hard limit: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data. According to the 5.2.0 release notes, a Small Peer on 5.2.0 instead drops a replication diff that would push a document over its hard limit: the document receives no more updates on that device until it is evicted and synced again, and it is listed in `system:sync_degradations` with the reason `documentTooBig`. Devices can then hold different versions of the same document without any error. This is not yet verified; on both releases, keep documents far below the limit, and on 5.2.0 also check `system:sync_degradations` in your diagnostics.
 
 The limits apply to the size of each stored document. Size affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes more than 10 seconds to replicate the first time.
 
@@ -168,6 +168,6 @@ FROM orders AS o
 WHERE _id = :id
 ```
 
-**❌ DON'T:** embed base64-encoded files, append to a nested map forever, or raise the hard limit to make a large document fit. If you change either limit, change it on every peer in the same release.
+**❌ DON'T:** embed base64-encoded files, append to a nested map forever, or raise the hard limit to make a large document fit. If you change either limit, change it on every peer in the same release. (In SDK 5.1.0 and 5.2.0, a hard limit set below the soft limit is not enforced.)
 
 Guide: `§ Document Size Limits`, `§ Attachments`. Example: [document-size.dart](../examples/document-size.dart).

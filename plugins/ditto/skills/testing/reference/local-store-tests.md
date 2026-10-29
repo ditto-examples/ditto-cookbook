@@ -162,7 +162,7 @@ test('deleting by ID removes exactly the listed documents', () async {
 });
 ```
 
-Assertions on the number of removed documents also catch the SDK 5.1.0 behavior where `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) removes nothing (`§ DELETE and Tombstones`). Tombstone expiry, husk documents, and "zombie data" from devices that were offline longer than the tombstone TTL involve several peers; cover them in multi-device tests ([multi-peer-tests.md](multi-peer-tests.md)).
+Assertions on the number of removed documents also catch SDK 5.1.0, where `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) removes nothing (`§ Known Issues in SDK 5.1.0`). Run the same tests on every SDK release that devices in the field use. Tombstone expiry, husk documents, and "zombie data" from devices that were offline longer than the tombstone TTL involve several peers; cover them in multi-device tests ([multi-peer-tests.md](multi-peer-tests.md)).
 
 ## Observer lifecycle
 
@@ -246,7 +246,7 @@ test("the app's subscriptions are valid", () async {
 
 ## Validating DQL with EXPLAIN
 
-`§ Validating DQL in Tests`. Keep the DQL statements of your app as constants in one place (for example, a repository class), and run each of them through `EXPLAIN` with representative arguments. `EXPLAIN` parses and plans a statement without executing it (`§ EXPLAIN and PROFILE`), so the test catches syntax errors and other statements that cannot be planned, without touching any data. For hot queries, also assert that the plan uses the index you created; a later change to the query or to strict mode (which disables index scans in 5.1.0, `§ Strict Mode`) then fails the test.
+`§ Validating DQL in Tests`. Keep the DQL statements of your app as constants in one place (for example, a repository class), and run each of them through `EXPLAIN` with representative arguments. `EXPLAIN` parses and plans a statement without executing it (`§ EXPLAIN and PROFILE`), so the test catches syntax errors and other statements that cannot be planned, without touching any data. For hot queries, also assert that the plan uses the index you created; a later change to the query or to strict mode (which disables index scans in 5.1.0 and 5.2.0, `§ Strict Mode`) then fails the test.
 
 ```dart
 import 'dart:convert';

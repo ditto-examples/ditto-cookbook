@@ -1,6 +1,6 @@
-// SDK Version: Ditto SDK 5.1.0 (ditto_live 5.1.0)
+// SDK Version: Ditto SDK 5.2.0 (ditto_live 5.2.0)
 // Platform: Flutter
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // ============================================================================
 // Logging and Diagnostics Configuration (Anti-Patterns)
@@ -122,9 +122,10 @@ Future<int> exportToFixedPath(Directory directory) {
 // ANTI-PATTERN 7: Observer on system:system_info
 // ============================================================================
 
-/// ❌ BAD: Observers on
-/// system:system_info fire every 500 ms regardless of whether anything
-/// changed. Query system collections with execute when you need them.
+/// ❌ BAD: Observers on system:system_info fire often even when nothing
+/// changed (every 500 ms in SDK 5.1.0; about twice per second, mostly with
+/// identical results, in testing with 5.2.0). Query system collections with
+/// execute when you need them.
 StoreObserver observeSystemInfo(Ditto ditto) {
   final observer = ditto.store.registerObserver(
     "SELECT key, value FROM system:system_info WHERE namespace = 'core'",

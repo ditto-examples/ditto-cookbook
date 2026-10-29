@@ -1,6 +1,6 @@
-// SDK Version: ditto_live 5.1.0
+// SDK Version: ditto_live 5.2.0
 // Platform: Flutter (the DQL applies to all SDKs)
-// Last Updated: 2026-10-08
+// Last Updated: 2026-10-30
 //
 // EVICT with correct subscription management.
 //
@@ -17,7 +17,8 @@
 // - Keep subscription references in a long-lived service so they can be
 //   cancelled.
 // - Evict on a schedule, at most about once per day.
-// - Target documents by ID with `WHERE _id IN :ids`, never `USE IDS` alone.
+// - Target documents by ID with `WHERE _id IN :ids`, which works on every
+//   SDK 5.x release (`USE IDS` alone evicts nothing on SDK 5.1.0).
 
 import 'package:ditto_live/ditto_live.dart';
 
