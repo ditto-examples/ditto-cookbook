@@ -83,6 +83,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each; the same results on both releases |
 | Setup | The sending device held documents in a collection `drafts`, which it gave a sync scope, and in a collection `shared` without a scope; another Small Peer subscribed to both. The scopes were set with `ALTER SYSTEM SET USER_COLLECTION_SYNC_SCOPES` before `sync.start()` |
+| Documentation | Ditto's [sync scopes documentation](https://docs.ditto.live/sdk/latest/sync/sync-scopes) describes the four scopes, says that a collection's scope is checked when a device sends data and can stop it even when the data matches the other peer's subscription, and says to set `USER_COLLECTION_SYNC_SCOPES` before `ditto.sync.start()` |
 
 | Scope of `drafts` on the sending device | Did the other Small Peer receive `drafts`? |
 |---|---|
@@ -189,6 +190,7 @@ The same with 200,000 documents (the index was compared only with 50,000):
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each; the same results on both releases |
 | Setup | Four peers in a line, 0–1–2–3, each connected only to the previous one |
+| Documentation | Ditto's [glossary](https://docs.ditto.live/home/glossary#multi-hop-sync) says that an intermediate device can relay only documents that it has in its local store, so that a device whose subscription is too narrow cannot relay the documents it does not store |
 
 - When every peer subscribed to the whole collection, an insert, an edit, and a `DELETE` on one end passed the three hops and reached the other end in about 0.1 seconds (we checked every 0.1 seconds).
 - When the two peers in the middle subscribed only to `status = 'open'`, a document that had never been open did not reach the far end. An open document arrived, and so did the change that closed it, but edits made after it was closed did not arrive within 8 seconds. When the document was opened again, it arrived in its latest state (`status: 'open', v: 3`).
@@ -540,6 +542,7 @@ Times below are from the moment the first device started sync. Because they come
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each; the same results on both releases |
 | Setup | Two connected devices. One of them called `sync.start()` while sync was running, then `sync.stop()`; both wrote while sync was stopped, the device registered a subscription, and then started sync again. A separate device called `sync.start()` without an offline license token |
+| Documentation | Ditto's [Syncing Data documentation](https://docs.ditto.live/sdk/latest/sync/syncing-data#stopping-sync) says that stopping sync disconnects the device from every peer and pauses all active subscriptions |
 
 - A second `start()` while sync was running did nothing.
 - Right after `stop()`, `isActive` was `false`, and the device disappeared from the other device's presence graph within 22 to 23 ms.

@@ -74,7 +74,7 @@ The results were the same on every release tested, and they matched these sectio
 |---|---|
 | Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
 | Setup | One device without sync. 184 expressions, each evaluated with `SELECT <expression> AS v FROM system:dual`: 171 compared with a rule that [DQL Functions and Operators](../dql-functions.md) states in its text, and 13 only recorded. Five more checks wrote documents to a collection. The page's `expression` → `result` examples are checked separately, as [Checks of the Guide Itself](how-we-tested.md#checks-of-the-guide-itself) describes |
-| Documentation | The [DQL operators and expressions](https://docs.ditto.live/dql/operator-expressions) reference says that `object_set` on an existing key without `replace-existing`, and `object_unset` and `object_rename` of a key that does not exist, raise an error; that `ifnull` returns `null` when no value qualifies; and that `decode` matches when type and value match |
+| Documentation | The [DQL operators and expressions](https://docs.ditto.live/dql/operator-expressions) reference says that `object_set` on an existing key without `replace-existing`, and `object_unset` and `object_rename` of a key that does not exist, raise an error, and that `decode` matches when type and value match |
 
 On 5.1.0 and 5.2.0, all 176 checks gave the result that the page states:
 

@@ -117,6 +117,7 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each, in two separate tests that showed the same behavior |
 | Setup | A join without an index (`JOIN ... USE INDEX ''`) of 3,000 by 3,000 documents, which took about 8 seconds on 5.2.0 and about 11 seconds on 5.1.0. We set `DQL_SLOW_REQUEST_WARN_SECONDS` and `DQL_REQUEST_TIMEOUT_SECONDS`, and read the log |
+| Documentation | The SDK 5.1 release notes say that `DQL_SLOW_REQUEST_WARN_SECONDS` (default `60`) logs the request details at the threshold and repeats while the request runs, that `DQL_REQUEST_TIMEOUT_SECONDS` (default `0`) cooperatively cancels requests that exceed the limit, and that `0` disables either |
 
 - **Slow-request warning**: with `DQL_SLOW_REQUEST_WARN_SECONDS = 1`, a warning `Slow DQL request dump entry="{...}"` was logged every second while the query ran: 8 times on 5.2.0 and 11 times on 5.1.0. The entry is JSON with `_id`, `directives`, the `plan` with `#stats`, and more.
 - **Timeout**: with `DQL_REQUEST_TIMEOUT_SECONDS = 1`, the query failed after 1.00 seconds with `Request exceeded maximum permitted execution time.`
