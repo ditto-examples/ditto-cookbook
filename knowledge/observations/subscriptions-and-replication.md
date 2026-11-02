@@ -15,7 +15,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - Sync sends compressed, field-level changes of the current state. In a full mesh, a device receives each new document from several neighbors, and when many devices reconnect at once with offline changes, the time until all of them agree grows faster than their number ([Sync traffic is compressed and carries field-level changes](#sync-traffic-is-compressed-and-carries-field-level-changes), [In a mesh, a new document arrives once from each neighbor](#in-a-mesh-a-new-document-arrives-once-from-each-neighbor), [Convergence after simultaneous reconnects grew faster than the number of devices](#convergence-after-simultaneous-reconnects-grew-faster-than-the-number-of-devices)).
 - After many offline updates of one field, only the current value syncs: 1,000 updates cost about as much as one ([Only the current state syncs after offline edits](#only-the-current-state-syncs-after-offline-edits)).
 - `close()` and `sync.stop()` do not wait for changes that are still being sent, and `sync_session_status` keeps showing `Connected` for about 73 seconds after a peer leaves ([A write made right before close or stop may not leave the device](#a-write-made-right-before-close-or-stop-may-not-leave-the-device), [The sync session status lags about 73 seconds behind a disconnection](#the-sync-session-status-lags-about-73-seconds-behind-a-disconnection)).
-- Starting and stopping sync behaved as documented, but a change written right after another device stopped sync could still reach it ([Starting and stopping sync behaved as documented](#starting-and-stopping-sync-behaved-as-documented), [A change written right after another device stops sync can still reach it](#a-change-written-right-after-another-device-stops-sync-can-still-reach-it)).
+- Starting and stopping sync behaved as documented, and a change written right after another device stopped sync did not reach it ([Starting and stopping sync behaved as documented](#starting-and-stopping-sync-behaved-as-documented), [A change written right after another device stops sync did not reach it](#a-change-written-right-after-another-device-stops-sync-did-not-reach-it)).
 - In JavaScript, `queryArguments` of a subscription registered without arguments is empty, and reading it does not end the process ([In JavaScript, queryArguments of a subscription without arguments is empty](#in-javascript-queryarguments-of-a-subscription-without-arguments-is-empty)).
 
 ## What a Subscription Delivers
@@ -579,16 +579,20 @@ Trials (of 9) in which the hub received the document:
 
 **Used in:** [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
 
-### A change written right after another device stops sync can still reach it
+### A change written right after another device stops sync did not reach it
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0, one run; we did not try to reproduce it. The variant with a 1-second wait: six runs |
-| Setup | A device X called `sync.stop()`. As soon as `presence.graph.remotePeers` on X was empty, a writer on another device set a flag in a document. In the variant, the writer waited 1 second after the presence graph showed the disconnection before writing |
+| Observed on | SDK 5.1.0 and 5.2.0: with the two devices connected directly, three runs each, and through a relay, three runs each; 20 rounds per delay in every run |
+| Setup | A device X called `sync.stop()`, and we checked `presence.graph.remotePeers` on X every 5 ms. As soon as it was empty, or 100, 250, 500, or 1,000 ms later, a writer updated a small document that both devices subscribed to. We read X's copy 2 seconds after the write, then started sync on X again and waited until it had the update before the next round. The writer was connected to X directly, or both were connected only to a relay (a TCP hub) |
 
-- The flag reached X, although X had stopped sync and its presence graph listed no peers.
-- When the writer waited 1 second, the flag did not reach X in any of the six runs.
-- An empty `remotePeers` right after `sync.stop()` therefore did not yet mean that no more changes would arrive.
+- The update did not reach X in any round: 0 of 600 over the direct connection and 0 of 600 through the relay, at every delay, on both releases.
+- X's presence graph was empty 0 to 16 ms after `sync.stop()`.
+- The other side noticed later. When the writer wrote at once, the writer's presence graph still listed X in 1 to 12 of the 20 rounds of a run, and through the relay, the relay's graph listed X in 5 to 14 of 20. From 100 ms on, neither listed X. The update did not reach X in those rounds either.
+- After X started sync again, it received the update in every round.
+- In one earlier run of a different test on SDK 5.1.0, X had a flag that a writer set through a relay right after X's presence graph was empty. That test read X only after X had started sync again, so it could not tell when the flag arrived. The next run, on 5.2.0 with the same steps, and eight later runs that waited 1 second before writing did not show it (see [A relay that evicts flagged documents receives old versions back](storage-and-deletion.md#a-relay-that-evicts-flagged-documents-receives-old-versions-back)).
+
+**Not tested:** a write made before X's own presence graph was empty (the first 0 to 16 ms); `close()` instead of `sync.stop()`; transports other than TCP between processes on one machine; large documents; the Flutter SDK.
 
 **Used in:** none yet.
 

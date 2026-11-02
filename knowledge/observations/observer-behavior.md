@@ -9,6 +9,7 @@ How store observers behave on one device: when an observer is called, how change
 - An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0 and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
 - `Differ` reports every item whose position shifted as a move, not only the item that was moved ([Differ reports every shifted item as a move](#differ-reports-every-shifted-item-as-a-move)).
 - On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stop every callback ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
+- On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([Since SDK 5.1, an observer does not re-run its query after writes to other collections](#since-sdk-51-an-observer-does-not-re-run-its-query-after-writes-to-other-collections)).
 - In JavaScript, async observer callbacks are not awaited and can finish out of order, exceptions in callbacks are discarded, and garbage collection stops neither observers nor subscriptions ([In JavaScript, registerObserver does not await async callbacks](#in-javascript-registerobserver-does-not-await-async-callbacks), [In JavaScript, exceptions in observer callbacks are discarded](#in-javascript-exceptions-in-observer-callbacks-are-discarded), [In JavaScript, garbage-collected subscriptions and observers keep running](#in-javascript-garbage-collected-subscriptions-and-observers-keep-running)).
 - In JavaScript, query results return the same objects on every read, so changes to them stay in the object but never reach the store, and `store.observers` lists other objects than the ones that the registration returned ([In JavaScript, query results return the same objects](#in-javascript-query-results-return-the-same-objects), [In JavaScript, store.observers exists since 5.0 and lists other objects](#in-javascript-storeobservers-exists-since-50-and-lists-other-objects)).
 
@@ -143,6 +144,30 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 **Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
 
 ## Observer Differences between SDK Releases
+
+### Since SDK 5.1, an observer does not re-run its query after writes to other collections
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result. The `system:metrics` counter: SDK 5.2.0, two runs |
+| Setup | One device without sync. (1) An observer of `SELECT * FROM products` over one document, with every request recorded in `system:request_history` (`DQL_REQUEST_HISTORY_QUALIFIERS = {'threshold': 0}`): 50 single-document `INSERT` statements into `orders`, awaited one at a time, then 50 into `products`; we counted the observer's query in the history and the callbacks. (2) The same observer over 20,000 documents: the process CPU time of 50 such `INSERT` statements into another collection with and without the observer, and of 50 into the observed collection |
+| Documentation | The 5.2.0 release notes say: "Store observers no longer re-run their queries after writes to collections they don't observe" (QE-1116) |
+
+| Measurement | 5.0.3 | 5.1.0 | 5.2.0 |
+|---|---|---|---|
+| Observer runs after 50 writes to another collection | 14 to 15, without a callback | 0 | 0 |
+| Observer runs after 50 writes to the observed collection | 15 to 16, with 13 to 15 callbacks | 4, with 4 callbacks | 4, with 4 callbacks |
+| CPU time of 50 writes to another collection, with the observer of 20,000 documents | 265 to 308 ms | 73 to 105 ms | 106 to 129 ms |
+| The same, without an observer | 50 to 121 ms | 66 to 103 ms | 79 to 132 ms |
+| CPU time of 50 writes to the observed collection | 1,068 to 1,175 ms, 13 to 14 callbacks | 600 to 614 ms, 5 callbacks | 562 to 592 ms, 5 callbacks |
+
+- On 5.0.3, the observer ran its query again after writes to another collection, without calling back, and the writes used about three times as much CPU time. On 5.1.0 and 5.2.0, it did not run: the issue that the 5.2.0 release notes list as fixed did not occur on 5.1.0 in this test.
+- Writes to the observed collection ran the query about every third write on 5.0.3, and 4 or 5 times for all 50 writes on 5.1.0 and 5.2.0, which coalesce changes (see [Local writes are coalesced into callbacks about 30 ms apart](#local-writes-are-coalesced-into-callbacks-about-30-ms-apart)).
+- On 5.2.0, `system:metrics` agreed: `ditto.query.requests` did not grow with the 50 writes to another collection, and grew by 4 with the 50 writes to the observed collection. 5.1.0 has no query metrics.
+
+**Not tested:** observers of joins or of several collections; changes that arrive through sync; writes in transactions; whether other conditions make 5.1.0 run an observer after writes to another collection.
+
+**Used in:** [Partial UI Updates](../../best-practices/observers.md#partial-ui-updates).
 
 ### On SDK 5.2.0, observer rows include _id only when it is projected
 

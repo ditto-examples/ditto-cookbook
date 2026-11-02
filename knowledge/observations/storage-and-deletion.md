@@ -118,7 +118,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each, with the same result on both releases. One earlier run on 5.1.0, before we added more observation points, differed because of the race described in [A change written right after another device stops sync can still reach it](subscriptions-and-replication.md#a-change-written-right-after-another-device-stops-sync-can-still-reach-it) |
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each, with the same result on both releases. One earlier run on 5.1.0, before we added more observation points, found the flag on X; it could not tell when the flag arrived, and no later run showed it again (see [A change written right after another device stops sync did not reach it](subscriptions-and-replication.md#a-change-written-right-after-another-device-stops-sync-did-not-reach-it)) |
 | Setup | A writer W and a device X connected through a relay R that subscribed to active documents only. While X was disconnected, W set the deletion flag on a document; R received the flag and then evicted the flagged document with `EVICT FROM orders WHERE isDeleted = true`. Then W disconnected and X connected |
 
 On both releases:
