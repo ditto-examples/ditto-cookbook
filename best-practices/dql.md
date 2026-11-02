@@ -925,6 +925,15 @@ ON ID CONFLICT DO UPDATE
 
 The `SELECT` follows `INSERT INTO c` directly. Wrapping it in parentheses or in `DOCUMENTS (...)` is a syntax error, and `INITIAL DOCUMENTS` cannot be combined with a `SELECT` source.
 
+A query result contains plain values, so declare `COUNTER` and `ATTACHMENT` fields on **both** sides when the copied documents have them. Without the declarations, the copy stores a counter as a plain number, which a later `INCREMENT` on the copy hides behind a new counter that starts at 0, and an attachment as an ordinary map that cannot be fetched. In our testing with SDK 5.1.0 and 5.2.0, declaring the counter kept the count, and the attachment could be fetched only when it was declared too. Do not add `ON ID CONFLICT DO UPDATE` here: an upsert restarts the copied counters (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
+
+```sql
+-- Copy closed orders that have a counter and an attachment
+INSERT INTO COLLECTION archivedOrders (tipCount COUNTER, receipt ATTACHMENT)
+SELECT * FROM COLLECTION orders (tipCount COUNTER, receipt ATTACHMENT)
+WHERE status = 'closed'
+```
+
 ### UPDATE
 
 ```text

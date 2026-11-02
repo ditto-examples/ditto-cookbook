@@ -70,6 +70,21 @@ A write records a value with a new timestamp even when the value is the same as 
 
 Write only the fields that the user changed, and never write back values from a copy that may be stale (see [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites)). Counters are the exception to "the latest write wins": a value written into a counter restarts it (see [Writing documents that contain counters](../best-practices/data-modeling.md#writing-documents-that-contain-counters)).
 
+## Reordering on two devices
+
+Entries of a map have no order, so an app that lets users reorder a list stores a `position` in each entry and sorts by it. Each `position` is a register, so which positions a reorder writes decides what survives a concurrent reorder on another device. In our testing with SDK 5.1.0 and 5.2.0, five entries a, b, c, d, e had the positions 0 to 4. Two offline devices reordered them, device A moving e to the top and device B, about 50 ms later, moving a to the end:
+
+| How the devices wrote | Order after sync | Result |
+|---|---|---|
+| Both renumbered every entry (0 to 4) | b c d e a | Only B's order survived; A's move was lost |
+| A renumbered every entry; B added f after b and renumbered only the entries that shifted | a b f c d e (b and f both 2) | A's move was lost, and the positions mixed both devices' numbers |
+| Each wrote only the moved entry, with a value between its new neighbors (e: 0.5, a: 5.5) | e b c d a | Both moves survived |
+| Both moved the same entry c, to 0.5 and to 5.5 | a b d e c | The later write decided; no duplicate |
+| Both inserted an entry into the same gap, with the same value 2.5 | a b f g c d e (f and g both 2.5) | Both survived; their order depends on how the app sorts equal positions |
+| The order was an array; A moved e to the top, B appended f | a b c d e f | B's array replaced A's |
+
+Midpoints run out: inserting each new entry halfway between b (2) and the entry after it produced 51 distinct values, and the 52nd equaled 2. Positions kept their exact double values through sync. See [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps) for the rules.
+
 ## Local write semantics you must know
 
 Several MAP behaviors differ from what developers expect from a JSON document store. With the default settings:

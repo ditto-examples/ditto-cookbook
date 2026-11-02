@@ -134,7 +134,7 @@ In DQL, a comparison with a missing or `null` field never passes a `WHERE` claus
 
 ### 4. Keep Soft-Deleted Documents in Subscriptions (CRITICAL)
 
-A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) still delivers the flag and a later restore for documents the device holds (SDK 5.1.0), but the device cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. A subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
+A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) still delivers the flag and a later restore for documents the device holds (SDK 5.1.0 and 5.2.0), but the device cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. A subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
 
 **✅ DO**:
 - Keep soft-deleted documents in the subscriptions of devices that relay data to others, at least for as long as a device may stay offline.

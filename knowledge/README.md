@@ -5,7 +5,7 @@ How Ditto works, and the reference material that the [best practices](../best-pr
 | Page | Covers |
 |---|---|
 | [Understanding Ditto](understanding-ditto.md) | What Ditto is, key characteristics, terminology, core principles |
-| [CRDT Types and Merge Behavior](crdt-types.md) | The CRDT types, how values are typed, merge semantics, what concurrent edits produce, local write semantics, choosing a type |
+| [CRDT Types and Merge Behavior](crdt-types.md) | The CRDT types, how values are typed, merge semantics, what concurrent edits produce, rewriting an unchanged value, reordering on two devices, local write semantics, choosing a type |
 | [DQL Functions and Operators](dql-functions.md) | Date and time, conditional, type checking, string, object, and array functions, `ANY` and `EVERY`, transformations, arithmetic and conversion |
 | [System Collections and Parameters](system-reference.md) | The `system:` virtual collections, and the system parameters with their defaults |
 | [Platform Differences](platform-differences.md) | How the Flutter, JavaScript, Swift, and Kotlin APIs differ |

@@ -105,6 +105,8 @@ Devices run different app versions for weeks or months, so a schema change must 
 
 **❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. A change of CRDT type on an **indexed** field (for example, from a REGISTER to a MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed.
 
+**Note (SDK 5.1.0 and 5.2.0)**: renaming in place (`SET quantity = qty UNSET qty`) loses old versions' edits without an error. In testing, an offline old version's `qty = 5` made before the rename merged into `{qty: null, quantity: 1}`; made after it, into `{qty: 5, quantity: 1}`, which the new version still read as 1. Add a new field and let each version read its own, or version the documents (`§ Schema Evolution`).
+
 | | Version in a composite `_id` | New collection per version |
 |---|---|---|
 | Example | `_id: {"id": "...", "schemaVersion": 2}` | `cars` to `carsV2` |

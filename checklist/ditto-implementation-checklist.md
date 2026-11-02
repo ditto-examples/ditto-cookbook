@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.12
+> **Version**: 2.13
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -229,7 +229,7 @@ class SyncLifecycle with WidgetsBindingObserver {
 
 **What this means:** `TransportConfig` is immutable. Call `ditto.updateTransportConfig((config) { ... })` instead: it starts from the current configuration, so you change only what you need, for example with `setAllPeerToPeerEnabled()` or one transport under `peerToPeer`. Treat `global.syncGroup` as an optimization, not as a security boundary. If more than six devices connect to a hub over TCP, raise `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` on the hub so that it is in effect before `ditto.sync.start()`: pass it in `DittoConfig.systemParameters` (SDK 5.2+), or on SDK 5.1 run `ALTER SYSTEM SET` after every open. Check how many clients your hub admits, and confirm the setting with Ditto support before you rely on it in production.
 
-**Why this matters:** A hand-built configuration can silently stop devices from finding each other. A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Changes are applied asynchronously, and invalid values do not throw. In our testing with SDK 5.1.0, a device accepted 6 TCP connections by default. Additional clients of a hub received no data, no API reported an error, and only a `WARN` log line showed the problem. According to the 5.2.0 release notes, the default is still 6, and accepted and outgoing LAN connections now count together; we have not yet repeated this test with 5.2.0.
+**Why this matters:** A hand-built configuration can silently stop devices from finding each other. A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Changes are applied asynchronously, and invalid values do not throw. In our testing with SDK 5.1.0 and 5.2.0, a device accepted 6 TCP connections by default. Additional clients of a hub received no data, no API reported an error, and only a `WARN` log line showed the problem. According to the 5.2.0 release notes, the default is still 6, and accepted and outgoing LAN connections now count together; we have not yet repeated this test with 5.2.0.
 
 **Best-practices guide:** Transport Configuration
 
@@ -478,9 +478,9 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 
 ### ☐ Use maps keyed by ID, not arrays, for items that several devices edit
 
-**What this means:** Store line items, participants, or checklist entries as a map keyed by a stable ID (`{"items": {"<itemId>": {...}}}`), and keep any display order in a field such as `position`. Use arrays only for lists that one device owns or that are replaced as a whole. To add or update one entry from code, upsert a partial document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`.
+**What this means:** Store line items, participants, or checklist entries as a map keyed by a stable ID (`{"items": {"<itemId>": {...}}}`), and keep any display order in a field such as `position`. When the user moves an entry, write only that entry's `position`, with a value between its new neighbors. Use arrays only for lists that one device owns or that are replaced as a whole. To add or update one entry from code, upsert a partial document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`.
 
-**Why this matters:** An array is a single register: when two devices change the same array concurrently, one version wins and the other change disappears without an error. Map entries merge independently, so concurrent additions and edits to different entries are all kept. In our testing with SDK 5.1.0, removing an entry with `UNSET` did not win over a concurrent edit of the same entry, and a partial entry remained. If one device may remove an entry while another edits it, mark the entry as removed instead (`` SET items.`<id>`.removed = true ``), and make readers skip entries whose required fields are missing or `null`.
+**Why this matters:** An array is a single register: when two devices change the same array concurrently, one version wins and the other change disappears without an error. Map entries merge independently, so concurrent additions and edits to different entries are all kept. In our testing with SDK 5.1.0 and 5.2.0, removing an entry with `UNSET` did not win over a concurrent edit of the same entry, and a partial entry remained. If one device may remove an entry while another edits it, mark the entry as removed instead (`` SET items.`<id>`.removed = true ``), and make readers skip entries whose required fields are missing or `null`. Renumbering every entry discards a reorder that another device makes at the same time (SDK 5.1.0 and 5.2.0).
 
 **Best-practices guide:** Arrays and Maps
 
@@ -612,7 +612,7 @@ Future<void> createOrder(Ditto ditto, String storeId, String orderUuid) async {
 
 **What this means:** Ditto logs a warning for documents above 256 KiB (soft limit) and rejects `INSERT` and `UPDATE` statements that would make a document larger than 5 MiB (hard limit). Store binary content as attachments, move data that grows without bound (history, readings, comments) into its own collection, and leave both limits at their defaults. On SDK 5.2+, include `system:sync_degradations` in your diagnostics.
 
-**Why this matters:** Large documents cost storage and memory on every device, make merges more expensive, and slow down initial replication: over Bluetooth LE, a 256 KiB document takes more than 10 seconds to replicate the first time. A write that exceeds the hard limit fails with a `DittoException`. The limit is checked only for local writes, so offline additions on two devices can merge into a document above it. After that, every `UPDATE` of the document fails on every device (SDK 5.1.0). According to the 5.2.0 release notes, a device on 5.2.0 instead drops a change that would push a document over its hard limit and lists the document in `system:sync_degradations`. The document then receives no more updates on that device until it is evicted and synced again, so devices can hold different versions of it without any error. To bring an oversized document back under the limits, move large values to attachments or a separate collection and remove them from the document with `UNSET`.
+**Why this matters:** Large documents cost storage and memory on every device, make merges more expensive, and slow down initial replication: over Bluetooth LE, a 256 KiB document takes more than 10 seconds to replicate the first time. A write that exceeds the hard limit fails with a `DittoException`. The limit is checked only for local writes, so offline additions on two devices can merge into a document above it. After that, every `UPDATE` of the document fails on every device (SDK 5.1.0). A device on 5.2.0 instead drops a change that would push a document over its hard limit and lists the document in `system:sync_degradations`. In our testing, the devices then kept different versions of the document without any error, and updates of it stopped in both directions. Evicting it on one device brought back the other device's version and discarded the evicting device's own changes, so evict on the device whose changes you can afford to lose. To bring an oversized document back under the limits, move large values to attachments or a separate collection and remove them from the document with `UNSET`.
 
 **Best-practices guide:** Document Size Limits
 
@@ -707,7 +707,7 @@ String localTimestamp() => DateTime.now().toIso8601String();
 
 **What this means:** Insert default settings or built-in categories with `INSERT INTO c INITIAL DOCUMENTS (:doc)`, using fixed, well-known `_id` values and identical content in every app version. Running it on every launch is safe: existing documents, including edited ones, are kept. Use a regular `INSERT` with a new UUID for data that only one device creates.
 
-**Why this matters:** A regular `INSERT` of shared defaults fails with an ID conflict on the second run, and `ON ID CONFLICT DO UPDATE` overwrites users' edits. Seeding an ID that was deleted leaves a document with `null` fields in two cases: when the seed content differs from the original `INITIAL` insert, and when the deleted document was originally created with a regular `INSERT`. So if the seed content may change in a later app version, let users remove seed documents with a soft delete (such as an `isArchived` flag). In our testing with SDK 5.1.0, different seeds for the same `_id` merged field by field: a key removed in a new app version came back from devices that still ran the old version. Initial documents sync like any other document.
+**Why this matters:** A regular `INSERT` of shared defaults fails with an ID conflict on the second run, and `ON ID CONFLICT DO UPDATE` overwrites users' edits. Seeding an ID that was deleted leaves a document with `null` fields in two cases: when the seed content differs from the original `INITIAL` insert, and when the deleted document was originally created with a regular `INSERT`. So if the seed content may change in a later app version, let users remove seed documents with a soft delete (such as an `isArchived` flag). In our testing with SDK 5.1.0 and 5.2.0, different seeds for the same `_id` merged field by field: a key removed in a new app version came back from devices that still ran the old version. Initial documents sync like any other document.
 
 **Best-practices guide:** Default Data with INITIAL Documents
 
@@ -733,7 +733,7 @@ Future<void> seedDefaultCategories(Ditto ditto) async {
 
 **What this means:** Add new fields, and read them with a default value when an older document lacks them. Instead of changing a field's meaning, unit, or type, add a new field (for example `mileageKm`). For breaking changes, version the data (a schema version in a composite `_id`, or a new collection per version). Ship an app version that reads both formats before one that writes the new format.
 
-**Why this matters:** Devices run different app versions for weeks or months, so old and new formats coexist. Changing the CRDT type of an indexed field (for example, from REGISTER to MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed. Backfilling old documents does not work either: devices that are offline during the backfill bring the old documents back.
+**Why this matters:** Devices run different app versions for weeks or months, so old and new formats coexist. Changing the CRDT type of an indexed field (for example, from REGISTER to MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed. Backfilling old documents does not work either: devices that are offline during the backfill bring the old documents back. Renaming a field in place loses what old versions write: in our testing with SDK 5.1.0 and 5.2.0, an offline old version's edit of the old field either disappeared or never reached the new version.
 
 **Best-practices guide:** Schema Evolution
 
@@ -802,7 +802,7 @@ Future<void> setShippingAddress(
 
 **What this means:** Write every subscription as `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. A subscription selects whole documents from one collection. Registration rejects projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS`. It also rejects `LIMIT` and `ORDER BY` while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value, `true`. Keep that default, and sort and limit in local queries instead.
 
-**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` degrades sync performance: it is stateful, so the sync engine must re-evaluate it whenever a document crosses the limit boundary. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0); after that, every matching new or changed document is synced, inside the window or not. In our testing with SDK 5.1.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits, and even its deletion, no longer arrived.
+**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` degrades sync performance: it is stateful, so the sync engine must re-evaluate it whenever a document crosses the limit boundary. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0 and 5.2.0); after that, every matching new or changed document is synced, inside the window or not. In our testing with SDK 5.1.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits, and even its deletion, no longer arrived.
 
 **Best-practices guide:** Subscription Rules
 
@@ -1226,7 +1226,7 @@ Subscribing to active documents only is acceptable when every device syncs direc
 
 **What this means:** Use `DELETE` only when both of these hold: no other device updates the same document concurrently, and every device connects within the tombstone TTL (`TOMBSTONE_TTL_HOURS`, 7 days by default on Small Peers). If you raise `TOMBSTONE_TTL_HOURS`, keep it at or below the Ditto Server tombstone TTL, and set it on every open. Make the UI tolerate documents with `null` or missing fields.
 
-**Why this matters:** When a deletion merges with a concurrent update, the result is a husk document: the document is not deleted, even when the `DELETE` is the later write. The updated fields keep their values (or become `null` if the deletion was later), and all other fields become missing (SDK 5.1.0). A device that stays offline longer than the TTL can resurrect deleted data (zombie data). A Small Peer tombstone TTL above the Ditto Server tombstone TTL makes tombstones sync back to the server again and again.
+**Why this matters:** When a deletion merges with a concurrent update, the result is a husk document: the document is not deleted, even when the `DELETE` is the later write. The updated fields keep their values (or become `null` if the deletion was later), and all other fields become missing (SDK 5.1.0 and 5.2.0). A device that stays offline longer than the TTL can resurrect deleted data (zombie data). A Small Peer tombstone TTL above the Ditto Server tombstone TTL makes tombstones sync back to the server again and again.
 
 **Best-practices guide:** Husk documents, Tombstone TTL and reaping
 

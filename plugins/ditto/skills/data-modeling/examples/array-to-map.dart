@@ -119,10 +119,10 @@ final _uuidKey = RegExp(
 /// key is validated against a strict pattern before it is placed inside a
 /// backtick-quoted path segment. This prevents DQL injection.
 ///
-/// Note (SDK 5.1.0 and 5.2.0): a removal does not win over a concurrent edit of the same
-/// entry on another device; the entry stays with only the edited fields (or
-/// with them set to null). Readers must skip such entries, and a `removed`
-/// flag is safer when concurrent edits are likely.
+/// Note (SDK 5.1.0 and 5.2.0): a removal does not win over a concurrent edit
+/// of the same entry on another device; the entry stays with only the edited
+/// fields (or with them set to null). Readers must skip such entries, and a
+/// `removed` flag is safer when concurrent edits are likely.
 Future<void> removeOrderItem(
   Ditto ditto, {
   required String orderId,
@@ -145,14 +145,51 @@ Future<void> setFixedItemQuantity(Ditto ditto, String orderId, int qty) async {
   );
 }
 
-/// Reads the items of an order in display order.
+/// ✅ GOOD: Move one entry by writing only its own position, halfway between
+/// its new neighbors. Renumbering every entry would undo a reorder that
+/// another device makes at the same time (guide: § Reordering on two devices).
+Future<void> moveOrderItem(
+  Ditto ditto, {
+  required String orderId,
+  required String itemId,
+  double? previousPosition, // null when the entry moves to the top
+  double? nextPosition, // null when the entry moves to the end
+}) async {
+  if (!_uuidKey.hasMatch(itemId)) {
+    throw ArgumentError.value(itemId, 'itemId', 'must be a lowercase UUID');
+  }
+  final double position;
+  if (previousPosition != null && nextPosition != null) {
+    position = (previousPosition + nextPosition) / 2;
+  } else if (previousPosition != null) {
+    position = previousPosition + 1;
+  } else if (nextPosition != null) {
+    position = nextPosition - 1;
+  } else {
+    position = 0;
+  }
+  await ditto.store.execute(
+    'UPDATE orders SET items.`$itemId`.position = :position WHERE _id = :id',
+    arguments: {'id': orderId, 'position': position},
+  );
+}
+
+/// Reads the items of an order in display order. Positions can be integers
+/// or doubles (midpoints), and entries with equal positions, which two devices
+/// can create by inserting into the same gap, are ordered by key so that
+/// every device shows the same order.
 List<Map<String, dynamic>> sortedItems(Map<String, dynamic> order) {
   final items = (order['items'] as Map<String, dynamic>?) ?? const {};
   final list = [
     for (final entry in items.entries)
       {'itemId': entry.key, ...(entry.value as Map<String, dynamic>)},
   ];
-  list.sort((a, b) => (a['position'] as int).compareTo(b['position'] as int));
+  list.sort((a, b) {
+    final byPosition = (a['position'] as num).compareTo(b['position'] as num);
+    return byPosition != 0
+        ? byPosition
+        : (a['itemId'] as String).compareTo(b['itemId'] as String);
+  });
   return list;
 }
 

@@ -374,7 +374,7 @@ What eviction does and does not do:
 
 - The documents are removed from this device immediately and disappear from local queries.
 - The removal is not propagated to other peers and no tombstone is created. The documents remain on every other peer, including the Ditto Server. (Each eviction still triggers a resync with every connected peer; see the **Why** below.)
-- The same `_id` can be inserted again later without a conflict. The new insert is not a new document across the mesh: in our testing, it merged with the copies that other peers still held, so fields from both appeared.
+- The same `_id` can be inserted again later without a conflict. The new insert is not a new document across the mesh: in our testing with SDK 5.1.0 and 5.2.0, it merged with the copies that other peers still held, so fields from both appeared (`{a: 2, items: {k2: 2}}` inserted after evicting `{a: 1, b: 1, items: {k1: 1}}` became `{a: 2, b: 1, items: {k1: 1, k2: 2}}` on both devices). To start over without the old fields, use a new ID.
 - **If an active subscription on this device still matches an evicted document, connected peers notice that it is missing and sync it back.** This can turn into a loop of evicting and re-syncing.
 
 **✅ DO:**

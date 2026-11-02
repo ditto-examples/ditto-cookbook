@@ -96,6 +96,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 - Pass a variable key as data: `INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF` with `patch = {'_id': orderId, 'items': {itemId: item}}`. Parameters bind values, not paths (`items[:key]` is a parser error).
 - Remove an entry with ``UNSET items.`<key>` `` only after validating the key against a strict pattern (for example, a UUID).
 - Mark entries removed (`removed = true`) when concurrent edits are likely; readers skip entries whose required fields are missing or `null`. **Note (SDK 5.1.0 and 5.2.0)**: a removal does not win over a concurrent edit; the entry stays with only the edited fields (removal first) or with them `null` (removal later).
+- Move an entry by writing only its `position`, between its new neighbors; renumbering all entries loses a concurrent reorder.
 - Convert an array to a map as soon as more than one device writes it, into a **new field** (`lineItems` next to the old `items`).
 
 **❌ DON'T**: splice unchecked input into a query; write a map under the array's field name (it changes the CRDT type, so the old array and the new map coexist under the same key).
@@ -118,7 +119,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 
 Choose `true` only when nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. Set it on every open in `DittoConfig.systemParameters` (SDK 5.2+; on 5.1, `ALTER SYSTEM` after `Ditto.open`, before sync, queries, and observers), with the same value on every peer (each peer interprets synced data with its own setting).
 
-**✅ DO**: for a few replace-as-a-whole objects, keep the default and declare `REGISTER` **in every statement** on the field, reads included: `UPDATE COLLECTION customers (shippingAddress REGISTER) SET shippingAddress = :address WHERE _id = :id` and `SELECT * FROM COLLECTION customers (shippingAddress REGISTER) WHERE _id = :id`. Keep the statements in one repository class.
+**✅ DO**: for a few replace-as-a-whole objects, keep the default and declare `REGISTER` **in every statement** on the field, reads included: `UPDATE COLLECTION customers (shippingAddress REGISTER) SET shippingAddress = :address WHERE _id = :id` and `SELECT * FROM COLLECTION customers (shippingAddress REGISTER) WHERE _id = :id`.
 
 **❌ DON'T**: mix declarations for one field. Each statement reads or writes the value of its declared type, so values seem to vanish even on one device: a `REGISTER` insert followed by an undeclared `SET obj.a = 11` makes an undeclared `SELECT` return `"obj": {"a": 11}`.
 
@@ -171,7 +172,7 @@ Embed sub-entities as maps keyed by ID. `JOIN` **(SDK 5.1+)** removes the main r
 
 Concurrent edits alone are **not** a reason to split: map entries merge.
 
-**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions (`Unsupported feature: Joining`) or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key (`CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)`), or join on its `_id`. Without a usable index the JOIN fails with `Joining to "<alias>" disallowed without appropriate index support`.
+**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions (`Unsupported feature: Joining`) or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key, or join on its `_id`. Without a usable index the JOIN fails with `Joining to "<alias>" disallowed without appropriate index support`.
 
 **✅ DO**:
 - Subscribe to every joined collection (app or feature scope); copy the filter key (`storeId`) into children, since subscriptions filter only on their own fields.
@@ -202,7 +203,7 @@ A stored total is a separate register that devices recompute from partial views;
 | Soft limit | 256 KiB | Write succeeds; warning `exceeds recommended limit` is logged |
 | Hard limit | 5 MiB | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
 
-**Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data. The 5.2.0 release notes say receivers drop such changes instead (not verified; see the reference).
+**Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data. On 5.2.0, receivers drop them; copies diverge until one is evicted, losing its changes (see the reference).
 
 **✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate, so leave headroom; to shrink an oversized document, move large values out and `UNSET` them.
 

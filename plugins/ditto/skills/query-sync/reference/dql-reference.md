@@ -235,7 +235,7 @@ Embedding remains the default modeling choice; see `§ Relationships: Embedding,
 - No `INSERT` policy removes fields; use `UNSET`.
 - Do not upsert a document that contains a `COUNTER` field: the value restarts the counter and discards increments not yet received, also with `DO UPDATE_LOCAL_DIFF` (`§ Writing documents that contain counters`).
 - `INSERT INTO c INITIAL DOCUMENTS (:doc)` inserts only if no document with that `_id` exists locally (no error otherwise). It cannot be combined with `ON ID CONFLICT`. It does not keep data off the network; subscriptions decide that. Use it to create a document with a counter on each device.
-- `INSERT ... SELECT` (SDK 5.1+): each result row becomes a document; projection aliases become field names; a projected `_id` is used as the document ID. Do not wrap the `SELECT` in parentheses or `DOCUMENTS (...)`.
+- `INSERT ... SELECT` (SDK 5.1+): each result row becomes a document; projection aliases become field names; a projected `_id` is used as the document ID. Do not wrap the `SELECT` in parentheses or `DOCUMENTS (...)`. Declare `COUNTER` and `ATTACHMENT` fields on both sides (`INSERT INTO COLLECTION archive (n COUNTER, file ATTACHMENT) SELECT * FROM COLLECTION src (n COUNTER, file ATTACHMENT)`); otherwise counters are copied as plain numbers and attachments as maps that cannot be fetched (SDK 5.1.0 and 5.2.0).
 
 ```sql
 -- Copy closed orders into an archive collection; safe to re-run

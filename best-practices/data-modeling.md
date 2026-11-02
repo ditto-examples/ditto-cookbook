@@ -87,6 +87,7 @@ A field can hold more than one CRDT value at the same time when statements disag
 | `INSERT INTO COLLECTION orders (obj REGISTER) ... {"obj": {"a": 1, "b": 2}}`, then an undeclared `UPDATE orders SET obj.a = 11` | Undeclared `SELECT` returns `"obj": {"a": 11}`: `b` seems to have vanished. The REGISTER value `{"a": 1, "b": 2}` still exists beside a new MAP value |
 | Undeclared `INSERT ... {"cnt": 10}`, then `APPLY cnt INCREMENT BY 1` | `cnt` becomes `1`, not `11`: the increment created a new COUNTER that started at 0 |
 | `APPLY pn PN_INCREMENT BY 4` twice, then `APPLY pn INCREMENT BY 1` | `pn` becomes `1`: the COUNTER hides the legacy PN_COUNTER value |
+| A counter at 3, an undeclared `UPDATE ... SET cnt = 0` to reset it, then `APPLY cnt INCREMENT BY 1` on any device | An undeclared `SELECT` returns `0` until the increment, then `4`: the `SET` wrote a REGISTER next to the COUNTER, and the increment made the COUNTER the latest value again. Reset a counter with `APPLY cnt RESTART` (see [RESTART](#restart)) |
 
 **✅ DO:**
 - Use the same declaration for a field in **every** `INSERT`, `UPDATE`, and `SELECT` that touches it.
@@ -137,6 +138,7 @@ Arrays are registers: the whole array is replaced on every write, and when two d
 **✅ DO:**
 - Store collections of editable items as maps keyed by a stable ID (a natural key such as a SKU, or a UUID).
 - Keep the item's own data inside the entry, and store any display order as a field (for example, `position`).
+- When the user moves an item, write only that entry's `position`, with a value between its new neighbors (for example, the midpoint). Renumbering every entry makes a reorder that another device made at the same time disappear, and renumbering only the shifted entries mixes the numbers of both devices (see [Reordering on two devices](../knowledge/crdt-types.md#reordering-on-two-devices)). Sort entries with equal positions by a fixed key, such as the entry key, and renumber the whole list only when no other device reorders it at the same time.
 - Use arrays for immutable lists or lists that a single device owns.
 
 **❌ DON'T:**
@@ -412,7 +414,7 @@ Ditto enforces two thresholds on the **size of each stored document**:
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | The write succeeds and a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0; the 5.2.0 release notes say that they are dropped on the receiving device (see below) |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below) |
 
 Log and error messages:
 
@@ -426,7 +428,7 @@ In Flutter, a failed statement throws a `DittoException`; catch it like any othe
 
 > **Note (SDK 5.1.0):** The hard limit is checked only when a device writes, not when changes from other devices merge. In our testing, two devices each added a 3 MiB field to the same document while offline. After sync, both devices stored the 6 MiB document; nothing reported an error, and no log line mentioned the merged size. From then on, **every `UPDATE` of that document failed on every device** with `exceeds limit of 5242880 bytes`, until an `UNSET` removed enough data. The same happens when devices use different hard limits: a device with a lower limit receives larger documents from other devices but cannot update them. Keep large or growing data out of documents (attachments, separate collections), so that even combined offline additions stay far below the limit.
 >
-> According to the 5.2.0 release notes, a Small Peer on 5.2.0 now drops a replication diff that would push a document over its hard limit, so other documents keep syncing. That document then receives no more updates on that device until it is evicted and synced again, and it is listed in `system:sync_degradations` with the reason `documentTooBig` (see [System Virtual Collections](../knowledge/system-reference.md#system-virtual-collections)). Devices can therefore hold different versions of the same document without any error. We have not yet repeated the test above on 5.2.0. The advice is the same on both releases: keep documents far below the limit, and on 5.2.0 also check `system:sync_degradations` in your diagnostics.
+> **Note (SDK 5.2.0):** A device on 5.2.0 drops a change that would push a document over its hard limit, so the devices keep different versions of the document. In our testing, two devices each added a 3 MiB field to the same document while offline. After sync, each kept only its own field, and both listed the document in `system:sync_degradations` with the reason `documentTooBig` and the other device's peer key (see [System Virtual Collections](../knowledge/system-reference.md#system-virtual-collections)); no API reported an error. From then on, updates of that document, even small ones, reached neither device, while other documents kept syncing. When one device evicted the document, it received the other device's version within 15 seconds, and **its own changes to the document were lost**: the 3 MiB field and the edits made since. After that, the document synced normally; the device that had not evicted kept its `system:sync_degradations` row. To recover, evict the document on the device whose changes you can afford to lose, and include `system:sync_degradations` in your diagnostics. On both releases, the protection is the same: keep documents far below the limit.
 
 **Why the limits matter:** Size affects local storage and memory on every device holding the document, serialization time, CRDT merge cost (which scales with document size, not change size), and initial replication. Over Bluetooth LE (roughly 20 KB/s in practice), a 256 KiB document takes more than 10 seconds to replicate the first time. Later edits sync only the changed fields.
 
@@ -923,7 +925,7 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
 | Likes, votes, view counts | **Unique sequence numbers** (invoice or ticket numbers): two offline devices both read 41 and both produce 42. Use UUIDs plus a display label (see [Document IDs](#document-ids)) |
 | Usage metrics and tallies from many devices | **Balances that must be validated** (account balances, "never below zero"): a counter cannot enforce a constraint, and concurrent decrements can drive it negative. Record transactions as events and validate when you derive the balance |
 | Inventory adjustments where every device records its own sales or receipts | **Values derivable from documents you already store** (number of open orders): compute them with a query such as `SELECT COUNT(*) ...` |
-| Values recalibrated occasionally with `RESTART WITH`, while all devices that change them are in sync | **Fractional amounts**: `COUNTER` is integer-only (`INCREMENT BY 1.5` fails with `Expected 1.5 to be an integer value`). Count in minor units such as cents |
+| Values recalibrated occasionally with `RESTART WITH`, while all devices that change them are in sync | **Fractional amounts**: `COUNTER` is integer-only (`INCREMENT BY 1.5` fails with `Expected 1.5 to be an integer value`, and a declared `INSERT` of 2.5 fails too; values are never rounded). Count in minor units such as cents or grams. The legacy `PN_COUNTER` accepts fractions, but rounding errors accumulate: in our testing, ten increments of 0.1 gave `0.9999999999999999` |
 
 **❌ DON'T:**
 - Initialize a counter with an undeclared `INSERT`.
@@ -1212,6 +1214,8 @@ Instead of changing the meaning or unit of a field (`mileage` from miles to kilo
 **❌ DON'T:**
 
 - Change a field's type, remove it, or rename it without a versioning pattern. Old peers may crash or show wrong data. A change of CRDT type on an **indexed** field (for example, from a REGISTER to a MAP) can also make queries return wrong results, because only the most recently written CRDT type of a field is indexed (see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types)).
+
+> **Note (SDK 5.1.0 and 5.2.0):** Renaming a field in place silently loses what old app versions write. In our testing, a new version renamed `qty` to `quantity` with `UPDATE orders SET quantity = qty UNSET qty` while an old version, offline, set `qty = 5`. When the old version's edit came first, the merged document was `{qty: null, quantity: 1}`: the 5 was gone. When the rename came first, the result was `{qty: 5, quantity: 1}`: the old field came back with the old version's value, but the new version still read 1. An old version that had already received the rename kept writing `qty`, which the new version never read. Reading both fields (`coalesce(quantity, qty)`) cannot recover the first case. Add the new field and let each version read the field it understands (see [Prefer additive changes](#prefer-additive-changes)), or version the documents ([Pattern 1](#pattern-1-schema-version-in-a-composite-_id)).
 
 ### Pattern 1: Schema version in a composite `_id`
 

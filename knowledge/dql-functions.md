@@ -140,10 +140,10 @@ Numbers keep their integer or float type: `type(1)` is `'integer'`, `type(1.5)` 
 | `s LIKE pattern` / `s ILIKE pattern` | `%` matches any sequence, `_` one character; `ILIKE` ignores case | `sku LIKE 'AB-%'` |
 | `s SIMILAR TO pattern` | `LIKE` wildcards plus `\|` alternatives, `[chars]` lists, grouping, and the repetition operators `*`, `+`, `?`, `{n}` | `code SIMILAR TO '(A\|B)%'` |
 | `regexp_like(s, pattern[, flags])` | Regular expression match; `'i'` for case-insensitive | `regexp_like(code, '^[a-z]-[0-9]{3}$', 'i')` |
-| `char_length(s)` / `character_length(s)` | Number of characters | `char_length('café')` → `4` |
+| `char_length(s)` / `character_length(s)` | Number of Unicode code points, which is neither the UTF-16 length that Dart and JavaScript report nor the number of characters a user sees | `char_length('café')` → `4`, `char_length('👍')` → `1` |
 | `byte_length(s)` | Number of UTF-8 bytes | `byte_length('café')` → `5` |
-| `lower(s)` / `upper(s)` | Case conversion | `lower(email) = :email` |
-| `substr(s, start[, len])` | Substring; `start` is zero-based | `substr('abcdef', 1, 3)` → `'bcd'` |
+| `lower(s)` / `upper(s)` | Case conversion; the length can change | `lower(email) = :email`, `upper('straße')` → `'STRASSE'` |
+| `substr(s, start[, len])` | Substring; `start` is zero-based and counts code points | `substr('abcdef', 1, 3)` → `'bcd'` |
 | `pos(s, sub)` / `POSITION(sub IN s)` | Zero-based index, `-1` if not found | `pos('abc', 'c')` → `2` |
 | `split(s, delim)` / `joinstr(sep, values...)` | Split into an array / join with a separator (separator first) | `joinstr(', ', tags)` |
 | `ltrim`, `rtrim`, `` `trim` ``, `TRIM(BOTH x FROM s)`, `lpad`, `rpad`, `repeat` | Trimming and padding (call `trim` with backticks) | `lpad(code, 6, '0')` |
@@ -156,6 +156,7 @@ Numbers keep their integer or float type: `type(1)` is `'integer'`, `type(1.5)` 
 
 **❌ DON'T:**
 - Concatenate numbers without `cast(... AS string)`.
+- Store strings cut in the middle of a character. **Note (SDK 5.1.0 and 5.2.0):** in the JavaScript SDK, a string with an unpaired surrogate, such as one cut in the middle of an emoji with `slice`, is stored as a different character without an error. In our testing, `'hello👍'.slice(0, 6)` was stored as `'hello🐀'`, and in `'a\ud800b'` the unpaired surrogate swallowed the `b`. Document IDs and query arguments change the same way. Cut strings at code point or grapheme boundaries (`Array.from(s)`, `Intl.Segmenter`), or check `s.isWellFormed()` before you write.
 - Use `SIMILAR TO` like a full regular expression: `.` matches only a literal dot there (`'abc' SIMILAR TO 'a.c'` is `false`), and the pattern must match the whole string. Use `regexp_like` for full regular expressions.
 
 ```dart
