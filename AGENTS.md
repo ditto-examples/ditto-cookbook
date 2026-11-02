@@ -7,7 +7,7 @@ Instructions for coding agents that work in this repository. [CONTRIBUTING.md](C
 | Path | Contents |
 |------|----------|
 | `best-practices/` | The Ditto SDK best practices guide: what to do and what to avoid, one page per topic. `README.md` holds the guide's version, conventions, and essentials |
-| `knowledge/` | The guide's knowledge pages: how Ditto works, what we observed in testing (with the releases, setup, and numbers), and the reference material that the best practices build on |
+| `knowledge/` | The guide's knowledge pages: how Ditto works and the reference material that the best practices build on; `knowledge/observations/` holds what we observed in testing, with the releases, setup, and numbers |
 | `checklist/` | Customer-facing checklist (sources, build script, generated HTML) derived from the guide |
 | `examples/simple-pos/` | Flutter POS example that applies the guide |
 | `plugins/ditto/` | The `ditto` Claude Code plugin: Skills derived from the guide, and evals |
@@ -26,7 +26,7 @@ After editing any page in `best-practices/` or `knowledge/`, you **must**:
 1. Update the guide's `Version` and `Last Updated` in `best-practices/README.md`.
 2. Propagate the change to the plugin Skills, the checklist, and the POS example as described in [Synchronizing a Change to the Guide](CONTRIBUTING.md#synchronizing-a-change-to-the-guide), and bump the plugin version when Skills change. Skip only for changes that do not affect any derived content.
 
-Record what testing shows in `knowledge/` first, one entry per observation with its releases, setup, every number, and what was not tested; then state the rule in `best-practices/` with a short reason and a link to that entry. Do not put measurements or procedures in `best-practices/` alone. See [Where content belongs](CONTRIBUTING.md#where-content-belongs).
+Record what testing shows in `knowledge/observations/` first, one entry per observation with its releases, setup, every number, and what was not tested; then state the rule in `best-practices/` with a short reason and a link to that entry. Do not put measurements or procedures in `best-practices/` alone. See [Where content belongs](CONTRIBUTING.md#where-content-belongs).
 
 Keep every heading of the guide unique across both directories: the Skills and the checklist cite sections by their heading text.
 

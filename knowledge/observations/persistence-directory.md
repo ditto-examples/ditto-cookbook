@@ -1,6 +1,6 @@
 # The Persistence Directory
 
-What the persistence directory holds, and what happens when it is copied, restored from an older copy, opened with another Database ID, deleted in part or while Ditto is open, or opened by a second instance. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory) and [DittoConfig](../best-practices/setup-and-lifecycle.md#dittoconfig).
+What the persistence directory holds, and what happens when it is copied, restored from an older copy, opened with another Database ID, deleted in part or while Ditto is open, or opened by a second instance. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory) and [DittoConfig](../../best-practices/setup-and-lifecycle.md#dittoconfig).
 
 **In brief**
 
@@ -30,7 +30,7 @@ The tendency was the same on both releases:
 - X holds its own updates, so looking at X alone, nobody can notice that its updates did not reach the other devices.
 - We think Ditto tracks which updates each peer already has by the peer's identity. With two peers of the same identity, the hub then assumes that one of them already has the other's updates. We have not confirmed this.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
 ### A copy that replaces the original syncs normally
 
@@ -43,7 +43,7 @@ The tendency was the same on both releases:
 - After X was opened again, Y's write reached every device. X's write reached neither the hub nor Y in two runs (one on 5.1.0, one on 5.2.0); in the other run on 5.2.0, it reached the hub but not Y.
 - After Y evicted the document: in the run where the hub had X's value, Y received X's value again. In the runs where the hub did not have it, X's value appeared nowhere, neither after the eviction on Y nor on the device with a new directory. X's write stayed only on X.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
 ### Restoring an older copy of a directory loses nothing
 
@@ -56,7 +56,7 @@ The tendency was the same on both releases:
 - The changes that it wrote after going back (another field, another document, and a new document) reached the hub and a device that joined later.
 - Going back to an older copy of the same device lost nothing; the problem in [A copied directory and its original never converge](#a-copied-directory-and-its-original-never-converge) is that the original keeps running.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
 ## Directories and Database IDs
 
@@ -70,7 +70,7 @@ The tendency was the same on both releases:
 - Both devices opened with the same offline license token. Even with the explicit TCP connection, they did not list each other in presence, and they did not sync within 10 seconds.
 - This is why devices that run development and production builds with different Database IDs do not sync with each other.
 
-**Used in:** [DittoConfig](../best-practices/setup-and-lifecycle.md#dittoconfig), [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process).
+**Used in:** [DittoConfig](../../best-practices/setup-and-lifecycle.md#dittoconfig), [Several peers in one test process](../../best-practices/testing.md#several-peers-in-one-test-process).
 
 ### A directory written with another Database ID opens and syncs its documents
 
@@ -83,7 +83,7 @@ The tendency was the same on both releases:
 - The directory opened with Database ID B without an error, and the document written with Database ID A was visible.
 - After the device connected to the hub, the document synced to the hub. Ditto opens a directory written with another Database ID as it is and syncs its documents to the devices of the new database, so development data can mix into production, for example.
 
-**Used in:** [DittoConfig](../best-practices/setup-and-lifecycle.md#dittoconfig).
+**Used in:** [DittoConfig](../../best-practices/setup-and-lifecycle.md#dittoconfig).
 
 ## Deleting a Directory or Part of It
 
@@ -100,7 +100,7 @@ The tendency was the same on both releases:
 - **Everything except `ditto_auth`**: the peer key stayed the same, and all five documents arrived.
 - On all three releases, a device whose `ditto_store` had been deleted logged four lines with the error `NonMonotonicLastDocLinkCommitId` when it reopened; on 5.1 and later, a device that wrote after sync had started also logged one line `Document database and metadata are out of sync`. The same lines appeared on 5.0.3, where every document arrived, and when `ditto_replication` was deleted as well, so these errors do not tell whether documents are being left behind.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
 ### Deleting the directory after close() leaves no data behind
 
@@ -113,7 +113,7 @@ The tendency was the same on both releases:
 
 **Not tested:** other operating systems than macOS; whether sync must be stopped before `close()` and the deletion.
 
-**Used in:** [Authentication](../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](platform-differences.md).
+**Used in:** [Authentication](../../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](../platform-differences.md).
 
 ### Deleting the directory while Ditto is open loses later writes
 
@@ -126,7 +126,7 @@ The tendency was the same on both releases:
 
 **Not tested:** other operating systems than macOS.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
 ### After close(), a small store keeps its values in the write-ahead log
 
@@ -138,7 +138,7 @@ The tendency was the same on both releases:
 - in a small store of a few dozen documents, the document values were only in `ditto_store/db.sql-wal` after `close()`, and `db.sql` stayed at 4 KB: closing did not write the write-ahead log back into the main file. (With 220 documents, in [Deleted and evicted values remain in the database files](storage-and-deletion.md#deleted-and-evicted-values-remain-in-the-database-files), they were in `db.sql`.) The subscription query strings were in `ditto_system_info/db.sql`; the subscriptions themselves do not come back when the directory is reopened (see [Subscriptions are not stored in the persistence directory](subscriptions-and-replication.md#subscriptions-are-not-stored-in-the-persistence-directory)). On 5.0.3, a file that we read right after `close()` had completed (`ditto_system_info/db.sql-shm`) disappeared before the read finished, in 1 of 3 runs and once in a trial run: cleanup continues for a moment after `close()`.
 - On 5.2.0, `ditto_store`, `ditto_attachments`, and `ditto_system_info` each contain a 6-byte file `__ditto_encryption` (`0100be23c258` in all three). 5.1.0 and 5.0.3 have no such file. We did not check what it means.
 
-**Used in:** [Data at Rest](../best-practices/security.md#data-at-rest).
+**Used in:** [Data at Rest](../../best-practices/security.md#data-at-rest).
 
 ### The lock file keeps a process ID after the process ends
 
@@ -171,7 +171,7 @@ The tendency was the same on both releases:
 - The lock of a process that crashed does not remain, and its committed writes are not lost.
 - Opening the same directory again in the same process also fails in JavaScript (see [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails)).
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
 ### In JavaScript, opening an open directory again fails
 
@@ -183,4 +183,4 @@ The tendency was the same on both releases:
 - The second `Ditto.open()` failed within 10 seconds with `File already locked, working dir = ..., retried 5 times. Multiple Ditto instances cannot run at the same time within the same working directory.`
 - After `close()` had completed, the directory opened.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory), [Platform Differences](platform-differences.md).
+**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory), [Platform Differences](../platform-differences.md).

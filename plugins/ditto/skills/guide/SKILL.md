@@ -5,7 +5,7 @@ description: Searches the complete Ditto SDK best practices guide (SDK 5.2.0) bu
 
 # Ditto Best Practices Guide
 
-The full guide (SDK 5.2.0, about 12,700 lines in 38 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works, the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary), and the observations from our testing with their numbers. Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
+The full guide (SDK 5.2.0, about 12,700 lines in 38 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works, the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary), and, in `reference/knowledge/observations/`, the observations from our testing with their numbers. Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
 
 ## How to Search
 
@@ -50,24 +50,24 @@ Knowledge, in `reference/knowledge/`:
 | `upgrading.md` | Changes in SDK 5.2.0, known issues of 5.1.0 that 5.2.0 fixed (for devices that still run 5.1.0), mixed releases, rolling back |
 | `glossary.md`, `references.md` | Terms and external documentation links |
 
-Observations from our testing, in `reference/knowledge/`, one entry per observation with the SDK releases, the setup, every number, and what was not tested. Read them for the evidence behind a rule, or when a question is about how Ditto behaved:
+Observations from our testing, in `reference/knowledge/observations/`, one entry per observation with the SDK releases, the setup, every number, and what was not tested. Read them for the evidence behind a rule, or when a question is about how Ditto behaved:
 
 | Page | Covers |
 |---|---|
-| `how-we-tested.md` | The test environment and its limits, how to read the results, the checks of the guide |
-| `subscriptions-and-replication.md` | What subscriptions deliver, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, the list of subscriptions, sync status |
-| `connections-and-presence.md` | The TCP connection limit, meshes, WebSocket hubs, retries, detecting lost connections, presence, peer metadata, accepting connections, shared keys |
-| `merge-behavior.md` | Concurrent edits, also between SDK releases, conditional updates, read-modify-write, reordering, renaming, counters |
-| `clocks-and-time.md` | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |
-| `storage-and-deletion.md` | Soft delete, tombstones and reaping, eviction, disk space, the write-ahead log, deleted data on disk |
-| `documents-and-limits.md` | The hard size limit across devices and releases, document weight, nesting depth, many fields and collections |
-| `persistence-directory.md` | Copies of a directory, Database IDs, deleting parts of a directory, locks |
-| `dql-behavior.md` | Statements that held, writes and arguments, `USE IDS`, comparison and ordering, IDs and field names, indexes and query plans (SDK 5.1.0 issues, migration), long conditions and `ANY`, SDK 5.0.3 differences |
-| `performance-measurements.md` | Statements and write rates, queries and indexes, memory, hub load |
-| `transaction-behavior.md` | Concurrency and reads, long transactions, transactions in JavaScript, closing Ditto in JavaScript |
-| `observer-behavior.md` | When observers fire, batching of changes, observers of `system:` collections, release differences, observers and results in JavaScript |
-| `attachment-behavior.md` | Relaying and fetching attachments, slow links, garbage collection of blobs |
-| `configuration-and-diagnostics.md` | Parameter defaults, environment variables, the offline license token, request diagnostics, logs |
+| `observations/how-we-tested.md` | The test environment and its limits, how to read the results, the checks of the guide |
+| `observations/subscriptions-and-replication.md` | What subscriptions deliver, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, the list of subscriptions, sync status |
+| `observations/connections-and-presence.md` | The TCP connection limit, meshes, WebSocket hubs, retries, detecting lost connections, presence, peer metadata, accepting connections, shared keys |
+| `observations/merge-behavior.md` | Concurrent edits, also between SDK releases, conditional updates, read-modify-write, reordering, renaming, counters |
+| `observations/clocks-and-time.md` | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |
+| `observations/storage-and-deletion.md` | Soft delete, tombstones and reaping, eviction, disk space, the write-ahead log, deleted data on disk |
+| `observations/documents-and-limits.md` | The hard size limit across devices and releases, document weight, nesting depth, many fields and collections |
+| `observations/persistence-directory.md` | Copies of a directory, Database IDs, deleting parts of a directory, locks |
+| `observations/dql-behavior.md` | Statements that held, writes and arguments, `USE IDS`, comparison and ordering, IDs and field names, indexes and query plans (SDK 5.1.0 issues, migration), long conditions and `ANY`, SDK 5.0.3 differences |
+| `observations/performance-measurements.md` | Statements and write rates, queries and indexes, memory, hub load |
+| `observations/transaction-behavior.md` | Concurrency and reads, long transactions, transactions in JavaScript, closing Ditto in JavaScript |
+| `observations/observer-behavior.md` | When observers fire, batching of changes, observers of `system:` collections, release differences, observers and results in JavaScript |
+| `observations/attachment-behavior.md` | Relaying and fetching attachments, slow links, garbage collection of blobs |
+| `observations/configuration-and-diagnostics.md` | Parameter defaults, environment variables, the offline license token, request diagnostics, logs |
 
 ## Answering
 

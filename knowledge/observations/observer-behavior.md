@@ -1,6 +1,6 @@
 # Observer Behavior
 
-How store observers behave on one device: when an observer is called, how changes are batched into callbacks, how often observers of `system:` collections fire, how observers differ between SDK releases, and how observers and query results behave in JavaScript. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Observing Changes](../best-practices/observers.md), [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), and [Platform Differences](platform-differences.md).
+How store observers behave on one device: when an observer is called, how changes are batched into callbacks, how often observers of `system:` collections fire, how observers differ between SDK releases, and how observers and query results behave in JavaScript. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Observing Changes](../../best-practices/observers.md), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Platform Differences](../platform-differences.md).
 
 **In brief**
 
@@ -41,7 +41,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - An observer of `ORDER BY score DESC LIMIT 10`, which returns the top 10 of 1,000 documents, was not called for writes to documents outside its result: updates of other fields, updates to values that do not reach the top 10, `INSERT`, and `DELETE`. It was called once for each update of a document in its result and for each update to a value that enters the top 10, like an observer of `WHERE score >= 990`. With only `_id` and `score` projected, it was not called for updates of other fields of the documents in its result either.
 - A projecting observer does not fall into the loop of [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing) (one run on 5.1.0 and 5.2.0). When the callback wrote the same value again with `DO UPDATE`, in 2 seconds, `SELECT *` was called 58 to 59 times, and `SELECT _id, v` only once, for its first result.
 
-**Used in:** [Observing Changes](../best-practices/observers.md), [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites).
+**Used in:** [Observing Changes](../../best-practices/observers.md), [Prefer field-level updates over whole-document rewrites](../../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites).
 
 ### Remote changes arrive in a few callbacks, and a transaction in one
 
@@ -59,7 +59,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - The writing device's own observer was called only 3 times for its 20 writes: local writes are coalesced too.
 - A local transaction that wrote 10 documents 50 ms apart called the observer once, after the commit (10 documents), and not at all when it was rolled back. Without a transaction, 10 writes 50 ms apart called it 10 times.
 
-**Used in:** [Observing Changes](../best-practices/observers.md).
+**Used in:** [Observing Changes](../../best-practices/observers.md).
 
 ### Local writes are coalesced into callbacks about 30 ms apart
 
@@ -77,7 +77,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - Since 5.1, the changes within about 30 ms are combined into one callback.
 - With `registerObserverWithSignalNext`, no callback arrived during the 5 writes until `signalNext()` was called; then one callback delivered the latest result (5 documents). This was the same on all three releases.
 
-**Used in:** [Observing Changes](../best-practices/observers.md), [registerObserverWithSignalNext (Experimental)](../best-practices/observers.md#registerobserverwithsignalnext-experimental).
+**Used in:** [Observing Changes](../../best-practices/observers.md), [registerObserverWithSignalNext (Experimental)](../../best-practices/observers.md#registerobserverwithsignalnext-experimental).
 
 ### A device receives nearly every value of a fast-changing field
 
@@ -102,7 +102,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** whether the values missing at 200 updates a second were missed by the reader or skipped by sync; whether sync delivered every state at the fastest rate; writing each value as its own document, so that an observer can process every value (we think no value is lost that way, because every document stays in the result).
 
-**Used in:** [Observing Changes](../best-practices/observers.md).
+**Used in:** [Observing Changes](../../best-practices/observers.md).
 
 ### Writing the same value from an observer keeps it firing
 
@@ -120,7 +120,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 - A write of the same value is a change that calls the observer again, so the callback keeps writing and the observer keeps firing. An observer that projects fields does not loop this way (see [When an observer fires depends on its query](#when-an-observer-fires-depends-on-its-query)).
 
-**Used in:** [Keep observer callbacks fast](../best-practices/observers.md#keep-observer-callbacks-fast).
+**Used in:** [Keep observer callbacks fast](../../best-practices/observers.md#keep-observer-callbacks-fast).
 
 ### Observers of system:system_info keep firing while nothing changes
 
@@ -140,7 +140,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** other `system:` collections; observers while sync runs.
 
-**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), [System Virtual Collections](system-reference.md#system-virtual-collections), [Changes in SDK 5.2.0](upgrading.md#changes-in-sdk-520).
+**Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
 
 ## Observer Differences between SDK Releases
 
@@ -163,7 +163,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** Flutter's `Differ` and observers.
 
-**Used in:** [Diffing Results](../best-practices/observers.md#diffing-results), [Joins in observers](../best-practices/dql.md#joins-in-observers).
+**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Joins in observers](../../best-practices/dql.md#joins-in-observers).
 
 ### On SDK 5.1.0, observers stall beyond about 60
 
@@ -191,7 +191,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** Flutter and mobile devices. The threshold may differ from device to device, for example with the number of threads.
 
-**Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510), [Partial UI Updates](../best-practices/observers.md#partial-ui-updates).
+**Used in:** [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510), [Partial UI Updates](../../best-practices/observers.md#partial-ui-updates).
 
 ## Observers and Results in JavaScript
 
@@ -205,7 +205,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - With an async function passed to `registerObserver`, the callback was called 6 times, and two calls ran at the same time. The slow second call (1 document) finished last, so the final state was 1 document, while the store held 5. If no newer result arrives after that, the screen keeps showing the old state.
 - With `registerObserverWithSignalNext`, calling `signalNext()` after the work, the callback was called only 3 times (the intermediate results were skipped), one call at a time, and the final state was 5 documents.
 
-**Used in:** [Keep observer callbacks fast](../best-practices/observers.md#keep-observer-callbacks-fast), [Backpressure on other platforms](../best-practices/observers.md#backpressure-on-other-platforms), [Platform Differences](platform-differences.md).
+**Used in:** [Keep observer callbacks fast](../../best-practices/observers.md#keep-observer-callbacks-fast), [Backpressure on other platforms](../../best-practices/observers.md#backpressure-on-other-platforms), [Platform Differences](../platform-differences.md).
 
 ### In JavaScript, exceptions in observer callbacks are discarded
 
@@ -219,7 +219,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - The first callback arrives asynchronously, about 1 ms after the registration; it is not called inside the registration call.
 - After `ditto.close()`, the observer's `isCancelled` is `true`, and the callbacks stop.
 
-**Used in:** [Platform Differences](platform-differences.md).
+**Used in:** [Platform Differences](../platform-differences.md).
 
 ### In JavaScript, query results return the same objects
 
@@ -232,7 +232,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - After `item.value.n = 99`, later reads of `item.value.n` also return 99. The value in the store does not change (it stays 1).
 - After `ditto.close()`, the `value` and `jsonString()` of results that had not been read yet could still be read.
 
-**Used in:** [Materialize values, then let the result go](../best-practices/dql.md#materialize-values-then-let-the-result-go), [Platform Differences](platform-differences.md).
+**Used in:** [Materialize values, then let the result go](../../best-practices/dql.md#materialize-values-then-let-the-result-go), [Platform Differences](../platform-differences.md).
 
 ### In JavaScript, store.observers exists since 5.0 and lists other objects
 
@@ -246,7 +246,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - With two observers from `registerObserver`, it returned 2; with one from `registerObserverWithSignalNext` added, 3. However, `observers.includes(withSignal)` was `false`: the list holds other objects than the ones that the registration returned.
 - After `cancel()` on one observer, the list had one fewer. `close()` set `isCancelled` to `true` on the remaining observers, and reading `store.observers` after `close()` threw `Can't perform operation using a Ditto instance that has been closed.`
 
-**Used in:** [Platform Differences](platform-differences.md).
+**Used in:** [Platform Differences](../platform-differences.md).
 
 ### Differ reports every shifted item as a move
 
@@ -260,7 +260,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - The first `diff()` reported every item as an insertion.
 - On 5.2.0, rows of a query that did not project `_id` have no `_id`, so `Differ` cannot tell the items apart (see [On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)).
 
-**Used in:** [Diffing Results](../best-practices/observers.md#diffing-results).
+**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results).
 
 ### In JavaScript, garbage-collected subscriptions and observers keep running
 
@@ -275,4 +275,4 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** Dart.
 
-**Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).

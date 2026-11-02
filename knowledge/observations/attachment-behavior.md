@@ -1,6 +1,6 @@
 # Attachment Behavior
 
-How attachments behaved: which devices can deliver a blob, what a fetch reports and how it continues after an interruption, how a transfer affects document sync on a slow link, and when Ditto collects blobs that no document references. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The two parts of an attachment, the token and the blob, are described in [Attachment Architecture](../best-practices/attachments.md#attachment-architecture). The rules that follow from these observations are in [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Attachments Are Immutable](../best-practices/attachments.md#attachments-are-immutable), [Availability](../best-practices/attachments.md#availability), and [Size Guidance](../best-practices/attachments.md#size-guidance).
+How attachments behaved: which devices can deliver a blob, what a fetch reports and how it continues after an interruption, how a transfer affects document sync on a slow link, and when Ditto collects blobs that no document references. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The two parts of an attachment, the token and the blob, are described in [Attachment Architecture](../../best-practices/attachments.md#attachment-architecture). The rules that follow from these observations are in [Fetching Attachments](../../best-practices/attachments.md#fetching-attachments), [Attachments Are Immutable](../../best-practices/attachments.md#attachments-are-immutable), [Availability](../../best-practices/attachments.md#availability), and [Size Guidance](../../best-practices/attachments.md#size-guidance).
 
 **In brief**
 
@@ -23,7 +23,7 @@ How attachments behaved: which devices can deliver a blob, what a fetch reports 
 
 - **Relay**: while only A held the blob, C's fetch made no progress for 15 seconds. Once B had fetched the blob (8 to 19 ms), C's fetch also completed at once.
 
-**Used in:** [Attachment Architecture](../best-practices/attachments.md#attachment-architecture), [Availability](../best-practices/attachments.md#availability).
+**Used in:** [Attachment Architecture](../../best-practices/attachments.md#attachment-architecture), [Availability](../../best-practices/attachments.md#availability).
 
 ### A fetch waits while no device holds the blob, and a device that deleted the document still serves it
 
@@ -37,7 +37,7 @@ How attachments behaved: which devices can deliver a blob, what a fetch reports 
 - **The holder deleted the document**: after the peer that held the blob had deleted the document, another device started a fetch and reconnected, and the fetch **completed** (2.1 seconds) instead of ending with `Deleted`. Deleting the document does not remove the blob from the device that holds it at once.
 - **DS-842 not reproduced**: none of these procedures reproduced the behavior that the release notes describe. It might occur only after the holder has collected the blob; [A fetch of a collected blob stays pending instead of ending with Deleted](#a-fetch-of-a-collected-blob-stays-pending-instead-of-ending-with-deleted) tried that, and it did not occur either.
 
-**Used in:** [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Availability](../best-practices/attachments.md#availability), [Attachments Are Immutable](../best-practices/attachments.md#attachments-are-immutable), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [Fetching Attachments](../../best-practices/attachments.md#fetching-attachments), [Availability](../../best-practices/attachments.md#availability), [Attachments Are Immutable](../../best-practices/attachments.md#attachments-are-immutable), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 ### An interrupted fetch resumes, and identical content is not downloaded again
 
@@ -51,7 +51,7 @@ Results on 5.2.0 (5.1.0 in parentheses):
 - When the receiving device called `sync.stop()` after 11.1 MiB (10.5 MiB) had passed the relay, the fetch did not fail and stayed pending (one progress event arrived while sync was stopped). It completed 72 ms (78 ms) after `sync.start()`, and only 8.3 MiB (8.8 MiB) flowed after sync resumed: the data that had arrived was kept.
 - The attachment that the receiving device created from the same bytes got the same ID as the other device's attachment. The fetch of the other device's attachment then completed with 0 MiB transferred.
 
-**Used in:** [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Availability](../best-practices/attachments.md#availability), [Attachment Architecture](../best-practices/attachments.md#attachment-architecture).
+**Used in:** [Fetching Attachments](../../best-practices/attachments.md#fetching-attachments), [Availability](../../best-practices/attachments.md#availability), [Attachment Architecture](../../best-practices/attachments.md#attachment-architecture).
 
 ### Fast fetches can complete without progress events
 
@@ -65,7 +65,7 @@ Results on 5.2.0 (5.1.0 in parentheses):
 - 40 fetches of 2 MB and 10 fetches of 20 MB started at once also all completed (in 0.5 seconds and 0.8 seconds), again without any `Progress` event.
 - The checks of starting and stopping sync that ran together with these are described in [Starting and stopping sync behaved as documented](subscriptions-and-replication.md#starting-and-stopping-sync-behaved-as-documented).
 
-**Used in:** [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Size Guidance](../best-practices/attachments.md#size-guidance).
+**Used in:** [Fetching Attachments](../../best-practices/attachments.md#fetching-attachments), [Size Guidance](../../best-practices/attachments.md#size-guidance).
 
 ## Attachments on Slow Links
 
@@ -93,7 +93,7 @@ Time until a small document reached the other side (median / maximum; the same t
 
 **Not tested:** Bluetooth LE, which is slower still, and real Wi-Fi with its latency and buffers; the relay ran over TCP on `127.0.0.1` and limited only the bandwidth.
 
-**Used in:** [Size Guidance](../best-practices/attachments.md#size-guidance).
+**Used in:** [Size Guidance](../../best-practices/attachments.md#size-guidance).
 
 ## Garbage Collection of Blobs
 
@@ -128,7 +128,7 @@ Time until a small document reached the other side (median / maximum; the same t
 
 **Not tested:** the Flutter SDK, and whether Dart attachment objects keep their blobs in the same way.
 
-**Used in:** [Attachments Are Immutable](../best-practices/attachments.md#attachments-are-immutable).
+**Used in:** [Attachments Are Immutable](../../best-practices/attachments.md#attachments-are-immutable).
 
 ### A fetch of a collected blob stays pending instead of ending with Deleted
 
@@ -141,4 +141,4 @@ Time until a small document reached the other side (median / maximum; the same t
 - B received the deletion, and its copy of the document was gone, but the fetch stayed pending for 30 seconds, and no event arrived.
 - Together with the procedures in [A fetch waits while no device holds the blob, and a device that deleted the document still serves it](#a-fetch-waits-while-no-device-holds-the-blob-and-a-device-that-deleted-the-document-still-serves-it), none of our procedures reproduced DS-842, on 5.1.0 or on 5.2.0.
 
-**Used in:** [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [Fetching Attachments](../../best-practices/attachments.md#fetching-attachments), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).

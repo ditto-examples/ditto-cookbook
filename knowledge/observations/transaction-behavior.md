@@ -1,6 +1,6 @@
 # Transaction Behavior
 
-How transactions behave on one device: what other reads, writes, and incoming changes do while a read-write transaction or a large statement runs, which parallel read-then-write sequences lose updates, how long transactions are logged, how transactions fail in JavaScript, and what `close()` waits for in JavaScript. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transactions](../best-practices/transactions.md), [Resource Cleanup and Shutdown](../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), and [Platform Differences](platform-differences.md).
+How transactions behave on one device: what other reads, writes, and incoming changes do while a read-write transaction or a large statement runs, which parallel read-then-write sequences lose updates, how long transactions are logged, how transactions fail in JavaScript, and what `close()` waits for in JavaScript. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transactions](../../best-practices/transactions.md), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), and [Platform Differences](../platform-differences.md).
 
 **In brief**
 
@@ -26,7 +26,7 @@ How transactions behave on one device: what other reads, writes, and incoming ch
 - A write in a read-only transaction fails with `A mutating DQL query was attempted using a read-only transaction.`
 - A `Transaction` object that is kept and used after its callback has finished fails with `No active write transaction found with id <uuid>. Active write transaction id: None`.
 
-**Used in:** [Concurrency and Duration](../best-practices/transactions.md#concurrency-and-duration), [Transaction Rules](../best-practices/transactions.md#transaction-rules).
+**Used in:** [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration), [Transaction Rules](../../best-practices/transactions.md#transaction-rules).
 
 ### Incoming changes wait while a read-write transaction is open
 
@@ -45,7 +45,7 @@ How transactions behave on one device: what other reads, writes, and incoming ch
 
 **Not tested:** whether the connection dropped and reconnected while the transaction was held open for 15 seconds.
 
-**Used in:** [Concurrency and Duration](../best-practices/transactions.md#concurrency-and-duration), [Transaction Rules](../best-practices/transactions.md#transaction-rules).
+**Used in:** [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration), [Transaction Rules](../../best-practices/transactions.md#transaction-rules).
 
 ### Large statements delay incoming changes and local writes
 
@@ -69,7 +69,7 @@ How transactions behave on one device: what other reads, writes, and incoming ch
 
 **Not tested:** the delay on the writing device with each peer in its own process.
 
-**Used in:** [Concurrency and Duration](../best-practices/transactions.md#concurrency-and-duration).
+**Used in:** [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration).
 
 ### Parallel writes are safe, but parallel read-modify-write loses updates
 
@@ -90,7 +90,7 @@ How transactions behave on one device: what other reads, writes, and incoming ch
 
 **Not tested:** `n = n + 1` on 5.0.3, which does not accept a reference to a field in `SET`.
 
-**Used in:** [Transactions](../best-practices/transactions.md).
+**Used in:** [Transactions](../../best-practices/transactions.md).
 
 ### Long transactions are logged at rising levels
 
@@ -111,7 +111,7 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 - Every line contained the transaction's hint.
 - With the minimum log level set to Info, the first line therefore appears after 20 seconds; with Warning, after 35 seconds.
 
-**Used in:** [Concurrency and Duration](../best-practices/transactions.md#concurrency-and-duration).
+**Used in:** [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration).
 
 ## Transactions in JavaScript
 
@@ -126,7 +126,7 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 - An `INSERT` through `ditto.store.execute` inside a read-write transaction never completes, and raises no exception. A `SELECT` completes, but, like any read outside the transaction, it does not see the transaction's writes (see [Reads outside a read-write transaction see only committed data](#reads-outside-a-read-write-transaction-see-only-committed-data)).
 - A read-write transaction started inside a read-write transaction never completes. A read-only transaction started inside completes.
 
-**Used in:** [Transaction Rules](../best-practices/transactions.md#transaction-rules), [Transactions on Other Platforms](../best-practices/transactions.md#transactions-on-other-platforms), [Platform Differences](platform-differences.md).
+**Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules), [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Platform Differences](../platform-differences.md).
 
 ### A deadlocked transaction does not end the process
 
@@ -141,7 +141,7 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 
 **Not tested:** which callbacks the deadlock detection applies to.
 
-**Used in:** [Transaction Rules](../best-practices/transactions.md#transaction-rules).
+**Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules).
 
 ### A tx.execute that is not awaited is not applied
 
@@ -159,7 +159,7 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 
 **Not tested:** Dart. A `tx.execute` left `unawaited` there probably behaves the same.
 
-**Used in:** [Transaction Rules](../best-practices/transactions.md#transaction-rules).
+**Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules).
 
 ### A Node.js script without sync ends with a panic while awaiting a transaction
 
@@ -175,7 +175,7 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 - A script that started sync (`sync.start()`, then the same transaction) completed in every run. Run again without sync on the same day, the script ended abnormally in every run (exit code 134 or 139, with `PendingException` or `InvalidArg` in the panic message). Only scripts that do not start sync, such as seed, migration, and command-line scripts, are affected.
 - The same kind of abnormal exit also occurs occasionally with `fetchAttachment()`; with a transaction, it occurred every time. The other tests behind these pages always kept a timer running, so this failure did not affect them.
 
-**Used in:** [Transactions on Other Platforms](../best-practices/transactions.md#transactions-on-other-platforms), [Platform Differences](platform-differences.md).
+**Used in:** [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Platform Differences](../platform-differences.md).
 
 ## Closing Ditto in JavaScript
 
@@ -193,7 +193,7 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 
 **Not tested:** Flutter.
 
-**Used in:** [Concurrency and Duration](../best-practices/transactions.md#concurrency-and-duration), [Transactions on Other Platforms](../best-practices/transactions.md#transactions-on-other-platforms), [Resource Cleanup and Shutdown](../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](platform-differences.md).
+**Used in:** [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration), [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](../platform-differences.md).
 
 ### In JavaScript, close() completes pending writes
 
@@ -212,4 +212,4 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 
 **Not tested:** Flutter, including whether its `close()` waits for pending work on 5.2.0.
 
-**Used in:** [Resource Cleanup and Shutdown](../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](platform-differences.md).
+**Used in:** [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](../platform-differences.md).

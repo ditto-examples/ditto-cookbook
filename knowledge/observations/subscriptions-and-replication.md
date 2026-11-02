@@ -1,6 +1,6 @@
 # Subscriptions and Replication
 
-How Ditto decides what to send to a device, and how the data gets there: which documents a subscription delivers and what registering one costs, how relays, hubs, and devices that move between sites pass documents on, how an initial sync arrives, in what order and how completely changes arrive, how much traffic sync produces, what happens to a write when sync stops or Ditto closes, what the list of subscriptions shows, and how quickly the sync status follows a disconnection. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Scope subscriptions to what the device needs](../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs), [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Sync Scopes](../best-practices/sync-and-subscriptions.md#sync-scopes), [Monitoring Sync Status](../best-practices/sync-and-subscriptions.md#monitoring-sync-status), [Transactions and Sync](../best-practices/transactions.md#transactions-and-sync), [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), and [Resource Cleanup and Shutdown](../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown).
+How Ditto decides what to send to a device, and how the data gets there: which documents a subscription delivers and what registering one costs, how relays, hubs, and devices that move between sites pass documents on, how an initial sync arrives, in what order and how completely changes arrive, how much traffic sync produces, what happens to a write when sync stops or Ditto closes, what the list of subscriptions shows, and how quickly the sync status follows a disconnection. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Scope subscriptions to what the device needs](../../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs), [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Sync Scopes](../../best-practices/sync-and-subscriptions.md#sync-scopes), [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status), [Transactions and Sync](../../best-practices/transactions.md#transactions-and-sync), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), and [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown).
 
 **In brief**
 
@@ -28,15 +28,15 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 | Setup | 16 conditions. The sending device held four documents whose `status` was `'open'`, `'closed'`, missing, and `null`. For each condition, a receiving device subscribed with it, and we compared the documents it received with the result of the same condition as a local query on the sending device |
 
 - For every condition, the documents that arrived were exactly those that the same condition returned as a local query on the sending device:
-  - `status != 'closed'`, `NOT (status = 'closed')`, and `status NOT IN :list` delivered only the `'open'` document. The document without `status` and the document with `null` did not arrive (see [MISSING and NULL](../best-practices/dql.md#missing-and-null)). On the receiving device, a missing field therefore looks like data that does not sync.
+  - `status != 'closed'`, `NOT (status = 'closed')`, and `status NOT IN :list` delivered only the `'open'` document. The document without `status` and the document with `null` did not arrive (see [MISSING and NULL](../../best-practices/dql.md#missing-and-null)). On the receiving device, a missing field therefore looks like data that does not sync.
   - `status IS NOT NULL` also delivered the document without `status`, as a local query returns it.
   - Nested paths (`a.b = 1`), `array_contains(tags, 'x')`, `'x' IN tags`, `lower(name) = 'apple'`, `LIKE 'A%'`, comparisons of ISO strings, and `_id IN :ids` were accepted in subscriptions and delivered the same documents as the local query.
   - A value of another type (`n` as the string `'5'`) did not match `n > 4` and did not arrive.
-- **Rejected features**: projections, aggregates, `DISTINCT *`, `GROUP BY`, `JOIN`, `USE IDS`, `LIMIT` and `ORDER BY`, and statements other than `SELECT` were rejected on 5.1.0 and 5.2.0 with exactly the error messages listed in [Subscription Rules](../best-practices/sync-and-subscriptions.md#subscription-rules) (one run). A syntax error, a missing argument, and an unknown function also throw when `registerSubscription` is called; such a subscription is never registered silently without delivering anything. A projection combined with `DISTINCT` or `GROUP BY` reports the projection error first. A subscription to a `system:` collection is registered.
+- **Rejected features**: projections, aggregates, `DISTINCT *`, `GROUP BY`, `JOIN`, `USE IDS`, `LIMIT` and `ORDER BY`, and statements other than `SELECT` were rejected on 5.1.0 and 5.2.0 with exactly the error messages listed in [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules) (one run). A syntax error, a missing argument, and an unknown function also throw when `registerSubscription` is called; such a subscription is never registered silently without delivering anything. A projection combined with `DISTINCT` or `GROUP BY` reports the projection error first. A subscription to a `system:` collection is registered.
 - **Part of a composite ID**: a subscription with `WHERE _id.storeId = :s` delivered only the documents of that store. A document whose `_id` is a string and that holds the same `storeId` in another field did not arrive. `CREATE INDEX ... (_id.storeId)` also works, and the local query then uses an index scan (one run on 5.1.0 and 5.2.0).
 - **Directives**: subscriptions with directives (`USE INDEX 'idx_status'`, `USE INDEX ''`, `/*+ {...} */`, and `USE INDEX 'nope'` for an index that does not exist) were registered without an error. Each registered on its own peer, every one of them delivered only the matching document, the one `open` document (one run on each of 5.1.0 and 5.2.0). A directive in a subscription does not break it.
 
-**Used in:** [Subscription Rules](../best-practices/sync-and-subscriptions.md#subscription-rules), [Testing Subscription Rules](../best-practices/testing.md#testing-subscription-rules), [Composite IDs for permission scoping and grouping](../best-practices/data-modeling.md#composite-ids-for-permission-scoping-and-grouping), [Directives](../best-practices/indexing-and-performance.md#directives), [clock() in a subscription uses the sending device's clock](clocks-and-time.md#clock-in-a-subscription-uses-the-sending-devices-clock).
+**Used in:** [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules), [Testing Subscription Rules](../../best-practices/testing.md#testing-subscription-rules), [Composite IDs for permission scoping and grouping](../../best-practices/data-modeling.md#composite-ids-for-permission-scoping-and-grouping), [Directives](../../best-practices/indexing-and-performance.md#directives), [clock() in a subscription uses the sending device's clock](clocks-and-time.md#clock-in-a-subscription-uses-the-sending-devices-clock).
 
 ### A LIMIT in a subscription limits only the first download
 
@@ -48,7 +48,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - The first sync delivered only the three documents `i01` to `i03`.
 - The documents created afterwards (`i11` and `i12`) and the updated `i09`, which was outside the first three, arrived as well. On both releases, the receiving device ended with `["i01","i02","i03","i09","i11","i12"]`.
 
-**Used in:** [LIMIT and ORDER BY in subscriptions](../best-practices/sync-and-subscriptions.md#limit-and-order-by-in-subscriptions).
+**Used in:** [LIMIT and ORDER BY in subscriptions](../../best-practices/sync-and-subscriptions.md#limit-and-order-by-in-subscriptions).
 
 ### Documents that leave a subscription stay as frozen copies
 
@@ -59,7 +59,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 
 - The change to `closed` arrived. Neither the later change of `title` nor the deletion arrived: the document stayed on the receiving device as `{"status": "closed", "title": "v1"}`.
 
-**Used in:** [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay).
+**Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
 
 ### Subscriptions are not stored in the persistence directory
 
@@ -74,7 +74,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - The document that the client wrote reached the hub, although the client had no subscription. Whether a change travels depends on the subscriptions of the receiving device (the same on all three releases).
 - After the client registered the subscription again, the update and the new document both arrived within about 110 ms (the same on all three releases).
 
-**Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Complete app startup](../best-practices/setup-and-lifecycle.md#complete-app-startup).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Complete app startup](../../best-practices/setup-and-lifecycle.md#complete-app-startup).
 
 ### Sync scopes behaved as documented on SDK 5.2.0
 
@@ -95,7 +95,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - A second `ALTER SYSTEM SET USER_COLLECTION_SYNC_SCOPES` that left out `drafts` replaced the whole map with `{"shared": "LocalPeerOnly"}`, and updates of `drafts` arrived again right away.
 - A collection name that starts with `__`, such as `__presence`, was rejected with `Key "__presence" failed validation with predicate Not(StartsWith("__"))`.
 
-**Used in:** [Sync Scopes](../best-practices/sync-and-subscriptions.md#sync-scopes).
+**Used in:** [Sync Scopes](../../best-practices/sync-and-subscriptions.md#sync-scopes).
 
 ### Relay, rewrite, and subscription behavior held on SDK 5.2.0
 
@@ -111,7 +111,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - **Sync groups**: peers in sync groups 1 and 2 synced when they were connected explicitly over TCP.
 - **Duplicate subscriptions**: two registrations of the same subscription appeared as two entries in `subscriptions`. Sync continued after one of them was cancelled and stopped when both were. The documents already received stayed after the cancel.
 
-**Used in:** [Transactions and Sync](../best-practices/transactions.md#transactions-and-sync), [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites), [Peers with different settings](../best-practices/data-modeling.md#peers-with-different-settings), [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Cancelling subscriptions and local data](../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
+**Used in:** [Transactions and Sync](../../best-practices/transactions.md#transactions-and-sync), [Prefer field-level updates over whole-document rewrites](../../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites), [Peers with different settings](../../best-practices/data-modeling.md#peers-with-different-settings), [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Cancelling subscriptions and local data](../../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
 
 ## The Cost of Registering Subscriptions
 
@@ -128,7 +128,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 
 **Not tested:** thousands of subscriptions, and sync with Ditto Server.
 
-**Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
 ### Each new subscription makes the data holder read the whole collection
 
@@ -178,7 +178,7 @@ The same with 200,000 documents (the index was compared only with 50,000):
 
 **Not tested:** a hub with more than one collection (whether the documents of other collections add to the cost); more than one hub, or more than four devices; Ditto Server as the device that holds the data; whether the size of the documents (200 bytes here) or the number of their fields changes the cost per document; long disconnections; and a device restart, after which the device registers its subscriptions again (see [Subscriptions are not stored in the persistence directory](#subscriptions-are-not-stored-in-the-persistence-directory)). We think a restart resembles the case of subscriptions registered before sync starts.
 
-**Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Where indexes live](../best-practices/indexing-and-performance.md#where-indexes-live).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Where indexes live](../../best-practices/indexing-and-performance.md#where-indexes-live).
 
 ## Relays, Hubs, and Carriers
 
@@ -192,7 +192,7 @@ The same with 200,000 documents (the index was compared only with 50,000):
 - When every peer subscribed to the whole collection, an insert, an edit, and a `DELETE` on one end passed the three hops and reached the other end in about 0.1 seconds (we checked every 0.1 seconds).
 - When the two peers in the middle subscribed only to `status = 'open'`, a document that had never been open did not reach the far end. An open document arrived, and so did the change that closed it, but edits made after it was closed did not arrive within 8 seconds. When the document was opened again, it arrived in its latest state (`status: 'open', v: 3`).
 
-**Used in:** [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay).
+**Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
 
 ### With two relays, sync continued when one of them stopped
 
@@ -206,7 +206,7 @@ The same with 200,000 documents (the index was compared only with 50,000):
 - **D subscribed to nothing**: D held no documents throughout. After B was killed, A's updates did not reach C within 15 seconds (all 11 runs), while C's presence graph still listed A and D (with one connection for A). A device without subscriptions relays nothing.
 - For a few seconds after B was killed, the number of peers in C's presence graph sometimes dropped: 1 where 2 were expected, and once on 5.2.0, 0 peers 2 seconds after the kill. An offline indicator that follows the number of peers in the presence graph can therefore show offline for a moment when only one of two relays fails.
 
-**Used in:** [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Key Characteristics](understanding-ditto.md#key-characteristics).
+**Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Key Characteristics](../understanding-ditto.md#key-characteristics).
 
 ### Each relay hop added about 4 ms
 
@@ -229,7 +229,7 @@ Median time until the observer had the new value (first run):
 - Each hop added about 3 to 4 ms. In the slowest run too, the far end had the value within 23 ms.
 - The peers ran on one Mac over TCP. On real devices, each hop adds its network round trip; the numbers show only that the hops themselves cost little.
 
-**Used in:** [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay).
+**Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
 
 ### Devices that move between sites carry documents and deletions
 
@@ -245,7 +245,7 @@ Median time until the observer had the new value (first run):
 
 **Not tested:** how long carrying the 20,000 documents takes without the short first visit. This test therefore cannot tell whether the part received during the 1-second visit was kept (that an interrupted initial sync resumes where it stopped is shown in [An interrupted initial sync resumes where it stopped](#an-interrupted-initial-sync-resumes-where-it-stopped)).
 
-**Used in:** [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay).
+**Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
 
 ### A new, empty hub recovers the data from its clients
 
@@ -260,7 +260,7 @@ Median time until the observer had the new value (first run):
 - Documents that only the old hub held, in a collection `hubNotes` that no client subscribed to, were not recovered, even when the new hub subscribed to that collection (0 documents in all three runs).
 - After the tombstones have been reaped, deleted documents do come back, as [A device with an old copy resurrects a document after its tombstone is reaped](storage-and-deletion.md#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped) describes.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ## How an Initial Sync Arrives
 
@@ -288,7 +288,7 @@ Time from the start of sync until all documents were visible (first run):
 
 **Not tested:** mobile devices and transports other than TCP, such as Bluetooth LE. The times there probably differ a lot, so do not use the numbers above as estimates.
 
-**Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
 ### An interrupted initial sync resumes where it stopped
 
@@ -308,7 +308,7 @@ The results were the same on both releases.
 
 **Not tested:** Bluetooth LE and other transports, and a connection that drops instead of `sync.stop()`.
 
-**Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
 ### A large initial sync holds up the device's other sync
 
@@ -329,7 +329,7 @@ Values are for 5.1.0 and 5.2.0; a number in parentheses right after a value is t
 
 **Not tested:** whether the receiving device's sync with peers other than the hub that it is directly connected to stops as well.
 
-**Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Scope subscriptions to what the device needs](../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Scope subscriptions to what the device needs](../../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs).
 
 ## Order and Atomicity of Incoming Changes
 
@@ -361,7 +361,7 @@ Values are for 5.1.0 and 5.2.0; a number in parentheses right after a value is t
 
 **Not tested:** whether writing the items first keeps orders complete when the receiving device registers the second subscription later; whether the order of arrival is guaranteed behavior; sustained writes through a relay, or received as a backlog after being offline.
 
-**Used in:** [Transactions and Sync](../best-practices/transactions.md#transactions-and-sync).
+**Used in:** [Transactions and Sync](../../best-practices/transactions.md#transactions-and-sync).
 
 ### Large transactions and statements arrived all at once
 
@@ -375,7 +375,7 @@ Values are for 5.1.0 and 5.2.0; a number in parentheses right after a value is t
 - 2,000 documents inserted one at a time, awaiting each, arrived in 10 steps on 5.1.0 and in 32 to 34 steps on 5.2.0: 5.2.0 delivers in smaller steps.
 - Closing the receiving device during the transfer left no partial state. We closed it 0.3, 0.9, and 1.5 seconds after the write. At 0.3 seconds, nothing was kept (`close()` took 35 ms), and after the device reopened and synced, the 30,000 documents arrived at once after 1.8 seconds. At 0.9 and 1.5 seconds, the count before closing was 0, but `close()` took 0.2 to 0.8 seconds, and after reopening, the 30,000 documents were there. We think `close()` waited for the transaction that was being applied.
 
-**Used in:** [Transactions and Sync](../best-practices/transactions.md#transactions-and-sync).
+**Used in:** [Transactions and Sync](../../best-practices/transactions.md#transactions-and-sync).
 
 ### A fast relay with narrower subscriptions can show part of a transaction
 
@@ -403,7 +403,7 @@ Orders visible without all their items: how many, and for how long:
 
 **Not tested:** link speeds other than 20 KB/s; the writes were a little faster than that, so the delay built up slowly. Over a link as slow as Bluetooth LE, the time that orders are visible without their items is probably longer. Layouts other than a triangle. Orders and items kept in one document (the items in a map).
 
-**Used in:** [Transactions and Sync](../best-practices/transactions.md#transactions-and-sync).
+**Used in:** [Transactions and Sync](../../best-practices/transactions.md#transactions-and-sync).
 
 ## Sync Traffic and Convergence
 
@@ -431,7 +431,7 @@ Orders visible without all their items: how many, and for how long:
 - A `DO UPDATE` that changed nothing still produced sync traffic (0.5 KiB), which wakes an observer on the other device (see [Relay, rewrite, and subscription behavior held on SDK 5.2.0](#relay-rewrite-and-subscription-behavior-held-on-sdk-520)).
 - Registering the same subscription a second time transferred almost nothing, and registering it again after a cancel fetched only what had changed in between.
 
-**Used in:** [What Syncs after Offline Edits](crdt-types.md#what-syncs-after-offline-edits), [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
+**Used in:** [What Syncs after Offline Edits](../crdt-types.md#what-syncs-after-offline-edits), [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits).
 
 ### Only the current state syncs after offline edits
 
@@ -450,7 +450,7 @@ Orders visible without all their items: how many, and for how long:
 
 - What syncs is the current state of each document, not the history of the writes: 1,000 updates of one field cost about as much as one. The intermediate values never reach other devices.
 
-**Used in:** [What Syncs after Offline Edits](crdt-types.md#what-syncs-after-offline-edits).
+**Used in:** [What Syncs after Offline Edits](../crdt-types.md#what-syncs-after-offline-edits).
 
 ### In a mesh, a new document arrives once from each neighbor
 
@@ -477,7 +477,7 @@ Transfer of the whole mesh, as a multiple of the bytes that the other five peers
 
 **Not tested:** more than six peers, and links other than TCP on one Mac, which have almost no latency. Over transports on which devices choose their connections themselves, such as Bluetooth LE, LAN, and AWDL, the number and shape of the connections differ (on 5.2.0, devices that could all connect to each other kept about six connections each; see [A full TCP mesh keeps about six direct connections per device on 5.2.0](connections-and-presence.md#a-full-tcp-mesh-keeps-about-six-direct-connections-per-device-on-520)). Whether links with a high latency increase or reduce the duplicates. Sync through Ditto Server.
 
-**Used in:** [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Key Characteristics](understanding-ditto.md#key-characteristics).
+**Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Key Characteristics](../understanding-ditto.md#key-characteristics).
 
 ### Convergence after simultaneous reconnects grew faster than the number of devices
 
@@ -529,7 +529,7 @@ Times below are from the moment the first device started sync. Because they come
 - On 5.0.3, the hub's CPU includes about 0.5 cores for the test's own query (a `COUNT(*)` of 20,000 documents every 100 ms): 48 to 51 percent while nothing synced, against 1 to 2 percent on 5.1 and later. The 5.0.3 devices that received every order ran the same query.
 - An earlier form of this test ran the cases one after another in the same processes. There, the cases after 20 × 1,000 were slower (7 to 17 seconds until the COUNTER was complete), and on 5.0.3, in all three runs, the documents of a new collection created afterwards did not reach the devices within 30 seconds, although all devices were connected. We did not look into the cause, and those results are not used above.
 
-**Used in:** [Scope subscriptions to what the device needs](../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs), [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync).
+**Used in:** [Scope subscriptions to what the device needs](../../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync).
 
 ## Stopping Sync and Closing Ditto
 
@@ -545,7 +545,7 @@ Times below are from the moment the first device started sync. Because they come
 - The subscriptions stayed registered, and the documents that both sides wrote while sync was stopped were exchanged after `start()`. A subscription registered while sync was stopped took effect after `start()`.
 - `start()` without an offline license token threw an error whose message begins with `Sync could not be started because Ditto has not yet been activated. This can be achieved with a successful call to setOfflineOnlyLicenseToken`.
 
-**Used in:** [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Sync stop, close, and inspection](../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection).
+**Used in:** [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Sync stop, close, and inspection](../../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection).
 
 ### A write made right before close or stop may not leave the device
 
@@ -575,9 +575,9 @@ Trials (of 9) in which the hub received the document:
 - A write that did not arrive was still in the device's store in every case. After the device opened the same directory again, the write reached the hub in 114 to 176 ms (over the direct connection; over the slow link it would take about 3 seconds again). If the device never syncs again, because it broke or its directory was deleted (see [Deleting the directory after close() leaves no data behind](persistence-directory.md#deleting-the-directory-after-close-leaves-no-data-behind)), the change never reaches other devices.
 - On 5.0.3, even 100 bytes did not arrive when the device ended right away. On 5.1 and later, 100 bytes arrived in most trials, but not reliably (8 of 9 with `close()`, for example), and in an app possibly in fewer, as described above.
 
-**Not tested:** logging out. The `cleanup` callback of `logout()` runs after sync has stopped (see [Authentication](../best-practices/setup-and-lifecycle.md#authentication)), so for the same reason it could remove changes that have not been sent yet. `logout()` cannot be used in our small-peers-only setup, so we could not check this.
+**Not tested:** logging out. The `cleanup` callback of `logout()` runs after sync has stopped (see [Authentication](../../best-practices/setup-and-lifecycle.md#authentication)), so for the same reason it could remove changes that have not been sent yet. `logout()` cannot be used in our small-peers-only setup, so we could not check this.
 
-**Used in:** [Resource Cleanup and Shutdown](../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Monitoring Sync Status](../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
+**Used in:** [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
 
 ### A change written right after another device stops sync can still reach it
 
@@ -604,9 +604,9 @@ Trials (of 9) in which the hub received the document:
 - On every release, the subscription without arguments had no `queryArguments` (`null` or `undefined`), and reading it did not end the process. The other subscription returned `{status: 'open'}`.
 - The order of `ditto.sync.subscriptions` differed between releases, the same in every run: on 5.0.3 and 5.1.0, the subscription registered second came first, and on 5.2.0, the one registered first. The order is not documented.
 
-**Not tested:** `queryArgumentsJsonString`; the Flutter SDK, for which [Sync stop, close, and inspection](../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection) describes a crash on 5.1.0.
+**Not tested:** `queryArgumentsJsonString`; the Flutter SDK, for which [Sync stop, close, and inspection](../../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection) describes a crash on 5.1.0.
 
-**Used in:** [Sync stop, close, and inspection](../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection).
+**Used in:** [Sync stop, close, and inspection](../../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection).
 
 ## How Quickly Sync Status Changes
 
@@ -630,4 +630,4 @@ On both releases, an empty commit is not confirmed on its own but with the next 
 
 **An idle observer on `system:data_sync_info`.** With one idle peer, the observer was called 3 times in 40 seconds on 5.1.0 (at 0 seconds, at 2 to 5 seconds, and at 27.6 seconds), and 3 or 4 times on 5.2.0 (at 0 seconds, in some runs at 0.8 to 2.8 seconds, and at 27.3 seconds and again 33 ms later). We think there is a periodic update about every 27 seconds and that empty commits are confirmed with it.
 
-**Used in:** [Monitoring Sync Status](../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
+**Used in:** [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).

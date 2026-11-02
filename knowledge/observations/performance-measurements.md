@@ -1,6 +1,6 @@
 # Performance Measurements
 
-How long Ditto's statements, queries, and observers took, how many writes a device could make in a second, how much memory query results and observers kept, and how much CPU a hub spent as more devices connected. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The times come from one Mac and serve to compare approaches; Ditto's own benchmark on an Android device is quoted in [Counting documents](../best-practices/indexing-and-performance.md#counting-documents). The rules that follow from these observations are in [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution), [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules), [INSERT and Conflict Handling](../best-practices/dql.md#insert-and-conflict-handling), [Large results](../best-practices/dql.md#large-results), and [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+How long Ditto's statements, queries, and observers took, how many writes a device could make in a second, how much memory query results and observers kept, and how much CPU a hub spent as more devices connected. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The times come from one Mac and serve to compare approaches; Ditto's own benchmark on an Android device is quoted in [Counting documents](../../best-practices/indexing-and-performance.md#counting-documents). The rules that follow from these observations are in [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [INSERT and Conflict Handling](../../best-practices/dql.md#insert-and-conflict-handling), [Large results](../../best-practices/dql.md#large-results), and [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 **In brief**
 
@@ -39,7 +39,7 @@ For the last three methods, only the times on 5.2.0 are available.
 - Reading 500 of 20,000 documents took 841 ms as 500 queries with `_id = :id` and 14 ms as one query with `_id IN :ids` on 5.2.0, about 60 times faster. On 5.0.3, the `IN` query took 52 ms, about 16 times faster than the loop.
 - Each `execute` call has a fixed cost of about 1.7 ms (5.0.3: about 6.5 ms), so the number of calls matters more than the number of documents.
 
-**Used in:** [INSERT and Conflict Handling](../best-practices/dql.md#insert-and-conflict-handling), [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution).
+**Used in:** [INSERT and Conflict Handling](../../best-practices/dql.md#insert-and-conflict-handling), [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
 ### One document per statement tops out at about 600 writes a second
 
@@ -80,7 +80,7 @@ Delay on the receiver (median / 95th percentile / maximum):
 
 **Not tested:** the rate of writes issued in parallel with `Promise.all` ([Parallel writes are safe, but parallel read-modify-write loses updates](transaction-behavior.md#parallel-writes-are-safe-but-parallel-read-modify-write-loses-updates) checked only that they do not break anything); the effect of the store size apart from the rate.
 
-**Used in:** [Pattern 2: Append-only event documents](../best-practices/data-modeling.md#pattern-2-append-only-event-documents).
+**Used in:** [Pattern 2: Append-only event documents](../../best-practices/data-modeling.md#pattern-2-append-only-event-documents).
 
 ## Queries and Indexes
 
@@ -102,11 +102,11 @@ Time for `COUNT(*)` (nearly the same on both releases; no value was recorded for
 | 500,000 (one run) | 66 to 67 s | — | 67 to 69 s |
 
 - In `EXPLAIN`, `IN :ids` is an `idScan` (a lookup by ID) followed by a `filter` that checks `_id IN [...]` again. Each document found is probably checked against the whole list again, which is why a longer list is slower. `USE IDS LIST` has no `filter`.
-- Writes behaved the same (one run, 10,000 IDs, 20,000 documents). `UPDATE`, `EVICT`, and `DELETE` with `WHERE _id IN :ids` took 693 to 732 ms on 5.2.0, and with `USE IDS LIST :ids` 20 to 65 ms. On 5.1.0, `UPDATE` with `USE IDS LIST` worked (69 ms), but `EVICT` and `DELETE` removed nothing, as listed in [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510); 5.2.0 fixed this.
+- Writes behaved the same (one run, 10,000 IDs, 20,000 documents). `UPDATE`, `EVICT`, and `DELETE` with `WHERE _id IN :ids` took 693 to 732 ms on 5.2.0, and with `USE IDS LIST :ids` 20 to 65 ms. On 5.1.0, `UPDATE` with `USE IDS LIST` worked (69 ms), but `EVICT` and `DELETE` removed nothing, as listed in [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510); 5.2.0 fixed this.
 - A subscription by an ID list also makes the initial sync slower (5.1.0 and 5.2.0, two runs each). A subscription with `WHERE _id IN :ids` and 10,000 IDs took 3.32 to 3.38 s, and one with `WHERE grp = 'a'`, which selects the same documents, took 0.85 to 0.86 s (with 3,000 IDs: 1.2 s; with 1,000 IDs: 0.64 s and 0.38 s). After the initial sync, an update of one document arrived in about 31 ms with either subscription. For the initial sync, subscribing by a field that identifies the device or the store is therefore faster than subscribing by a list of document IDs.
 - `USE IDS :ids` with an array treats the whole array as one ID. With a small array, it silently returns 0 documents; above 256 bytes, it fails with `SerializedFormOverLimit { limit: 256, ... }`.
 
-**Used in:** [USE IDS](../best-practices/dql.md#use-ids), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [USE IDS](../../best-practices/dql.md#use-ids), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 ### A full COUNT(*) is fast, and indexes made selective queries several times faster
 
@@ -129,14 +129,14 @@ Time for `COUNT(*)` (nearly the same on both releases; no value was recorded for
 - A full-collection `COUNT(*)` is cheap, as expected from a count scan that does not read documents: 1.8 ms against 54 to 66 ms for reading every `_id`.
 - The index made the filtered queries about 3 to 7 times faster.
 
-**Used in:** [Counting documents](../best-practices/indexing-and-performance.md#counting-documents), [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules).
+**Used in:** [Counting documents](../../best-practices/indexing-and-performance.md#counting-documents), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
 
 ### The conditions of the Index Usage Rules table produced the plans it lists
 
 | | |
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each |
-| Setup | One device without sync, 50,000 documents. `COUNT(*)` with each of 11 conditions of the table in [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules); `EXPLAIN` for the plan, and the median time on 5.2.0 |
+| Setup | One device without sync, 50,000 documents. `COUNT(*)` with each of 11 conditions of the table in [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules); `EXPLAIN` for the plan, and the median time on 5.2.0 |
 
 The 11 conditions produced the plans that the table lists, on both releases. Among them:
 
@@ -155,7 +155,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 **Not tested:** the other conditions of the table, such as `IS MISSING`, `array_contains`, and composite indexes.
 
-**Used in:** [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules).
+**Used in:** [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
 
 ### A query answered from the index alone was about a third faster
 
@@ -172,7 +172,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 - Once documents had to be fetched, projecting fewer fields hardly changed the time: of the two benefits of a narrow projection, the one that counts is skipping the fetch.
 
-**Used in:** [Covering scans](../best-practices/indexing-and-performance.md#covering-scans).
+**Used in:** [Covering scans](../../best-practices/indexing-and-performance.md#covering-scans).
 
 ### An observer of 5,000 documents was called about six times later than one of 50
 
@@ -188,7 +188,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 - On 5.1.0 and 5.2.0, the larger observer was called about six times later; on 5.0.3, the difference was smaller.
 
-**Used in:** [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution).
+**Used in:** [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
 ### Evicting in chunks costs little more than one statement
 
@@ -201,7 +201,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 - In chunks of 1,000, it took 11 statements, the longest 5 ms (5.1.0: 6 ms), 48 ms in total (5.1.0: 56 ms).
 - The local cost is small either way; chunks keep each statement short.
 
-**Used in:** [Batching evictions](../best-practices/deletion-and-storage.md#batching-evictions).
+**Used in:** [Batching evictions](../../best-practices/deletion-and-storage.md#batching-evictions).
 
 ### Opening Ditto took the same time with 1,000 and 200,000 documents
 
@@ -236,7 +236,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 - With `LIMIT 50`, the query took 2 to 4 ms even without an index: it reads from the start and stops after 50 documents. With the combined plan (with indexes on `store`, `status`, and `total`), the median was 6 to 7 ms, but individual queries with the same plan varied from 2 to 69 ms.
 - `Ditto.open()` took 10 to 21 ms for an empty store and for 100,000 documents (about 70 MB): it does not depend on the size of the store. Without indexes, the first query after opening was as fast as the second (1 to 4 ms).
 
-**Used in:** [Creating Indexes](../best-practices/indexing-and-performance.md#creating-indexes), [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules), [Where indexes live](../best-practices/indexing-and-performance.md#where-indexes-live).
+**Used in:** [Creating Indexes](../../best-practices/indexing-and-performance.md#creating-indexes), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Where indexes live](../../best-practices/indexing-and-performance.md#where-indexes-live).
 
 ### Constant query strings were not faster
 
@@ -255,7 +255,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 **Not tested:** whether and when Ditto caches prepared statements.
 
-**Used in:** [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution).
+**Used in:** [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
 ## Memory Held by Query Results and Observers
 
@@ -281,7 +281,7 @@ RSS as the increase from the start; the JavaScript heap started at 7 MB. In MB:
 
 **Not tested:** what remains in the JavaScript heap after the results are dropped.
 
-**Used in:** [Large results](../best-practices/dql.md#large-results).
+**Used in:** [Large results](../../best-practices/dql.md#large-results).
 
 ### An observer of 200 documents grows memory on every callback
 
@@ -308,11 +308,11 @@ After 10 minutes (5.2.0; 5.1.0 / 5.0.3 in parentheses; RSS in MiB):
 - **An observer that is not called does not grow**: the observer that never called `signalNext()` was called only once and stayed close to the device without an observer (5.2.0: 1 to 2 MiB per minute, against 0.8 to 1.0 MiB without an observer).
 - **Writers without observers also grow slowly**: the two devices that kept updating their documents grew about 2.4 to 3.9 MiB per minute without any observer (5.2.0: 3.1 to 3.9; 5.1.0: 2.8 to 3.1; 5.0.3: 2.4 to 2.6), and the growth did not slow down in the second half: about 2 to 3 KiB per write. We did not look for the cause. The hub, which had no observer, grew 1.4 to 1.7 MiB per minute after the first 2 minutes on 5.2.0 and 0.2 to 0.3 MiB on 5.1.0 and 5.0.3.
 - **5.2.0 grows more in the first 2 minutes**: even without an observer, a device on 5.2.0 grew about 35 to 40 MiB in the first 2 minutes (5.1.0: about 5 MiB; 5.0.3: about 3 MiB). The hub did the same (at 10 minutes, 182 to 189 MiB on 5.2.0 and 126 to 127 MiB on 5.1.0). After that, it hardly grew.
-- This growth is a different mechanism from the results that queue up in a Flutter observer's unconsumed `changes` stream on SDK 5.1.0 (see [Store Observers in Flutter](../best-practices/observers.md#store-observers-in-flutter)).
+- This growth is a different mechanism from the results that queue up in a Flutter observer's unconsumed `changes` stream on SDK 5.1.0 (see [Store Observers in Flutter](../../best-practices/observers.md#store-observers-in-flutter)).
 
 **Not tested:** lower write rates, closer to those of real apps (here, about 45 writes a second); whether an observer called less often, such as once a second, grows by the same amount per call (if it does, an observer of 200 documents called once a second grows by about 45 to 85 MiB an hour); callbacks that read the values; the relation to the size of the result in bytes rather than rows; Flutter observers (`onChange`, `changes`); mobile devices; CPU use (the three releases ran at the same time, so this test says little about CPU); runs longer than 10 minutes, and whether the growth levels off. Whether this is a leak cannot be said from a 10-minute observation, and what the retained memory holds was not examined.
 
-**Used in:** [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution).
+**Used in:** [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
 ## Load on a Hub
 
@@ -346,4 +346,4 @@ After 10 minutes (5.2.0; 5.1.0 / 5.0.3 in parentheses; RSS in MiB):
 
 **Not tested:** the number of observer callbacks on the watching device; delays without the writers competing with the hub for the same CPU.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).

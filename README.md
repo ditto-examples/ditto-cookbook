@@ -7,7 +7,7 @@ Knowledge, best practices, a review checklist, example code, and Claude Code Age
 | Path | What it is |
 |------|------------|
 | [`best-practices/`](best-practices/README.md) | **Ditto SDK Best Practices**: what to do and what to avoid, one page per topic: setup and lifecycle, DQL, data modeling, sync and subscriptions, observers, transactions, attachments, deletion and storage, indexing, logging, security, testing, and a review list of anti-patterns. Start here. |
-| [`knowledge/`](knowledge/README.md) | **Ditto SDK Knowledge**: how Ditto works, and the reference material that the best practices build on: CRDT merge rules, DQL functions, system collections and parameters, platform differences, changes between SDK releases, and a glossary. |
+| [`knowledge/`](knowledge/README.md) | **Ditto SDK Knowledge**: how Ditto works, and the reference material that the best practices build on: CRDT merge rules, DQL functions, system collections and parameters, platform differences, changes between SDK releases, and a glossary. `knowledge/observations/` holds what we observed in testing, with the SDK releases, the setup, and every number. |
 | [`checklist/`](checklist/) | **Ditto SDK Implementation Checklist**: an interactive English and Japanese review checklist in one self-contained HTML file. |
 | [`examples/simple-pos/`](examples/simple-pos/) | **Simple POS**: a Point-of-Sale and Kitchen Display example that applies the guide end to end, with its data model. |
 | [`plugins/ditto/`](plugins/ditto/) | **`ditto` Claude Code plugin**: Agent Skills that help coding agents write and review Ditto code, an anti-pattern scanner, and the bundled guide. |
@@ -30,6 +30,7 @@ See [plugins/ditto/README.md](plugins/ditto/README.md) for the list of Skills an
 ditto-cookbook/
 ├── best-practices/           # The guide: best practices, one page per topic
 ├── knowledge/                # The guide: how Ditto works, reference material
+│   └── observations/         # What we observed in testing, one entry per observation
 ├── checklist/                # Checklist sources, build script, generated HTML
 ├── examples/
 │   └── simple-pos/           # Flutter POS example and its schema

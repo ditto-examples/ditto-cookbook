@@ -41,6 +41,22 @@ class SlugifyTest(unittest.TestCase):
         self.assertEqual(check.anchors(text), {"title", "example", "example-1", "example-1-1"})
 
 
+class GuidePagesTest(unittest.TestCase):
+    def test_lists_the_pages_of_both_directories_and_of_knowledge_observations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("best-practices/README.md", "best-practices/dql.md", "knowledge/README.md",
+                         "knowledge/crdt-types.md", "knowledge/observations/merge-behavior.md"):
+                write(root, name, "# Page\n")
+            pages = [str(page.relative_to(root)) for page in check.guide_pages(root)]
+            self.assertEqual(sorted(pages), ["best-practices/README.md", "best-practices/dql.md",
+                                             "knowledge/README.md", "knowledge/crdt-types.md",
+                                             "knowledge/observations/merge-behavior.md"])
+            self.assertEqual([str(page.relative_to(root)) for page in check.knowledge_pages(root)],
+                             ["knowledge/README.md", "knowledge/crdt-types.md",
+                              "knowledge/observations/merge-behavior.md"])
+
+
 class HeadingsTest(unittest.TestCase):
     def test_ignores_comments_in_code_blocks(self):
         text = "# Title\n\n```bash\n# not a heading\n```\n\n## Section\n"

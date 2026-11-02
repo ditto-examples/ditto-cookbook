@@ -1,6 +1,6 @@
 # Storage and Deletion
 
-What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT` reach other devices, when tombstones are reaped and what a device with an old copy does after that, what removed data costs in queries, documents, and sync traffic, and how much of it stays on disk. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Soft Delete](../best-practices/deletion-and-storage.md#soft-delete), [EVICT](../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), and [Data at Rest](../best-practices/security.md#data-at-rest).
+What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT` reach other devices, when tombstones are reaped and what a device with an old copy does after that, what removed data costs in queries, documents, and sync traffic, and how much of it stays on disk. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Soft Delete](../../best-practices/deletion-and-storage.md#soft-delete), [EVICT](../../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Data at Rest](../../best-practices/security.md#data-at-rest).
 
 **In brief**
 
@@ -25,13 +25,13 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 | What we checked | Result on 5.1.0 and 5.2.0 | Described in |
 |---|---|---|
-| Husk documents | `COUNT(*)` counted the husks (2). `WHERE year >= 2000` and `WHERE make IS NOT MISSING AND make IS NOT NULL` excluded them; `make IS NOT NULL` alone kept them. Running the `DELETE` again removed the husk from the other device within 0.25 seconds. The shape of the husk was the same on both releases | [Husk documents](../best-practices/deletion-and-storage.md#husk-documents) |
-| A subscription that excludes soft-deleted documents, on a device that already held the document | All five cases behaved as described: the flag arrived; edits made while the document was flagged did not arrive; a restore arrived together with those edits; the cleanup `DELETE` did not arrive; a flag set while the device was offline also arrived | [Soft delete, subscriptions, and cleanup](../best-practices/deletion-and-storage.md#soft-delete-subscriptions-and-cleanup) |
-| `EVICT` | A document evicted while a subscription still matched it came back in about 0.26 seconds. A document evicted after the subscription was cancelled had not come back after 10 seconds. Inserting `{c: 1}` with the evicted `_id` merged on the other device into `{a: 1, b: 1, c: 1}`. The inserting device held only its own `{c: 1}` while it did not subscribe, and received the merged document when it subscribed | [EVICT](../best-practices/deletion-and-storage.md#evict) |
-| Tombstones and a device that never had the document | A device B that was offline during the deletion connected with a device N that had never seen the document: N received the old version. When N then connected with device A, which had deleted it, the document disappeared from N and B | [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones) |
-| `INITIAL DOCUMENTS` | A seed that another device had deleted stayed deleted when it was seeded again with the same content. With different content, it became `{"theme": null}` on every device. A new device that seeded different content before its first connection also turned it into `null` on every device | [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents) |
+| Husk documents | `COUNT(*)` counted the husks (2). `WHERE year >= 2000` and `WHERE make IS NOT MISSING AND make IS NOT NULL` excluded them; `make IS NOT NULL` alone kept them. Running the `DELETE` again removed the husk from the other device within 0.25 seconds. The shape of the husk was the same on both releases | [Husk documents](../../best-practices/deletion-and-storage.md#husk-documents) |
+| A subscription that excludes soft-deleted documents, on a device that already held the document | All five cases behaved as described: the flag arrived; edits made while the document was flagged did not arrive; a restore arrived together with those edits; the cleanup `DELETE` did not arrive; a flag set while the device was offline also arrived | [Soft delete, subscriptions, and cleanup](../../best-practices/deletion-and-storage.md#soft-delete-subscriptions-and-cleanup) |
+| `EVICT` | A document evicted while a subscription still matched it came back in about 0.26 seconds. A document evicted after the subscription was cancelled had not come back after 10 seconds. Inserting `{c: 1}` with the evicted `_id` merged on the other device into `{a: 1, b: 1, c: 1}`. The inserting device held only its own `{c: 1}` while it did not subscribe, and received the merged document when it subscribed | [EVICT](../../best-practices/deletion-and-storage.md#evict) |
+| Tombstones and a device that never had the document | A device B that was offline during the deletion connected with a device N that had never seen the document: N received the old version. When N then connected with device A, which had deleted it, the document disappeared from N and B | [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones) |
+| `INITIAL DOCUMENTS` | A seed that another device had deleted stayed deleted when it was seeded again with the same content. With different content, it became `{"theme": null}` on every device. A new device that seeded different content before its first connection also turned it into `null` on every device | [Default Data with INITIAL Documents](../../best-practices/data-modeling.md#default-data-with-initial-documents) |
 
-**Used in:** [Husk documents](../best-practices/deletion-and-storage.md#husk-documents), [Soft delete, subscriptions, and cleanup](../best-practices/deletion-and-storage.md#soft-delete-subscriptions-and-cleanup), [EVICT](../best-practices/deletion-and-storage.md#evict), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents).
+**Used in:** [Husk documents](../../best-practices/deletion-and-storage.md#husk-documents), [Soft delete, subscriptions, and cleanup](../../best-practices/deletion-and-storage.md#soft-delete-subscriptions-and-cleanup), [EVICT](../../best-practices/deletion-and-storage.md#evict), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Default Data with INITIAL Documents](../../best-practices/data-modeling.md#default-data-with-initial-documents).
 
 ## Tombstones and Reaping
 
@@ -57,7 +57,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 - **When the reaper runs**: on a new store, the first run happens at a random time within `REAPER_TIMING_RANDOM_VARIATION_SECONDS` (600 by default) after startup: after 59, 89, 253, and 471 seconds, and not within 90 seconds in three more runs (seven runs). With the parameter set to 0, it ran 0.35 seconds after startup. On a reopened store, it runs at startup if `DAYS_BETWEEN_REAPING` (1 day) has passed since the previous run by the device clock, and not otherwise: reopened 2 hours later, it did not run; 26 hours later, it did. The time of the previous run is kept in the store.
 - The random delay is drawn again at every start. With the default settings, six starts of 8 seconds each, with the clock moved 11 minutes ahead between them, never reaped. Opening once more with the delay set to 0 then reaped at startup (5.1.0 and 5.2.0, one run each by hand). An app that is used again and again for less than 10 minutes therefore reaps only by chance, at some of its starts.
 
-**Used in:** [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [A clock running ahead spreads to devices that sync with it](clocks-and-time.md#a-clock-running-ahead-spreads-to-devices-that-sync-with-it), [Receiving future timestamps does not advance Ditto's clock](clocks-and-time.md#receiving-future-timestamps-does-not-advance-dittos-clock).
+**Used in:** [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [A clock running ahead spreads to devices that sync with it](clocks-and-time.md#a-clock-running-ahead-spreads-to-devices-that-sync-with-it), [Receiving future timestamps does not advance Ditto's clock](clocks-and-time.md#receiving-future-timestamps-does-not-advance-dittos-clock).
 
 ### Reaping at a preferred hour runs only at hourly checks within that hour
 
@@ -89,7 +89,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 - Values passed as environment variables (`DITTO_ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING`, `DITTO_REAPER_PREFERRED_HOUR`) appear in the INFO log at startup as `system parameter default overridden` (see [DITTO_ environment variables set system parameters at startup](configuration-and-diagnostics.md#ditto_-environment-variables-set-system-parameters-at-startup)). They took effect on 5.1.0 as well.
 - On 5.2.0, passing the parameters in `DittoConfig.systemParameters` gave the same result (one run): reopened at 19:10 by the device clock, the peer with 19 reaped after 0.29 seconds, and those with 18 and 20 did not reap in 90 seconds.
 
-**Used in:** [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping).
+**Used in:** [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping).
 
 ## Deletion Traffic and Eviction
 
@@ -108,11 +108,11 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 - `DELETE` does not send the content (about 1.2 MiB). A deletion flag and `DELETE` both send little; `DELETE` sends about 1.5 times as much.
 - The eviction did not change the other device's documents; the evicting device simply downloaded everything it had evicted again.
-- **Eviction warning** (one run on 5.2.0): since SDK 5.1, Ditto writes a warning when post-eviction session cleanup runs too frequently (see [Eviction frequency](../best-practices/deletion-and-storage.md#eviction-frequency)). It did not appear in this pattern: on two connected devices, 40 evictions of one document each, 0.5 seconds apart, produced no WARN line about eviction, cleanup, or sessions in the log at level Info.
+- **Eviction warning** (one run on 5.2.0): since SDK 5.1, Ditto writes a warning when post-eviction session cleanup runs too frequently (see [Eviction frequency](../../best-practices/deletion-and-storage.md#eviction-frequency)). It did not appear in this pattern: on two connected devices, 40 evictions of one document each, 0.5 seconds apart, produced no WARN line about eviction, cleanup, or sessions in the log at level Info.
 
 **Not tested:** the frequency and the time window that trigger the eviction warning.
 
-**Used in:** [EVICT](../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Cancelling subscriptions and local data](../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
+**Used in:** [EVICT](../../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Cancelling subscriptions and local data](../../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
 
 ### A relay that evicts flagged documents receives old versions back
 
@@ -127,7 +127,7 @@ On both releases:
 - **R received the old, active version (`isDeleted: false`) back from X within 1 second.** R had seen the flagged version, but forgot it by evicting it, and from then on held the old version as an active document, which it can show as active and pass on to other devices.
 - When R widened its subscription to the whole collection and W connected, the flag reached X within 3 ms.
 
-**Used in:** [Soft delete, subscriptions, and cleanup](../best-practices/deletion-and-storage.md#soft-delete-subscriptions-and-cleanup), [Flag-based eviction](../best-practices/deletion-and-storage.md#flag-based-eviction).
+**Used in:** [Soft delete, subscriptions, and cleanup](../../best-practices/deletion-and-storage.md#soft-delete-subscriptions-and-cleanup), [Flag-based eviction](../../best-practices/deletion-and-storage.md#flag-based-eviction).
 
 ### Inserting with an evicted document's ID merges with the old version
 
@@ -141,7 +141,7 @@ On both releases:
 
 **Not tested:** a `DELETE` before inserting again. How a deletion merges with a later insert of the same ID is a row of the table in [The merge table held on SDK 5.1.0 and 5.2.0](merge-behavior.md#the-merge-table-held-on-sdk-510-and-520).
 
-**Used in:** [EVICT](../best-practices/deletion-and-storage.md#evict).
+**Used in:** [EVICT](../../best-practices/deletion-and-storage.md#evict).
 
 ## Removed Data in Queries and Documents
 
@@ -163,7 +163,7 @@ On both releases:
 - With `isDeleted` on every document, an index on it, and `isDeleted = false` as the condition, the queries were back near the speed of the 1,000-document collection.
 - Reads by ID took about 1.4 ms in every collection.
 
-**Used in:** [Indexing soft-delete filters](../best-practices/deletion-and-storage.md#indexing-soft-delete-filters), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
+**Used in:** [Indexing soft-delete filters](../../best-practices/deletion-and-storage.md#indexing-soft-delete-filters), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
 ### Removed map keys keep adding to a new device's first sync
 
@@ -197,7 +197,7 @@ What a new peer received in its first sync:
 
 **Not tested:** a collection of 10 documents without deletions, for comparison with the documents per entry.
 
-**Used in:** [Adding, updating, and removing map entries](../best-practices/data-modeling.md#adding-updating-and-removing-map-entries).
+**Used in:** [Adding, updating, and removing map entries](../../best-practices/data-modeling.md#adding-updating-and-removing-map-entries).
 
 ## Disk Space and the Write-Ahead Log
 
@@ -217,7 +217,7 @@ What a new peer received in its first sync:
 
 **Not tested:** the reclaim at the default interval; why the reclaim with a 30 MB threshold stopped at 28 MB.
 
-**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
+**Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
 ### Repeated updates do not grow a document
 
@@ -229,7 +229,7 @@ What a new peer received in its first sync:
 - **Document size**: a new device received 1.4 KiB for the document written once, 1.3 KiB for the document updated 10,000 times, and 1.3 KiB for the document whose COUNTER was incremented 10,000 times, on all three releases. The history of updates does not stay in the document and does not add to what is sent.
 - **Write time**: 10,000 `UPDATE` statements and 10,000 increments each took 14.3 to 15.2 seconds, 1.4 to 1.5 ms per write (5.0.3: 20.7 to 21.4 seconds, about 2.1 ms per write).
 
-**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage).
+**Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage).
 
 ### The write-ahead log grows to about 20 MB
 
@@ -244,7 +244,7 @@ What a new peer received in its first sync:
 - **The whole directory**: with three documents in the store, about 54 to 57 MB right after the writes and about 31.5 MB after closing (5.0.3: 16 to 24 MB and 14.8 MB). Of the 31.5 MB after closing, 20 MB was the attachment store's WAL and 11 MB the on-disk logs (5.0.3: 14.6 MB of logs).
 - With five devices (the setup of [An observer of 200 documents grows memory on every callback](performance-measurements.md#an-observer-of-200-documents-grows-memory-on-every-callback)): five devices synced for 10 minutes, two of them updating about 42 times a second each. On 5.1.0 and 5.2.0, `ditto_system_info`, `ditto_store`, `ditto_replication`, and `ditto_attachments` each reached about 20 MB (no attachment was used), and on the hub, to which four devices were connected, `ditto_replication` was 79.3 MB (the same value in all six runs). With the on-disk logs (7 to 26 MB), the persistence directory of a store with 200 documents moved between 63 and 107 MB on the clients and between 130 and 169 MB on the hub. On 5.0.3, each was about 4 MB (the hub's `ditto_replication` 16.3 MB), and the directory 15 to 57 MB.
 
-**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage).
+**Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage).
 
 ### On SDK 5.2.0, system:system_info keeps old rows of each storage value
 
@@ -255,7 +255,7 @@ What a new peer received in its first sync:
 
 - the same key appears in several rows with different `timestamp` values. Read right after the 10,000 writes, `fs_usage_store_db_sql_wal` had 16 to 17 rows: the newest held the actual file size (about 20.7 MB), the oldest the size before the writes (about 342 KB). `wal_current_size_bytes` and `wal_peak_size_bytes` had only one row each, 37,112 from before the writes, in all three runs. Reading repeatedly in one run, a row with 20,925,512 appeared about 60 seconds later, and the old rows remained. The WAL values are recorded about once a minute, and the `fs_usage` values more often. A query that takes one row without ordering by `timestamp` gets an old value, as our first measurement did. 5.1.0 and 5.0.3 have no WAL keys.
 
-**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage).
+**Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage).
 
 ### The on-disk logs keep about 200,000 writes
 
@@ -267,7 +267,7 @@ What a new peer received in its first sync:
 - On 5.1.0 and 5.2.0, each write added four debug lines, three for the transaction and one for the store, without values (see [Subscription queries and arguments appear in other devices' logs](configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)): about 1.5 KB per write (5.0.3: about 0.75 KB). In one run on 5.2.0, the active log file grew to about 15 to 18 MB before it rotated, and a rotated file was about 0.62 MB with gzip, the log of about 14,000 to 15,000 writes. After 5.5 minutes of continuous writes (about 220,000), the compressed files stopped at 14: 15 files with the active one, about 8.7 MB of compressed files and up to about 18 MB for the active file. The logs therefore keep about 200,000 writes, which is about 5 minutes at 600 writes a second, or about 5 hours at 10 writes a second.
 - The rotation size of 1 MB (`ROTATING_LOG_FILE_MAX_SIZE_MB`, 1 by default) probably refers to the compressed file; the active file grows far beyond 1 MB. On 5.0.3, the log was still one file (14.6 MB) after 20,000 writes.
 
-**Used in:** [On-disk logs and exporting them](../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them).
+**Used in:** [On-disk logs and exporting them](../../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them).
 
 ## Deleted Data on Disk
 
@@ -275,7 +275,7 @@ What a new peer received in its first sync:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, six runs each (in three of them, the document with the overwritten field was the same size as the others); the same pattern on all three releases. JavaScript SDK on macOS, where Ditto does not encrypt the store (see [Data at Rest](../best-practices/security.md#data-at-rest)) |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, six runs each (in three of them, the document with the overwritten field was the same size as the others); the same pattern on all three releases. JavaScript SDK on macOS, where Ditto does not encrypt the store (see [Data at Rest](../../best-practices/security.md#data-at-rest)) |
 | Setup | 220 documents of about 1.5 KB, each holding a different string (standing in for an email address). We closed Ditto and searched the files in the persistence directory for the bytes of each string. Then we reopened, deleted 100 documents with `DELETE`, evicted 100 with `EVICT`, overwrote a field of one document, closed, and searched again |
 
 - After closing, every value was found in `ditto_store/db.sql`, byte for byte (in a small store of a few dozen documents, in `db.sql-wal`; see [After close(), a small store keeps its values in the write-ahead log](persistence-directory.md#after-close-a-small-store-keeps-its-values-in-the-write-ahead-log)).
@@ -293,4 +293,4 @@ What a new peer received in its first sync:
 
 **Not tested:** how long the values remain with the default settings; whether overwriting a field removes its old value in general (one document only).
 
-**Used in:** [Data at Rest](../best-practices/security.md#data-at-rest), [Authentication](../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](platform-differences.md).
+**Used in:** [Data at Rest](../../best-practices/security.md#data-at-rest), [Authentication](../../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](../platform-differences.md).

@@ -1,6 +1,6 @@
 # Documents and Limits
 
-What happens at the edges of a document: a merge that pushes a document over the hard size limit, also between SDK releases, how heavy a document becomes when many devices have written it, how deep a document can nest, and what many top-level fields or many collections cost. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [Flat or nested](../best-practices/data-modeling.md#flat-or-nested), and [DQL Fundamentals](../best-practices/dql.md#dql-fundamentals).
+What happens at the edges of a document: a merge that pushes a document over the hard size limit, also between SDK releases, how heavy a document becomes when many devices have written it, how deep a document can nest, and what many top-level fields or many collections cost. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), and [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals).
 
 **In brief**
 
@@ -21,7 +21,7 @@ What happens at the edges of a document: a merge that pushes a document over the
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each |
 | Setup | Two devices, A and B, held the same document (`big` in the collection `blobs`), with the default hard limit of 5,242,880 bytes. While disconnected, A added a 3 MiB field `partA` and B a 3 MiB field `partB`. Then they reconnected, and we waited 20 seconds |
-| Documentation | The SDK 5.2.0 release notes say that a device drops a replication diff that would push a document over the hard size limit, and lists the document in `system:sync_degradations` (see [Changes in SDK 5.2.0](upgrading.md#changes-in-sdk-520)) |
+| Documentation | The SDK 5.2.0 release notes say that a device drops a replication diff that would push a document over the hard size limit, and lists the document in `system:sync_degradations` (see [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520)) |
 
 | Release | What the devices held after sync | A later `UPDATE` of the document |
 |---|---|---|
@@ -31,7 +31,7 @@ What happens at the edges of a document: a merge that pushes a document over the
 - On 5.2.0, `system:sync_degradations` on each device had one row: `{"collection": "blobs", "document_id": "big", "reason": "documentTooBig", "senderPeerKey": "<the other device's peer key>"}`. No API reported an error or a warning.
 - On 5.1.0, the result is a document that no device can update; on 5.2.0, it is a document whose version differs from device to device. What happens to later updates, and to an eviction, is described in [An oversized document stops syncing until one side evicts it](#an-oversized-document-stops-syncing-until-one-side-evicts-it).
 
-**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [System Virtual Collections](system-reference.md#system-virtual-collections), [Upgrading from SDK 5.1](upgrading.md).
+**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Upgrading from SDK 5.1](../upgrading.md).
 
 ### An oversized document stops syncing until one side evicts it
 
@@ -52,7 +52,7 @@ On 5.1.0:
 
 - Both devices held the 6 MiB document, and `UPDATE` failed on A and on B. After B evicted the document, it received the 6 MiB document again, and `UPDATE` kept failing. On 5.1.0, recovering takes an `UNSET` that removes enough data.
 
-**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
+**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits).
 
 ### An oversized merge ends differently on each release
 
@@ -64,7 +64,7 @@ On 5.1.0:
 - **5.1.0 and 5.2.0**: the 5.1.0 peer held the 6 MiB document that combined both 3 MiB parts, and a later `UPDATE` of it failed. The 5.2.0 peer kept only its own part and listed the document in `system:sync_degradations` with `documentTooBig`.
 - **5.0.3 and 5.2.0**: the 5.0.3 peer held the 6 MiB document, and **a later `UPDATE` of it succeeded**. 5.0.3 does not check the hard limit when a document is written (see [SDK 5.0.3 does not check the hard size limit when a document is written](#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)).
 
-**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [Mixed Releases](upgrading.md#mixed-releases).
+**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [Mixed Releases](../upgrading.md#mixed-releases).
 
 ### SDK 5.0.3 does not check the hard size limit when a document is written
 
@@ -77,7 +77,7 @@ On 5.1.0:
 - **5.0.3**: both writes succeeded, and the stored document held both 3 MiB fields. The parameter `DOCUMENT_SIZE_HARD_LIMIT_BYTES` exists on 5.0.3, but with every value we set, a 500 KB document could still be written (see [The documented parameter defaults match SHOW ALL](configuration-and-diagnostics.md#the-documented-parameter-defaults-match-show-all)).
 - This is probably also why a peer on 5.0.3 could update a 6 MiB document in [An oversized merge ends differently on each release](#an-oversized-merge-ends-differently-on-each-release).
 
-**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
+**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits).
 
 ## Document Weight and the Number of Writers
 
@@ -114,9 +114,9 @@ Bytes for the first sync and for one change made on the hub:
 - A device whose whole persistence directory was deleted comes back with a new peer key (see [Deleting only ditto_store keeps the peer key and loses some writes](persistence-directory.md#deleting-only-ditto_store-keeps-the-peer-key-and-loses-some-writes)), so a reinstalled device writes as a new device and adds to the weight.
 - If the growth stays proportional beyond 300 devices, a document that 3,000 devices wrote would cost about 60 KB on the first sync and about 30 KB per change. This is a calculation, not a measurement.
 
-**Not tested:** what the added bytes contain (for example, a list of the devices that wrote the document); sizes on disk or in memory (the numbers are bytes on the wire after compression); more than 300 devices; whether the weight goes down after about 7 days, when Ditto removes the information about peers that have not connected (see [Eviction frequency](../best-practices/deletion-and-storage.md#eviction-frequency)), since we measured only within minutes of the writes; the traffic of one document per device instead of one shared document.
+**Not tested:** what the added bytes contain (for example, a list of the devices that wrote the document); sizes on disk or in memory (the numbers are bytes on the wire after compression); more than 300 devices; whether the weight goes down after about 7 days, when Ditto removes the information about peers that have not connected (see [Eviction frequency](../../best-practices/deletion-and-storage.md#eviction-frequency)), since we measured only within minutes of the writes; the traffic of one document per device instead of one shared document.
 
-**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate).
+**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate).
 
 ## Nesting Depth
 
@@ -138,7 +138,7 @@ Bytes for the first sync and for one change made on the hub:
 - A document deeper than 125 levels cannot be written back as it was read with `INSERT ... ON ID CONFLICT DO UPDATE`, because of the argument limit.
 - `SHOW ALL` lists no system parameter for the nesting depth.
 
-**Used in:** [Flat or nested](../best-practices/data-modeling.md#flat-or-nested), [Merge Semantics in Detail](crdt-types.md#merge-semantics-in-detail).
+**Used in:** [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), [Merge Semantics in Detail](../crdt-types.md#merge-semantics-in-detail).
 
 ### Very deep documents end a peer's process during sync
 
@@ -159,7 +159,7 @@ Bytes for the first sync and for one change made on the hub:
 - **5.1.0**: without a peer, 5.1.0 can build and read a 1,000-level document (see [Nesting depth is limited differently for arguments, literals, and paths](#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)), so it fails when it sends the change to the other peer. We think that the same defect as on the 5.2.0 receiving side appears in different places on the sending and the receiving side.
 - **5.0.3**: a document 30 or more levels deep can be written, but every query on its collection ends the process with `Panic: able to deserialize document: ... recursion limit exceeded`, also a `SELECT` by the ID of another document and `COUNT(*)`. Documents up to 29 levels deep can be read. A 5.0.3 device that received a 40-level document written by a 5.1.0 or 5.2.0 device behaved the same: receiving the document did not end the process, but reading the collection did, also after reopening. `EVICT` by ID failed with `Failed to deserialize TLV into requested type`. `EVICT` without a condition on the collection succeeded, but the device received the document again when it synced, and ended again. Other collections could be read.
 
-**Used in:** [Flat or nested](../best-practices/data-modeling.md#flat-or-nested), [Upgrading from SDK 5.1](upgrading.md).
+**Used in:** [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), [Upgrading from SDK 5.1](../upgrading.md).
 
 ## Many Fields and Many Collections
 
@@ -220,4 +220,4 @@ On 5.1.0 and 5.2.0:
 
 **Not tested:** why the time of each creation grows with the number of collections (the explanation above is not confirmed).
 
-**Used in:** [DQL Fundamentals](../best-practices/dql.md#dql-fundamentals).
+**Used in:** [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals).

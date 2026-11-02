@@ -1,6 +1,6 @@
 # Connections and Presence
 
-How devices connect to each other and how presence reports them: the TCP connection limit and how each release counts it, meshes and WebSocket hubs, changing and retrying connections, how long a lost or stalled connection takes to notice, the presence graph and peer metadata, and the connection handler and shared keys that decide which peers connect. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Presence](../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Controlling Incoming Connections](../best-practices/security.md#controlling-incoming-connections), [Small-Peers-Only Deployments](../best-practices/security.md#small-peers-only-deployments), and [Key Characteristics](understanding-ditto.md#key-characteristics).
+How devices connect to each other and how presence reports them: the TCP connection limit and how each release counts it, meshes and WebSocket hubs, changing and retrying connections, how long a lost or stalled connection takes to notice, the presence graph and peer metadata, and the connection handler and shared keys that decide which peers connect. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections), [Small-Peers-Only Deployments](../../best-practices/security.md#small-peers-only-deployments), and [Key Characteristics](../understanding-ditto.md#key-characteristics).
 
 **In brief**
 
@@ -31,7 +31,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 - The hub had six TCP connections in `system:transport_connections`, and six peers in `presence.graph.remotePeers`.
 - The change in the 5.2.0 release notes did not change how many clients a hub that only accepts connections admits. How 5.2.0 counts the connections that a device opens itself is described in [SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit).
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process), [System Parameters Reference](system-reference.md#system-parameters-reference).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Several peers in one test process](../../best-practices/testing.md#several-peers-in-one-test-process), [System Parameters Reference](../system-reference.md#system-parameters-reference).
 
 ### Raising the TCP limit takes effect only before sync starts
 
@@ -46,7 +46,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 
 **Not tested:** raising the limit on 5.0.3.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay), [System Parameters Reference](system-reference.md#system-parameters-reference).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay), [System Parameters Reference](../system-reference.md#system-parameters-reference).
 
 ### SDK 5.2.0 counts outgoing connections toward the TCP limit
 
@@ -68,7 +68,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 - Duplicate connections did not reduce the number of devices that synced, on either release.
 - Two devices below the limit kept both of their connections, which suggests that duplicate connections are not cleaned up while a device is below the limit.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [System Parameters Reference](system-reference.md#system-parameters-reference).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [System Parameters Reference](../system-reference.md#system-parameters-reference).
 
 ### Outgoing TCP connections are not limited
 
@@ -83,7 +83,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 - Together with [SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit), this suggests that on 5.2.0 a device counts its outgoing connections when it decides whether to accept a new connection (the more connections it opened, the fewer it accepts), while the connections it opens are not limited. The "count together" of the release notes probably describes only how connections are counted when one is accepted. 5.1.0 does not count outgoing connections, also when it accepts one.
 - By the same count, a hub on 5.2.0 that has opened six or more connections itself probably accepts no further connections (not checked directly).
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [System Parameters Reference](system-reference.md#system-parameters-reference).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [System Parameters Reference](../system-reference.md#system-parameters-reference).
 
 ### At-capacity actions admit extra clients but keep replacing connections
 
@@ -109,7 +109,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 
 **Not tested:** the value 3; the documented meaning of each value.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ## Meshes and WebSocket Hubs
 
@@ -136,7 +136,7 @@ Direct connections per device (TCP connections in parentheses):
 - Direct connections changed during the 20 seconds only in one run with 10 devices on 5.1.0 (12 changes in total). Otherwise they did not change.
 - In a full mesh, a new document arrives from each directly connected neighbor: with six devices all connected to each other, each device received the same document about 3 to 5 times, and the mesh carried about 3.5 to 5 times the bytes of a hub layout (see [In a mesh, a new document arrives once from each neighbor](subscriptions-and-replication.md#in-a-mesh-a-new-document-arrives-once-from-each-neighbor)). Keeping about six connections per device on 5.2.0 also caps this duplication.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ### WebSocket connections to a Small Peer hub do not count toward the TCP limit
 
@@ -154,7 +154,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Not tested:** more than 30 clients, and whether there is a limit at all; the hub's CPU, memory, and traffic; TLS (`wss://`); clients in separate processes or on other machines; meshes that also include Bluetooth LE or AWDL devices; a mobile device as the hub.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ## Changing and Retrying Connections
 
@@ -170,7 +170,7 @@ Direct connections per device (TCP connections in parentheses):
 - When the hub stopped listening, the client disconnected after 52 ms. When the hub listened again, the client reconnected after about 5 seconds, the default `connect.retryInterval` in JavaScript.
 - In contrast, raising the connection limit (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`) after sync had started had no effect ([Raising the TCP limit takes effect only before sync starts](#raising-the-tcp-limit-takes-effect-only-before-sync-starts)).
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ### A lost TCP connection is retried at the retry interval
 
@@ -187,7 +187,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Not tested:** what these three parameters apply to (for example, whether they apply to peers found over Bluetooth LE or LAN); the default `retryInterval` of the SDKs other than JavaScript.
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ### A device that only connects also listens for TCP connections
 
@@ -204,7 +204,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Not tested:** mobile devices and Flutter; whether the connections that this listener accepts count toward the TCP limit (probably they do, as described in [Outgoing TCP connections are not limited](#outgoing-tcp-connections-are-not-limited)).
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Security Checklist](../best-practices/security.md#security-checklist), [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process), [Test Environment](how-we-tested.md#test-environment).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Security Checklist](../../best-practices/security.md#security-checklist), [Several peers in one test process](../../best-practices/testing.md#several-peers-in-one-test-process), [Test Environment](how-we-tested.md#test-environment).
 
 ### A second hub listened on a port already in use without an error
 
@@ -215,7 +215,7 @@ Direct connections per device (TCP connections in parentheses):
 
 - B's hub listened on the same port as A's hub without an error; the log showed the usual `TCP server listening`. Devices of either group that opened afterwards connected to B's hub. On this Mac, the hub that started listening last receives new connections.
 - With the same Database ID:
-  - when A's client reconnected with `sync.stop()` and `start()` (as the `whileDisconnected` helper in [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process) does), it connected to B's hub. It brought A's document (`fromA`) to B's hub and received B's documents. No device was connected to A's hub any longer
+  - when A's client reconnected with `sync.stop()` and `start()` (as the `whileDisconnected` helper in [Several peers in one test process](../../best-practices/testing.md#several-peers-in-one-test-process) does), it connected to B's hub. It brought A's document (`fromA`) to B's hub and received B's documents. No device was connected to A's hub any longer
   - when B's hub closed, B's client connected to A's hub, and B's documents reached A's hub
 - With different Database IDs:
   - A's client, after it reconnected, did not connect to B's hub (`remotePeers` stayed empty), and did not return to A's hub either. The documents did not mix. A device of group A that opened afterwards did not connect either
@@ -224,7 +224,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Not tested:** Linux, where connections to one port may be distributed over several hubs.
 
-**Used in:** [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process).
+**Used in:** [Several peers in one test process](../../best-practices/testing.md#several-peers-in-one-test-process).
 
 ## Detecting Lost Connections
 
@@ -240,7 +240,7 @@ Direct connections per device (TCP connections in parentheses):
 - The relay also holds the bytes of new connections and delivers them later, so the time to reconnect after a long outage (about 55 ms here) is shorter than on a real network, where `connect.retryInterval` probably applies ([A lost TCP connection is retried at the retry interval](#a-lost-tcp-connection-is-retried-at-the-retry-interval)).
 - When the same peer is also connected over another connection, a stalled connection took a similar time to be dropped, and until then sync did not move to the other connection: a TCP connection that carried changes after 7.20 to 8.01 seconds, an unused TCP connection after 3.89 to 3.92 seconds, and a WebSocket connection that carried changes after 14.89 to 14.92 seconds (SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; see [Each device sends over one of two connections and waits when it stalls](#each-device-sends-over-one-of-two-connections-and-waits-when-it-stalls)).
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Monitoring Sync Status](../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
 
 ### A suspended device leaves the presence graph after about 9 seconds
 
@@ -256,7 +256,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Not tested:** Bluetooth LE and LAN transports, which may take a different time.
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Monitoring Sync Status](../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
 
 ### Each device sends over one of two connections and waits when it stalls
 
@@ -286,7 +286,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Not tested:** Bluetooth LE, AWDL, and LAN transports, which check in other ways whether a connection is alive, so the time until a connection is dropped is probably different; whether the client reconnects over the path that closed (that relay also stopped listening).
 
-**Used in:** [Key Characteristics](understanding-ditto.md#key-characteristics), [Presence](../best-practices/setup-and-lifecycle.md#presence), [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Key Characteristics](../understanding-ditto.md#key-characteristics), [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ### Slow links keep the connection and the presence entry
 
@@ -313,7 +313,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 
 **Not tested:** Bluetooth LE. The relay used TCP on `127.0.0.1` and limited only the bandwidth, without adding latency. Ditto's Bluetooth LE transport is not TCP and has different buffers, so the queued amount and the wait are probably different; what carries over is that the delay is about the queued amount divided by the link speed.
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Size Guidance](../best-practices/attachments.md#size-guidance).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Size Guidance](../../best-practices/attachments.md#size-guidance).
 
 ## The Presence Graph
 
@@ -329,7 +329,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - Even when nothing changes, the observer is called about every 15 seconds. With 4 and 7 devices watched for 60 seconds, after the callback right after registration, it was called four times, from about 11 seconds on, 15.0 seconds apart (the same on 5.1.0 and 5.2.0; 7 devices on 5.2.0 only). Each graph was identical to the previous one: the peer keys, connections, metadata, and `deviceName`.
 - The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](observer-behavior.md#differ-reports-every-shifted-item-as-a-move) and [ANY over a parameter array returns no rows since SDK 5.1.0](dql-behavior.md#any-over-a-parameter-array-returns-no-rows-since-sdk-510).
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Diffing Results](../best-practices/observers.md#diffing-results), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Diffing Results](../../best-practices/observers.md#diffing-results), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership).
 
 ### The presence graph includes indirect peers and all of their connections
 
@@ -347,7 +347,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - Three hubs with four clients each (15 devices): 1.5 to 1.9 seconds after the first hub opened, every device had the other 14 in `remotePeers`. A client's graph contained 15 connections (3 between the hubs and 12 to clients), and each hub's `connections` had 6 entries. An update reached a client of another hub in 22 to 35 ms. Each hub used exactly 6 connections, so on 5.2.0 it cannot accept another client ([SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit)).
 - Two devices that connect to each other (both listen and list the other in `connect.tcpServers`) had one connection in presence, whose ID is determined by the two devices, but two in `system:transport_connections`, one with `side` `server` and one with `client`. With four devices all connected to each other, presence showed 6 connections, and device 0 had 4 to 5 TCP connections.
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ### Presence shows each peer's SDK version
 
@@ -359,7 +359,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - In every pair, the presence graph showed the other peer's `dittoSdkVersion` (`5.0.3`, `5.1.0`, or `5.2.0`), `os`, and `isCompatible` (`true`), and the peer metadata that the other peer had set arrived.
 - During a rollout, `dittoSdkVersion` therefore identifies the devices that still run an older release.
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Mixed Releases](upgrading.md#mixed-releases).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Mixed Releases](../upgrading.md#mixed-releases).
 
 ### Presence and sync work across a chain of 20 devices
 
@@ -383,7 +383,7 @@ Values for 5.2.0, with 5.1.0 / 5.0.3 in parentheses ("same" means the same as on
 - When the device in the middle called `sync.stop()`, an end device that was directly connected to it had removed it at the first check, 21 to 23 ms later; the checks were 20 ms apart, so it was removed within 20 ms. Only the last device of the line of four was such a direct neighbor. Devices two or more hops away disappeared from both ends' lists after 0.51 to 0.64 seconds, and each end kept only the devices on its own side. This is faster than the about 9 seconds of a device that stops responding ([A suspended device leaves the presence graph after about 9 seconds](#a-suspended-device-leaves-the-presence-graph-after-about-9-seconds)).
 - When the stopped device called `sync.start()`, both ends listed every device again after about 2 seconds in most runs (1.0 to 3.0 seconds; 5.0.3: 1.0 to 5.2 seconds), in steps of about 1 second, probably set by the interval at which reconnection is attempted ([A lost TCP connection is retried at the retry interval](#a-lost-tcp-connection-is-retried-at-the-retry-interval)). The time did not follow the length of the line (on 5.2.0, 3.0 seconds in all three runs with 4 devices, 2.0 seconds with 8 to 16 devices, and 1.0 second with 20 devices), so the number of hops did not cause it. After the return, documents arrived as fast as before the stop.
 
-**Used in:** [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay).
+**Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
 
 ### Presence callbacks stay at about one per second while peers come and go
 
@@ -408,7 +408,7 @@ Time until the stable client's update reached the hub's observer, on 5.1.0 and 5
 
 **Not tested:** more devices, and whether the callback then stays at one per second; real network outages. When a radio link drops, noticing it takes seconds (about 7 seconds in [A silent network outage removes a peer after about 7 seconds](#a-silent-network-outage-removes-a-peer-after-about-7-seconds)), so devices leave the list later, and the catch-up times above do not apply.
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync).
 
 ## Peer Metadata
 
@@ -427,7 +427,7 @@ Time until the stable client's update reached the hub's observer, on 5.1.0 and 5
 
 **Not tested:** the default `deviceName` in Flutter on mobile devices.
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence).
 
 ### Peer metadata changes reach other peers about once per second
 
@@ -442,7 +442,7 @@ Time until the stable client's update reached the hub's observer, on 5.1.0 and 5
 
 **Not tested:** whether the sending device batches the changes or the receiving device's presence updates do (`presence_debounce_interval` is 500 ms in `SHOW ALL`).
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence).
 
 ### Presence traffic grows faster than the number of devices
 
@@ -468,7 +468,7 @@ What the observing device received:
 - From these numbers, we estimate that a device that joins 30 devices that each hold 3 KB of metadata receives about 180 KiB, which takes about 9 seconds at the roughly 20 KB/s of Bluetooth LE (a calculation, not a measurement).
 - On 5.0.3, after a run with metadata, closing the 32 devices one by one sometimes stopped at a `close()` that never returned: 2 of 4 runs hit the 900-second timeout. In one run that logged every step, the `close()` of device 28, after three devices had closed, had not returned after about 18 minutes, and its directory remained. After runs without metadata, the 32 devices closed in about 1.4 seconds. On 5.1.0 and 5.2.0, this did not happen in any of the six runs.
 
-**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence).
 
 ## Accepting Connections and Shared Keys
 
@@ -486,7 +486,7 @@ What the observing device received:
 
 **Not tested:** how long it takes until a handler that throws denies the connection.
 
-**Used in:** [Controlling Incoming Connections](../best-practices/security.md#controlling-incoming-connections).
+**Used in:** [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections).
 
 ### Shared keys must match, and traffic is TLS-wrapped without a key
 
@@ -499,4 +499,4 @@ What the observing device received:
 - With and without a key, the traffic began with a TLS handshake (`16 03 01 00 fa 01`), and the marker string did not appear in the captured bytes (about 6.4 KB). Without a key, the traffic is TLS-wrapped, but no shared secret authenticates the peers: any two devices without a key connected.
 - `privateKey` accepts a P-256 key with a named curve, as PKCS#8 DER encoded in base64 on one line (`openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER | base64`). With a PEM file, `Ditto.open()` failed with `Invalid symbol 45, offset 0`. With a key that has explicit curve parameters (what `openssl genpkey` produces by default with LibreSSL on macOS) or a key in SEC1 DER, it failed with `Invalid Private Key`.
 
-**Used in:** [Small-Peers-Only Deployments](../best-practices/security.md#small-peers-only-deployments), [DittoConfig](../best-practices/setup-and-lifecycle.md#dittoconfig).
+**Used in:** [Small-Peers-Only Deployments](../../best-practices/security.md#small-peers-only-deployments), [DittoConfig](../../best-practices/setup-and-lifecycle.md#dittoconfig).

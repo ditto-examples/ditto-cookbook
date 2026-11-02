@@ -1,6 +1,6 @@
 # Clocks and Time
 
-How device clocks affect Ditto: which concurrent write wins when a clock is wrong, how a wrong clock spreads to other devices through Ditto's Hybrid Logical Clock (HLC), and when `clock()` in a subscription or an observer is evaluated. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Clock drift](../best-practices/data-modeling.md#clock-drift) and [Date and Time](dql-functions.md#date-and-time).
+How device clocks affect Ditto: which concurrent write wins when a clock is wrong, how a wrong clock spreads to other devices through Ditto's Hybrid Logical Clock (HLC), and when `clock()` in a subscription or an observer is evaluated. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Clock drift](../../best-practices/data-modeling.md#clock-drift) and [Date and Time](../dql-functions.md#date-and-time).
 
 **In brief**
 
@@ -30,7 +30,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 - A write from a device whose clock runs ahead wins against writes to the same field made later than it, as long as they were made within the clock difference. A clock that is a few seconds off, which is common on Android, is enough to reverse the outcome of edits made a few seconds apart.
 - A device whose clock runs behind writes with a timestamp after any change it has received, also when that change was to another document. Ditto keeps one HLC per device, not one per document. Such a device therefore loses only against writes that other devices made after the last change it received.
 
-**Used in:** [Clock drift](../best-practices/data-modeling.md#clock-drift).
+**Used in:** [Clock drift](../../best-practices/data-modeling.md#clock-drift).
 
 ### A clock running ahead spreads to devices that sync with it
 
@@ -45,7 +45,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 - As a result, while one device's clock runs N ahead, every device that syncs with it, directly or through a hub, writes with future timestamps until real time catches up or until that device's app restarts (see the next section). Concurrent edits by devices that have not synced with them lose meanwhile, and a device that comes back online joins them as soon as it receives a change.
 - A deletion written with a future timestamp leaves a tombstone that is reaped correspondingly later (see [Tombstones and Reaping](storage-and-deletion.md#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped)).
 
-**Used in:** [Clock drift](../best-practices/data-modeling.md#clock-drift).
+**Used in:** [Clock drift](../../best-practices/data-modeling.md#clock-drift).
 
 ### Ditto's clock stays ahead until the app restarts
 
@@ -58,7 +58,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 - Against B: after the clock was set right while F kept running, F's write won against B's write made 2 seconds later, because F's HLC was still 1 hour ahead. After F reopened, its write lost against B's write made 2 seconds later, because its HLC had returned to the correct device time. The HLC lives only in the running process and is not stored.
 - A device's new write replaces its own earlier write with a timestamp 1 hour ahead, either because the device continues its own sequence of writes or because it writes after the timestamp it finds on the document. This test cannot tell which.
 
-**Used in:** [Clock drift](../best-practices/data-modeling.md#clock-drift).
+**Used in:** [Clock drift](../../best-practices/data-modeling.md#clock-drift).
 
 ### Receiving future timestamps does not advance Ditto's clock
 
@@ -71,7 +71,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 - N could overwrite `d1.v`, which had been written with a timestamp 1 hour ahead, and the change reached the hub: a value that a device has seen can be overwritten, even when its timestamp is later than the device's clock.
 - Together with the observations above, this suggests that the HLC moves forward when a running peer sends a change, which carries that peer's current clock, and not from the timestamps of stored documents. The spread of a fast clock therefore stops once every process that ran with the future time has restarted, or once real time catches up. A tombstone whose timestamp moved forward although the deleting device's clock was behind (see [A device with an old copy resurrects a document after its tombstone is reaped](storage-and-deletion.md#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped)) fits the same explanation.
 
-**Used in:** [Clock drift](../best-practices/data-modeling.md#clock-drift).
+**Used in:** [Clock drift](../../best-practices/data-modeling.md#clock-drift).
 
 ## clock() in Queries
 
@@ -81,7 +81,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 |---|---|
 | Observed on | SDK 5.0.3, 5.1.0, and 5.2.0: three runs each for each of the three procedures below; all nine runs of each procedure gave the same subscription results |
 | Setup | A sending and a receiving device, each in its own process with its own clock. The sender held five documents whose `createdAt` (epoch milliseconds, in real time) was 10 minutes ago, 50 minutes ago, 2 hours ago, 30 minutes ahead, and 90 minutes ahead. The receiver subscribed to `SELECT * FROM ev WHERE createdAt > clock() - 3600000` ("the last hour"). The observer checks ran on a separate device without sync |
-| Documentation | [Date and Time](dql-functions.md#date-and-time) describes `clock()` as the current time on this device. Nothing describes when or on which device `clock()` in a subscription is evaluated |
+| Documentation | [Date and Time](../dql-functions.md#date-and-time) describes `clock()` as the current time on this device. Nothing describes when or on which device `clock()` in a subscription is evaluated |
 
 Which documents arrived:
 
@@ -103,6 +103,6 @@ Which documents arrived:
   - a subscription with the same text and different arguments (`createdAt > clock() - :window`, with `:window` 1 ms longer) did the same. The earlier subscription stayed registered meanwhile
 - **Observers**: an observer with `clock() - 60000` ("the last minute") showed a document written 57 seconds earlier. On 5.1.0 and 5.2.0, after 6 seconds, when the document had left the window, the observer was not called, and its last result still contained the document, while `execute` at the same moment returned none. A write to another collection did not call it either; a write to the same collection, even of a document outside the condition, did, and the document disappeared from the result. On 5.0.3, the observer was also called while nothing was written and sync was off (in 2 of 3 runs) or on a write to another collection (1 run), and the document disappeared: 5.0.3 re-runs observers on more events.
 
-**Not tested:** periods longer than 30 seconds; cancelling a subscription and registering the same text and arguments again (by [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), which says that re-registering after a cancel fetched only what had changed, it probably does not move the window); whether a write to one document makes the sender evaluate other documents that have entered the window; a new peer with a new persistence directory.
+**Not tested:** periods longer than 30 seconds; cancelling a subscription and registering the same text and arguments again (by [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), which says that re-registering after a cancel fetched only what had changed, it probably does not move the window); whether a write to one document makes the sender evaluate other documents that have entered the window; a new peer with a new persistence directory.
 
-**Used in:** [Date and Time](dql-functions.md#date-and-time), [Subscription Rules](../best-practices/sync-and-subscriptions.md#subscription-rules).
+**Used in:** [Date and Time](../dql-functions.md#date-and-time), [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules).

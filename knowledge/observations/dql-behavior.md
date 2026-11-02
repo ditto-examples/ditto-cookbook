@@ -1,6 +1,6 @@
 # DQL Behavior
 
-How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.2.0, what statements without `WHERE`, mismatched arguments, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../best-practices/dql.md#missing-and-null), [ORDER BY](../best-practices/dql.md#order-by), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership), [UPDATE](../best-practices/dql.md#update), [Document IDs](../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent), [Composite indexes and key order (SDK 5.1+)](../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.2.0, what statements without `WHERE`, mismatched arguments, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [UPDATE](../../best-practices/dql.md#update), [Document IDs](../../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 **In brief**
 
@@ -30,20 +30,20 @@ On 5.1.0 and 5.2.0, every row of the following tables and statements held:
 
 | Section | What was checked |
 |---|---|
-| [MISSING and NULL](../best-practices/dql.md#missing-and-null) | The `WHERE` table (11 expressions), and the related behavior: MISSING in projections, comparisons between different types, the position of `null` and missing values in `ORDER BY`, and aggregates over zero documents |
-| [Indexing soft-delete filters](../best-practices/deletion-and-storage.md#indexing-soft-delete-filters) | The four plans |
-| [ON ID CONFLICT](../best-practices/dql.md#on-id-conflict) | The four policies; that an `INSERT` of several documents is atomic; the syntax errors of [INITIAL DOCUMENTS](../best-practices/dql.md#initial-documents) and of [INSERT ... SELECT (SDK 5.1+)](../best-practices/dql.md#insert--select-sdk-51) |
-| [UPDATE](../best-practices/dql.md#update) | The errors for `SET _id`, the same path set twice, an array element, `items[:key]`, clauses in the wrong order, a `COUNTER` declared without `COLLECTION`, and a fractional increment; and that a `SET` to the current value is recorded as a mutation |
-| [Local Write Semantics You Must Know](crdt-types.md#local-write-semantics-you-must-know) | The seven rows. In addition, `UNSET obj` followed by `SET obj = 5` gives `5` |
-| [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent) | Three rows: a `REGISTER` object followed by an undeclared nested `SET`, an undeclared number followed by `INCREMENT`, and `PN_INCREMENT` followed by `INCREMENT`. Also an `INSERT` that declares a `COUNTER` |
-| [What strict mode changes](../best-practices/data-modeling.md#what-strict-mode-changes) | The table |
-| [Subscription Rules](../best-practices/sync-and-subscriptions.md#subscription-rules) | The error messages (12 cases), and what `DQL_RESTRICT_SUBSCRIPTIONS = false` allows ([LIMIT and ORDER BY in subscriptions](../best-practices/sync-and-subscriptions.md#limit-and-order-by-in-subscriptions)) |
-| [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents) | The table of the behavior on a device |
-| [Working with arrays](../best-practices/data-modeling.md#working-with-arrays) | `:tag IN tags`; `array_contains` does not use an index, while a path inside a map does |
+| [MISSING and NULL](../../best-practices/dql.md#missing-and-null) | The `WHERE` table (11 expressions), and the related behavior: MISSING in projections, comparisons between different types, the position of `null` and missing values in `ORDER BY`, and aggregates over zero documents |
+| [Indexing soft-delete filters](../../best-practices/deletion-and-storage.md#indexing-soft-delete-filters) | The four plans |
+| [ON ID CONFLICT](../../best-practices/dql.md#on-id-conflict) | The four policies; that an `INSERT` of several documents is atomic; the syntax errors of [INITIAL DOCUMENTS](../../best-practices/dql.md#initial-documents) and of [INSERT ... SELECT (SDK 5.1+)](../../best-practices/dql.md#insert--select-sdk-51) |
+| [UPDATE](../../best-practices/dql.md#update) | The errors for `SET _id`, the same path set twice, an array element, `items[:key]`, clauses in the wrong order, a `COUNTER` declared without `COLLECTION`, and a fractional increment; and that a `SET` to the current value is recorded as a mutation |
+| [Local Write Semantics You Must Know](../crdt-types.md#local-write-semantics-you-must-know) | The seven rows. In addition, `UNSET obj` followed by `SET obj = 5` gives `5` |
+| [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent) | Three rows: a `REGISTER` object followed by an undeclared nested `SET`, an undeclared number followed by `INCREMENT`, and `PN_INCREMENT` followed by `INCREMENT`. Also an `INSERT` that declares a `COUNTER` |
+| [What strict mode changes](../../best-practices/data-modeling.md#what-strict-mode-changes) | The table |
+| [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules) | The error messages (12 cases), and what `DQL_RESTRICT_SUBSCRIPTIONS = false` allows ([LIMIT and ORDER BY in subscriptions](../../best-practices/sync-and-subscriptions.md#limit-and-order-by-in-subscriptions)) |
+| [Default Data with INITIAL Documents](../../best-practices/data-modeling.md#default-data-with-initial-documents) | The table of the behavior on a device |
+| [Working with arrays](../../best-practices/data-modeling.md#working-with-arrays) | `:tag IN tags`; `array_contains` does not use an index, while a path inside a map does |
 
 On 5.0.3, only two things differed: `INSERT ... SELECT` (SDK 5.1+) does not exist, and two subscription errors have other messages (a `JOIN` is a syntax error, and `USE IDS` fails with `Unsupported feature: use ids`).
 
-**Used in:** [MISSING and NULL](../best-practices/dql.md#missing-and-null), [Indexing soft-delete filters](../best-practices/deletion-and-storage.md#indexing-soft-delete-filters), [ON ID CONFLICT](../best-practices/dql.md#on-id-conflict), [INITIAL DOCUMENTS](../best-practices/dql.md#initial-documents), [INSERT ... SELECT (SDK 5.1+)](../best-practices/dql.md#insert--select-sdk-51), [UPDATE](../best-practices/dql.md#update), [Local Write Semantics You Must Know](crdt-types.md#local-write-semantics-you-must-know), [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent), [What strict mode changes](../best-practices/data-modeling.md#what-strict-mode-changes), [Subscription Rules](../best-practices/sync-and-subscriptions.md#subscription-rules), [LIMIT and ORDER BY in subscriptions](../best-practices/sync-and-subscriptions.md#limit-and-order-by-in-subscriptions), [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents), [Working with arrays](../best-practices/data-modeling.md#working-with-arrays).
+**Used in:** [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [Indexing soft-delete filters](../../best-practices/deletion-and-storage.md#indexing-soft-delete-filters), [ON ID CONFLICT](../../best-practices/dql.md#on-id-conflict), [INITIAL DOCUMENTS](../../best-practices/dql.md#initial-documents), [INSERT ... SELECT (SDK 5.1+)](../../best-practices/dql.md#insert--select-sdk-51), [UPDATE](../../best-practices/dql.md#update), [Local Write Semantics You Must Know](../crdt-types.md#local-write-semantics-you-must-know), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [What strict mode changes](../../best-practices/data-modeling.md#what-strict-mode-changes), [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules), [LIMIT and ORDER BY in subscriptions](../../best-practices/sync-and-subscriptions.md#limit-and-order-by-in-subscriptions), [Default Data with INITIAL Documents](../../best-practices/data-modeling.md#default-data-with-initial-documents), [Working with arrays](../../best-practices/data-modeling.md#working-with-arrays).
 
 ### JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0
 
@@ -54,29 +54,29 @@ On 5.0.3, only two things differed: `INSERT ... SELECT` (SDK 5.1+) does not exis
 
 The results were the same on every release tested, and they matched these sections:
 
-- **Joins** ([Joining Collections (SDK 5.1+)](../best-practices/dql.md#joining-collections-sdk-51)):
-  - Without an index, a join failed with `Joining to "o" disallowed without appropriate index support` ([Index requirement](../best-practices/dql.md#index-requirement)). A join on `_id` and a join with `USE INDEX ''` worked without an index.
-  - `INNER`, `LEFT` (also with a filter inside `ON`), and `RIGHT` joins, and `WHERE o._id IS MISSING`, returned the rows in [Join types](../best-practices/dql.md#join-types).
-  - `SELECT *` returned one nested object per alias, `c.*, o.total` a flat row, and `SELECT _id` a composite ID; a field `name` present on both sides failed with `Ambiguous reference to field` ([Result shape](../best-practices/dql.md#result-shape)).
-  - `FULL OUTER`, `CROSS`, and comma joins, and joins in `UPDATE`, were rejected, and a `RIGHT JOIN` after the first join failed with `RIGHT OUTER join that isn't the first join is not supported` ([Restrictions](../best-practices/dql.md#restrictions)).
-  - An observer of a join was called when either collection changed ([Joins in observers](../best-practices/dql.md#joins-in-observers)). Whether its rows include `_id` is described in [On SDK 5.2.0, observer rows include _id only when it is projected](observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected).
-- **`RETURNING`** ([RETURNING (SDK 5.1+)](../best-practices/dql.md#returning-sdk-51)): documents skipped by `DO NOTHING` and documents that `DO UPDATE_LOCAL_DIFF` left unchanged were not returned. `UPDATE` returned the documents after the update, and `DELETE` the documents before they were deleted. `EVICT ... RETURNING COUNT(*)` returned the number of documents. `mutatedDocumentIDs` and `commitID` were populated as well.
-- **Document IDs** ([Allowed values](../best-practices/data-modeling.md#allowed-values)): strings, objects, integers, booleans, and arrays were accepted; a float failed with `Floats are not supported in document IDs`, and `null` with `Null document ID not allowed`. Two composite IDs whose keys differ only in order identify the same document: inserting the second failed with `Identifier conflict`, and a lookup with the keys in the other order found the document. Without `_id`, Ditto generated a string ID. More ID comparisons are in [Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value).
-- **Timestamps** ([Store UTC with a zone designator](../best-practices/data-modeling.md#store-utc-with-a-zone-designator)): `'2026-10-08T10:30:45Z' < '2026-10-08T10:30:45.123Z'` is `false`. `ORDER BY` on strings with a mixed number of fractional digits is not chronological: three documents with `'2026-10-08T10:30:45Z'`, `'2026-10-08T10:30:45.000500Z'`, and `'2026-10-08T10:30:45.123Z'` (in chronological order) came back as `...45.000500Z`, `...45.123Z`, `...45Z`. `date_part` of a string without a time zone is MISSING.
+- **Joins** ([Joining Collections (SDK 5.1+)](../../best-practices/dql.md#joining-collections-sdk-51)):
+  - Without an index, a join failed with `Joining to "o" disallowed without appropriate index support` ([Index requirement](../../best-practices/dql.md#index-requirement)). A join on `_id` and a join with `USE INDEX ''` worked without an index.
+  - `INNER`, `LEFT` (also with a filter inside `ON`), and `RIGHT` joins, and `WHERE o._id IS MISSING`, returned the rows in [Join types](../../best-practices/dql.md#join-types).
+  - `SELECT *` returned one nested object per alias, `c.*, o.total` a flat row, and `SELECT _id` a composite ID; a field `name` present on both sides failed with `Ambiguous reference to field` ([Result shape](../../best-practices/dql.md#result-shape)).
+  - `FULL OUTER`, `CROSS`, and comma joins, and joins in `UPDATE`, were rejected, and a `RIGHT JOIN` after the first join failed with `RIGHT OUTER join that isn't the first join is not supported` ([Restrictions](../../best-practices/dql.md#restrictions)).
+  - An observer of a join was called when either collection changed ([Joins in observers](../../best-practices/dql.md#joins-in-observers)). Whether its rows include `_id` is described in [On SDK 5.2.0, observer rows include _id only when it is projected](observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected).
+- **`RETURNING`** ([RETURNING (SDK 5.1+)](../../best-practices/dql.md#returning-sdk-51)): documents skipped by `DO NOTHING` and documents that `DO UPDATE_LOCAL_DIFF` left unchanged were not returned. `UPDATE` returned the documents after the update, and `DELETE` the documents before they were deleted. `EVICT ... RETURNING COUNT(*)` returned the number of documents. `mutatedDocumentIDs` and `commitID` were populated as well.
+- **Document IDs** ([Allowed values](../../best-practices/data-modeling.md#allowed-values)): strings, objects, integers, booleans, and arrays were accepted; a float failed with `Floats are not supported in document IDs`, and `null` with `Null document ID not allowed`. Two composite IDs whose keys differ only in order identify the same document: inserting the second failed with `Identifier conflict`, and a lookup with the keys in the other order found the document. Without `_id`, Ditto generated a string ID. More ID comparisons are in [Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value).
+- **Timestamps** ([Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator)): `'2026-10-08T10:30:45Z' < '2026-10-08T10:30:45.123Z'` is `false`. `ORDER BY` on strings with a mixed number of fractional digits is not chronological: three documents with `'2026-10-08T10:30:45Z'`, `'2026-10-08T10:30:45.000500Z'`, and `'2026-10-08T10:30:45.123Z'` (in chronological order) came back as `...45.000500Z`, `...45.123Z`, `...45Z`. `date_part` of a string without a time zone is MISSING.
 
-**Used in:** [Joining Collections (SDK 5.1+)](../best-practices/dql.md#joining-collections-sdk-51), [Index requirement](../best-practices/dql.md#index-requirement), [Join types](../best-practices/dql.md#join-types), [Result shape](../best-practices/dql.md#result-shape), [Restrictions](../best-practices/dql.md#restrictions), [Joins in observers](../best-practices/dql.md#joins-in-observers), [RETURNING (SDK 5.1+)](../best-practices/dql.md#returning-sdk-51), [Allowed values](../best-practices/data-modeling.md#allowed-values), [Store UTC with a zone designator](../best-practices/data-modeling.md#store-utc-with-a-zone-designator).
+**Used in:** [Joining Collections (SDK 5.1+)](../../best-practices/dql.md#joining-collections-sdk-51), [Index requirement](../../best-practices/dql.md#index-requirement), [Join types](../../best-practices/dql.md#join-types), [Result shape](../../best-practices/dql.md#result-shape), [Restrictions](../../best-practices/dql.md#restrictions), [Joins in observers](../../best-practices/dql.md#joins-in-observers), [RETURNING (SDK 5.1+)](../../best-practices/dql.md#returning-sdk-51), [Allowed values](../../best-practices/data-modeling.md#allowed-values), [Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator).
 
 ### ADVISE returned the documented output
 
 | | |
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each, after one earlier run with a separate script |
-| Setup | One device without sync. `ADVISE` for the two example statements of [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51) and for an ID lookup |
+| Setup | One device without sync. `ADVISE` for the two example statements of [ADVISE (SDK 5.1+)](../../best-practices/indexing-and-performance.md#advise-sdk-51) and for an ID lookup |
 
-- 5.1.0 and 5.2.0 returned the same JSON as the two example outputs in [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51).
+- 5.1.0 and 5.2.0 returned the same JSON as the two example outputs in [ADVISE (SDK 5.1+)](../../best-practices/indexing-and-performance.md#advise-sdk-51).
 - For an ID lookup, the result was `outcome: "no advice available for statement"`.
 
-**Used in:** [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51).
+**Used in:** [ADVISE (SDK 5.1+)](../../best-practices/indexing-and-performance.md#advise-sdk-51).
 
 ## Writes and Query Arguments
 
@@ -90,7 +90,7 @@ The results were the same on every release tested, and they matched these sectio
 - `UPDATE items SET n = 1`, `DELETE FROM items`, and `EVICT FROM items` without `WHERE` were accepted and changed every document in the collection. Nothing asked for confirmation or logged a warning.
 - `SET a.b = 1` replaced `a` with `{"b": 1}` when `a` was a string, an array, `null`, or a number, without an error, and the old value was lost. When `a` was an object, `b` was added to it.
 
-**Used in:** [UPDATE](../best-practices/dql.md#update), [DELETE and EVICT](../best-practices/dql.md#delete-and-evict).
+**Used in:** [UPDATE](../../best-practices/dql.md#update), [DELETE and EVICT](../../best-practices/dql.md#delete-and-evict).
 
 ### Wrong argument types fail silently
 
@@ -112,7 +112,7 @@ The results were the same on every release tested, and they matched these sectio
 - Both cases of the wrong shape (a single value for `IN`, an array for `=`) are easy to miss, because nothing reports them.
 - `=` between an array field and an array argument compares the elements.
 
-**Used in:** [Always pass values as parameters](../best-practices/dql.md#always-pass-values-as-parameters), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership).
+**Used in:** [Always pass values as parameters](../../best-practices/dql.md#always-pass-values-as-parameters), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership).
 
 ### On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing
 
@@ -127,7 +127,7 @@ The results were the same on every release tested, and they matched these sectio
 - **5.0.3**: `USE IDS` in a `DELETE` is a syntax error.
 - `WHERE _id IN :ids` removed the listed documents on all three releases (four runs each on 5.1.0 and 5.2.0, one run on 5.0.3).
 
-**Used in:** [USE IDS](../best-practices/dql.md#use-ids), [DELETE and EVICT](../best-practices/dql.md#delete-and-evict), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [USE IDS](../../best-practices/dql.md#use-ids), [DELETE and EVICT](../../best-practices/dql.md#delete-and-evict), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 ## Comparisons, Sort Order, and Paging
 
@@ -150,7 +150,7 @@ The results were the same on every release tested, and they matched these sectio
 - `LIKE` is case-sensitive.
 - `ORDER BY ... ASC` on a field with mixed types returned `false`, `true`, numbers (`2`, `10`), strings (`'10'`, `'B'`, `'b'`), arrays, objects, `null`, and missing values, in that order.
 
-**Used in:** [Literals](../best-practices/dql.md#literals), [MISSING and NULL](../best-practices/dql.md#missing-and-null), [ORDER BY](../best-practices/dql.md#order-by), [String Functions](dql-functions.md#string-functions), [Arithmetic, Conversion, and Other Functions](dql-functions.md#arithmetic-conversion-and-other-functions).
+**Used in:** [Literals](../../best-practices/dql.md#literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [String Functions](../dql-functions.md#string-functions), [Arithmetic, Conversion, and Other Functions](../dql-functions.md#arithmetic-conversion-and-other-functions).
 
 ### Names are case-sensitive, and most DQL keywords work as bare names
 
@@ -165,7 +165,7 @@ The results were the same on every release tested, and they matched these sectio
 
 **Not tested:** whether the statements with keyword names returned the intended results; the test checked only whether they were syntax errors.
 
-**Used in:** [Reserved words](../best-practices/dql.md#reserved-words), [Field names](../best-practices/data-modeling.md#field-names).
+**Used in:** [Reserved words](../../best-practices/dql.md#reserved-words), [Field names](../../best-practices/data-modeling.md#field-names).
 
 ### Descending order puts missing and null first
 
@@ -181,7 +181,7 @@ The results were the same on every release tested, and they matched these sectio
 
 `DESC` reverses the whole sequence, including `null` and missing values. A newest-first list (`ORDER BY createdAt DESC`) therefore shows documents without `createdAt` at the top.
 
-**Used in:** [ORDER BY](../best-practices/dql.md#order-by), [MISSING and NULL](../best-practices/dql.md#missing-and-null).
+**Used in:** [ORDER BY](../../best-practices/dql.md#order-by), [MISSING and NULL](../../best-practices/dql.md#missing-and-null).
 
 ### Rows with equal sort keys come back in _id order since SDK 5.1
 
@@ -203,7 +203,7 @@ The results were the same on every release tested, and they matched these sectio
 
 **Not tested:** more than one collection; `_id` values other than strings, including composite IDs; more than one tied value; `JOIN`; sorting after `GROUP BY`; an index on only one of the two devices.
 
-**Used in:** [ORDER BY](../best-practices/dql.md#order-by), [Stable ordering](../best-practices/observers.md#stable-ordering).
+**Used in:** [ORDER BY](../../best-practices/dql.md#order-by), [Stable ordering](../../best-practices/observers.md#stable-ordering).
 
 ### OFFSET pages repeat rows after inserts, and keyset pages do not
 
@@ -215,7 +215,7 @@ The results were the same on every release tested, and they matched these sectio
 - `LIMIT :limit OFFSET :offset` accepted parameters. After the insert, the second `OFFSET` page repeated the last row of the first page.
 - Keyset pagination with `_id` as the tie-breaker (`WHERE createdAt < :at OR (createdAt = :at AND _id < :id)`) returned no duplicates and skipped nothing.
 
-**Used in:** [LIMIT and OFFSET](../best-practices/dql.md#limit-and-offset).
+**Used in:** [LIMIT and OFFSET](../../best-practices/dql.md#limit-and-offset).
 
 ### EXPLAIN runs no statement, and PROFILE runs it
 
@@ -227,7 +227,7 @@ The results were the same on every release tested, and they matched these sectio
 - **`EXPLAIN`**: on 5.1.0 and 5.2.0, `EXPLAIN` accepted `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `EVICT`, `CREATE INDEX`, `DROP INDEX`, and `ADVISE`, and executed none of them. `SHOW` and `ALTER SYSTEM` were rejected with `Explain DML is not supported`, a message that does not match the kind of statement. On 5.0.3, `EXPLAIN` of a mutation was rejected with the same message, and `ADVISE` was a syntax error.
 - **`PROFILE`**: `PROFILE SELECT` returned the two result rows followed by one row with `~request_profile`. `PROFILE UPDATE` executed the update and returned one row, the profile. `PROFILE SHOW` did not fail and returned only the result of `SHOW`, without a profile row.
 
-**Used in:** [EXPLAIN and PROFILE](../best-practices/indexing-and-performance.md#explain-and-profile).
+**Used in:** [EXPLAIN and PROFILE](../../best-practices/indexing-and-performance.md#explain-and-profile).
 
 ### User input embedded in a statement changes what it matches
 
@@ -239,7 +239,7 @@ The results were the same on every release tested, and they matched these sectio
 - With the input embedded as a string literal, the `SELECT` returned all three documents, and the `DELETE` built the same way deleted all three.
 - Passed as an argument, the same value matched no document.
 
-**Used in:** [Input Validation and Query Parameters](../best-practices/security.md#input-validation-and-query-parameters).
+**Used in:** [Input Validation and Query Parameters](../../best-practices/security.md#input-validation-and-query-parameters).
 
 ## Numbers and Strings in DQL
 
@@ -256,7 +256,7 @@ The results were the same on every release tested, and they matched these sectio
 - Arithmetic with a float gives a float: `UPDATE ... SET n = qty * 2.5`, with `qty` at 4, stored `n` as the float `10` (5.1.0 and 5.2.0; on 5.0.3, a `SET` value cannot refer to a field, see [Some features that are not marked SDK 5.1+ fail on 5.0.3](#some-features-that-are-not-marked-sdk-51-fail-on-503)). A float is rejected as a document ID even when it is `2.0`: `Floats are not supported in document IDs` (see [Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value)).
 - Dart has separate `int` and `double` types, and values such as `jsonDecode('10.0')` and `price * 1.0` are doubles, so a Flutter app can probably store both types in one field in the same way.
 
-**Used in:** [Type Checking](dql-functions.md#type-checking).
+**Used in:** [Type Checking](../dql-functions.md#type-checking).
 
 ### char_length counts code points, and JavaScript damages lone surrogates
 
@@ -280,7 +280,7 @@ The results were the same on every release tested, and they matched these sectio
 
 **Not tested:** what devices on other platforms receive (probably the changed characters); the Flutter SDK (Dart strings are UTF-16 as well and can hold the same unpaired surrogates).
 
-**Used in:** [String Functions](dql-functions.md#string-functions).
+**Used in:** [String Functions](../dql-functions.md#string-functions).
 
 ## Document IDs and Field Names
 
@@ -315,7 +315,7 @@ The results were the same on every release tested, and they matched these sectio
 
 - The `_id` of the merged document comes back with its keys in name order (`{"orderId": "o1", "storeId": "s1"}`). When each device builds an ID by a fixed rule, such as a composite of a store and a date, every device must produce the same value types and the same array order.
 
-**Used in:** [Allowed values](../best-practices/data-modeling.md#allowed-values).
+**Used in:** [Allowed values](../../best-practices/data-modeling.md#allowed-values).
 
 ### Field names can contain dots and backticks, or be empty
 
@@ -329,7 +329,7 @@ The results were the same on every release tested, and they matched these sectio
 - A quoted `` `a.b` `` is one field whose name contains a dot, different from the unquoted `a.b`, which is the field `b` inside `a`. Both can exist in the same document, and each can be read and written on its own. A map key that contains a dot works the same way: `` items.`x.y`.q `` treats `x.y` as one key.
 - `é` in NFC and `é` in NFD are two different field names, as with document IDs (see [Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value)).
 
-**Used in:** [Adding, updating, and removing map entries](../best-practices/data-modeling.md#adding-updating-and-removing-map-entries), [Field names](../best-practices/data-modeling.md#field-names).
+**Used in:** [Adding, updating, and removing map entries](../../best-practices/data-modeling.md#adding-updating-and-removing-map-entries), [Field names](../../best-practices/data-modeling.md#field-names).
 
 ## Indexes and Query Plans
 
@@ -343,7 +343,7 @@ The results were the same on every release tested, and they matched these sectio
 
 - With and without the index, the rows and their order were the same, whether the index was created before or after the writes, and also when two devices wrote. The incorrect or mis-ordered results that the documentation describes did not occur with this query.
 - `EXPLAIN` showed that only the query without a declaration used the index. The queries that declared `price REGISTER` or `price MAP` did not use it.
-- A document written with both declarations holds two values under one key, as in [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent). For a document written first as a `REGISTER` and then as a `MAP`, the reads returned different values:
+- A document written with both declarations holds two values under one key, as in [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent). For a document written first as a `REGISTER` and then as a `MAP`, the reads returned different values:
 
 | Read | Value |
 |---|---|
@@ -353,7 +353,7 @@ The results were the same on every release tested, and they matched these sectio
 
 - The same happened with two devices. An app version that declares `REGISTER` when it reads does not see the updates that other devices write with `MAP`, and keeps showing the old value.
 
-**Used in:** [Strict mode and data types](../best-practices/indexing-and-performance.md#strict-mode-and-data-types), [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent).
+**Used in:** [Strict mode and data types](../../best-practices/indexing-and-performance.md#strict-mode-and-data-types), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent).
 
 ### On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order
 
@@ -375,7 +375,7 @@ The results were the same on every release tested, and they matched these sectio
 
 **Not tested:** composite indexes with more than two keys; descending keys in the first position.
 
-**Used in:** [Composite indexes and key order (SDK 5.1+)](../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 ### On SDK 5.1.0, ORDER BY on a projected field was ignored in an index plan
 
@@ -388,7 +388,7 @@ The results were the same on every release tested, and they matched these sectio
 - **5.1.0**: the projected query returned the rows in the order they were inserted (`10-01`, `10-03`, `10-02`), and with `LIMIT 2` the first two of that order. The plan was `indexScan`, `filter`, `sort`, `projection`: it sorted without reading the documents. `SELECT *`, whose plan reads the documents (`indexScan`, `filter`, `sort`, `fetch`), returned the newest first.
 - **5.2.0**: both queries returned the newest first, with the same plans.
 
-**Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 ### Before SDK 5.2.0, a comparison with the constant on the left returned wrong rows through an index
 
@@ -406,7 +406,7 @@ The results were the same on every release tested, and they matched these sectio
 
 - The issue that 5.2.0 fixed existed since 5.0. No error was raised.
 
-**Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 ### An index created on an empty collection breaks in the 5.1.0 migration
 
@@ -422,7 +422,7 @@ The results were the same on every release tested, and they matched these sectio
 - Moving between 5.2.0 and 5.1.0, in both directions, kept the documents, the indexes, and the composite index created on 5.2.0 usable.
 - Back on 5.0.3, the composite index `idx_status_n (status, n)` became two single-field indexes, `idx_status_n_status` and `idx_status_n_n`. All documents could be read, including those written on 5.1.0 and 5.2.0.
 
-**Used in:** [Upgrading and downgrading](../best-practices/indexing-and-performance.md#upgrading-and-downgrading), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510), [Mixed Releases](upgrading.md#mixed-releases), [Rolling Back](upgrading.md#rolling-back).
+**Used in:** [Upgrading and downgrading](../../best-practices/indexing-and-performance.md#upgrading-and-downgrading), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510), [Mixed Releases](../upgrading.md#mixed-releases), [Rolling Back](../upgrading.md#rolling-back).
 
 ## Long Conditions and ANY
 
@@ -439,7 +439,7 @@ The results were the same on every release tested, and they matched these sectio
 - **5.2.0**: 50,000 `OR` terms returned the correct result in 96 ms.
 - Devices with smaller thread stacks, such as mobile devices, may crash with fewer terms on 5.1.0.
 
-**Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership).
+**Used in:** [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership).
 
 ### Conditions fail at 100 levels of nested parentheses
 
@@ -451,7 +451,7 @@ The results were the same on every release tested, and they matched these sectio
 - On both releases, conditions worked up to 99 levels, and at 100 levels they failed with `DQL parser error: recursion limit exceeded`, an error that did not end the process.
 - A DQL literal has a similar limit on nesting (see [Nesting depth is limited differently for arguments, literals, and paths](documents-and-limits.md#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)).
 
-**Used in:** [Filtering by Membership](../best-practices/dql.md#filtering-by-membership).
+**Used in:** [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership).
 
 ### ANY over a parameter array returns no rows since SDK 5.1.0
 
@@ -467,7 +467,7 @@ The results were the same on every release tested, and they matched these sectio
 - `ANY` and `EVERY` over a parameter or literal array have returned no rows since 5.1.0, without an error, and 5.2.0 does not fix it.
 - A subscription is not affected: with `WHERE ANY s IN :statuses SATISFIES s = status END`, a subscription synced the two matching documents, while the same statement as a local query on the receiving device returned no rows. A screen that observes the subscription's own query therefore shows an empty list although the data has arrived.
 
-**Used in:** [Filtering by Membership](../best-practices/dql.md#filtering-by-membership), [ANY and EVERY](dql-functions.md#any-and-every).
+**Used in:** [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [ANY and EVERY](../dql-functions.md#any-and-every).
 
 ### On SDK 5.1.0, ANY with a condition on several properties matched every document
 
@@ -481,7 +481,7 @@ The results were the same on every release tested, and they matched these sectio
 - **5.0.3 and 5.2.0**: the condition matched the one document.
 - The issue came with 5.1.0 and was fixed in 5.2.0.
 
-**Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 ## Statements That Fail or Differ on SDK 5.0.3
 
@@ -496,13 +496,13 @@ Some statements failed because they use features marked (SDK 5.1+) or (SDK 5.2+)
 
 | Statement | Where the guide uses it | Result on 5.0.3 |
 |---|---|---|
-| `SHOW ALL LIKE '...'` | [Applying System Parameters](../best-practices/setup-and-lifecycle.md#applying-system-parameters), [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [System Parameters Reference](system-reference.md#system-parameters-reference) | Syntax error |
-| `object_size()` | [Object Functions](dql-functions.md#object-functions), [Monitoring size](../best-practices/data-modeling.md#monitoring-size) | `Function "object_size" not found` |
-| `DELETE ... USE IDS LIST :ids` | [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones) | Syntax error: `DELETE` does not accept `USE IDS` on 5.0.3 |
-| `UPDATE inventory SET stockLevel = stockLevel - 1` | [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate) (the ❌ BAD example) | `Forbidden: Document references in mutation values`; the statement succeeds on 5.1.0 and later |
-| `serialize_json()` | [Arithmetic, Conversion, and Other Functions](dql-functions.md#arithmetic-conversion-and-other-functions) | `Function "serialize_json" not found` (also found by the check of the expression examples) |
+| `SHOW ALL LIKE '...'` | [Applying System Parameters](../../best-practices/setup-and-lifecycle.md#applying-system-parameters), [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [System Parameters Reference](../system-reference.md#system-parameters-reference) | Syntax error |
+| `object_size()` | [Object Functions](../dql-functions.md#object-functions), [Monitoring size](../../best-practices/data-modeling.md#monitoring-size) | `Function "object_size" not found` |
+| `DELETE ... USE IDS LIST :ids` | [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones) | Syntax error: `DELETE` does not accept `USE IDS` on 5.0.3 |
+| `UPDATE inventory SET stockLevel = stockLevel - 1` | [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate) (the ❌ BAD example) | `Forbidden: Document references in mutation values`; the statement succeeds on 5.1.0 and later |
+| `serialize_json()` | [Arithmetic, Conversion, and Other Functions](../dql-functions.md#arithmetic-conversion-and-other-functions) | `Function "serialize_json" not found` (also found by the check of the expression examples) |
 
-**Used in:** [How to Use This Guide](../best-practices/README.md#how-to-use-this-guide), [Applying System Parameters](../best-practices/setup-and-lifecycle.md#applying-system-parameters), [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [System Parameters Reference](system-reference.md#system-parameters-reference), [Object Functions](dql-functions.md#object-functions), [Monitoring size](../best-practices/data-modeling.md#monitoring-size), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate), [Arithmetic, Conversion, and Other Functions](dql-functions.md#arithmetic-conversion-and-other-functions), [USE IDS](../best-practices/dql.md#use-ids).
+**Used in:** [How to Use This Guide](../../best-practices/README.md#how-to-use-this-guide), [Applying System Parameters](../../best-practices/setup-and-lifecycle.md#applying-system-parameters), [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [System Parameters Reference](../system-reference.md#system-parameters-reference), [Object Functions](../dql-functions.md#object-functions), [Monitoring size](../../best-practices/data-modeling.md#monitoring-size), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate), [Arithmetic, Conversion, and Other Functions](../dql-functions.md#arithmetic-conversion-and-other-functions), [USE IDS](../../best-practices/dql.md#use-ids).
 
 ### On SDK 5.0.3, SELECT _id on an indexed collection returned too few rows
 
@@ -544,4 +544,4 @@ Some statements failed because they use features marked (SDK 5.1+) or (SDK 5.2+)
 
 **Not tested:** integers written as int64 values by the other SDKs (they probably come back as `BigInt` in JavaScript as well).
 
-**Used in:** [Platform Differences](platform-differences.md), [MISSING and NULL](../best-practices/dql.md#missing-and-null), [Store UTC with a zone designator](../best-practices/data-modeling.md#store-utc-with-a-zone-designator).
+**Used in:** [Platform Differences](../platform-differences.md), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator).

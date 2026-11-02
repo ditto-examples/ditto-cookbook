@@ -17,7 +17,7 @@ DQL (Ditto Query Language) is the SQL-like language you use to read, write, and 
 
 There is no `CREATE COLLECTION` or `DROP COLLECTION` statement: a collection exists as soon as a document is written to it, and it cannot be removed. <!-- lint-ignore -->
 
-Keep the number of collections small. In our testing with SDK 5.1.0 and 5.2.0, the first write to a new collection slowed down as collections accumulated (about 20 ms with 1,000 collections), each collection took about 15 to 17 KB of disk, and evicting the documents of a collection removed neither (see [Each new collection makes the first write to a collection slower](../knowledge/documents-and-limits.md#each-new-collection-makes-the-first-write-to-a-collection-slower)). Do not create a collection per user, tenant, or day; partition one collection with part of `_id` (`{"tenant": ..., "orderId": ...}`) or a field instead.
+Keep the number of collections small. In our testing with SDK 5.1.0 and 5.2.0, the first write to a new collection slowed down as collections accumulated (about 20 ms with 1,000 collections), each collection took about 15 to 17 KB of disk, and evicting the documents of a collection removed neither (see [Each new collection makes the first write to a collection slower](../knowledge/observations/documents-and-limits.md#each-new-collection-makes-the-first-write-to-a-collection-slower)). Do not create a collection per user, tenant, or day; partition one collection with part of `_id` (`{"tenant": ..., "orderId": ...}`) or a field instead.
 
 ### Where Queries Run
 
@@ -64,7 +64,7 @@ Reference values with `:name` placeholders and pass them in `arguments`. Paramet
 **❌ DON'T:**
 - Build DQL strings with string interpolation or concatenation.
 - Write `IN (:statuses)` with an array parameter. The parentheses turn it into a one-element list whose only element is the array, so nothing matches.
-- Pass a single value where the statement expects an array. In our testing, `status IN :statuses` with a string instead of a list matched nothing, without an error (see [Wrong argument types fail silently](../knowledge/dql-behavior.md#wrong-argument-types-fail-silently)); wrap a single value in a list.
+- Pass a single value where the statement expects an array. In our testing, `status IN :statuses` with a string instead of a list matched nothing, without an error (see [Wrong argument types fail silently](../knowledge/observations/dql-behavior.md#wrong-argument-types-fail-silently)); wrap a single value in a list.
 
 ```dart
 // ✅ GOOD: Values travel as typed parameters
@@ -168,7 +168,7 @@ The recommended form is to avoid inline objects entirely and pass the document a
 
 #### Reserved words
 
-Some DQL keywords cannot be used as bare identifiers. A collection named `collection` is the most common trap: `SELECT * FROM collection` is a parser error (`expected identifier`). Aliases such as `all` fail the same way. Most other keywords, such as `order`, `select`, `value`, and `count`, worked as bare collection and field names in our testing (see [Names are case-sensitive, and most DQL keywords work as bare names](../knowledge/dql-behavior.md#names-are-case-sensitive-and-most-dql-keywords-work-as-bare-names)). Literals are a different case: a bare `true`, `false`, or `null` is read as the value, never as a field of that name, and the statement runs without an error.
+Some DQL keywords cannot be used as bare identifiers. A collection named `collection` is the most common trap: `SELECT * FROM collection` is a parser error (`expected identifier`). Aliases such as `all` fail the same way. Most other keywords, such as `order`, `select`, `value`, and `count`, worked as bare collection and field names in our testing (see [Names are case-sensitive, and most DQL keywords work as bare names](../knowledge/observations/dql-behavior.md#names-are-case-sensitive-and-most-dql-keywords-work-as-bare-names)). Literals are a different case: a bare `true`, `false`, or `null` is read as the value, never as a field of that name, and the statement runs without an error.
 
 **✅ DO:**
 - Choose collection and field names that are not DQL keywords (`orders`, `tasks`, `createdAt`).
@@ -201,7 +201,7 @@ Which documents each `WHERE` expression matches, when `isDeleted` is `true`, `fa
 
 Note that `IS NOT NULL` is true for a missing field, and that `!= true` drops both `null` and missing rows. <!-- lint-ignore -->
 
-In the JavaScript SDK, a field whose value is `undefined` is stored as `null`, not left out, so it no longer matches `IS MISSING`, also inside arrays and objects (in our testing; see [JavaScript values that are not plain JSON change when stored](../knowledge/dql-behavior.md#javascript-values-that-are-not-plain-json-change-when-stored)). Omit the key to leave a field missing.
+In the JavaScript SDK, a field whose value is `undefined` is stored as `null`, not left out, so it no longer matches `IS MISSING`, also inside arrays and objects (in our testing; see [JavaScript values that are not plain JSON change when stored](../knowledge/observations/dql-behavior.md#javascript-values-that-are-not-plain-json-change-when-stored)). Omit the key to leave a field missing.
 
 **✅ DO:**
 - Filter optional booleans with `coalesce(field, default)`: `coalesce(isDeleted, false) = false`.
@@ -328,7 +328,7 @@ Every row of a `SELECT` is materialized in the result. To keep results small on 
 - **Filter** in `WHERE` rather than in Dart.
 - **Page** with `ORDER BY ... LIMIT` (see [LIMIT and OFFSET](#limit-and-offset)).
 - **Count** with `SELECT COUNT(*)` instead of loading documents to call `.length`.
-- **Let large results go** once you have extracted what you need, and read very large sets in pages. In our testing with the JavaScript SDK, the process's resident memory did not shrink after a large result had been released and garbage-collected; on 5.2.0, the same result used about a third less memory than on 5.1.0, in line with the release notes, which say that query results stay compact until they are read (see [Large query results keep process memory after they are released](../knowledge/performance-measurements.md#large-query-results-keep-process-memory-after-they-are-released)).
+- **Let large results go** once you have extracted what you need, and read very large sets in pages. In our testing with the JavaScript SDK, the process's resident memory did not shrink after a large result had been released and garbage-collected; on 5.2.0, the same result used about a third less memory than on 5.1.0, in line with the release notes, which say that query results stay compact until they are read (see [Large query results keep process memory after they are released](../knowledge/observations/performance-measurements.md#large-query-results-keep-process-memory-after-they-are-released)).
 - **Check existence** with `LIMIT 1`.
 
 ## Reading Data with SELECT
@@ -501,11 +501,11 @@ Results have no guaranteed order unless you specify `ORDER BY`. The default dire
 
 `DESC` reverses the whole sequence, so documents with a missing sort field come **first** in descending order, followed by those with `null`: a newest-first list (`ORDER BY createdAt DESC`) shows documents without `createdAt` at the top.
 
-Strings compare by Unicode code point, not in the alphabetical order of a language: uppercase letters sort before lowercase ones (`'B'` before `'a'`), accented letters after `'z'`, and digits as characters (`'10'` before `'9'`). `LIKE` is case-sensitive too; use `ILIKE` to ignore case (in our testing; see [Comparisons across types are MISSING, and strings sort by code point](../knowledge/dql-behavior.md#comparisons-across-types-are-missing-and-strings-sort-by-code-point)).
+Strings compare by Unicode code point, not in the alphabetical order of a language: uppercase letters sort before lowercase ones (`'B'` before `'a'`), accented letters after `'z'`, and digits as characters (`'10'` before `'9'`). `LIKE` is case-sensitive too; use `ILIKE` to ignore case (in our testing; see [Comparisons across types are MISSING, and strings sort by code point](../knowledge/observations/dql-behavior.md#comparisons-across-types-are-missing-and-strings-sort-by-code-point)).
 
 **✅ DO:**
 - Add `ORDER BY` to every observer query whose order matters in the UI. Observers do not guarantee a stable order without it.
-- Add a unique tie-breaker such as `_id` when the sort key can repeat: `ORDER BY createdAt DESC, _id`. In our testing, SDK 5.1.0 and 5.2.0 returned rows with equal sort keys in ascending `_id` order, also with `DESC`, but that is not documented, and SDK 5.0.3 returned them in another order, so that `LIMIT n` did not return the first n rows (see [Rows with equal sort keys come back in _id order since SDK 5.1](../knowledge/dql-behavior.md#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51)). Give the tie-breaker the same direction as the sort key (`ORDER BY createdAt DESC, _id DESC`) if ties should reverse too.
+- Add a unique tie-breaker such as `_id` when the sort key can repeat: `ORDER BY createdAt DESC, _id`. In our testing, SDK 5.1.0 and 5.2.0 returned rows with equal sort keys in ascending `_id` order, also with `DESC`, but that is not documented, and SDK 5.0.3 returned them in another order, so that `LIMIT n` did not return the first n rows (see [Rows with equal sort keys come back in _id order since SDK 5.1](../knowledge/observations/dql-behavior.md#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51)). Give the tie-breaker the same direction as the sort key (`ORDER BY createdAt DESC, _id DESC`) if ties should reverse too.
 - Store sortable values in one consistent type (for example, all timestamps as ISO-8601 UTC strings produced by one helper with a fixed precision; see [Timestamps](data-modeling.md#timestamps)), and numbers as numbers, not as strings of digits.
 - Sort names for display in your app with the user's locale, or on `lower(name)` for small results (a function on the field cannot use an index); `ORDER BY name` puts `Zoe` before `adam`.
 
@@ -527,7 +527,7 @@ Sorting large result sets costs memory and time unless an index provides the ord
 `LIMIT` and `OFFSET` accept parameters. Always combine them with `ORDER BY`, otherwise the page contents are not well defined.
 
 **✅ DO:**
-- Prefer keyset pagination (`WHERE sortKey < :lastValue ORDER BY sortKey DESC LIMIT n`) for long lists; use a unique sort key or add a tie-breaker. In our testing, one document inserted at the top between two `OFFSET` page reads made the last row of the first page appear again on the second, while keyset pagination with `_id` as the tie-breaker (`WHERE createdAt < :at OR (createdAt = :at AND _id < :id)`) returned no duplicates and skipped nothing (see [OFFSET pages repeat rows after inserts, and keyset pages do not](../knowledge/dql-behavior.md#offset-pages-repeat-rows-after-inserts-and-keyset-pages-do-not)).
+- Prefer keyset pagination (`WHERE sortKey < :lastValue ORDER BY sortKey DESC LIMIT n`) for long lists; use a unique sort key or add a tie-breaker. In our testing, one document inserted at the top between two `OFFSET` page reads made the last row of the first page appear again on the second, while keyset pagination with `_id` as the tie-breaker (`WHERE createdAt < :at OR (createdAt = :at AND _id < :id)`) returned no duplicates and skipped nothing (see [OFFSET pages repeat rows after inserts, and keyset pages do not](../knowledge/observations/dql-behavior.md#offset-pages-repeat-rows-after-inserts-and-keyset-pages-do-not)).
 - Use `LIMIT` in `execute` and observers to cap memory.
 
 **❌ DON'T:**
@@ -586,7 +586,7 @@ SELECT * FROM orders USE IDS LIST :ids
 | `USE IDS ('a', 'b')` | ❌ Error: `('a', 'b') is not supported` | <!-- lint-ignore -->
 | `USE IDS :ids` with an array | ❌ Treats the whole array as a single ID and returns nothing |
 
-A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids` and 20 to 65 ms with `USE IDS LIST :ids`, for reads and writes alike. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents); see [Long ID lists are faster with USE IDS LIST than with WHERE _id IN](../knowledge/performance-measurements.md#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in). For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (SDK 5.0.3 rejected `USE IDS` in `DELETE` as a syntax error in our testing; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)) (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids` and 20 to 65 ms with `USE IDS LIST :ids`, for reads and writes alike. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents); see [Long ID lists are faster with USE IDS LIST than with WHERE _id IN](../knowledge/observations/performance-measurements.md#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in). For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (SDK 5.0.3 rejected `USE IDS` in `DELETE` as a syntax error in our testing; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)) (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
 
 ```dart
 // ✅ GOOD: Direct ID lookup with an array parameter
@@ -611,7 +611,7 @@ Future<List<Map<String, dynamic>>> ordersByIds(Ditto ditto, List<String> ids) as
 | A single value instead of an array | `status IN :statuses` with `'open'` | ❌ Matches nothing, without an error |
 | Equality with an array parameter | `status = :statuses` | ❌ Compares with the whole array, so only array fields with the same elements match |
 
-An empty array returns no rows, also without an error. Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded` (see [Conditions fail at 100 levels of nested parentheses](../knowledge/dql-behavior.md#conditions-fail-at-100-levels-of-nested-parentheses)).
+An empty array returns no rows, also without an error. Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded` (see [Conditions fail at 100 levels of nested parentheses](../knowledge/observations/dql-behavior.md#conditions-fail-at-100-levels-of-nested-parentheses)).
 
 ```dart
 // ✅ GOOD: Membership against an array parameter
@@ -636,7 +636,7 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 }
 ```
 
-> **Note (SDK 5.1.0 and 5.2.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a known issue since 5.1.0, and 5.2.0 does not fix it; in our testing, 5.0.3 returned the matching documents (see [ANY over a parameter array returns no rows since SDK 5.1.0](../knowledge/dql-behavior.md#any-over-a-parameter-array-returns-no-rows-since-sdk-510)). A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](../knowledge/dql-functions.md#any-and-every). <!-- lint-ignore -->
+> **Note (SDK 5.1.0 and 5.2.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a known issue since 5.1.0, and 5.2.0 does not fix it; in our testing, 5.0.3 returned the matching documents (see [ANY over a parameter array returns no rows since SDK 5.1.0](../knowledge/observations/dql-behavior.md#any-over-a-parameter-array-returns-no-rows-since-sdk-510)). A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](../knowledge/dql-functions.md#any-and-every). <!-- lint-ignore -->
 
 ### Joining Collections (SDK 5.1+)
 
@@ -746,7 +746,7 @@ Always qualify fields with their alias (`c.name`, `o.total`) and alias projected
 
 #### Joins in observers
 
-`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
+`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
 
 ```dart
 // ✅ GOOD: Subscribe per collection (app or feature scope), join locally
@@ -838,7 +838,7 @@ Future<void> importProducts(Ditto ditto, List<Map<String, dynamic>> products) as
 
 You can also list several parameters: `DOCUMENTS (:first), (:second)`. A multi-document insert is atomic: if one document fails (for example with an ID conflict under `FAIL`), none of them is inserted. Two documents with the same `_id` in one statement fail with `Expected unique document identifiers`.
 
-The number of statements matters more than the number of documents. In our testing with the JavaScript SDK, 2,000 documents took about 4 seconds as 2,000 awaited `INSERT` statements and 17 ms as one statement with an array parameter (see [The number of execute calls matters more than the number of documents](../knowledge/performance-measurements.md#the-number-of-execute-calls-matters-more-than-the-number-of-documents)). Import data in a few large statements, for example in chunks of a few hundred documents.
+The number of statements matters more than the number of documents. In our testing with the JavaScript SDK, 2,000 documents took about 4 seconds as 2,000 awaited `INSERT` statements and 17 ms as one statement with an array parameter (see [The number of execute calls matters more than the number of documents](../knowledge/observations/performance-measurements.md#the-number-of-execute-calls-matters-more-than-the-number-of-documents)). Import data in a few large statements, for example in chunks of a few hundred documents.
 
 #### ON ID CONFLICT
 
@@ -941,7 +941,7 @@ ON ID CONFLICT DO UPDATE
 
 The `SELECT` follows `INSERT INTO c` directly. Wrapping it in parentheses or in `DOCUMENTS (...)` is a syntax error, and `INITIAL DOCUMENTS` cannot be combined with a `SELECT` source.
 
-A query result contains plain values, so declare `COUNTER` and `ATTACHMENT` fields on **both** sides when the copied documents have them. Without the declarations, the copy stores a counter as a plain number, which a later `INCREMENT` on the copy hides behind a new counter that starts at 0, and an attachment as an ordinary map that cannot be fetched (in our testing; see [INSERT ... SELECT copies counters and attachments as plain values](../knowledge/merge-behavior.md#insert--select-copies-counters-and-attachments-as-plain-values)). Do not add `ON ID CONFLICT DO UPDATE` here: an upsert restarts the copied counters (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
+A query result contains plain values, so declare `COUNTER` and `ATTACHMENT` fields on **both** sides when the copied documents have them. Without the declarations, the copy stores a counter as a plain number, which a later `INCREMENT` on the copy hides behind a new counter that starts at 0, and an attachment as an ordinary map that cannot be fetched (in our testing; see [INSERT ... SELECT copies counters and attachments as plain values](../knowledge/observations/merge-behavior.md#insert--select-copies-counters-and-attachments-as-plain-values)). Do not add `ON ID CONFLICT DO UPDATE` here: an upsert restarts the copied counters (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
 
 ```sql
 -- Copy closed orders that have a counter and an attachment
@@ -998,7 +998,7 @@ Errors to expect:
 - Setting the same path twice in one statement fails: `More than one modification specified for the path ...`.
 - Array elements cannot be assigned (`SET items[0] = ...` is a syntax error). Replace the whole array, or model the collection as a map keyed by ID (see [Arrays and Maps](data-modeling.md#arrays-and-maps)).
 
-Not reported as an error: a nested `SET a.b = 1` adds `b` when `a` is an object, but when `a` holds a string, a number, an array, or `null`, it replaces `a` with `{"b": 1}`, and the old value is lost (in our testing; see [Statements without WHERE change every document](../knowledge/dql-behavior.md#statements-without-where-change-every-document)).
+Not reported as an error: a nested `SET a.b = 1` adds `b` when `a` is an object, but when `a` holds a string, a number, an array, or `null`, it replaces `a` with `{"b": 1}`, and the old value is lost (in our testing; see [Statements without WHERE change every document](../knowledge/observations/dql-behavior.md#statements-without-where-change-every-document)).
 
 #### Assigning an object merges it
 
@@ -1044,7 +1044,7 @@ Future<void> replaceAddress(
 
 **❌ DON'T:**
 - Read a document, modify it in Dart, and write the whole map back with `INSERT ... ON ID CONFLICT DO UPDATE`.
-- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
+- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
 
 ```dart
 // ❌ BAD: Read-modify-write of the whole document

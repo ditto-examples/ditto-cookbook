@@ -2,8 +2,9 @@
 """Check the Ditto guide, the plugin Skills, the checklist, and Markdown links.
 
 Checks:
-- every heading of the guide (knowledge/*.md and best-practices/*.md) is
-  unique across its pages, so that a `§ Heading` citation names one section
+- every heading of the guide (knowledge/*.md, knowledge/observations/*.md,
+  and best-practices/*.md) is unique across its pages, so that a
+  `§ Heading` citation names one section
 - every plugins/ditto/skills/*/SKILL.md: frontmatter with only `name`
   (matching the directory) and `description`, the description length (error
   above 1,024 characters, warning above 450), and the size (error above
@@ -38,7 +39,7 @@ from typing import Iterator
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
-GUIDE_DIRS = ("knowledge", "best-practices")
+GUIDE_DIRS = ("knowledge", "knowledge/observations", "best-practices")
 SKILLS = ROOT / "plugins" / "ditto" / "skills"
 CHECKLIST = ROOT / "checklist" / "ditto-implementation-checklist.md"
 
@@ -169,6 +170,11 @@ def markdown_files(root: Path) -> list[Path]:
 
 def guide_pages(root: Path) -> list[Path]:
     return [page for directory in GUIDE_DIRS for page in sorted((root / directory).glob("*.md"))]
+
+
+def knowledge_pages(root: Path) -> list[Path]:
+    """The pages of knowledge/: concepts and reference, and the observation pages below it."""
+    return [page for page in guide_pages(root) if page.relative_to(root).parts[0] == "knowledge"]
 
 
 def guide_headings(pages: list[Path]) -> set[str]:
@@ -454,11 +460,11 @@ def main() -> int:
     pages = guide_pages(ROOT)
     headings = guide_headings(pages)
     errors += check_unique_headings(pages, ROOT)
-    knowledge_pages = [p for p in pages if p.parent.name == "knowledge"]
-    errors += check_observation_links(pages, knowledge_pages, ROOT)
-    errors += check_observation_entries(knowledge_pages, ROOT)
-    errors += check_used_in(pages, knowledge_pages, ROOT)
-    errors += check_in_brief(knowledge_pages, ROOT)
+    knowledge = knowledge_pages(ROOT)
+    errors += check_observation_links(pages, knowledge, ROOT)
+    errors += check_observation_entries(knowledge, ROOT)
+    errors += check_used_in(pages, knowledge, ROOT)
+    errors += check_in_brief(knowledge, ROOT)
     for skill in sorted(p.parent for p in SKILLS.glob("*/SKILL.md")):
         skill_errors, skill_warnings = check_skill(skill, headings)
         errors += skill_errors
