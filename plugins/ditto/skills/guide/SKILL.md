@@ -5,7 +5,7 @@ description: Searches the complete Ditto SDK best practices guide (SDK 5.2.0) bu
 
 # Ditto Best Practices Guide
 
-The full guide (SDK 5.2.0, about 12,400 lines in 38 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works, the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary), and the observations from our testing with their numbers. Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
+The full guide (SDK 5.2.0, about 12,700 lines in 38 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works, the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary), and the observations from our testing with their numbers. Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
 
 ## How to Search
 

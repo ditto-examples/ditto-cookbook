@@ -441,5 +441,54 @@ class UsedInTest(unittest.TestCase):
             self.assertEqual(check.check_used_in([page, knowledge], [knowledge], root), [])
 
 
+class InBriefTest(unittest.TestCase):
+    ENTRIES = textwrap.dedent("""
+        ## The Limit
+
+        ### A hub accepts six clients
+
+        | | |
+        |---|---|
+        | Observed on | SDK 5.2.0, three runs |
+
+        ### Clients retry
+
+        | | |
+        |---|---|
+        | Observed on | SDK 5.2.0, one run |
+        """)
+
+    def check(self, summary: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = write(root, "knowledge/connections.md", textwrap.dedent(summary) + self.ENTRIES)
+            return check.check_in_brief([page], root)
+
+    def test_accepts_a_summary_that_names_every_entry(self):
+        self.assertEqual(self.check("""
+            # Connections
+
+            **In brief**
+
+            - Six clients ([A hub accepts six clients](#a-hub-accepts-six-clients)).
+            - Retries ([Clients retry](#clients-retry)).
+            """), [])
+
+    def test_reports_entries_that_the_summary_leaves_out(self):
+        errors = self.check("""
+            # Connections
+
+            **In brief**
+
+            - Six clients ([A hub accepts six clients](#a-hub-accepts-six-clients)).
+            """)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("#clients-retry", errors[0])
+
+    def test_reports_a_page_without_a_summary(self):
+        errors = self.check("# Connections\n")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("In brief", errors[0])
+
 if __name__ == "__main__":
     unittest.main()

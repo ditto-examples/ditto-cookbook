@@ -17,6 +17,8 @@ Checks:
 - every knowledge entry of an observation (a section with an "Observed on"
   row) has a "Setup" row and a "Used in" line, and the "Used in" line lists
   every section of another page that links to the entry
+- every knowledge page with observation entries has an "In brief" list that
+  links to each of them
 - every relative link in the repository's Markdown files is well formed and points to an
   existing file, and every #anchor to an existing heading (GitHub anchors)
 - audit/reference/scanner-rules.md matches `scan.py --list-rules`
@@ -304,6 +306,32 @@ def check_observation_entries(knowledge_pages: list[Path], root: Path) -> list[s
     return errors
 
 
+IN_BRIEF = "**In brief**"
+
+
+def check_in_brief(knowledge_pages: list[Path], root: Path) -> list[str]:
+    """A page with observation entries starts with an "In brief" list that links to every entry."""
+    errors = []
+    for page in knowledge_pages:
+        text = page.read_text(encoding="utf-8")
+        entries = observation_sections(text)
+        if not entries:
+            continue
+        lines = list(prose_lines(text))
+        start = next((number for number, line in lines if line.strip() == IN_BRIEF), None)
+        if start is None:
+            errors.append(f"{page.relative_to(root)}: a page with observation entries has no {IN_BRIEF} list")
+            continue
+        end = next((number for number, line in lines if number > start and line.startswith("## ")), len(text))
+        named = {target.partition("#")[2] for number, line in lines if start < number < end
+                 for _, target in parse_links(line) if target.startswith("#")}
+        for number, anchor, _ in entries:
+            if anchor not in named:
+                errors.append(f"{page.relative_to(root)}:{number}: the entry #{anchor} is missing from "
+                              f"the page's {IN_BRIEF} list")
+    return errors
+
+
 def check_used_in(pages: list[Path], knowledge_pages: list[Path], root: Path) -> list[str]:
     """Every section that links to an observation entry is listed in the entry's "Used in".
 
@@ -430,6 +458,7 @@ def main() -> int:
     errors += check_observation_links(pages, knowledge_pages, ROOT)
     errors += check_observation_entries(knowledge_pages, ROOT)
     errors += check_used_in(pages, knowledge_pages, ROOT)
+    errors += check_in_brief(knowledge_pages, ROOT)
     for skill in sorted(p.parent for p in SKILLS.glob("*/SKILL.md")):
         skill_errors, skill_warnings = check_skill(skill, headings)
         errors += skill_errors

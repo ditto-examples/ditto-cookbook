@@ -40,7 +40,7 @@ When new material both explains a behavior and recommends a pattern, put the rec
 
 ### Headings and links
 
-The Skills and the checklist cite sections by their heading text (`§ Heading`), so every heading must be unique across all pages of both directories. Renaming a heading breaks the citations that use it; `scripts/check.py` reports them. Link to another section with a relative link and its GitHub anchor, for example `[What Concurrent Edits Produce](../knowledge/crdt-types.md#what-concurrent-edits-produce)`. Write page titles and `##` headings in title case, and `###` headings, including the heading of each observation entry, in sentence case. When a section of another page links to an observation entry, add that section to the entry's "Used in"; `scripts/check.py` reports a section that is missing.
+The Skills and the checklist cite sections by their heading text (`§ Heading`), so every heading must be unique across all pages of both directories. Renaming a heading breaks the citations that use it; `scripts/check.py` reports them. Link to another section with a relative link and its GitHub anchor, for example `[What Concurrent Edits Produce](../knowledge/crdt-types.md#what-concurrent-edits-produce)`. Write page titles and `##` headings in title case, and `###` headings, including the heading of each observation entry, in sentence case. When a section of another page links to an observation entry, add that section to the entry's "Used in", and name every entry in the "In brief" list at the top of its page; `scripts/check.py` reports what is missing.
 
 ### Version
 

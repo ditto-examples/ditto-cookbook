@@ -21,7 +21,7 @@ See the [release notes](https://docs.ditto.live/sdk/latest/release-notes/flutter
 
 ## Known Issues in SDK 5.1.0
 
-SDK 5.2.0 fixes the following issues of 5.1.0. They apply to every device that still runs 5.1.0. Items that say "in our testing" were reproduced with the JavaScript SDK 5.1.0 on Node.js and did not occur with 5.2.0; the others come from the 5.2.0 release notes.
+SDK 5.2.0 fixes the following issues of 5.1.0. They apply to every device that still runs 5.1.0. Items that say "in our testing" were reproduced with the JavaScript SDK 5.1.0 on Node.js and, except for the attachment fetch below, did not occur with 5.2.0; the others come from the 5.2.0 release notes.
 
 **Wrong results without an error**
 
