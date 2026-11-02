@@ -73,7 +73,7 @@ Future<void> sellOne(Ditto ditto, String itemId) async {
 /// as recalibrating stock after a physical count, run only while every device
 /// that changes the counter is online and in sync.
 ///
-/// Note (SDK 5.1.0): a RESTART discards every increment that this device had
+/// Note (SDK 5.1.0 and 5.2.0): a RESTART discards every increment that this device had
 /// not received when it ran the restart, including increments that other
 /// devices make later (by the clock) until the restart reaches them. If tills
 /// keep selling offline during a recount, store recounts and sales as event

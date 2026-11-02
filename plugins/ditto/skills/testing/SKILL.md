@@ -174,7 +174,7 @@ Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment 
 - Small-peers-only sync needs an **offline license token**: `ditto.sync.start()` throws until `ditto.setOfflineOnlyLicenseToken(token)` is called with a valid token. Without one, tests are limited to a single local store.
 - **✅ DO**: Make the concurrent writes inside `whileDisconnected` (stop sync on every peer, write, reconnect), then `waitForConvergence` with a timeout until every peer returns the same rows.
 - **❌ DON'T**: Write while the peers are connected and call it a merge test; the writes reach the other peers within milliseconds.
-- A listening peer accepted at most 6 TCP connections by default in testing with SDK 5.1.0 (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`; the 5.2.0 release notes say accepted and outgoing connections now count together), so keep the peer count at 7 or below. The multi-peer test file was verified with `ditto_live` 5.1.0 and has not yet been run with 5.2.0. For a relay test, chain the peers: A listens, B listens and connects to A, C connects to B.
+- A listening peer accepted at most 6 TCP connections by default in testing with SDK 5.1.0 and 5.2.0 (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`), so keep the peer count at 7 or below. The multi-peer test file was verified with `ditto_live` 5.1.0 and has not yet been run with 5.2.0. For a relay test, chain the peers: A listens, B listens and connects to A, C connects to B.
 
 `§ Testing on Multiple Devices`, `§ Several peers in one test process`, `§ Transport Configuration` · Helpers and test: [reference/multi-peer-tests.md](reference/multi-peer-tests.md)
 

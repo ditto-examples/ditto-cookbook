@@ -130,7 +130,7 @@ Invalid values do not throw; they only log. WebSocket sync between Small Peers i
 
 ### 7. Raise the TCP connection limit on hubs with more than six clients (CRITICAL)
 
-> **Note (SDK 5.1.0):** A device accepts 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In testing, extra clients got no data and no API error; only a `WARN` log `... at capacity for this transport`. Per the 5.2.0 release notes, accepted and outgoing LAN connections now count together (default still 6); not re-tested on 5.2.0, so check what your hub admits and confirm with Ditto support.
+> **Note (SDK 5.1.0 and 5.2.0):** A device accepts 6 TCP connections by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In testing, extra clients got no data and no API error; only a `WARN` log `... at capacity for this transport`. Per the 5.2.0 release notes, accepted and outgoing LAN connections now count together (default still 6); a hub still admitted six of eight clients.
 
 **✅ DO**: on the hub, pass `'MESH_CHOOSER_MAX_WLAN_CONNECTIONS': 12` in `DittoConfig.systemParameters` on every open (SDK 5.2+); on SDK 5.1, `ALTER SYSTEM` after `Ditto.open` and **before** `sync.start()`.
 **❌ DON'T**: raise it after sync started (rejected clients stayed out in testing).

@@ -31,7 +31,7 @@ Tombstone defaults, reaping, and the Edge/Ditto Server TTL rule: [SKILL.md rule 
 
 ## Husk Documents
 
-When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. The result is a *husk document*, and the document is not deleted. In SDK 5.1.0, the husk's shape depends on which operation was written first:
+When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. The result is a *husk document*, and the document is not deleted. In SDK 5.1.0 and 5.2.0, the husk's shape depends on which operation was written first:
 
 ```text
 Initial:            {"_id": "abc123", "color": "red", "make": "Toyota", "year": 2020}
@@ -46,7 +46,7 @@ After merge:        {"_id": "abc123", "color": null}        // make, year: MISSI
 ```
 
 - The document survives even when the `DELETE` is the later write.
-- Fields the update did not touch are MISSING (`make IS MISSING` is `true`) in SDK 5.1.0, although Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) shows them as `null`. Make code that reads husk documents handle both cases.
+- Fields the update did not touch are MISSING (`make IS MISSING` is `true`) in SDK 5.1.0 and 5.2.0, although Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) shows them as `null`. Make code that reads husk documents handle both cases.
 - Husks count in `SELECT COUNT(*)`, but value filters exclude them.
 - Running the `DELETE` again after the merge removes the husk on every device.
 
@@ -133,7 +133,7 @@ Guide: `§ Indexing soft-delete filters`
 
 ## Cleaning Up Soft-Deleted Documents
 
-What a device whose subscription excludes soft-deleted documents (`WHERE coalesce(isDeleted, false) = false`) received for a document it already held, in testing with SDK 5.1.0:
+What a device whose subscription excludes soft-deleted documents (`WHERE coalesce(isDeleted, false) = false`) received for a document it already held, in testing with SDK 5.1.0 and 5.2.0:
 
 | Change made on another peer | Reached the device |
 |---|---|

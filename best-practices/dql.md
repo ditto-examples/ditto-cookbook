@@ -517,7 +517,7 @@ Sorting large result sets costs memory and time unless an index provides the ord
 `LIMIT` and `OFFSET` accept parameters. Always combine them with `ORDER BY`, otherwise the page contents are not well defined.
 
 **✅ DO:**
-- Prefer keyset pagination (`WHERE sortKey < :lastValue ORDER BY sortKey DESC LIMIT n`) for long lists; use a unique sort key or add a tie-breaker.
+- Prefer keyset pagination (`WHERE sortKey < :lastValue ORDER BY sortKey DESC LIMIT n`) for long lists; use a unique sort key or add a tie-breaker. In our testing, one document inserted at the top between two `OFFSET` page reads made the last row of the first page appear again on the second; keyset pagination with `_id` as the tie-breaker (`WHERE createdAt < :at OR (createdAt = :at AND _id < :id)`) returned no duplicates and skipped nothing.
 - Use `LIMIT` in `execute` and observers to cap memory.
 
 **❌ DON'T:**

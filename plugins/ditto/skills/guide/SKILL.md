@@ -52,7 +52,7 @@ Knowledge, in `reference/knowledge/`:
 
 ## Answering
 
-- Quote or paraphrase the guide precisely; keep its qualifiers ("in our testing", "SDK 5.1.0", "according to the 5.2.0 release notes", "Experimental"). Statements marked "in our testing" are behavior observed on the release the statement names, not documented guarantees; 5.2.0 checks were single-device runs with the JavaScript SDK.
+- Quote or paraphrase the guide precisely; keep its qualifiers ("in our testing", "SDK 5.1.0", "according to the 5.2.0 release notes", "Experimental"). Statements marked "in our testing" are behavior observed on the releases the statement names (mostly with JavaScript SDK peers on one machine), not documented guarantees.
 - Cite the section you used as `§ <Heading>` so the user can find it.
 - If the guide does not cover the question, say so, and point to Ditto's documentation (https://docs.ditto.live) instead of guessing.
 - Code examples in the guide are Flutter (Dart) and were compiled against `ditto_live` 5.1.0; examples that use APIs added in 5.2 (such as `DittoConfig.systemParameters`) follow the `ditto_live` 5.2.0 API reference. For other platforms, use `§ Platform Differences` and the platform notes in each section.

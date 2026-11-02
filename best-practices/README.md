@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 3.0
+> **Version**: 3.1
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -37,7 +37,7 @@ The guide has two parts: these best practices, which say what to do and what to 
 - **Note (SDK ...)**: Describes behavior that is easy to miss and can lead to wrong results, lost data, crashes, or hangs, together with the pattern that avoids it. The label names the releases on which we observed it: **Note (SDK 5.1.0 and 5.2.0)** was confirmed on both releases, and **Note (SDK 5.1.0)** was observed on 5.1.0 and has not yet been repeated on 5.2.0 (the 5.2.0 release notes describe no change unless the note says so). Search for "Note (SDK" to list them all, and review them when you upgrade the SDK: a later release may change the behavior. Issues that 5.2.0 fixed are collected in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 - **Placeholders** such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
 
-**How the content was verified**: The Dart examples were compiled against `ditto_live` 5.1.0, and the DQL statements were validated against Ditto SDK 5.1.0. Statements about what happens between devices (merges of concurrent edits, deletions, relay, subscriptions) that say they were observed "in our testing" come from two or more SDK 5.1.0 peers syncing over TCP on one machine (the JavaScript SDK on Node.js, and the key cases also with Flutter on macOS). They describe how 5.1.0 behaves, not a documented guarantee. For SDK 5.2.0, we repeated the single-device checks with the JavaScript SDK 5.2.0 on Node.js: system parameters, DQL results and query plans, observers, and the diagnostic collections. The examples that use APIs added in 5.2 (such as `DittoConfig.systemParameters`) follow the `ditto_live` 5.2.0 API reference. Statements that the 5.2.0 release notes are the only source for say so.
+**How the content was verified**: The Dart examples were compiled against `ditto_live` 5.1.0, and every DQL statement in the guide was run on Ditto SDK 5.1.0 and 5.2.0 (in an empty store, with placeholder arguments). Statements that say a behavior was observed "in our testing" come from SDK peers on one machine: mostly the JavaScript SDK on Node.js, with the peers in one process or in separate processes connected over TCP (some cases through a relay that limits bandwidth or pauses traffic), and the key cases on 5.1.0 also with Flutter on macOS. Each such statement, and each **Note (SDK ...)**, names the releases on which we observed it; one that names only 5.1.0 has not yet been repeated on 5.2.0. These observations describe how those releases behaved, not a documented guarantee. The examples that use APIs added in 5.2 (such as `DittoConfig.systemParameters`) follow the `ditto_live` 5.2.0 API reference. Statements that the 5.2.0 release notes are the only source for say so.
 
 ## The Essentials
 

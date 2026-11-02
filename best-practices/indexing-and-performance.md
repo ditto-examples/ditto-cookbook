@@ -262,14 +262,14 @@ Future<void> printIndexAdvice(
 
 ## EXPLAIN and PROFILE
 
-`EXPLAIN` and `PROFILE` answer different questions:
+`EXPLAIN` and `PROFILE` answer different questions (the table was checked on SDK 5.1.0 and 5.2.0):
 
 | | `EXPLAIN` | `PROFILE` |
 |---|---|---|
 | Executes the statement | ❌ (parse and plan only) | ✅ |
 | Returns | The query plan | The normal results, followed by one extra profile row |
 | Use it to | Check which access path and indexes are used | Measure where time is spent and how many documents flow through each step |
-| Statements | `SELECT`, mutations, `CREATE INDEX` / `DROP INDEX`, and `ADVISE` (not `SHOW` or `ALTER SYSTEM`) | `SELECT` and mutations (`INSERT`, `UPDATE`, `DELETE`, `EVICT`); mutations are executed |
+| Statements | `SELECT`, mutations (SDK 5.1+), `CREATE INDEX` / `DROP INDEX`, and `ADVISE` (not `SHOW` or `ALTER SYSTEM`) | `SELECT` and mutations (`INSERT`, `UPDATE`, `DELETE`, `EVICT`) get a profile row; mutations are executed. `PROFILE SHOW` returns only the `SHOW` result |
 
 **❌ DON'T:**
 

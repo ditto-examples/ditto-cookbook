@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.10
+> **Version**: 2.11
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1218,7 +1218,7 @@ Future<List<Map<String, dynamic>>> activeOrders(Ditto ditto, String status) asyn
 
 Subscribing to active documents only is acceptable when every device syncs directly with Ditto Server and evicts flagged documents itself.
 
-**Why this matters:** In our testing with SDK 5.1.0, a device whose subscription excluded flagged documents still received the flag and a later restore for documents it already held. It did not store flagged documents that it did not already hold, so it could not pass the flag on to a device that had missed it, and a `DELETE` of a flagged document did not reach it. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.
+**Why this matters:** In our testing with SDK 5.1.0 and 5.2.0, a device whose subscription excluded flagged documents still received the flag and a later restore for documents it already held. It did not store flagged documents that it did not already hold, so it could not pass the flag on to a device that had missed it, and a `DELETE` of a flagged document did not reach it. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.
 
 **Best-practices guide:** Soft delete, subscriptions, and cleanup
 

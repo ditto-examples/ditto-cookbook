@@ -385,7 +385,7 @@ Local only, read only, and snapshot-based. Query them with `execute`; do not reg
 |---|---|
 | `system:system_info` | Key/value rows: SDK version, database ID, storage usage, subscriptions, log settings, non-default parameters |
 | `system:indexes` | Indexes on this device |
-| `system:data_sync_info` | One row per sync connection. `sync_session_status` stays `"Connected"` for about 73 s after a disconnect (SDK 5.1.0); use presence for live connectivity |
+| `system:data_sync_info` | One row per sync connection. `sync_session_status` stays `"Connected"` for about 73 s after a disconnect (SDK 5.1.0 and 5.2.0); use presence for live connectivity |
 | `system:active_requests` | DQL requests executing now |
 | `system:request_history` | Recently completed requests matching the history qualifiers (in memory) |
 | `system:shared_statements` | Prepared-statement cache with execution statistics |

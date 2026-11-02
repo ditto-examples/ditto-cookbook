@@ -119,7 +119,7 @@ final _uuidKey = RegExp(
 /// key is validated against a strict pattern before it is placed inside a
 /// backtick-quoted path segment. This prevents DQL injection.
 ///
-/// Note (SDK 5.1.0): a removal does not win over a concurrent edit of the same
+/// Note (SDK 5.1.0 and 5.2.0): a removal does not win over a concurrent edit of the same
 /// entry on another device; the entry stays with only the edited fields (or
 /// with them set to null). Readers must skip such entries, and a `removed`
 /// flag is safer when concurrent edits are likely.

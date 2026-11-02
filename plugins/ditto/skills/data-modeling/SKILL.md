@@ -95,7 +95,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 **✅ DO**:
 - Pass a variable key as data: `INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF` with `patch = {'_id': orderId, 'items': {itemId: item}}`. Parameters bind values, not paths (`items[:key]` is a parser error).
 - Remove an entry with ``UNSET items.`<key>` `` only after validating the key against a strict pattern (for example, a UUID).
-- Mark entries removed (`removed = true`) when concurrent edits are likely; make readers skip entries with missing or `null` required fields. **Note (SDK 5.1.0)**: a removal does not win over a concurrent edit; the entry stays with only the edited fields (removal first) or with them `null` (removal later).
+- Mark entries removed (`removed = true`) when concurrent edits are likely; readers skip entries whose required fields are missing or `null`. **Note (SDK 5.1.0 and 5.2.0)**: a removal does not win over a concurrent edit; the entry stays with only the edited fields (removal first) or with them `null` (removal later).
 - Convert an array to a map as soon as more than one device writes it, into a **new field** (`lineItems` next to the old `items`).
 
 **❌ DON'T**: splice unchecked input into a query; write a map under the array's field name (it changes the CRDT type, so the old array and the new map coexist under the same key).
@@ -139,7 +139,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 **❌ DON'T**:
 - `SET stock = stock - 1` (two devices both write 9 from 10; one decrement is lost).
 - Initialize with an undeclared `INSERT` (stored as a REGISTER; the first `INCREMENT` starts a new counter at 0), or overwrite with `SET` (use `RESTART WITH`).
-- Recalibrate with `RESTART WITH` while other devices change the counter offline: increments the restarting device has not received yet are discarded, even later ones (**Note (SDK 5.1.0)**). Recount only while all devices are in sync, or keep recounts and changes as events and derive the value.
+- Recalibrate with `RESTART WITH` while other devices change the counter offline: increments the restarting device has not received yet are discarded, even later ones (**Note (SDK 5.1.0 and 5.2.0)**). Recount only while all devices are in sync, or derive the value from recount and change events.
 - Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 

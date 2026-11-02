@@ -224,7 +224,7 @@ Ditto collections are schema-free, so the application is responsible for validat
 - Treat documents received from other peers as untrusted input when you render or process them.
 
 **❌ DON'T:**
-- Build DQL strings by interpolating user input.
+- Build DQL strings by interpolating user input. In our testing, the input `nobody' OR '1'='1` embedded as a string literal made a `SELECT` return every document and a `DELETE` delete every document; passed as an argument, it matched none.
 
 ```dart
 // ✅ GOOD: Validate, then pass values as parameters.

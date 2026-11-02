@@ -189,7 +189,7 @@ try {
 
 ### 6. Avoid Husk Documents (HIGH)
 
-When one device deletes a document while another concurrently updates it, the add-wins merge produces a *husk document*, and the document is **not** deleted, even when the `DELETE` is the later write. In SDK 5.1.0, the updated fields keep their new values (or become `null` if the deletion was later), and all other fields are **MISSING**, not `null` as Ditto's docs say.
+When one device deletes a document while another concurrently updates it, the add-wins merge produces a *husk document*, and the document is **not** deleted, even when the `DELETE` is the later write. In SDK 5.1.0 and 5.2.0, the updated fields keep their new values (or become `null` if the deletion was later), and all other fields are **MISSING**, not `null` as Ditto's docs say.
 
 **✅ DO**:
 - Use a soft delete for data that may be edited concurrently.

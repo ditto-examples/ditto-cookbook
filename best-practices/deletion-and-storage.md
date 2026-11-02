@@ -117,7 +117,7 @@ Reaping can be expensive on devices with very many tombstones. The parameters `E
 
 ### Husk documents
 
-When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. The result is a *husk document*, and the document is **not** deleted. In SDK 5.1.0, the husk's shape depends on which operation was written first:
+When one device deletes a document while another device concurrently updates it, the add-wins CRDT merges both operations field by field. The result is a *husk document*, and the document is **not** deleted. In SDK 5.1.0 and 5.2.0, the husk's shape depends on which operation was written first:
 
 ```text
 Initial:            {"_id": "abc123", "color": "red", "make": "Toyota", "year": 2020}
@@ -249,7 +249,7 @@ WHERE isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false
 
 ### Soft delete, subscriptions, and cleanup
 
-The deletion flag is an ordinary update, but a subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) changes which documents a device receives and stores. In our testing with SDK 5.1.0, a device with such a subscription received these changes to a document it already held:
+The deletion flag is an ordinary update, but a subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) changes which documents a device receives and stores. In our testing with SDK 5.1.0 and 5.2.0, a device with such a subscription received these changes to a document it already held:
 
 | Change made on another peer | Reached the device |
 |---|---|

@@ -111,7 +111,7 @@ const strictModeConfig = DittoConfig(
 
 ### Peers with different settings
 
-Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. In our testing with SDK 5.1.0, one strict and one non-strict peer showed these effects:
+Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. In our testing with SDK 5.1.0 and 5.2.0, one strict and one non-strict peer showed these effects:
 - A nested update such as `SET obj.a = 2` on the strict peer failed with `Unsupported DML operation on REGISTER field "obj"` when `obj` had been written as an object by a strict peer.
 - After concurrent edits, an undeclared `SELECT *` kept showing different values for the same document on the two peers.
 
@@ -249,7 +249,7 @@ Future<void> removeOrderItem(
 }
 ```
 
-> **Note (SDK 5.1.0):** Removing an entry does not win over a concurrent edit of that entry. In our testing, one device ran `` UNSET items.`item-1` `` while another device changed `` items.`item-1`.quantity ``:
+> **Note (SDK 5.1.0 and 5.2.0):** Removing an entry does not win over a concurrent edit of that entry. In our testing, one device ran `` UNSET items.`item-1` `` while another device changed `` items.`item-1`.quantity ``:
 > - **Removal first, edit later:** the entry stays with only the edited fields, for example `{"quantity": 5}`.
 > - **Edit first, removal later:** the entry stays with the edited fields set to `null`, for example `{"quantity": null}`.
 > - **Whole entry rewritten after the removal** (`` SET items.`item-1` = :item `` or `DO UPDATE`): the full entry comes back.
@@ -880,7 +880,7 @@ WHERE _id = :id
 
 `RESTART WITH n` sets the counter to a specific value and `RESTART` sets it to zero. When devices perform `RESTART` operations concurrently, the last write wins.
 
-> **Note (SDK 5.1.0):** A `RESTART` discards **every increment that the restarting device had not received when it ran the restart**. That includes increments that other devices make *after* the restart (by the clock) until the restart reaches them. Only increments made after a device has received the restart are added to the new value. In our testing, a counter at 10 was restarted with 100 on one peer while another peer, which had not yet received the restart, incremented it by 5. The result was 100, whichever peer wrote first by the clock. Only when the restart had already synced before the increment was the result 105.
+> **Note (SDK 5.1.0 and 5.2.0):** A `RESTART` discards **every increment that the restarting device had not received when it ran the restart**. That includes increments that other devices make *after* the restart (by the clock) until the restart reaches them. Only increments made after a device has received the restart are added to the new value. In our testing, a counter at 10 was restarted with 100 on one peer while another peer, which had not yet received the restart, incremented it by 5. The result was 100, whichever peer wrote first by the clock. Only when the restart had already synced before the increment was the result 105.
 
 A typical consequence: a stock recount with `RESTART WITH :counted` silently erases the sales that offline devices record until they receive the recount.
 
@@ -1129,7 +1129,7 @@ Behavior on a device:
 | The document was evicted earlier on this device | The document is inserted again |
 | Combined with `ON ID CONFLICT ...` | Parser error; the conflict policy cannot be changed |
 
-Across devices, the same rules apply when the deletion came from another device. In our testing with SDK 5.1.0, the effects were these:
+Across devices, the same rules apply when the deletion came from another device. In our testing with SDK 5.1.0 and 5.2.0, the effects were these:
 - **A seed for an `_id` that another device deleted** stays deleted if its content is identical. If its content differs, it becomes a document with `null` fields **on every device**. This also happens when a newly installed device seeds before it first connects.
 - **Two devices that seed the same `_id` with different content** are merged field by field: `{v: 'A', onlyA: 1}` and `{v: 'B', onlyB: 1}` became `{v: 'B', onlyA: 1, onlyB: 1}`. A field that both seeds set is decided by its value, not by which device seeded later. A regular `INSERT` of the same `_id` wins over the seed.
 

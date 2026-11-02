@@ -38,7 +38,7 @@ Because a MAP merges at every level, a single document can hold many independent
 
 ## What concurrent edits produce
 
-The table shows how two devices' edits to the same document merged in our testing with SDK 5.1.0. Both devices were offline when they wrote, and they synced afterwards. Every result was the same on both devices and did not depend on which device wrote first unless the table says so. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
+The table shows how two devices' edits to the same document merged in our testing with SDK 5.1.0 and 5.2.0 (the results were identical on both releases). Both devices were offline when they wrote, and they synced afterwards. Every result was the same on both devices and did not depend on which device wrote first unless the table says so. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
 
 | Device A | Device B | Result after sync |
 |---|---|---|
