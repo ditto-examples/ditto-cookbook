@@ -105,7 +105,7 @@ Subscriptions never download blobs; a token is not image data. Fetching every at
 
 | Event | Delivered | Contents |
 |---|---|---|
-| `AttachmentFetchEventProgress` | Zero or more times | `downloadedBytes`, `totalBytes` |
+| `AttachmentFetchEventProgress` | Zero or more times (none on a fast link in testing) | `downloadedBytes`, `totalBytes` |
 | `AttachmentFetchEventCompleted` | At most once | `attachment` (read bytes with `await attachment.data`) |
 | `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched |
 

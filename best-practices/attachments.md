@@ -75,7 +75,7 @@ Read the token from the document, then call `ditto.store.fetchAttachment(token, 
 
 | Event | Delivered | Contents |
 |---|---|---|
-| `AttachmentFetchEventProgress` | Zero or more times | `downloadedBytes`, `totalBytes` |
+| `AttachmentFetchEventProgress` | Zero or more times; in our testing with SDK 5.1.0 and 5.2.0, fetches of 2 to 20 MB over a fast local link reported none | `downloadedBytes`, `totalBytes` |
 | `AttachmentFetchEventCompleted` | At most once | `attachment` (read the bytes with `await attachment.data`) |
 | `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched. According to the 5.2.0 release notes, a fetch of an attachment that no document references anymore now ends with this event instead of retrying forever, but we did not observe it on SDK 5.1.0 or 5.2.0: when the referencing document was deleted while no peer could deliver the blob, or after the only holder had collected the blob, the fetch stayed pending without any event. Keep a stall timeout on both releases |
 
@@ -365,7 +365,7 @@ An attachment can only be fetched while a peer that **holds the blob** is reacha
 | Blob storage | Stored outside the document database; does not count toward the per-device key-value storage guidance (about 2 GB; see [Key Characteristics](../knowledge/understanding-ditto.md#key-characteristics)) |
 | Uploads through the HTTP API | A separate 1 MB request body limit applies (can be raised on request) |
 | Documents | 256 KiB soft limit (warning) and 5 MiB hard limit (writes that exceed it fail); see [Document Size Limits](data-modeling.md#document-size-limits) |
-| Transfer progress | Reported only through fetch events; `system:data_sync_info` does not include attachments |
+| Transfer progress | Reported only through fetch events; `system:data_sync_info` does not include attachments. A fast fetch can complete without any progress event, so make progress displays work without one |
 
 **✅ DO:**
 - Store images, documents, audio, and other binary files as attachments rather than inside documents.
