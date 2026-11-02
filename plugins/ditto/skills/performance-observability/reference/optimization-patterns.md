@@ -148,11 +148,13 @@ The planner chooses indexes by rules, not by statistics. `EXPLAIN` shows these p
 | `_id = :id`, `_id IN :ids`, `USE IDS` | ID scan | No index needed |
 | `a = 1 OR b = 2` (both indexed) | Union scan | |
 | `a = 1 OR b = 2` (`b` not indexed) | **Collection scan** | Every `OR` branch must be indexable |
-| `a = 1 AND b = 2` (separate indexes) | Intersect scan | A composite index on `(a, b)` is generally better |
+| `a = 1 AND b = 2` (separate indexes) | Intersect scan | A composite index on `(a, b)` is generally better; in testing, the intersect scan was slower than the more selective index alone |
 | `address.city = 'Tokyo'` (index on `address.city`) | Index scan | Index the full path you filter on |
 | `tags = ['x', 'y']` (index on `tags`) | Index scan | Whole-value match only |
 | `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan | Element lookups cannot use an index |
 | `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan | Does not read documents |
+
+Do not index a field with only a few distinct values (a boolean, a two-value status) on its own: the planner uses it, and on 100,000 documents it was slower than no index (140 against 90 ms), while an index on the selective field took 21 to 27 ms and a composite `(store, status)` 17 ms (SDK 5.1.0 and 5.2.0, in testing; `§ Creating Indexes`). Measure the time after adding an index, not only the plan.
 
 Constraints (`§ Creating Indexes`, `§ Strict mode and data types`):
 - Expression, partial, and functional indexes are not supported.
@@ -377,6 +379,7 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 - `customLogCallback` receives the log events that Ditto emits; keep it fast. `ditto.close()` resets it to `null` for the whole process, so set it again before every `Ditto.open()` (after `Ditto.init()`).
 - `DittoLogger.isDevtoolsLoggingEnabled = true` also sends Ditto logs to Flutter DevTools.
 - On-disk logs (debug level and above) are kept in the persistence directory of the most recently created `Ditto` instance, about 15 MB of compressed logs or 15 days of logs by default (older entries are discarded once one of these limits is reached). They rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`); leave them at their defaults unless Ditto support advises otherwise.
+- Each write added about 1.5 KB of debug log on SDK 5.1.0 and 5.2.0 (in testing); the active file grew to 15 to 18 MB before rotating, each rotated file was about 0.6 MB compressed, and the 15 files held about 200,000 writes (about 5 hours at 10 writes a second).
 - Retrieve on-disk logs from the Ditto Portal device dashboard or with `DittoLogger.exportLogs(path)` (gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count). Use a fresh, timestamped `.jsonl.gz` path.
 - On-disk logs contain the text and argument values of this device's subscriptions and of those of directly connected devices, at every console level; document values, `execute` statements and arguments, and peer metadata did not appear (in testing with SDK 5.1.0 and 5.2.0). Do not filter subscriptions by personal data, because the logs leave the device when exported or requested.
 - Data bundles requested through the Ditto Portal include (SDK 5.1+) a `config_snapshot.json` file with the device's effective configuration.

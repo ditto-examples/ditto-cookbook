@@ -43,7 +43,7 @@ The client-side setup (expiration handler, `login`, `AuthResponse.exception`, `l
 - Roll out a new key to all devices together. Peers with different keys, or a peer with a key and one without, never connect. No API reports this; only `WARN` log lines appear on every retry (`invalid peer certificate: BadSignature`, or `DecryptError`).
 - Distribute the key through a controlled channel, such as mobile device management (MDM) or secure provisioning, and keep it in secure storage on the device.
 - Generate the key with Ditto's `ditto-authtool` or OpenSSL as described in the [authentication documentation](https://docs.ditto.live/key-concepts/authentication-and-authorization).
-- Set the offline license token from Ditto with `ditto.setOfflineOnlyLicenseToken()` before `ditto.sync.start()`.
+- Set the offline license token from Ditto with `ditto.setOfflineOnlyLicenseToken()` before `ditto.sync.start()`, and distribute a new token well before the current one expires. The expiry is checked against the device clock when the token is set: in our testing with SDK 5.1.0 and 5.2.0, a device whose clock was past the expiry failed with `activation/license-token-expired` and could not start sync, while a running device kept syncing after its clock passed the expiry.
 
 **❌ DON'T:**
 - Hardcode the shared key in source code. Keys in an app binary can be extracted by decompiling the app.

@@ -259,6 +259,8 @@ Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
 
 **SQLite write-ahead log (SDK 5.2+)**: Small Peers keep the WAL in check and reclaim free disk space automatically (`BACKEND_SQLITE3_ENABLE_WAL_SIZE_MONITOR` and `BACKEND_SQLITE3_ENABLE_INCREMENTAL_VACUUM_RECLAIM`, both on by default). Ditto logs a warning when the WAL grows past `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (1 GiB by default); the usual cause is a read transaction that stays open for a long time. Read the current values on demand:
 
+Free space from deleted or evicted data is reused by later writes, but the files shrink only when it exceeds `BACKEND_SQLITE3_INCREMENTAL_VACUUM_THRESHOLD_BYTES` (100 MB by default): evicting about 62 MB left the files at the same size in testing with 5.2.0, and 5.1.0 does not reclaim. After a few thousand writes, the WAL of the document store and of the attachment store (even unused) each reached about 20 MB on 5.1.0 and 5.2.0, and the attachment store's WAL stayed after closing. Each `system:system_info` key can appear several times with different timestamps; read the latest row (`ORDER BY timestamp DESC`). Flagged documents slow queries until cleanup (15 to 20 times with 49,000 flagged documents and no index on the flag); tombstones and evicted documents do not.
+
 ```sql
 -- wal_current_size_bytes, wal_peak_size_bytes, checkpoint_busy_percent, auto_vacuum
 SELECT key, value FROM system:system_info WHERE namespace = 'backend_sqlite3'

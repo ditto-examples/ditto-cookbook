@@ -242,6 +242,8 @@ See [MISSING and NULL](dql.md#missing-and-null) for the general rules.
 | `(isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false)` with an index on `isDeleted` | Index scan (returns the same documents as the `coalesce` form) |
 | `isDeleted = false` with an index on `isDeleted`, when every document is guaranteed to have the field | Index scan |
 
+In our testing with SDK 5.1.0 and 5.2.0, a collection with 1,000 live and 49,000 flagged documents answered `COUNT(*)` and filtered queries 15 to 20 times slower than one with 1,000 documents; with every document carrying `isDeleted` and an index on it, `isDeleted = false` brought it back to the same speed. Tombstones and evicted documents did not slow queries down.
+
 In most screens, the soft-delete condition is combined with a more selective predicate (a status, a customer ID, a date range). Index that predicate, keep the `coalesce` form for correctness, and confirm the plan with [ADVISE](indexing-and-performance.md#advise-sdk-51) or [EXPLAIN](indexing-and-performance.md#explain-and-profile).
 
 ```sql
@@ -527,7 +529,8 @@ Batching keeps individual write transactions short. It does not reduce the sync 
 | Safe when devices stay offline longer than the tombstone TTL (7 days by default) | ❌ (data can be resurrected) | ✅ | ✅ (other peers are unaffected) |
 | Safe with concurrent updates on other devices | ❌ (husk documents) | ✅ | ✅ |
 | Can be undone | ❌ | ✅ | ✅ (data syncs back if a subscription matches it again) |
-| Frees local storage | ✅ (values immediately; tombstones after reaping) | ❌ (until cleanup) | ✅ (immediately) |
+| Frees local storage | ✅ (the space is reused at once and reclaimed later; tombstones after reaping) | ❌ (until cleanup) | ✅ (the space is reused at once and reclaimed later) |
+| Effect on queries | None: tombstones are not read | Queries read the flagged documents until cleanup (15 to 20 times slower with 49,000 flagged documents and no index on the flag, in our testing) | None |
 | Extra query complexity | None | Every query filters the flag | Subscription and eviction scopes must be complementary |
 | Data sent to other devices (in our testing, 2,500 documents) | Small (about 43 bytes per document) | Small (about 28 bytes per document) | None, unless a subscription still matches: then every evicted document is downloaded again (1.35 MiB within 3 seconds) |
 
@@ -567,12 +570,16 @@ Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
 }
 ```
 
-**SQLite write-ahead log (SDK 5.2+)**: Ditto's store is built on SQLite, which writes changes to a write-ahead log (WAL) before folding them into the database file. On devices that run for weeks, this log could grow without bound. Since 5.2, Small Peers keep the WAL in check and reclaim free disk space automatically (system parameters `BACKEND_SQLITE3_ENABLE_WAL_SIZE_MONITOR` and `BACKEND_SQLITE3_ENABLE_INCREMENTAL_VACUUM_RECLAIM`, both on by default). If the WAL keeps growing past `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (1 GiB by default), Ditto logs a warning; the usual cause is a read transaction that stays open for a long time. The current size is in `system:system_info`:
+**SQLite write-ahead log (SDK 5.2+)**: Ditto's store is built on SQLite, which writes changes to a write-ahead log (WAL) before folding them into the database file. On devices that run for weeks, this log could grow without bound. Since 5.2, Small Peers keep the WAL in check and reclaim free disk space automatically (system parameters `BACKEND_SQLITE3_ENABLE_WAL_SIZE_MONITOR` and `BACKEND_SQLITE3_ENABLE_INCREMENTAL_VACUUM_RECLAIM`, both on by default). If the WAL keeps growing past `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (1 GiB by default), Ditto logs a warning; the usual cause is a read transaction that stays open for a long time. The current size is in `system:system_info`, where each key can appear several times with different timestamps (in our testing with 5.2.0, the WAL values were recorded about once a minute), so take the latest row of each key:
 
 ```sql
 -- wal_current_size_bytes, wal_peak_size_bytes, checkpoint_busy_percent, auto_vacuum
-SELECT key, value FROM system:system_info WHERE namespace = 'backend_sqlite3'
+SELECT key, value, timestamp FROM system:system_info
+WHERE namespace = 'backend_sqlite3'
+ORDER BY timestamp DESC
 ```
+
+Deleted and evicted data leaves free space inside the database files. Later writes reuse it, but the files shrink only when the automatic reclaim runs: by default only once the free space exceeds `BACKEND_SQLITE3_INCREMENTAL_VACUUM_THRESHOLD_BYTES` (100 MB), so `fs_usage_store` does not drop after you evict less than that. In our testing with SDK 5.2.0, evicting about 62 MB left the files at the same size; SDK 5.1.0 does not reclaim at all. Even a small store uses tens of megabytes: after a few thousand writes on SDK 5.1.0 and 5.2.0, the WAL of the document store and that of the attachment store (even with no attachments) each reached about 20 MB, and the attachment store's WAL remained after Ditto was closed.
 
 **❌ DON'T:**
 

@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.20
+> **Version**: 2.21
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1324,7 +1324,7 @@ class OrderRetention {
 
 **What this means:** Read storage usage and document counts from `system:system_info` with `execute`, for example from a diagnostics screen or a daily maintenance task. Use keys such as `fs_usage_total` and `collection_num_docs[...]`, and take the newest row for each key. Pair monitoring with a retention policy.
 
-**Why this matters:** The values are collected periodically, so they can lag behind recent writes. A long-lived observer on `system:system_info` fires often, even when nothing has changed: every 500 ms in SDK 5.1.0, and in our testing with SDK 5.2.0 about twice a second.
+**Why this matters:** The values are collected periodically, so they can lag behind recent writes. A long-lived observer on `system:system_info` fires often, even when nothing has changed: every 500 ms in SDK 5.1.0, and in our testing with SDK 5.2.0 about twice a second. Usage does not drop right after you evict: the freed space is reused by later writes, and SDK 5.2 shrinks the files only once the free space exceeds 100 MB by default.
 
 **Best-practices guide:** Monitoring Storage
 
@@ -1405,7 +1405,7 @@ ORDER BY c.name, o.total DESC
 
 **What this means:** Prefix important queries with `ADVISE` (SDK 5.1+) to get index suggestions. Copy the suggested `CREATE INDEX IF NOT EXISTS` statements into your startup code, and confirm the new plan with `EXPLAIN`. To measure where time is spent, use `PROFILE`. Never run `ADVISE AND PROVISION` from production code. On devices that still run SDK 5.1.0, do not create a suggested index that mixes `ASC` and `DESC` keys.
 
-**Why this matters:** `ADVISE` and `EXPLAIN` only plan the statement and never execute it, so neither can measure performance. `ADVISE AND PROVISION` creates indexes as a side effect, so which indexes exist would depend on whichever queries happened to run.
+**Why this matters:** `ADVISE` and `EXPLAIN` only plan the statement and never execute it, so neither can measure performance. `ADVISE AND PROVISION` creates indexes as a side effect, so which indexes exist would depend on whichever queries happened to run. A plan that uses an index is not always faster: in our testing with SDK 5.1.0 and 5.2.0, an index on a two-value status alone made a query on 100,000 documents slower than no index. Measure the time after adding an index.
 
 **Best-practices guide:** ADVISE (SDK 5.1+), EXPLAIN and PROFILE, Known Issues in SDK 5.1.0
 
@@ -1570,7 +1570,7 @@ Future<AttachmentFetcher?> showPhoto(Ditto ditto, String photoId) async {
 
 **What this means:** In production, always pass a `privateKey` to `DittoConfigConnectSmallPeersOnly`. Distribute the key through a controlled channel such as MDM or secure provisioning, and keep it and the offline license token in secure storage. Never hardcode keys, tokens, or API keys in source code.
 
-**Why this matters:** Without a key, peers do not authenticate each other: any device with the SDK, your Database ID, and a license token can join and read all data. The SDK also documents this mode as unencrypted. Peers with different keys, or a peer without a key, never connect, and only `WARN` logs show why. A key in an app binary can be extracted by decompiling the app. Shared-key mode has no per-user identity: every key holder has full access, and you cannot revoke individual devices.
+**Why this matters:** Without a key, peers do not authenticate each other: any device with the SDK, your Database ID, and a license token can join and read all data. The SDK also documents this mode as unencrypted. Peers with different keys, or a peer without a key, never connect, and only `WARN` logs show why. A key in an app binary can be extracted by decompiling the app. Shared-key mode has no per-user identity: every key holder has full access, and you cannot revoke individual devices. The offline license token's expiry is checked against the device clock when the token is set, so distribute a new token well before the old one expires.
 
 **Best-practices guide:** Small-Peers-Only Deployments
 

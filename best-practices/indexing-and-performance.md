@@ -80,6 +80,7 @@ Example output for the indexes created above:
 **❌ DON'T:**
 - Create indexes on demand right before a query; creation scans the collection.
 - Index every field "just in case".
+- Index a field with only a few distinct values (a boolean, a status with two or three values) on its own. The planner uses such an index, and it can be slower than no index: in our testing with SDK 5.1.0 and 5.2.0, `WHERE store = 's1' AND status = 'open'` on 100,000 documents took 90 ms without an index, 140 ms with an index on `status` alone, 21 to 27 ms with one on `store`, and 17 ms with a composite index on `(store, status)`. Put such fields after a selective key in a composite index, and measure the time after adding an index, not only the plan.
 - Rely on indexes when [strict mode](data-modeling.md#strict-mode) is enabled (see [Strict mode and data types](#strict-mode-and-data-types)).
 
 ```dart
@@ -129,7 +130,7 @@ The query planner chooses indexes by rules, not by statistics about your data. `
 | `_id = :id`, `_id IN :ids`, `USE IDS` | ID scan | No index needed |
 | `a = 1 OR b = 2` (both indexed) | Union scan | |
 | `a = 1 OR b = 2` (`b` not indexed) | **Collection scan** | Every `OR` branch must be indexable |
-| `a = 1 AND b = 2` (separate indexes) | Intersect scan | A composite index on `(a, b)` is generally better |
+| `a = 1 AND b = 2` (separate indexes) | Intersect scan | A composite index on `(a, b)` is generally better; in our testing, the intersect scan was slower than the more selective index alone, and its time varied widely with `LIMIT` |
 | `address.city = 'Tokyo'` (index on `address.city`) | Index scan | Index the full path you filter on |
 | `tags = ['x', 'y']` (index on `tags`) | Index scan | Whole-value match only |
 | `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan | Element lookups cannot use an index |

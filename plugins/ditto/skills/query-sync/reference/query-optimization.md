@@ -112,7 +112,7 @@ The planner chooses indexes by rules, not data statistics. `EXPLAIN` shows these
 | `_id = :id`, `_id IN :ids`, `USE IDS` | ID scan, no index needed |
 | `a = 1 OR b = 2` with both indexed | Union scan |
 | `a = 1 OR b = 2` with `b` not indexed | Collection scan: every `OR` branch must be indexable |
-| `a = 1 AND b = 2` with separate indexes | Intersect scan; a composite index on `(a, b)` is generally better |
+| `a = 1 AND b = 2` with separate indexes | Intersect scan; a composite index on `(a, b)` is generally better (in testing, slower than the more selective index alone) |
 | `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan |
 | `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan |
 
