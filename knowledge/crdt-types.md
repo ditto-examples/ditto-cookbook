@@ -34,11 +34,11 @@ Ditto's [CRDT documentation](https://docs.ditto.live/key-concepts/syncing-data#c
 - **COUNTER.** Increments and decrements from every device are combined. Concurrent `RESTART` operations resolve by last-writer-wins. A `RESTART` also discards every increment that the restarting device had not yet received, even increments made later by the clock (see [RESTART](../best-practices/data-modeling.md#restart)).
 - **Consistency guarantee.** Ditto guarantees causal consistency across documents and collections within the same database.
 
-Because a MAP merges at every level, a single document can hold many independently editable sub-entities. Nesting carries no special performance penalty; CRDT maps work the same way at every level.
+Because a MAP merges at every level, a single document can hold many independently editable sub-entities: maps merge the same way at every level of nesting. Nesting depth is limited, though, and very deep documents fail in other ways (see [Nesting depth is limited differently for arguments, literals, and paths](documents-and-limits.md#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)).
 
 ## What concurrent edits produce
 
-The table shows how two devices' edits to the same document merged in our testing with SDK 5.1.0 and 5.2.0 (the results were identical on both releases unless a row says otherwise). Both devices were offline when they wrote, and they synced afterwards. Every result was the same on both devices and did not depend on which device wrote first unless the table says so. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
+The table shows how two devices' edits to the same document merged in our testing with SDK 5.1.0 and 5.2.0 (see [The merge table held on SDK 5.1.0 and 5.2.0](merge-behavior.md#the-merge-table-held-on-sdk-510-and-520) for the setup and further cases). Both devices were offline when they wrote, and they synced afterwards. The results were the same on both releases and on both devices, and did not depend on which device wrote first, unless a row says otherwise. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
 
 | Device A | Device B | Result after sync |
 |---|---|---|
@@ -59,25 +59,17 @@ The table shows how two devices' edits to the same document merged in our testin
 | Adds a 3 MiB field | Adds another 3 MiB field | On 5.1.0, a 6 MiB document on both devices, above the hard limit, which no `UPDATE` can change. On 5.2.0, each device keeps only its own field, and updates of the document stop (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)) |
 | `INSERT ... INITIAL DOCUMENTS` | Same `_id`, different content | Fields are combined; a field both set is decided by its value, not by time (see [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents)) |
 
-Further observations, also with SDK 5.1.0 and 5.2.0:
+Further results of the same kind:
 
-- **The later write wins by when it was written, not when it arrived.** A device whose offline write was older did not overwrite a newer write when it reconnected after it; its own change lost instead (see [The later write wins by when it was written, not when it arrived](merge-behavior.md#the-later-write-wins-by-when-it-was-written-not-when-it-arrived)).
-- **Values written together in a transaction still merge field by field with other devices' edits.** One device wrote `amount = 15000` and `currency = 'JPY'` in a transaction, and another later wrote `amount = 120`: the result was `120 JPY`. Keep values that must change together in one object declared as `REGISTER` (see [Fields written in one transaction still merge field by field](merge-behavior.md#fields-written-in-one-transaction-still-merge-field-by-field)).
-- **A long text field keeps only one edit.** Two devices edited different paragraphs of the same string, and only the later edit survived; with the paragraphs in a map (`paragraphs.p1`, `paragraphs.p2`), both survived. There is no character-level merge (see [Fields written in one transaction still merge field by field](merge-behavior.md#fields-written-in-one-transaction-still-merge-field-by-field)).
-- **The recommended shapes hold with more devices.** With three devices writing offline at the same time, a counter, a map keyed by ID, and an audit log keyed by event kept every device's changes, and an array kept one device's version (see [With three offline devices, counters and maps keep every change](merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)).
-- **Concurrent writes converge.** In a randomized test, four or five devices applied type changes, map and array edits, counter operations, deletions, and upserts to the same documents while offline, online, partly connected, or reconnecting, also with SDK 5.0.3, 5.1.0, and 5.2.0 mixed. In all 396 rounds, every device ended with the same documents, and no counter increment or latest write was lost (see [A randomized merge test always converged](merge-behavior.md#a-randomized-merge-test-always-converged)).
+- **The later write wins by when it was written, not when it arrived.** An older offline write that reaches the other devices later does not overwrite a newer one (see [The later write wins by when it was written, not when it arrived](merge-behavior.md#the-later-write-wins-by-when-it-was-written-not-when-it-arrived)).
+- **Values written together in a transaction still merge field by field** with other devices' edits, so an amount and its currency can end up from different devices. Keep values that must change together in one object declared as `REGISTER` (see [Fields written in one transaction still merge field by field](merge-behavior.md#fields-written-in-one-transaction-still-merge-field-by-field)).
+- **A long text field keeps only one edit.** There is no character-level merge: two devices that edit different paragraphs of one string keep only the later edit, while paragraphs stored as map entries both survive (same entry).
+- **The recommended shapes hold with more devices**: counters, maps keyed by ID, and audit logs kept every change from three offline devices, while an array kept one device's version (see [With three offline devices, counters and maps keep every change](merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)).
+- **Concurrent writes converge**: in a randomized test with four or five devices, also on mixed SDK releases, every device always ended with the same documents (see [A randomized merge test always converged](merge-behavior.md#a-randomized-merge-test-always-converged)).
 
 ## Writing a value that did not change
 
-A write records a value with a new timestamp even when the value is the same as before, so it wins over an earlier concurrent edit of that field on another device. In our testing with SDK 5.1.0 and 5.2.0, the document `{f1: 'old', f2: 'x'}` was on two devices. Device B, offline, set `f1 = 'B-edit'`. Afterwards device A, which still held `f1: 'old'`, changed `f2`. After sync, `f1` was: The full observation is in [Rewriting an unchanged value overwrites concurrent edits](merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits).
-
-| How device A wrote | `f1` after sync |
-|---|---|
-| The whole document with `ON ID CONFLICT DO UPDATE` | `'old'`: B's edit was lost |
-| `UPDATE ... SET f1 = 'old', f2 = :value` (`f1` unchanged) | `'old'`: B's edit was lost |
-| The whole document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` | `'B-edit'` |
-| `UPDATE ... SET f2 = :value` | `'B-edit'` |
-| A copy read before B's edit arrived, written with `DO UPDATE_LOCAL_DIFF` after it arrived | `'old'`: B's edit was lost, because the stale value differed from the local one |
+A write records a value with a new timestamp even when the value is the same as before, so it wins over an earlier concurrent edit of that field on another device. Writing a whole document with `ON ID CONFLICT DO UPDATE`, or setting a field to the value it already has, therefore overwrites what another device changed in the meantime. `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` and an `UPDATE` of only the changed fields keep the other device's edit, unless the values come from a copy read before that edit arrived (see [Rewriting an unchanged value overwrites concurrent edits](merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
 
 Write only the fields that the user changed, and never write back values from a copy that may be stale (see [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites)). Counters are the exception to "the latest write wins": a value written into a counter restarts it (see [Writing documents that contain counters](../best-practices/data-modeling.md#writing-documents-that-contain-counters)).
 
@@ -89,22 +81,19 @@ Changes sync as compressed field-level differences whichever way they were writt
 
 ## Reordering on two devices
 
-Entries of a map have no order, so an app that lets users reorder a list stores a `position` in each entry and sorts by it. Each `position` is a register, so which positions a reorder writes decides what survives a concurrent reorder on another device. In our testing with SDK 5.0.3, 5.1.0, and 5.2.0, five entries a, b, c, d, e had consecutive positions (b, c, and d at 2, 3, and 4). Two offline devices reordered them, device A moving e to the top and device B, about 50 ms later, moving a to the end:
+Entries of a map have no order, so an app that lets users reorder a list stores a `position` in each entry and sorts by it. Each `position` is a register, so which positions a reorder writes decides what survives a concurrent reorder on another device (see [Reordering on two offline devices keeps both moves only with gap positions](merge-behavior.md#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions)):
 
-| How the devices wrote | Order after sync | Result |
-|---|---|---|
-| Both renumbered every entry (0 to 4) | b c d e a | Only B's order survived; A's move was lost |
-| A renumbered every entry; B added f after b and renumbered only the entries that shifted | a b f c d e (b and f both 2) | A's move was lost, and the positions mixed both devices' numbers |
-| Each wrote only the moved entry, with a value between its new neighbors (e: 0.5, a: 5.5) | e b c d a | Both moves survived |
-| Both moved the same entry c, to 0.5 and to 5.5 | a b d e c | The later write decided; no duplicate |
-| Both inserted an entry into the same gap, with the same value 2.5 | a b f g c d e (f and g both 2.5) | Both survived; their order depends on how the app sorts equal positions |
-| The order was an array; A moved e to the top, B appended f | a b c d e f | B's array replaced A's |
+- **Renumbering every entry** overwrites the other device's reorder: only the order written later survives.
+- **Writing only the moved entry**, with a value between its new neighbors (such as `0.5` to move an entry above the one at `1`), keeps both devices' moves.
+- **Moving the same entry on two devices** leaves it where the later write put it, without a duplicate. Two entries inserted into the same gap with the same value both survive, in an order that depends on how the app sorts equal positions.
+- **An order kept in an array** is one register: the later array replaces the other.
+- **Values between neighbors run out** when entries keep being inserted into the same gap: halving a gap of 1 gave about 50 distinct values.
 
-Midpoints run out: inserting each new entry halfway between b (2) and the entry after it produced 51 distinct values, and the 52nd equaled 2. Positions kept their exact double values through sync (see [Reordering on two offline devices keeps both moves only with gap positions](merge-behavior.md#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions)). See [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps) for the rules.
+See [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps) for the rules.
 
 ## Conditions and arithmetic across devices
 
-Devices sync the effects of statements (changed documents), not the statements themselves, and each device evaluates conditions against the documents it has at that moment. In our testing with SDK 5.1.0 and 5.2.0:
+Devices sync the effects of statements (changed documents), not the statements themselves, and each device evaluates conditions against the documents it has at that moment:
 
 - **A conditional update is not a lock.** Two offline devices both ran `UPDATE tasks SET status = 'assigned', assignee = :me WHERE _id = 't1' AND status = 'open'`, and each statement changed one document, so each device concluded that it had claimed the task. After sync, only one assignee remained, and the other device's claim disappeared without notice. Claims written to a map keyed by device (`claims.A`, `claims.B`) both survived, so that every device can pick the winner by the same rule (the earliest time, then the smallest ID) (see [Conditional updates on two offline devices both succeed](merge-behavior.md#conditional-updates-on-two-offline-devices-both-succeed)).
 - **A bulk update covers only the documents the device has.** One device ran `UPDATE orders SET status = 'closed' WHERE status = 'open' AND day <= 2` while another, offline, inserted a matching order. After sync, that order was still open. Run closing jobs and migrations where every change has arrived (for example on Ditto Server, afterwards), or evaluate the condition when reading (see [UPDATE changes only the documents that the writing device holds](merge-behavior.md#update-changes-only-the-documents-that-the-writing-device-holds)).
@@ -128,7 +117,7 @@ Several MAP behaviors differ from what developers expect from a JSON document st
 - Update individual fields with `UPDATE ... SET obj.field = :value`.
 - Remove keys explicitly with `UNSET`.
 - Read replaced or removed objects defensively: a key that another device added concurrently can remain with the value `null` (see the table above).
-- When an object must be replaced as a whole, either declare it as a register (`COLLECTION orders (shippingAddress REGISTER)`) or run `UNSET` followed by `SET` in one transaction. Only the register guarantees that concurrent edits never mix two versions: with `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object. It can even bring back a key that the replacement removed: in our testing, replacing `{street, city, zip}` with `{street, city}` while another device set `zip` kept `zip`.
+- When an object must be replaced as a whole, either declare it as a register (`COLLECTION orders (shippingAddress REGISTER)`) or run `UNSET` followed by `SET` in one transaction. Only the register guarantees that concurrent edits never mix two versions: with `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object. It can even bring back a key that the replacement removed: in our testing, replacing `{street, city, zip}` with `{street, city}` while another device set `zip` kept `zip`, with the value `null` (see [A key added concurrently survives a later removal as null](merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null)).
 
 **❌ DON'T:**
 - Assume `SET obj = {...}` or `ON ID CONFLICT DO UPDATE` removes keys that you left out.

@@ -10,6 +10,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 - Changes of TCP targets and listeners take effect while sync runs, a lost connection is retried at `connect.retryInterval` (5 seconds by default in JavaScript), and a device that only connects also listens for TCP on all interfaces ([TCP targets and listeners change while sync runs](#tcp-targets-and-listeners-change-while-sync-runs), [A lost TCP connection is retried at the retry interval](#a-lost-tcp-connection-is-retried-at-the-retry-interval), [A device that only connects also listens for TCP connections](#a-device-that-only-connects-also-listens-for-tcp-connections)).
 - A network that goes silent removes the peer from presence after about 7.3 seconds, and a suspended process after about 9.1 seconds. Until a stalled connection is dropped, sync waits on it, even when another connection to the same peer works ([A silent network outage removes a peer after about 7 seconds](#a-silent-network-outage-removes-a-peer-after-about-7-seconds), [A suspended device leaves the presence graph after about 9 seconds](#a-suspended-device-leaves-the-presence-graph-after-about-9-seconds), [Each device sends over one of two connections and waits when it stalls](#each-device-sends-over-one-of-two-connections-and-waits-when-it-stalls)).
 - Presence callbacks arrive about once per second, the graph includes indirect peers and all of their connections, and a peer in the graph is not necessarily up to date ([Presence reports a joining peer after about 1.2 seconds](#presence-reports-a-joining-peer-after-about-12-seconds), [The presence graph includes indirect peers and all of their connections](#the-presence-graph-includes-indirect-peers-and-all-of-their-connections), [Slow links keep the connection and the presence entry](#slow-links-keep-the-connection-and-the-presence-entry)).
+- The presence graph shows each peer's `dittoSdkVersion`, also across SDK releases, which identifies the devices that still run an older release ([Presence shows each peer's SDK version](#presence-shows-each-peers-sdk-version)).
 - Peer metadata is replaced, not merged, reaches other peers about once per second, and is sent to every device whenever a device joins or changes it ([Peer metadata is replaced, not merged, and the device name is read when sync starts](#peer-metadata-is-replaced-not-merged-and-the-device-name-is-read-when-sync-starts), [Peer metadata changes reach other peers about once per second](#peer-metadata-changes-reach-other-peers-about-once-per-second), [Presence traffic grows faster than the number of devices](#presence-traffic-grows-faster-than-the-number-of-devices)).
 - A denied peer retries at its retry interval. Peers connect only when their shared keys match, and traffic without a key is TLS-wrapped but not authenticated ([A denied peer retries at the retry interval](#a-denied-peer-retries-at-the-retry-interval), [Shared keys must match, and traffic is TLS-wrapped without a key](#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key)).
 
@@ -323,7 +324,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - The callback ran once right after registration (0 ms), and then about every second during the first few seconds, even without changes. Callbacks arrive at intervals of about 1 second.
 - A joining peer was reported after 1.16 to 1.19 seconds in all three runs. A peer that left: after about 1.0 second in all three runs on 5.1.0; after 1 ms, 1 ms, and 1.0 second on 5.2.0.
 - Even when nothing changes, the observer is called about every 15 seconds. With 4 and 7 devices watched for 60 seconds, after the callback right after registration, it was called four times, from about 11 seconds on, 15.0 seconds apart (the same on 5.1.0 and 5.2.0; 7 devices on 5.2.0 only). Each graph was identical to the previous one: the peer keys, connections, metadata, and `deviceName`.
-- The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](transactions-and-observers.md#differ-reports-every-shifted-item-as-a-move) and [ANY over a parameter array broke in 5.1.0, and the multi-property issue was 5.1.0 only](dql-behavior.md#any-over-a-parameter-array-broke-in-510-and-the-multi-property-issue-was-510-only).
+- The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](observer-behavior.md#differ-reports-every-shifted-item-as-a-move) and [ANY over a parameter array broke in 5.1.0, and the multi-property issue was 5.1.0 only](dql-behavior.md#any-over-a-parameter-array-broke-in-510-and-the-multi-property-issue-was-510-only).
 
 **Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Diffing Results](../best-practices/observers.md#diffing-results), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership).
 
@@ -344,6 +345,18 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - Two devices that connect to each other (both listen and list the other in `connect.tcpServers`) had one connection in presence, whose ID is determined by the two devices, but two in `system:transport_connections`, one with `side` `server` and one with `client`. With four devices all connected to each other, presence showed 6 connections, and device 0 had 4 to 5 TCP connections.
 
 **Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
+
+### Presence shows each peer's SDK version
+
+| | |
+|---|---|
+| Observed on | Three pairs of releases, one run each: 5.0.3 with 5.2.0, 5.1.0 with 5.2.0, and 5.2.0 with 5.1.0 |
+| Setup | Two peers on different releases, each in its own process, each with peer metadata set. We read the other peer in each peer's presence graph |
+
+- In every pair, the presence graph showed the other peer's `dittoSdkVersion` (`5.0.3`, `5.1.0`, or `5.2.0`), `os`, and `isCompatible` (`true`), and the peer metadata that the other peer had set arrived.
+- During a rollout, `dittoSdkVersion` therefore identifies the devices that still run an older release.
+
+**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Mixed Releases](upgrading.md#mixed-releases).
 
 ### Presence and sync work across a chain of 20 devices
 

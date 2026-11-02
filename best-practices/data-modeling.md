@@ -419,7 +419,7 @@ Ditto enforces two thresholds on the **size of each stored document**:
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | The write succeeds and a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below). SDK 5.0.3 did not check the limit in our testing (see [SDK 5.0.3 differs in the size limit, constant comparisons, and defaults](../knowledge/dql-behavior.md#sdk-503-differs-in-the-size-limit-constant-comparisons-and-defaults)) |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below). SDK 5.0.3 did not check the limit in our testing (see [SDK 5.0.3 does not check the hard size limit when a document is written](../knowledge/documents-and-limits.md#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)) |
 
 Log and error messages:
 

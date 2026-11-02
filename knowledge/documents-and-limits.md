@@ -1,11 +1,12 @@
 # Documents and Limits
 
-What happens at the edges of a document: a merge that pushes a document over the hard size limit, how heavy a document becomes when many devices have written it, how deep a document can nest, and what many top-level fields or many collections cost. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [Flat or nested](../best-practices/data-modeling.md#flat-or-nested), and [DQL Fundamentals](../best-practices/dql.md#dql-fundamentals).
+What happens at the edges of a document: a merge that pushes a document over the hard size limit, also between SDK releases, how heavy a document becomes when many devices have written it, how deep a document can nest, and what many top-level fields or many collections cost. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [Flat or nested](../best-practices/data-modeling.md#flat-or-nested), and [DQL Fundamentals](../best-practices/dql.md#dql-fundamentals).
 
 **In brief**
 
 - When two devices together push a document over the hard size limit, SDK 5.1.0 stores the combined document and can no longer update it, while SDK 5.2.0 drops the change, so each device keeps its own version ([On SDK 5.2.0, an oversized merge leaves devices with different versions](#on-sdk-520-an-oversized-merge-leaves-devices-with-different-versions)).
 - On 5.2.0, updates of such a document stop in both directions until one device evicts it, and that device loses its own changes to the document ([An oversized document stops syncing until one side evicts it](#an-oversized-document-stops-syncing-until-one-side-evicts-it)).
+- With releases mixed, an oversized merge ends differently on each device, and SDK 5.0.3 does not check the hard limit when a document is written ([An oversized merge ends differently on each release](#an-oversized-merge-ends-differently-on-each-release), [SDK 5.0.3 does not check the hard size limit when a document is written](#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)).
 - A document grows with the number of devices that ever wrote it, also when they all wrote the same field and only one value remains: with 300 writers, the first sync was about 11 times and each later change 6 to 13 times as heavy ([A document grows with the number of devices that wrote it](#a-document-grows-with-the-number-of-devices-that-wrote-it)).
 - An argument can nest 125 levels and a literal 97 levels, while `UPDATE` paths can build much deeper documents ([Nesting depth is limited differently for arguments, literals, and paths](#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)).
 - Documents 800 or more levels deep ended a peer's process during sync on 5.1.0 and 5.2.0, and 5.0.3 cannot read a collection that holds a document 30 or more levels deep ([Very deep documents end a peer's process during sync](#very-deep-documents-end-a-peers-process-during-sync)).
@@ -50,6 +51,31 @@ On 5.2.0:
 On 5.1.0:
 
 - Both devices held the 6 MiB document, and `UPDATE` failed on A and on B. After B evicted the document, it received the 6 MiB document again, and `UPDATE` kept failing. On 5.1.0, recovering takes an `UNSET` that removes enough data.
+
+**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
+
+### An oversized merge ends differently on each release
+
+| | |
+|---|---|
+| Observed on | Three pairs of releases, one run each: 5.2.0 with 5.1.0, 5.1.0 with 5.2.0 (the same two releases in the other order), and 5.0.3 with 5.2.0 |
+| Setup | Two peers on different releases, each in its own process. Each peer added 3 MiB to the same document, so that the merged document would be 6 MiB, over the hard size limit of 5 MiB |
+
+- **5.1.0 and 5.2.0**: the 5.1.0 peer held the 6 MiB document that combined both 3 MiB parts, and a later `UPDATE` of it failed. The 5.2.0 peer kept only its own part and listed the document in `system:sync_degradations` with `documentTooBig`.
+- **5.0.3 and 5.2.0**: the 5.0.3 peer held the 6 MiB document, and **a later `UPDATE` of it succeeded**. 5.0.3 does not check the hard limit when a document is written (see [SDK 5.0.3 does not check the hard size limit when a document is written](#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)).
+
+**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [Mixed Releases](upgrading.md#mixed-releases).
+
+### SDK 5.0.3 does not check the hard size limit when a document is written
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each, and 5.0.3, one run |
+| Setup | One device without sync. A document with a 3 MiB field, then an `UPDATE` that adds a second 3 MiB field, and an `INSERT` of a new 6 MiB document; then the stored document was read |
+
+- **5.1.0 and 5.2.0**: the `UPDATE` failed with `Update failed: <store> Document _id = "big" size is 6291697 bytes and exceeds limit of 5242880 bytes`, and the `INSERT` with the same message for the new document. The stored document kept only its first field.
+- **5.0.3**: both writes succeeded, and the stored document held both 3 MiB fields. The parameter `DOCUMENT_SIZE_HARD_LIMIT_BYTES` exists on 5.0.3, but with every value we set, a 500 KB document could still be written (see [The documented parameter defaults match SHOW ALL](configuration-and-diagnostics.md#the-documented-parameter-defaults-match-show-all)).
+- This is probably also why a peer on 5.0.3 could update a 6 MiB document in [An oversized merge ends differently on each release](#an-oversized-merge-ends-differently-on-each-release).
 
 **Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
 
@@ -155,6 +181,8 @@ Bytes for the first sync and for one change made on the hub:
 - The time grows faster than the number of top-level fields.
 - `object_size` was about 689 KB for both shapes of the 50,000 fields, and the arguments were of the same size, so the difference lies in how the SDK handles top-level fields.
 - With 50,000 top-level fields, a read took about 14 ms, and an `UPDATE` of one field about 17 ms.
+
+**Used in:** none yet.
 
 ### Each new collection makes the first write to a collection slower
 

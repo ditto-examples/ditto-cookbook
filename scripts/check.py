@@ -12,8 +12,10 @@ Checks:
   heading of the guide
 - every section that a checklist item names under "Best-practices guide" is
   a heading of the guide
-- every line of the best practices that reports an observation ("in our
-  testing") links to the knowledge entry that describes it
+- every line of the guide that reports an observation ("in our testing")
+  outside the knowledge entry that describes it links to that entry
+- every knowledge entry of an observation (a section with an "Observed on"
+  row) has a "Setup" row and a "Used in" line
 - every relative link in the repository's Markdown files points to an
   existing file, and every #anchor to an existing heading (GitHub anchors)
 - audit/reference/scanner-rules.md matches `scan.py --list-rules`
@@ -66,7 +68,8 @@ OBSERVATION = re.compile(r"\bin (?:our )?testing\b", re.IGNORECASE)
 OBSERVED_ON = "| Observed on |"
 # The phrase itself, quoted, as when a page explains what it means.
 QUOTED_PHRASE = re.compile(r'"in (?:our )?testing"', re.IGNORECASE)
-KNOWLEDGE_LINK = re.compile(r"\]\(\.\./knowledge/([^)#\s]+\.md)(?:#([^)\s]+))?\)")
+SETUP = "| Setup |"
+USED_IN = "**Used in:**"
 
 
 # --- Markdown -----------------------------------------------------------------
@@ -216,46 +219,81 @@ def check_checklist_sections(checklist: Path, headings: set[str], root: Path) ->
 
 
 
-def observation_anchors(text: str) -> set[str]:
-    """Anchors of the knowledge headings whose section has an "Observed on" table row."""
-    found: set[str] = set()
+def observation_sections(text: str) -> list[tuple[int, str, list[tuple[int, str]]]]:
+    """The sections of a page that are observation entries: line number, anchor, and lines.
+
+    A section runs from a heading to the next heading of any level. It is an
+    observation entry when one of its lines is an "Observed on" table row.
+    """
+    sections: list[tuple[int, str, list[tuple[int, str]]]] = []
     seen: set[str] = set()
-    current = ""
-    for _, line in prose_lines(text):
+    current: tuple[int, str, list[tuple[int, str]]] | None = None
+    for number, line in prose_lines(text):
         match = HEADING.match(line)
         if match:
-            base = current = slugify(match.group(1))
+            base = anchor = slugify(match.group(1))
             count = 0
-            while current in seen:
+            while anchor in seen:
                 count += 1
-                current = f"{base}-{count}"
-            seen.add(current)
-        elif current and line.startswith(OBSERVED_ON):
-            found.add(current)
-    return found
+                anchor = f"{base}-{count}"
+            seen.add(anchor)
+            current = (number, anchor, [])
+            sections.append(current)
+        elif current:
+            current[2].append((number, line))
+    return [section for section in sections
+            if any(line.startswith(OBSERVED_ON) for _, line in section[2])]
+
+
+def observation_anchors(text: str) -> set[str]:
+    """Anchors of the knowledge headings whose section has an "Observed on" table row."""
+    return {anchor for _, anchor, _ in observation_sections(text)}
 
 
 def check_observation_links(pages: list[Path], knowledge_pages: list[Path], root: Path) -> list[str]:
     """Lines that report an observation ("in our testing") must link to its knowledge entry.
 
-    The best practices summarize observations; the knowledge pages describe
-    each one in an entry with an "Observed on" table. A link qualifies when it
-    names such an entry, or a knowledge page that has entries. Paragraphs,
-    list items, and table rows are single lines.
+    The knowledge pages describe each observation in an entry with an
+    "Observed on" table; every other line of the guide that reports one (in
+    the best practices, and on the concept and reference pages of knowledge)
+    summarizes it and links to the entry. A link qualifies when it names such
+    an entry, or a knowledge page that has entries. Lines inside an entry are
+    the observation itself. Paragraphs, list items, and table rows are single
+    lines.
     """
-    observations = {page.name: observation_anchors(page.read_text(encoding="utf-8"))
+    observations = {page.resolve(): observation_anchors(page.read_text(encoding="utf-8"))
                     for page in knowledge_pages}
     errors = []
     for page in pages:
-        for number, line in prose_lines(page.read_text(encoding="utf-8")):
+        text = page.read_text(encoding="utf-8")
+        inside = {number for _, _, lines in observation_sections(text) for number, _ in lines}
+        for number, line in prose_lines(text):
             prose = QUOTED_PHRASE.sub("", INLINE_CODE.sub("code", line))
-            if not OBSERVATION.search(prose):
+            if number in inside or not OBSERVATION.search(prose):
                 continue
-            linked = any(observations.get(name) and (not anchor or anchor in observations[name])
-                         for name, anchor in KNOWLEDGE_LINK.findall(line))
-            if not linked:
+            if not any(links_to_observation(page, target, observations)
+                       for _, target in parse_links(line)):
                 errors.append(f"{page.relative_to(root)}:{number}: an observation without a link "
                               "to the knowledge entry that describes it")
+    return errors
+
+
+def links_to_observation(page: Path, target: str, observations: dict[Path, set[str]]) -> bool:
+    path, _, anchor = unquote(target).partition("#")
+    if SCHEME.match(path):
+        return False
+    anchors = observations.get((page.parent / path).resolve() if path else page.resolve())
+    return bool(anchors) and (not anchor or anchor in anchors)
+
+
+def check_observation_entries(knowledge_pages: list[Path], root: Path) -> list[str]:
+    """Every observation entry has a "Setup" row and a "Used in" line ("none yet" if unused)."""
+    errors = []
+    for page in knowledge_pages:
+        for number, _, lines in observation_sections(page.read_text(encoding="utf-8")):
+            for mark, name in ((SETUP, "Setup row"), (USED_IN, "Used in line")):
+                if not any(line.startswith(mark) for _, line in lines):
+                    errors.append(f"{page.relative_to(root)}:{number}: the observation entry has no {name}")
     return errors
 
 
@@ -332,8 +370,9 @@ def main() -> int:
     pages = guide_pages(ROOT)
     headings = guide_headings(pages)
     errors += check_unique_headings(pages, ROOT)
-    errors += check_observation_links([p for p in pages if p.parent.name == "best-practices"],
-                                      [p for p in pages if p.parent.name == "knowledge"], ROOT)
+    knowledge_pages = [p for p in pages if p.parent.name == "knowledge"]
+    errors += check_observation_links(pages, knowledge_pages, ROOT)
+    errors += check_observation_entries(knowledge_pages, ROOT)
     for skill in sorted(p.parent for p in SKILLS.glob("*/SKILL.md")):
         skill_errors, skill_warnings = check_skill(skill, headings)
         errors += skill_errors

@@ -5,7 +5,7 @@ description: Searches the complete Ditto SDK best practices guide (SDK 5.2.0) bu
 
 # Ditto Best Practices Guide
 
-The full guide (SDK 5.2.0, about 12,300 lines in 37 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works, the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary), and the observations from our testing with their numbers. Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
+The full guide (SDK 5.2.0, about 12,400 lines in 38 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works, the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary), and the observations from our testing with their numbers. Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
 
 ## How to Search
 
@@ -42,8 +42,8 @@ Knowledge, in `reference/knowledge/`:
 
 | Page | Covers |
 |---|---|
-| `understanding-ditto.md` | What Ditto is, key characteristics, terminology, core principles |
-| `crdt-types.md` | CRDT types, how values are typed, merge semantics, what concurrent edits produce, rewriting an unchanged value, what syncs after offline edits, reordering on two devices, local write semantics |
+| `understanding-ditto.md` | What Ditto is, key characteristics, core principles |
+| `crdt-types.md` | CRDT types, how values are typed, merge semantics, what concurrent edits produce, rewriting an unchanged value, what syncs after offline edits, reordering on two devices, conditions across devices, local write semantics, choosing a type |
 | `dql-functions.md` | Date and time, conditional, type checking, string, object, array, ANY/EVERY, conversion functions |
 | `system-reference.md` | System virtual collections, system parameters reference |
 | `platform-differences.md` | API differences between Flutter, JavaScript, Swift, and Kotlin |
@@ -55,16 +55,17 @@ Observations from our testing, in `reference/knowledge/`, one entry per observat
 | Page | Covers |
 |---|---|
 | `how-we-tested.md` | The test environment and its limits, how to read the results, the checks of the guide |
-| `subscriptions-and-replication.md` | What subscriptions deliver, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, sync status |
+| `subscriptions-and-replication.md` | What subscriptions deliver, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, the list of subscriptions, sync status |
 | `connections-and-presence.md` | The TCP connection limit, meshes, WebSocket hubs, retries, detecting lost connections, presence, peer metadata, accepting connections, shared keys |
-| `merge-behavior.md` | Concurrent edits, conditional updates, read-modify-write, reordering, renaming, counters |
+| `merge-behavior.md` | Concurrent edits, also between SDK releases, conditional updates, read-modify-write, reordering, renaming, counters |
 | `clocks-and-time.md` | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |
 | `storage-and-deletion.md` | Soft delete, tombstones and reaping, eviction, disk space, the write-ahead log, deleted data on disk |
-| `documents-and-limits.md` | The hard size limit across devices, document weight, nesting depth, many fields and collections |
+| `documents-and-limits.md` | The hard size limit across devices and releases, document weight, nesting depth, many fields and collections |
 | `persistence-directory.md` | Copies of a directory, Database IDs, deleting parts of a directory, locks |
-| `dql-behavior.md` | Statements that held, writes and arguments, comparison and ordering, IDs and field names, type declarations, limits, SDK 5.0.3 differences |
+| `dql-behavior.md` | Statements that held, writes and arguments, `USE IDS`, comparison and ordering, IDs and field names, indexes and query plans (SDK 5.1.0 issues, migration), long conditions and `ANY`, SDK 5.0.3 differences |
 | `performance-measurements.md` | Statements and write rates, queries and indexes, memory, hub load |
-| `transactions-and-observers.md` | Concurrency and reads, transactions in JavaScript, closing, when observers fire |
+| `transaction-behavior.md` | Concurrency and reads, long transactions, transactions in JavaScript, closing Ditto in JavaScript |
+| `observer-behavior.md` | When observers fire, batching of changes, observers of `system:` collections, release differences, observers and results in JavaScript |
 | `attachment-behavior.md` | Relaying and fetching attachments, slow links, garbage collection of blobs |
 | `configuration-and-diagnostics.md` | Parameter defaults, environment variables, the offline license token, request diagnostics, logs |
 

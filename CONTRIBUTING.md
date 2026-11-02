@@ -30,9 +30,11 @@ A change to the guide is complete only when the derived content agrees with it. 
 
 Observations from testing flow in one direction: test → `knowledge/` → `best-practices/` → Skills and checklist.
 
-1. **Record the observation in `knowledge/`.** Add an entry to the observation page for its topic, in the format of the existing entries: a heading that states the behavior; a table with "Observed on" (the SDK releases and the number of runs), "Setup", and, when Ditto's documentation or release notes describe the behavior, "Documentation"; the results with every number, separately for each release; "Not tested"; and "Used in". [How We Tested](knowledge/how-we-tested.md) describes the environment that all entries share.
+1. **Record the observation in `knowledge/`.** Add an entry to the observation page of the part of Ditto that it concerns ([Where an observation belongs](knowledge/README.md#where-an-observation-belongs)), in the format of the existing entries ([Reading an observation](knowledge/README.md#reading-an-observation)): a heading that states the behavior; a table with "Observed on" (the SDK releases and the number of runs), "Setup", and, when Ditto's documentation or release notes describe the behavior, "Documentation"; the results with every number, separately for each release; "Not tested"; and "Used in" ("none yet" until a section uses it). Write one entry per finding: when one test shows two things that different sections use, or that hold on different releases, write two entries. A result on another release belongs in the entry for the same behavior. [How We Tested](knowledge/how-we-tested.md) describes the environment that all entries share.
 2. **Derive the rule in `best-practices/`.** State what to do, give the reason in a sentence or two with only the numbers that the rule needs, label release-specific behavior with **Note (SDK ...)**, and link to the knowledge entry for the evidence.
 3. **Propagate the rule** to the Skills and the checklist (see [Synchronizing a Change to the Guide](#synchronizing-a-change-to-the-guide)).
+
+The setup, the numbers, and the number of runs of an observation appear only in its entry. Every other page that reports it, in `best-practices/` and on the concept and reference pages of `knowledge/`, states it in a sentence or two and links to the entry; `scripts/check.py` reports a line with "in our testing" that has no such link, and an entry without "Setup" or "Used in".
 
 When new material both explains a behavior and recommends a pattern, put the recommendation in `best-practices/` and link to the explanation in `knowledge/`. Keep each page readable on its own, and follow the conventions in [How to Use This Guide](best-practices/README.md#how-to-use-this-guide), such as the **Note (SDK ...)** labels.
 
@@ -92,7 +94,7 @@ Edit the Markdown and JSON sources and rebuild the HTML, as described in [checkl
 Run these from the repository root before you finish a change to the guide, the Skills, or the checklist:
 
 ```bash
-python3 scripts/check.py                  # guide headings, Skill format and citations, checklist sections, links and anchors, scanner rules
+python3 scripts/check.py                  # guide headings and observation links, Skill format and citations, checklist sections, links and anchors, scanner rules
 claude plugin validate . --strict         # plugin and marketplace manifests
 ```
 

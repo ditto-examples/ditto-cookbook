@@ -129,7 +129,7 @@ The re-evaluation reads the whole collection on each peer that holds the data, a
 **❌ DON'T:**
 - Register subscriptions in `build()` or on every screen visit.
 - Re-register a subscription with new arguments whenever the user changes a filter, search term, or sort order.
-- Drop the reference to a subscription without cancelling it. Always release these objects explicitly; do not rely on garbage collection to cancel them. In our testing with the JavaScript SDK, subscriptions and observers whose objects had been garbage-collected kept syncing and kept calling back, and only the entries of `ditto.sync.subscriptions` and `ditto.store.observers` could still cancel them (see [In JavaScript, garbage-collected subscriptions and observers keep running](../knowledge/transactions-and-observers.md#in-javascript-garbage-collected-subscriptions-and-observers-keep-running)).
+- Drop the reference to a subscription without cancelling it. Always release these objects explicitly; do not rely on garbage collection to cancel them. In our testing with the JavaScript SDK, subscriptions and observers whose objects had been garbage-collected kept syncing and kept calling back, and only the entries of `ditto.sync.subscriptions` and `ditto.store.observers` could still cancel them (see [In JavaScript, garbage-collected subscriptions and observers keep running](../knowledge/observer-behavior.md#in-javascript-garbage-collected-subscriptions-and-observers-keep-running)).
 
 ```dart
 // ✅ GOOD: A session-level service owns long-lived subscriptions.
@@ -321,7 +321,7 @@ Future<List<SyncSubscription>> switchStore(
 - `await ditto.close()` stops sync and marks every subscription as cancelled (`isCancelled == true`); calling `cancel()` afterwards is a safe no-op (see [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown)).
 - `ditto.sync.subscriptions` returns the currently active subscriptions. Use it for debugging (for example, logging `queryString`), but manage subscriptions through the references you keep yourself.
 
-> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate a Flutter app (in our testing, the JavaScript SDK returned `null` instead; see [SDK 5.0.3 differs in the size limit, constant comparisons, and defaults](../knowledge/dql-behavior.md#sdk-503-differs-in-the-size-limit-constant-comparisons-and-defaults)). Read only `queryString` and `isCancelled` there, and keep your own references (as `OrderSync` does) when you need the arguments.
+> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate a Flutter app (in our testing, the JavaScript SDK returned `null` instead; see [In JavaScript, queryArguments of a subscription without arguments is empty](../knowledge/subscriptions-and-replication.md#in-javascript-queryarguments-of-a-subscription-without-arguments-is-empty)). Read only `queryString` and `isCancelled` there, and keep your own references (as `OrderSync` does) when you need the arguments.
 
 ## Scope Balancing
 

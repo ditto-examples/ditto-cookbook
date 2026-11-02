@@ -585,6 +585,6 @@ Deleted and evicted data leaves free space inside the database files. Later writ
 
 **❌ DON'T:**
 
-- Register a long-lived observer on `system:system_info`: it fires often even when nothing changed (every 500 ms in 5.1.0, and twice about every second in 5.2.0, mostly with identical results; see [SDK 5.0.3 differs in the size limit, constant comparisons, and defaults](../knowledge/dql-behavior.md#sdk-503-differs-in-the-size-limit-constant-comparisons-and-defaults)). Query it with `execute` when you need it.
+- Register a long-lived observer on `system:system_info`: it fires often even when nothing changed (every 500 ms in 5.1.0, and twice about every second in 5.2.0, mostly with identical results; see [Observers of system:system_info keep firing while nothing changes](../knowledge/observer-behavior.md#observers-of-systemsystem_info-keep-firing-while-nothing-changes)). Query it with `execute` when you need it.
 
 To keep storage under control, combine monitoring with a retention policy ([EVICT](#evict)) and keep individual documents small (see [Document Size Limits](data-modeling.md#document-size-limits)).

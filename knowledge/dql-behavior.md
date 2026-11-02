@@ -1,16 +1,18 @@
 # DQL Behavior
 
-How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.2.0, what statements without `WHERE` and mismatched arguments do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, what mixed type declarations do to queries and indexes, which limits and crashes we found, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../best-practices/dql.md#missing-and-null), [ORDER BY](../best-practices/dql.md#order-by), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership), [UPDATE](../best-practices/dql.md#update), [Document IDs](../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent), and [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.2.0, what statements without `WHERE`, mismatched arguments, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../best-practices/dql.md#missing-and-null), [ORDER BY](../best-practices/dql.md#order-by), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership), [UPDATE](../best-practices/dql.md#update), [Document IDs](../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent), [Composite indexes and key order (SDK 5.1+)](../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
 
 **In brief**
 
-- The DQL tables of the guide held on SDK 5.2.0 as on 5.1.0: MISSING and NULL, conflict policies, `UPDATE` errors, map writes, strict mode, subscription errors, joins, `RETURNING`, and document IDs ([The single-store DQL tables held on SDK 5.2.0](#the-single-store-dql-tables-held-on-sdk-520), [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
-- Mistakes in a statement often give no error: `UPDATE`, `DELETE`, and `EVICT` without `WHERE` change every document, and a single value passed to `IN :ids` matches nothing ([Statements without WHERE change every document](#statements-without-where-change-every-document), [Wrong argument types fail silently](#wrong-argument-types-fail-silently)).
+- The DQL tables of the guide held on SDK 5.2.0 as on 5.1.0: MISSING and NULL, conflict policies, `UPDATE` errors, map writes, strict mode, subscription errors, joins, `RETURNING`, document IDs, and the `ADVISE` output ([The single-store DQL tables held on SDK 5.2.0](#the-single-store-dql-tables-held-on-sdk-520), [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](#join-returning-document-id-and-timestamp-statements-held-on-sdk-520), [ADVISE returned the documented output](#advise-returned-the-documented-output)).
+- Mistakes in a statement often give no error: `UPDATE`, `DELETE`, and `EVICT` without `WHERE` change every document, a single value passed to `IN :ids` matches nothing, and on SDK 5.1.0, `DELETE` and `EVICT` with `USE IDS` and no `WHERE` remove nothing ([Statements without WHERE change every document](#statements-without-where-change-every-document), [Wrong argument types fail silently](#wrong-argument-types-fail-silently), [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing](#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-remove-nothing)).
 - A comparison between values of different types is MISSING, strings sort by code point, and `DESC` puts missing and `null` values first ([Comparisons across types are MISSING, and strings sort by code point](#comparisons-across-types-are-missing-and-strings-sort-by-code-point), [Descending order puts missing and null first](#descending-order-puts-missing-and-null-first)).
 - Since SDK 5.1, rows with equal sort keys come back in ascending `_id` order, also with `DESC`; on 5.0.3, `LIMIT` then did not return the first rows. `OFFSET` pages repeat a row after an insert, and keyset pages do not ([Rows with equal sort keys come back in _id order since SDK 5.1](#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51), [OFFSET pages repeat rows after inserts, and keyset pages do not](#offset-pages-repeat-rows-after-inserts-and-keyset-pages-do-not)).
 - The integer `1` and the float `1.0` are equal in `WHERE` but form two groups in `GROUP BY` ([Integers and floats are equal in WHERE but separate in GROUP BY](#integers-and-floats-are-equal-in-where-but-separate-in-group-by)).
 - Document IDs and field names are compared by type and exact code points, without Unicode normalization, and a string ID can have at most 254 bytes ([Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value), [Field names can contain dots and backticks, or be empty](#field-names-can-contain-dots-and-backticks-or-be-empty)).
+- On SDK 5.1.0, index plans returned wrong results without an error: a composite index with a descending key and an `ORDER BY` on projected fields returned rows in the wrong order, and a comparison with the constant on the left (`1 < a`) returned the wrong rows, as on 5.0.3. An index created on an empty collection broke in the migration by 5.1.0, and 5.2.0 does not repair it ([On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order](#on-sdk-510-composite-indexes-with-a-descending-key-return-rows-in-the-wrong-order), [On SDK 5.1.0, ORDER BY on a projected field was ignored in an index plan](#on-sdk-510-order-by-on-a-projected-field-was-ignored-in-an-index-plan), [Before SDK 5.2.0, a comparison with the constant on the left returned wrong rows through an index](#before-sdk-520-a-comparison-with-the-constant-on-the-left-returned-wrong-rows-through-an-index), [An index created on an empty collection breaks in the 5.1.0 migration](#an-index-created-on-an-empty-collection-breaks-in-the-510-migration)).
 - On SDK 5.1.0, long `OR` chains ended the process, and on 5.1.0 and 5.2.0, `ANY` over a parameter array returns no rows ([Long OR chains crashed SDK 5.1.0, and nested parentheses fail at 100 levels](#long-or-chains-crashed-sdk-510-and-nested-parentheses-fail-at-100-levels), [ANY over a parameter array broke in 5.1.0, and the multi-property issue was 5.1.0 only](#any-over-a-parameter-array-broke-in-510-and-the-multi-property-issue-was-510-only)).
+- On SDK 5.0.3, some statements of the guide fail, and `SELECT _id` on an indexed collection returned too few rows ([Some features that are not marked SDK 5.1+ fail on 5.0.3](#some-features-that-are-not-marked-sdk-51-fail-on-503), [On SDK 5.0.3, SELECT _id on an indexed collection returned too few rows](#on-sdk-503-select-_id-on-an-indexed-collection-returned-too-few-rows)).
 - In JavaScript, a `Date` is stored as `{}`, `undefined` as `null`, and unpaired surrogates as other characters, all without an error ([JavaScript values that are not plain JSON change when stored](#javascript-values-that-are-not-plain-json-change-when-stored), [char_length counts code points, and JavaScript damages lone surrogates](#char_length-counts-code-points-and-javascript-damages-lone-surrogates)).
 
 ## DQL tables and statements that held on SDK 5.2.0
@@ -55,25 +57,24 @@ The results were the same on every release tested, and they matched these sectio
   - `INNER`, `LEFT` (also with a filter inside `ON`), and `RIGHT` joins, and `WHERE o._id IS MISSING`, returned the rows in [Join types](../best-practices/dql.md#join-types).
   - `SELECT *` returned one nested object per alias, `c.*, o.total` a flat row, and `SELECT _id` a composite ID; a field `name` present on both sides failed with `Ambiguous reference to field` ([Result shape](../best-practices/dql.md#result-shape)).
   - `FULL OUTER`, `CROSS`, and comma joins, and joins in `UPDATE`, were rejected, and a `RIGHT JOIN` after the first join failed with `RIGHT OUTER join that isn't the first join is not supported` ([Restrictions](../best-practices/dql.md#restrictions)).
-  - An observer of a join was called when either collection changed ([Joins in observers](../best-practices/dql.md#joins-in-observers)). Whether its rows include `_id` is described in [On SDK 5.2.0, observer rows include _id only when it is projected](transactions-and-observers.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected).
+  - An observer of a join was called when either collection changed ([Joins in observers](../best-practices/dql.md#joins-in-observers)). Whether its rows include `_id` is described in [On SDK 5.2.0, observer rows include _id only when it is projected](observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected).
 - **`RETURNING`** ([RETURNING (SDK 5.1+)](../best-practices/dql.md#returning-sdk-51)): documents skipped by `DO NOTHING` and documents that `DO UPDATE_LOCAL_DIFF` left unchanged were not returned. `UPDATE` returned the documents after the update, and `DELETE` the documents before they were deleted. `EVICT ... RETURNING COUNT(*)` returned the number of documents. `mutatedDocumentIDs` and `commitID` were populated as well.
 - **Document IDs** ([Allowed values](../best-practices/data-modeling.md#allowed-values)): strings, objects, integers, booleans, and arrays were accepted; a float failed with `Floats are not supported in document IDs`, and `null` with `Null document ID not allowed`. Two composite IDs whose keys differ only in order identify the same document: inserting the second failed with `Identifier conflict`, and a lookup with the keys in the other order found the document. Without `_id`, Ditto generated a string ID. More ID comparisons are in [Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value).
 - **Timestamps** ([Store UTC with a zone designator](../best-practices/data-modeling.md#store-utc-with-a-zone-designator)): `'2026-10-08T10:30:45Z' < '2026-10-08T10:30:45.123Z'` is `false`. `ORDER BY` on strings with a mixed number of fractional digits is not chronological: three documents with `'2026-10-08T10:30:45Z'`, `'2026-10-08T10:30:45.000500Z'`, and `'2026-10-08T10:30:45.123Z'` (in chronological order) came back as `...45.000500Z`, `...45.123Z`, `...45Z`. `date_part` of a string without a time zone is MISSING.
 
 **Used in:** the sections linked above.
 
-### USE IDS LIST, ADVISE output, and descending index keys held
+### ADVISE returned the documented output
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0 (`USE IDS LIST` also on 5.0.3), one run each. Each case had also been checked once before with a separate script |
-| Setup | One device without sync. `DELETE FROM orders USE IDS LIST :ids` and `EVICT FROM orders USE IDS LIST ['c']`; `ADVISE` for the two example statements of [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51) and for an ID lookup; an index on `(customerId, createdAt DESC)` with a query that filtered on `createdAt >= :since` and sorted with `ORDER BY createdAt DESC` |
+| Observed on | SDK 5.1.0 and 5.2.0, one run each, after one earlier run with a separate script |
+| Setup | One device without sync. `ADVISE` for the two example statements of [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51) and for an ID lookup |
 
-- **`USE IDS LIST` in `DELETE` and `EVICT`**: 5.2.0 removed the documents and listed them in `mutatedDocumentIDs`. 5.1.0 removed nothing, and `mutatedDocumentIDs` was empty. On 5.0.3, `USE IDS` in a `DELETE` is a syntax error.
-- **`ADVISE`**: 5.1.0 and 5.2.0 returned the same JSON as the two example outputs in [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51). For an ID lookup, the result was `outcome: "no advice available for statement"`.
-- **An index with a descending key and a range condition**: 5.1.0 returned the oldest documents first, and with `LIMIT 2` the two oldest. 5.2.0 returned the correct order. On both releases, the plan was `indexScan`, `filter`, `fetch`, with no `sort` step. The 5.1.0 issue in [Composite indexes and key order (SDK 5.1+)](../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51) therefore also applies when the second key has a range condition.
+- 5.1.0 and 5.2.0 returned the same JSON as the two example outputs in [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51).
+- For an ID lookup, the result was `outcome: "no advice available for statement"`.
 
-**Used in:** [USE IDS](../best-practices/dql.md#use-ids), [DELETE and EVICT](../best-practices/dql.md#delete-and-evict), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51), [Composite indexes and key order (SDK 5.1+)](../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [ADVISE (SDK 5.1+)](../best-practices/indexing-and-performance.md#advise-sdk-51).
 
 ## Writes and query arguments
 
@@ -110,6 +111,21 @@ The results were the same on every release tested, and they matched these sectio
 - `=` between an array field and an array argument compares the elements.
 
 **Used in:** [Always pass values as parameters](../best-practices/dql.md#always-pass-values-as-parameters), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership).
+
+### On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each, and 5.0.3, one run; every run gave the same result. `USE IDS LIST`: SDK 5.0.3, 5.1.0, and 5.2.0, one run each, after one earlier run with a separate script |
+| Setup | One device without sync, with three documents `a`, `b`, and `c`. `DELETE FROM orders USE IDS 'a'`, `DELETE FROM orders USE IDS 'b' WHERE true`, and `EVICT FROM orders USE IDS 'c'`, each followed by reading `mutatedDocumentIDs()`, and then the remaining documents. Separately, `DELETE FROM orders USE IDS LIST :ids` and `EVICT FROM orders USE IDS LIST ['c']`, and the same deletion written with `WHERE _id IN :ids` |
+| Documentation | The 5.2.0 release notes say: "`DELETE` and `EVICT` statements with a `USE IDS` clause now delete the specified documents. Previously the workaround was to filter on the `_id` field directly" (QE-1186) |
+
+- **5.1.0**: none of the statements removed a document, with `USE IDS` or with `USE IDS LIST`, and `mutatedDocumentIDs()` was empty each time. No error was raised, and all three documents remained.
+- **5.2.0**: each statement removed its documents and listed them in `mutatedDocumentIDs()`.
+- **5.0.3**: `USE IDS` in a `DELETE` is a syntax error.
+- `WHERE _id IN :ids` removed the listed documents on all three releases (four runs each on 5.1.0 and 5.2.0, one run on 5.0.3).
+
+**Used in:** [USE IDS](../best-practices/dql.md#use-ids), [DELETE and EVICT](../best-practices/dql.md#delete-and-evict), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
 
 ## Comparisons, sort order, and paging
 
@@ -168,8 +184,8 @@ The results were the same on every release tested, and they matched these sectio
 | `ORDER BY priority DESC LIMIT 10` | Ascending `_id`: the ties are not reversed | `t01` to `t09`, `t00` (the same order as `ASC`) | `t01` to `t09`, `t00` |
 | No `ORDER BY` | Ascending `_id` | Ascending `_id` | `SELECT _id FROM tasks` without `WHERE` was not in `_id` order in any of the three runs, and in the separate reproduction it returned one row `{}` instead of 40 rows |
 
-- **5.1.0 and 5.2.0**: the results were the same with 40 and with 3,000 documents. Rows with the same sort key stay in ascending `_id` order with `DESC` too, so `DESC` does not return the reverse of `ORDER BY priority`. The insertion order is not followed. The order was the same on the writing and on the receiving device, and it did not change after the first rows were updated on either device or after the index was created. The observer was not called for updates of documents outside its result (as described in [When an observer fires depends on its query](transactions-and-observers.md#when-an-observer-fires-depends-on-its-query)).
-- **5.0.3**: without an index, the order was the same on both devices and did not change after the updates. The single `{}` row matches a separate 5.0.3 issue with `SELECT _id` on an indexed collection, described in [An index created on an empty collection breaks in the 5.1.0 migration](upgrading.md#an-index-created-on-an-empty-collection-breaks-in-the-510-migration).
+- **5.1.0 and 5.2.0**: the results were the same with 40 and with 3,000 documents. Rows with the same sort key stay in ascending `_id` order with `DESC` too, so `DESC` does not return the reverse of `ORDER BY priority`. The insertion order is not followed. The order was the same on the writing and on the receiving device, and it did not change after the first rows were updated on either device or after the index was created. The observer was not called for updates of documents outside its result (as described in [When an observer fires depends on its query](observer-behavior.md#when-an-observer-fires-depends-on-its-query)).
+- **5.0.3**: without an index, the order was the same on both devices and did not change after the updates. The single `{}` row matches a separate 5.0.3 issue with `SELECT _id` on an indexed collection, described in [On SDK 5.0.3, SELECT _id on an indexed collection returned too few rows](#on-sdk-503-select-_id-on-an-indexed-collection-returned-too-few-rows).
 - On every release, the order was fixed, and devices that held the same documents never showed different orders. On 5.0.3, however, the order of ties depends on whether an index exists. Indexes are created on each device, so we think that a device with the index and a device without it show the same documents in different orders on 5.0.3. On 5.1 and later, the order was the same either way. This order is not documented; in these tests, it never varied.
 
 **Not tested:** more than one collection; `_id` values other than strings, including composite IDs; more than one tied value; `JOIN`; sorting after `GROUP BY`; an index on only one of the two devices.
@@ -280,7 +296,7 @@ The results were the same on every release tested, and they matched these sectio
 
 **Used in:** [Adding, updating, and removing map entries](../best-practices/data-modeling.md#adding-updating-and-removing-map-entries), [Field names](../best-practices/data-modeling.md#field-names).
 
-## Type declarations and indexes
+## Indexes and query plans
 
 ### Mixed type declarations change what a query reads, not the index results
 
@@ -304,7 +320,76 @@ The results were the same on every release tested, and they matched these sectio
 
 **Used in:** [Strict mode and data types](../best-practices/indexing-and-performance.md#strict-mode-and-data-types), [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent).
 
-## Query limits and SDK 5.1.0 regressions
+### On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each; every run gave the same result. The case with a range condition: one run each, after one earlier run with a separate script. SDK 5.0.3 has no composite indexes (`The feature is not implemented yet : composite indexes`) |
+| Setup | One device without sync, each case in a new store. (1) Six documents in two groups, `a1` to `a3` and `b1` to `b3`, an index on `(group ASC, rank DESC)`, and `SELECT _id FROM items WHERE group >= :low ORDER BY group ASC, rank DESC`. (2) Orders with the `status` `open` or `paid` and three `createdAt` values, inserted out of order, an index on `(status, createdAt DESC)` or, in a separate store, on `(status, createdAt)`, and `SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC`, with and without `LIMIT 2`. (3) An index on `(customerId, createdAt DESC)` and `WHERE customerId = :c AND createdAt >= :since ORDER BY createdAt DESC`, with and without `LIMIT 2` |
+| Documentation | The 5.2.0 release notes say: "Queries that use a composite index with mixed `ASC` and `DESC` keys now return results in the correct order" (CCB-85) |
+
+| Case | 5.1.0 | 5.2.0 |
+|---|---|---|
+| (1) `(group ASC, rank DESC)` | `a1 a2 a3 b1 b2 b3`: `rank` ascending | `a3 a2 a1 b3 b2 b1` (correct) |
+| (2) `(status, createdAt DESC)` | Oldest first; with `LIMIT 2`, the two oldest | Newest first (correct) |
+| (2) `(status, createdAt)` | Newest first (correct) | Newest first (correct) |
+| (3) `(customerId, createdAt DESC)`, range on `createdAt` | Oldest first; with `LIMIT 2`, the two oldest | Newest first (correct) |
+
+- Every query used the index. With a descending key, the plan was `indexScan`, `filter`, `fetch`, with no `sort` step, on both releases. With the keys in one direction, the plan added a `sort` step before `fetch`, and the order was correct on both releases.
+- Under the same ticket, the release notes also say that "Indexed `SELECT *` queries now fetch full documents instead of reading only from the index". We did not reproduce that issue: with an index on `status`, `SELECT * FROM orders WHERE status = 'paid'` returned the whole document on 5.0.3, 5.1.0, and 5.2.0 (four runs each on 5.1.0 and 5.2.0, one run on 5.0.3).
+
+**Not tested:** composite indexes with more than two keys; descending keys in the first position.
+
+**Used in:** [Composite indexes and key order (SDK 5.1+)](../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+
+### On SDK 5.1.0, ORDER BY on a projected field was ignored in an index plan
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each; every run gave the same result |
+| Setup | One device without sync. The orders of case (2) in [On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order](#on-sdk-510-composite-indexes-with-a-descending-key-return-rows-in-the-wrong-order), an index on `(status, createdAt)`, and `SELECT _id, createdAt FROM orders WHERE status = :status ORDER BY createdAt DESC`, with and without `LIMIT 2`, compared with the same query with `SELECT *` |
+| Documentation | The 5.2.0 release notes say: "Results are now sorted correctly when `ORDER BY` refers to a projection alias in a plan that sorts before fetching documents" (QE-1166) |
+
+- **5.1.0**: the projected query returned the rows in the order they were inserted (`10-01`, `10-03`, `10-02`), and with `LIMIT 2` the first two of that order. The plan was `indexScan`, `filter`, `sort`, `projection`: it sorted without reading the documents. `SELECT *`, whose plan reads the documents (`indexScan`, `filter`, `sort`, `fetch`), returned the newest first.
+- **5.2.0**: both queries returned the newest first, with the same plans.
+
+**Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+
+### Before SDK 5.2.0, a comparison with the constant on the left returned wrong rows through an index
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each, and 5.0.3, one run; every run gave the same result |
+| Setup | One device without sync. Four documents `n0` to `n3` whose field `a` was `0` to `3`, an index on `a`, and the conditions `1 < a`, `a > 1`, and `2 >= a` |
+| Documentation | The 5.2.0 release notes say: "The query planner now generates correct index span ranges for expressions of the form `constant operator field`, such as `1 < a`" (QE-1212) |
+
+| Condition | Correct result | 5.0.3 and 5.1.0 | 5.2.0 |
+|---|---|---|---|
+| `1 < a` | `n2`, `n3` | No rows | `n2`, `n3` |
+| `a > 1` | `n2`, `n3` | `n2`, `n3` | `n2`, `n3` |
+| `2 >= a` | `n0`, `n1`, `n2` | `n2` only | `n0`, `n1`, `n2` |
+
+- The issue that 5.2.0 fixed existed since 5.0. No error was raised.
+
+**Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+
+### An index created on an empty collection breaks in the 5.1.0 migration
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs; every run gave the same result. The repair by dropping and re-creating the index: one run |
+| Setup | Each release ran in its own process. One persistence directory was opened on 5.0.3, 5.1.0, 5.2.0, 5.1.0, 5.0.3, and 5.2.0, in that order, and another one on 5.0.3 and then on 5.2.0. On 5.0.3, an index `idx_empty` was created on an empty collection `emptyc`, and another collection held documents and an index. A composite index was created on 5.2.0 |
+| Documentation | The 5.2.0 release notes list as fixed (CCB-88) that an `INSERT` into an indexed collection that was empty before the upgrade failed |
+
+- After the index on the empty collection `emptyc` was created on 5.0.3 and the directory was closed and opened on 5.1.0, an `INSERT` into that collection failed with `no such table: ___idx_coll_...`. Opened next on 5.2.0, and then again on 5.1.0, the same `INSERT` still failed. The collection that held documents kept its indexes and documents on every release.
+- In the directory opened on 5.0.3 and then directly on 5.2.0, the same `INSERT` succeeded: the fix of CCB-88 works in the migration by 5.2.0. A directory that 5.1.0 has migrated once is not repaired by 5.2.0.
+- In the broken directory, `DROP INDEX idx_empty ON emptyc` on 5.2.0 made the `INSERT` succeed, and it kept succeeding after the index was created again (one run). Opening and closing the directory on 5.0.3, and then opening it again on 5.2.0, also repaired it; this was also checked once with 5.0.3 only opening the directory, without writing. We think this is because going back to 5.0.3 returns the index to the 5.0 format, so that 5.2.0 migrates it again.
+- Moving between 5.2.0 and 5.1.0, in both directions, kept the documents, the indexes, and the composite index created on 5.2.0 usable.
+- Back on 5.0.3, the composite index `idx_status_n (status, n)` became two single-field indexes, `idx_status_n_status` and `idx_status_n_n`. All documents could be read, including those written on 5.1.0 and 5.2.0.
+
+**Used in:** [Upgrading and downgrading](../best-practices/indexing-and-performance.md#upgrading-and-downgrading), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510), [Mixed Releases](upgrading.md#mixed-releases), [Rolling Back](upgrading.md#rolling-back).
+
+## Long conditions and ANY
 
 ### Long OR chains crashed SDK 5.1.0, and nested parentheses fail at 100 levels
 
@@ -361,22 +446,20 @@ Some statements failed because they use features marked (SDK 5.1+) or (SDK 5.2+)
 
 **Used in:** [How to Use This Guide](../best-practices/README.md#how-to-use-this-guide) (the SDK release marks), and the sections in the table above.
 
-### SDK 5.0.3 differs in the size limit, constant comparisons, and defaults
+### On SDK 5.0.3, SELECT _id on an indexed collection returned too few rows
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, one run |
-| Setup | The 27 existing checks on one device without sync, run again on 5.0.3 and compared with their results on 5.1.0 and 5.2.0 |
-| Documentation | The 5.2.0 release notes say: "The query planner now generates correct index span ranges for expressions of the form `constant operator field`, such as `1 < a`" (QE-1212) |
+| Observed on | SDK 5.0.3, one run, compared with SDK 5.1.0 and 5.2.0 |
+| Setup | `SELECT _id FROM c` without `WHERE` on a collection with an index: in a new store with two documents, and in the store of [An index created on an empty collection breaks in the 5.1.0 migration](#an-index-created-on-an-empty-collection-breaks-in-the-510-migration), which held five documents after it had moved between releases |
 
-- **Hard size limit**: 5.0.3 stored a 6 MiB document, built by adding 3 MiB twice, without an error. The 5 MiB limit on writes is probably enforced only since 5.1. This is probably also why a 5.0.3 peer could update a 6 MiB document in [An oversized merge ends differently on each release](upgrading.md#an-oversized-merge-ends-differently-on-each-release).
-- **Constant on the left**: like 5.1.0, 5.0.3 returned wrong results for `1 < a` through an index. The issue that 5.2.0 fixed existed since 5.0.
-- **Observer on `system:system_info`**: 5.0.3 called it 5 times in 5 seconds (about once a second; from the second call on, the results barely changed). 5.1.0 called it every 500 ms, and 5.2.0 twice about every second.
-- **`queryArguments`**: for a subscription registered without arguments, 5.0.3 also returned `null` and did not crash.
-- **`DQL_REQUEST_HISTORY_SIZE`**: the default on 5.0.3 is 4096, as on 5.1.0; 5.2.0 changed it to 128.
-- **`DELETE ... USE IDS`** is a syntax error, and a composite index fails with `The feature is not implemented yet : composite indexes`, as the (SDK 5.1+) mark says.
+- 5.0.3 returned 0 of 2 rows in the new store, and 1 of 5 rows in the store that had moved between releases. The plan was an index scan and a `groupBy`.
+- `SELECT *` and `COUNT(*)` returned the correct results on 5.0.3, and so did 5.1.0 and 5.2.0 with the same query.
+- The same pattern appeared in [Rows with equal sort keys come back in _id order since SDK 5.1](#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51): there, the rows of `SELECT _id` did not come back in `_id` order in any of the three runs, and in one run of a separate reproduction the query returned a single row, `{}`, for 40 documents. In every case so far, the query returned at most one row.
 
-**Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Not tested:** which index, collection size, or store history triggers it; queries with `WHERE`.
+
+**Used in:** none yet.
 
 ## JavaScript values in DQL
 

@@ -18,6 +18,8 @@ Ditto is an **offline-first edge sync platform**. The **Ditto Edge SDK** embeds 
    (Bluetooth LE, P2P Wi-Fi, LAN mesh)
 ```
 
+The [Glossary](glossary.md) defines these and the other terms that the guide uses, such as Database ID, collection, subscription, store observer, tombstone, and eviction.
+
 ## Key Characteristics
 
 **Offline-first operation**
@@ -36,23 +38,6 @@ Ditto is an **offline-first edge sync platform**. The **Ditto Edge SDK** embeds 
 
 **Capacity**
 - A device running the SDK, such as a mobile device, is designed to handle up to about 2 GB of key-value data and tens of thousands of documents in a collection. Actual limits depend on data shape, query complexity, and performance requirements.
-
-## Terminology
-
-The terms below are used throughout this guide. The [Glossary](glossary.md) defines further terms.
-
-| Term | Meaning |
-|---|---|
-| **Database ID** | The UUID that identifies a Ditto database. All peers that sync together use the same Database ID. Copy it from the Ditto Portal (or choose your own UUID for small-peers-only deployments). |
-| **Small Peer** | An instance of the Ditto SDK embedded in an application. |
-| **Ditto Server** | The optional server-side cluster (formerly called Big Peer) that Small Peers connect to over WebSocket. |
-| **Collection** | A named group of documents, similar to a table. Collections do not need to be created in advance. |
-| **Document** | A JSON-like object identified by its `_id` field. Each field is merged according to its CRDT type. |
-| **Subscription** | A `SELECT * FROM <collection> [WHERE ...]` query registered with `ditto.sync.registerSubscription()`. It tells connected peers which documents to send to this device. |
-| **Store observer** | A DQL query registered with `ditto.store.registerObserver()` that delivers new results whenever matching data in the local store changes. |
-| **Tombstone** | The marker left behind by `DELETE` so that the deletion syncs to other peers. Tombstones are removed after a TTL (7 days by default on Small Peers, set with `TOMBSTONE_TTL_HOURS`; see [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping)). |
-| **Eviction** | Removing documents from the local store only (`EVICT`). Eviction does not sync to other peers. |
-| **Mesh** | The network of peers connected to each other over peer-to-peer transports, optionally bridged to Ditto Server. |
 
 ## Core Principles
 

@@ -746,7 +746,7 @@ Always qualify fields with their alias (`c.name`, `o.total`) and alias projected
 
 #### Joins in observers
 
-`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/transactions-and-observers.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
+`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
 
 ```dart
 // ✅ GOOD: Subscribe per collection (app or feature scope), join locally

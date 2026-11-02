@@ -244,11 +244,117 @@ class ObservationLinksTest(unittest.TestCase):
             Statements that say "in our testing" summarize the knowledge pages.
             """), [])
 
+    def check_knowledge(self, text: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = write(root, "knowledge/connections.md", self.KNOWLEDGE)
+            page = write(root, "knowledge/concepts.md", text)
+            return check.check_observation_links([page, knowledge], [knowledge, page], root)
+
+    def test_reports_observations_on_knowledge_pages_without_a_link(self):
+        errors = self.check_knowledge("""
+            # Concepts
+
+            In our testing, the hub accepted six clients.
+            """)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("knowledge/concepts.md:3", errors[0])
+
+    def test_accepts_links_between_knowledge_pages(self):
+        self.assertEqual(self.check_knowledge("""
+            # Concepts
+
+            In our testing, the hub accepted six clients (see [The limit](connections.md#a-hub-accepts-six-clients)).
+            """), [])
+
+    def test_accepts_links_to_an_observation_on_the_same_page(self):
+        self.assertEqual(self.check_knowledge("""
+            # Concepts
+
+            In our testing, it held (see [Six clients](#six-clients-synced)).
+
+            ### Six clients synced
+
+            | | |
+            |---|---|
+            | Observed on | SDK 5.2.0, one run |
+            """), [])
+
+    def test_ignores_the_text_of_an_observation(self):
+        self.assertEqual(self.check_knowledge("""
+            # Concepts
+
+            ### Six clients synced
+
+            | | |
+            |---|---|
+            | Observed on | SDK 5.2.0, one run |
+
+            - In our testing, six clients synced.
+
+            ## Background
+
+            How it works.
+            """), [])
+
     def test_finds_the_observations_of_a_page(self):
         with tempfile.TemporaryDirectory() as tmp:
             page = write(Path(tmp), "knowledge/connections.md", self.KNOWLEDGE)
             self.assertEqual(check.observation_anchors(page.read_text(encoding="utf-8")),
                              {"a-hub-accepts-six-clients"})
+
+
+class ObservationEntriesTest(unittest.TestCase):
+    def check(self, text: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = write(root, "knowledge/connections.md", text)
+            return check.check_observation_entries([page], root)
+
+    def test_accepts_complete_entries(self):
+        self.assertEqual(self.check("""
+            # Connections
+
+            ### A hub accepts six clients
+
+            | | |
+            |---|---|
+            | Observed on | SDK 5.2.0, three runs |
+            | Setup | One hub and eight clients |
+
+            - Six of eight clients synced.
+
+            **Used in:** none yet.
+
+            ## Background
+
+            How connections work.
+            """), [])
+
+    def test_reports_entries_without_setup_or_used_in(self):
+        errors = self.check("""
+            # Connections
+
+            ### A hub accepts six clients
+
+            | | |
+            |---|---|
+            | Observed on | SDK 5.2.0, three runs |
+
+            - Six of eight clients synced.
+
+            ### A hub accepts more clients when asked
+
+            | | |
+            |---|---|
+            | Observed on | SDK 5.2.0, three runs |
+            | Setup | One hub and eight clients |
+            """)
+        self.assertEqual(len(errors), 3)
+        self.assertIn("knowledge/connections.md:3", errors[0])
+        self.assertIn("Setup", errors[0])
+        self.assertIn("Used in", errors[1])
+        self.assertIn("knowledge/connections.md:11", errors[2])
 
 
 if __name__ == "__main__":
