@@ -107,6 +107,20 @@ class LinksTest(unittest.TestCase):
         self.assertTrue(any("b.md#section-three" in e for e in errors), errors)
         self.assertTrue(any("#nowhere" in e for e in errors), errors)
 
+    def test_reports_links_that_do_not_close(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, "docs/b.md", "# B\n")
+            source = write(root, "docs/a.md", """
+                # A
+
+                See ([one](b.md, [two](b.md)) and `[code](x, y)`.
+                """)
+            errors = check.check_links([source], root)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("docs/a.md:3", errors[0])
+        self.assertIn("malformed", errors[0])
+
     def test_follows_symbolic_links_to_directories(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -8,8 +8,9 @@ What the persistence directory holds, and what happens when it is copied, restor
 - A copy that replaces the original, and a device that goes back to an older copy of its own directory, sync normally ([A copy that replaces the original syncs normally](#a-copy-that-replaces-the-original-syncs-normally), [Restoring an older copy of a directory loses nothing](#restoring-an-older-copy-of-a-directory-loses-nothing)).
 - Peers with different Database IDs never see each other, but a directory written with one Database ID opens with another, and its documents sync into the new database ([Devices with different Database IDs do not sync](#devices-with-different-database-ids-do-not-sync), [A directory written with another Database ID opens and syncs its documents](#a-directory-written-with-another-database-id-opens-and-syncs-its-documents)).
 - A device whose `ditto_store` subdirectory alone was deleted keeps its peer key, and on SDK 5.1.0 and 5.2.0 some documents that it creates before sync starts do not reach other devices, without an error; a device whose whole directory was deleted comes back with a new peer key and syncs everything ([Deleting only ditto_store keeps the peer key and loses some writes](#deleting-only-ditto_store-keeps-the-peer-key-and-loses-some-writes)).
+- A directory deleted after `close()` opens as an empty store with a new peer key, and no earlier value remains in any file; in a small store, the values stay in the write-ahead log file after `close()` ([Deleting the directory after close() leaves no data behind](#deleting-the-directory-after-close-leaves-no-data-behind), [After close(), a small store keeps its values in the write-ahead log](#after-close-a-small-store-keeps-its-values-in-the-write-ahead-log)).
 - Deleting the directory while Ditto is open raises no error, but the writes made afterwards are lost when Ditto closes ([Deleting the directory while Ditto is open loses later writes](#deleting-the-directory-while-ditto-is-open-loses-later-writes)).
-- A directory that another process holds, even a suspended one, fails to open after about 1 second; the lock of a process that crashed does not remain ([A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second), [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails)).
+- A directory that another process holds, even a suspended one, fails to open after about 1 second; the lock of a process that crashed does not remain ([A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second), [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails), [The lock file keeps a process ID after the process ends](#the-lock-file-keeps-a-process-id-after-the-process-ends)).
 
 ## Copies of a Directory
 
@@ -101,22 +102,54 @@ The tendency was the same on both releases:
 
 **Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
+### Deleting the directory after close() leaves no data behind
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result on all three releases. macOS only: what happens when files in use are deleted depends on the operating system (Windows, in general, does not allow deleting a file that is open) |
+| Setup | After `close()`, we deleted the whole directory and opened the same path again |
+
+- opening the same path gave an empty store with no documents and a new peer key. The earlier values (document values and subscription queries) remained in no file. The logs on disk (`ditto_logs`, which contain subscription arguments; see [Subscription queries and arguments appear in other devices' logs](configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)) are inside this directory and are deleted with it.
+
+**Not tested:** other operating systems than macOS; whether sync must be stopped before `close()` and the deletion.
+
+**Used in:** [Authentication](../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](platform-differences.md).
+
 ### Deleting the directory while Ditto is open loses later writes
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each, with a single store and with a second process; every run gave the same result on all three releases. macOS only: what happens when files in use are deleted depends on the operating system (Windows, in general, does not allow deleting a file that is open) |
-| Setup | (1) After `close()`, we deleted the whole directory and opened the same path again. (2) While Ditto was open, we deleted the directory, wrote and read, opened a second instance at the same path, then closed both and opened the path again. (3) We read the files after `close()` to see where the data was. (4) In a second process, we read the lock file while the directory was open, after `close()`, while the process was stopped with `SIGSTOP`, and after it was killed with `SIGKILL` |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result on all three releases. macOS only: what happens when files in use are deleted depends on the operating system (Windows, in general, does not allow deleting a file that is open) |
+| Setup | While Ditto was open, we deleted the directory, wrote and read, opened a second instance at the same path, then closed both and opened the path again |
 
-- **Deleting after `close()`**: opening the same path gave an empty store with no documents and a new peer key. The earlier values (document values and subscription queries) remained in no file. The logs on disk (`ditto_logs`, which contain subscription arguments; see [Subscription queries and arguments appear in other devices' logs](configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)) are inside this directory and are deleted with it.
-- **Deleting while open**: `INSERT` and reads after the deletion raised no error, and the documents written before it could still be read, probably because the operating system keeps deleted files for a process that has them open. After 1 second, the files had still not been created again. A second instance at the same path meanwhile opened, because the lock file was gone too (no error as in [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails)), and the two instances held different contents (the first 4 documents, the second 1). After both were closed and the path was opened again, only the 1 document written by the second instance remained. Everything else was gone, including the documents that the first instance wrote after the deletion.
-- **The files after `close()`**: in a small store of a few dozen documents, the document values were only in `ditto_store/db.sql-wal` after `close()`, and `db.sql` stayed at 4 KB: closing did not write the write-ahead log back into the main file. (With 220 documents, in [Deleted and evicted values remain in the database files](storage-and-deletion.md#deleted-and-evicted-values-remain-in-the-database-files), they were in `db.sql`.) The subscription query strings were in `ditto_system_info/db.sql`; the subscriptions themselves do not come back when the directory is reopened (see [Subscriptions are not stored in the persistence directory](subscriptions-and-replication.md#subscriptions-are-not-stored-in-the-persistence-directory)). On 5.0.3, a file that we read right after `close()` had completed (`ditto_system_info/db.sql-shm`) disappeared before the read finished, in 1 of 3 runs and once in a trial run: cleanup continues for a moment after `close()`.
-- **The lock file** (`__ditto_lock_file`) holds the process ID of the process while the directory is open, and is empty after `close()`. While the process was stopped with `SIGSTOP`, the file still held the process ID, and other processes could not open the directory (see [A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second)). After `SIGKILL`, the process ID remained, but another process could open the directory at once. The contents of the file therefore do not tell whether the directory is in use. We think the lock is an operating-system file lock that the process holds and that is released when the process ends.
+- `INSERT` and reads after the deletion raised no error, and the documents written before it could still be read, probably because the operating system keeps deleted files for a process that has them open. After 1 second, the files had still not been created again. A second instance at the same path meanwhile opened, because the lock file was gone too (no error as in [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails)), and the two instances held different contents (the first 4 documents, the second 1). After both were closed and the path was opened again, only the 1 document written by the second instance remained. Everything else was gone, including the documents that the first instance wrote after the deletion.
+
+**Not tested:** other operating systems than macOS.
+
+**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+
+### After close(), a small store keeps its values in the write-ahead log
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result on all three releases |
+| Setup | We wrote a few dozen documents and a subscription, closed Ditto, and read the files of the directory |
+
+- in a small store of a few dozen documents, the document values were only in `ditto_store/db.sql-wal` after `close()`, and `db.sql` stayed at 4 KB: closing did not write the write-ahead log back into the main file. (With 220 documents, in [Deleted and evicted values remain in the database files](storage-and-deletion.md#deleted-and-evicted-values-remain-in-the-database-files), they were in `db.sql`.) The subscription query strings were in `ditto_system_info/db.sql`; the subscriptions themselves do not come back when the directory is reopened (see [Subscriptions are not stored in the persistence directory](subscriptions-and-replication.md#subscriptions-are-not-stored-in-the-persistence-directory)). On 5.0.3, a file that we read right after `close()` had completed (`ditto_system_info/db.sql-shm`) disappeared before the read finished, in 1 of 3 runs and once in a trial run: cleanup continues for a moment after `close()`.
 - On 5.2.0, `ditto_store`, `ditto_attachments`, and `ditto_system_info` each contain a 6-byte file `__ditto_encryption` (`0100be23c258` in all three). 5.1.0 and 5.0.3 have no such file. We did not check what it means.
 
-**Not tested:** other operating systems than macOS; whether sync must be stopped before `close()` and the deletion.
+**Used in:** [Data at Rest](../best-practices/security.md#data-at-rest).
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory), [Authentication](../best-practices/setup-and-lifecycle.md#authentication), [Data at Rest](../best-practices/security.md#data-at-rest), [Platform Differences](platform-differences.md).
+### The lock file keeps a process ID after the process ends
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result on all three releases |
+| Setup | In a second process, we read the lock file while the directory was open, after `close()`, while the process was stopped with `SIGSTOP`, and after it was killed with `SIGKILL` |
+
+- The lock file (`__ditto_lock_file`) holds the process ID of the process while the directory is open, and is empty after `close()`. While the process was stopped with `SIGSTOP`, the file still held the process ID, and other processes could not open the directory (see [A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second)). After `SIGKILL`, the process ID remained, but another process could open the directory at once. The contents of the file therefore do not tell whether the directory is in use. We think the lock is an operating-system file lock that the process holds and that is released when the process ends.
+
+**Used in:** none yet.
 
 ## Locks on the Directory
 

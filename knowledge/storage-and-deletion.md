@@ -10,7 +10,8 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 - A deletion flag sends about 28 bytes per document and `DELETE` about 43 bytes. Evicting documents that a subscription still matches downloads all of them again within seconds ([Deletion flags and DELETE transfer little, and eviction under a subscription refetches](#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)).
 - `EVICT` makes a device forget what it knew: a relay that evicts flagged documents receives the old, unflagged versions back, and a document inserted with an evicted ID merges with the old version that other devices hold ([A relay that evicts flagged documents receives old versions back](#a-relay-that-evicts-flagged-documents-receives-old-versions-back), [Inserting with an evicted document's ID merges with the old version](#inserting-with-an-evicted-documents-id-merges-with-the-old-version)).
 - Tombstones and evicted documents do not slow queries; flagged documents are read by every query unless the flag is indexed ([Tombstones and evicted documents do not slow queries, but flagged documents do](#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
-- Updating a document 10,000 times does not make it heavier, but every map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove them ([Repeated updates do not grow a document, and the write-ahead log grows to about 20 MB](#repeated-updates-do-not-grow-a-document-and-the-write-ahead-log-grows-to-about-20-mb), [Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
+- Updating a document 10,000 times does not make it heavier, but every map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove them ([Repeated updates do not grow a document](#repeated-updates-do-not-grow-a-document), [Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
+- 10,000 writes grew the write-ahead logs of the document store and of the attachment store to about 20 MB each, and the on-disk logs kept the lines of about 200,000 writes. On 5.2.0, `system:system_info` keeps old rows of each storage value, so read the newest row by `timestamp` ([The write-ahead log grows to about 20 MB](#the-write-ahead-log-grows-to-about-20-mb), [The on-disk logs keep about 200,000 writes](#the-on-disk-logs-keep-about-200000-writes), [On SDK 5.2.0, system:system_info keeps old rows of each storage value](#on-sdk-520-systemsystem_info-keeps-old-rows-of-each-storage-value)).
 - Removing data does not shrink the files at once, and most removed values can still be read from them after Ditto closes. SDK 5.2.0 reclaims free space only above 100 MB, and since 5.1, after a few thousand writes, the document store and the attachment store each have a write-ahead log of about 20 MB ([Evicting data does not free disk space at once](#evicting-data-does-not-free-disk-space-at-once), [Deleted and evicted values remain in the database files](#deleted-and-evicted-values-remain-in-the-database-files)).
 
 ## Deletion across Devices
@@ -218,26 +219,55 @@ What a new peer received in its first sync:
 
 **Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
-### Repeated updates do not grow a document, and the write-ahead log grows to about 20 MB
+### Repeated updates do not grow a document
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; all nine runs showed the same tendency. Log rotation, how the `system:system_info` values change, and the attachment store's WAL after closing: one run on 5.2.0 (the attachment store's WAL also on 5.1.0) |
-| Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times. We compared these documents with a document of the same size written once: a new device subscribed to each document in turn through the relay that counts bytes. We also measured the size of each file in the persistence directory |
-
-5.1.0 and 5.2.0 gave nearly the same values; values for 5.0.3 are given separately.
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; all nine runs showed the same tendency |
+| Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times. We compared these documents with a document of the same size written once: a new device subscribed to each document in turn through the relay that counts bytes |
 
 - **Document size**: a new device received 1.4 KiB for the document written once, 1.3 KiB for the document updated 10,000 times, and 1.3 KiB for the document whose COUNTER was incremented 10,000 times, on all three releases. The history of updates does not stay in the document and does not add to what is sent.
 - **Write time**: 10,000 `UPDATE` statements and 10,000 increments each took 14.3 to 15.2 seconds, 1.4 to 1.5 ms per write (5.0.3: 20.7 to 21.4 seconds, about 2.1 ms per write).
+
+**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage).
+
+### The write-ahead log grows to about 20 MB
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; all nine runs showed the same tendency. The attachment store's write-ahead log after closing: one run each on 5.1.0 and 5.2.0. Five devices: three runs on each release |
+| Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times, and we measured the size of each file in the persistence directory, right after the writes and after closing. Separately, five devices synced for 10 minutes |
+
+5.1.0 and 5.2.0 gave nearly the same values; values for 5.0.3 are given separately.
+
 - **Write-ahead log**: after the 10,000 writes, the document store's `ditto_store/db.sql-wal` was about 20 MB, and the attachment store's `ditto_attachments/db.sql-wal` was also about 20 MB, although no attachment was used (5.0.3: about 4 MB each). The database file `db.sql` itself was 148 KiB (5.0.3: 52 KiB). In a separate run, 3,000 writes already reached the same 20 MB. Closing folded the document store's WAL into its database file. On 5.1.0 and 5.2.0, however, the attachment store's 20 MB WAL and its `db.sql-shm` remained after closing; on 5.0.3, they were removed. In one run, the WAL was still 20 MB 5 seconds after closing, and after reopening and closing again.
 - **The whole directory**: with three documents in the store, about 54 to 57 MB right after the writes and about 31.5 MB after closing (5.0.3: 16 to 24 MB and 14.8 MB). Of the 31.5 MB after closing, 20 MB was the attachment store's WAL and 11 MB the on-disk logs (5.0.3: 14.6 MB of logs).
-- **`system:system_info`** on 5.2.0: the same key appears in several rows with different `timestamp` values. Read right after the 10,000 writes, `fs_usage_store_db_sql_wal` had 16 to 17 rows: the newest held the actual file size (about 20.7 MB), the oldest the size before the writes (about 342 KB). `wal_current_size_bytes` and `wal_peak_size_bytes` had only one row each, 37,112 from before the writes, in all three runs. Reading repeatedly in one run, a row with 20,925,512 appeared about 60 seconds later, and the old rows remained. The WAL values are recorded about once a minute, and the `fs_usage` values more often. A query that takes one row without ordering by `timestamp` gets an old value, as our first measurement did. 5.1.0 and 5.0.3 have no WAL keys.
-- **On-disk logs** on 5.1.0 and 5.2.0: each write added four debug lines, three for the transaction and one for the store, without values (see [Subscription queries and arguments appear in other devices' logs](configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)): about 1.5 KB per write (5.0.3: about 0.75 KB). In one run on 5.2.0, the active log file grew to about 15 to 18 MB before it rotated, and a rotated file was about 0.62 MB with gzip, the log of about 14,000 to 15,000 writes. After 5.5 minutes of continuous writes (about 220,000), the compressed files stopped at 14: 15 files with the active one, about 8.7 MB of compressed files and up to about 18 MB for the active file. The logs therefore keep about 200,000 writes, which is about 5 minutes at 600 writes a second, or about 5 hours at 10 writes a second.
+- With five devices (the setup of [An observer of 200 documents grows memory on every callback](performance-measurements.md#an-observer-of-200-documents-grows-memory-on-every-callback)): five devices synced for 10 minutes, two of them updating about 42 times a second each. On 5.1.0 and 5.2.0, `ditto_system_info`, `ditto_store`, `ditto_replication`, and `ditto_attachments` each reached about 20 MB (no attachment was used), and on the hub, to which four devices were connected, `ditto_replication` was 79.3 MB (the same value in all six runs). With the on-disk logs (7 to 26 MB), the persistence directory of a store with 200 documents moved between 63 and 107 MB on the clients and between 130 and 169 MB on the hub. On 5.0.3, each was about 4 MB (the hub's `ditto_replication` 16.3 MB), and the directory 15 to 57 MB.
+
+**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage).
+
+### On SDK 5.2.0, system:system_info keeps old rows of each storage value
+
+| | |
+|---|---|
+| Observed on | SDK 5.2.0, three runs; reading repeatedly after the writes: one run. SDK 5.1.0 and 5.0.3 have no keys for the write-ahead log |
+| Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times, and we read the storage keys of `system:system_info` right after the writes and then repeatedly |
+
+- the same key appears in several rows with different `timestamp` values. Read right after the 10,000 writes, `fs_usage_store_db_sql_wal` had 16 to 17 rows: the newest held the actual file size (about 20.7 MB), the oldest the size before the writes (about 342 KB). `wal_current_size_bytes` and `wal_peak_size_bytes` had only one row each, 37,112 from before the writes, in all three runs. Reading repeatedly in one run, a row with 20,925,512 appeared about 60 seconds later, and the old rows remained. The WAL values are recorded about once a minute, and the `fs_usage` values more often. A query that takes one row without ordering by `timestamp` gets an old value, as our first measurement did. 5.1.0 and 5.0.3 have no WAL keys.
+
+**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage).
+
+### The on-disk logs keep about 200,000 writes
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each. The rotation: one run on 5.2.0 |
+| Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times, and we read the on-disk logs. For the rotation, one device wrote continuously for 5.5 minutes |
+
+- On 5.1.0 and 5.2.0, each write added four debug lines, three for the transaction and one for the store, without values (see [Subscription queries and arguments appear in other devices' logs](configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)): about 1.5 KB per write (5.0.3: about 0.75 KB). In one run on 5.2.0, the active log file grew to about 15 to 18 MB before it rotated, and a rotated file was about 0.62 MB with gzip, the log of about 14,000 to 15,000 writes. After 5.5 minutes of continuous writes (about 220,000), the compressed files stopped at 14: 15 files with the active one, about 8.7 MB of compressed files and up to about 18 MB for the active file. The logs therefore keep about 200,000 writes, which is about 5 minutes at 600 writes a second, or about 5 hours at 10 writes a second.
 - The rotation size of 1 MB (`ROTATING_LOG_FILE_MAX_SIZE_MB`, 1 by default) probably refers to the compressed file; the active file grows far beyond 1 MB. On 5.0.3, the log was still one file (14.6 MB) after 20,000 writes.
 
-**With five devices** (the setup of [An observer of 200 documents grows memory on every callback](performance-measurements.md#an-observer-of-200-documents-grows-memory-on-every-callback)): five devices synced for 10 minutes, two of them updating about 42 times a second each. On 5.1.0 and 5.2.0, `ditto_system_info`, `ditto_store`, `ditto_replication`, and `ditto_attachments` each reached about 20 MB (no attachment was used), and on the hub, to which four devices were connected, `ditto_replication` was 79.3 MB (the same value in all six runs). With the on-disk logs (7 to 26 MB), the persistence directory of a store with 200 documents moved between 63 and 107 MB on the clients and between 130 and 169 MB on the hub. On 5.0.3, each was about 4 MB (the hub's `ditto_replication` 16.3 MB), and the directory 15 to 57 MB.
-
-**Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), [On-disk logs and exporting them](../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them).
+**Used in:** [On-disk logs and exporting them](../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them).
 
 ## Deleted Data on Disk
 
@@ -248,7 +278,7 @@ What a new peer received in its first sync:
 | Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, six runs each (in three of them, the document with the overwritten field was the same size as the others); the same pattern on all three releases. JavaScript SDK on macOS, where Ditto does not encrypt the store (see [Data at Rest](../best-practices/security.md#data-at-rest)) |
 | Setup | 220 documents of about 1.5 KB, each holding a different string (standing in for an email address). We closed Ditto and searched the files in the persistence directory for the bytes of each string. Then we reopened, deleted 100 documents with `DELETE`, evicted 100 with `EVICT`, overwrote a field of one document, closed, and searched again |
 
-- After closing, every value was found in `ditto_store/db.sql`, byte for byte (in a small store of a few dozen documents, in `db.sql-wal`; see [Deleting the directory while Ditto is open loses later writes](persistence-directory.md#deleting-the-directory-while-ditto-is-open-loses-later-writes)).
+- After closing, every value was found in `ditto_store/db.sql`, byte for byte (in a small store of a few dozen documents, in `db.sql-wal`; see [After close(), a small store keeps its values in the write-ahead log](persistence-directory.md#after-close-a-small-store-keeps-its-values-in-the-write-ahead-log)).
 - After the removals and closing, most removed values were still in the files:
 
   | Removed with | Values still in the files after closing |

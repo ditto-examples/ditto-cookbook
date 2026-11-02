@@ -8,8 +8,9 @@ How attachments behaved: which devices can deliver a blob, what a fetch reports 
 - A fetch whose connection stops stays pending and continues where it stopped; a device that already holds the same bytes downloads nothing, because identical content gets the same attachment ID ([An interrupted fetch resumes, and identical content is not downloaded again](#an-interrupted-fetch-resumes-and-identical-content-is-not-downloaded-again)).
 - A fast fetch can complete with a single `Completed` event and no `Progress` event, and `system:data_sync_info` does not show it; 60 fetches started at once all completed ([Fast fetches can complete without progress events](#fast-fetches-can-complete-without-progress-events)).
 - On a slow link, documents sent in the same direction as a large attachment wait behind the attachment data already queued: 1.2 to 1.9 seconds at 1 MB/s ([A large attachment holds up documents on a slow link](#a-large-attachment-holds-up-documents-on-a-slow-link)).
+- While the store stayed open, the blobs of replaced and deleted attachments stayed on disk as long as the app held their attachment objects, and attachments with the same bytes share one blob ([Blobs of replaced and deleted attachments stayed while the store was open](#blobs-of-replaced-and-deleted-attachments-stayed-while-the-store-was-open)).
 - Unreferenced blobs are collected about 10 minutes later while Ditto stays open, but only after the app has let go of its attachment objects for them (the values that `newAttachment` and `fetchAttachment` return), and at once when the store is opened again ([Unreferenced blobs are collected after about 10 minutes](#unreferenced-blobs-are-collected-after-about-10-minutes)).
-- The `Deleted` fetch event that the 5.2.0 release notes describe never appeared: fetches of attachments whose documents had been deleted stayed pending, or completed from a device that had not collected the blob yet ([Attachments relay only through devices that fetched them](#attachments-relay-only-through-devices-that-fetched-them), [A fetch of a collected blob stays pending instead of ending with Deleted](#a-fetch-of-a-collected-blob-stays-pending-instead-of-ending-with-deleted)).
+- The `Deleted` fetch event that the 5.2.0 release notes describe never appeared: fetches of attachments whose documents had been deleted stayed pending, or completed from a device that had not collected the blob yet ([A fetch waits while no device holds the blob, and a device that deleted the document still serves it](#a-fetch-waits-while-no-device-holds-the-blob-and-a-device-that-deleted-the-document-still-serves-it), [A fetch of a collected blob stays pending instead of ending with Deleted](#a-fetch-of-a-collected-blob-stays-pending-instead-of-ending-with-deleted)).
 
 ## Relaying and Fetching Attachments
 
@@ -17,21 +18,26 @@ How attachments behaved: which devices can deliver a blob, what a fetch reports 
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each; the results were the same on both releases. The later checks of garbage collection: 12 minutes once on 5.2.0, and a 15-second collection interval once each on 5.1.0 and 5.2.0 |
-| Setup | (1) Three devices in a line, A–B–C; only A held the blob, and C fetched it. (2) The only peer that held the blob was disconnected while another device fetched it. (3) The peer that held the blob deleted the document; then another device started a fetch and reconnected. (4) A device replaced attachments and deleted a document with an attachment, and we watched `fs_usage_attachment` in `system:system_info` and the blob files on disk |
-| Documentation | The 5.2.0 release notes (DS-842): "Requesting an attachment that no document references anymore now delivers a terminal `Deleted` status" |
+| Observed on | SDK 5.1.0 and 5.2.0, one run each; the results were the same on both releases |
+| Setup | Three devices in a line, A–B–C, each subscribed to the documents; only A held the blob, and C fetched it |
 
 - **Relay**: while only A held the blob, C's fetch made no progress for 15 seconds. Once B had fetched the blob (8 to 19 ms), C's fetch also completed at once.
+
+**Used in:** [Attachment Architecture](../best-practices/attachments.md#attachment-architecture), [Availability](../best-practices/attachments.md#availability).
+
+### A fetch waits while no device holds the blob, and a device that deleted the document still serves it
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each; the results were the same on both releases |
+| Setup | (1) The only device that held the blob was disconnected while another device fetched it. (2) The device that held the blob deleted the document; then another device, which still had the token, started a fetch and reconnected |
+| Documentation | The 5.2.0 release notes (DS-842): "Requesting an attachment that no document references anymore now delivers a terminal `Deleted` status" |
+
 - **No peer can deliver the blob**: while the only peer that held the blob was disconnected, the fetch stayed pending for 20 seconds, both when the fetching device deleted the document and when it fetched with a token that no document referenced from the start. No event arrived.
 - **The holder deleted the document**: after the peer that held the blob had deleted the document, another device started a fetch and reconnected, and the fetch **completed** (2.1 seconds) instead of ending with `Deleted`. Deleting the document does not remove the blob from the device that holds it at once.
-- **Replacing an attachment**: after a 2 MB attachment was replaced with another 2 MB attachment, `fs_usage_attachment` stayed at about 4.26 MB for 60 seconds: the old blob was not collected. This value is updated about every 10 seconds.
 - **DS-842 not reproduced**: none of these procedures reproduced the behavior that the release notes describe. It might occur only after the holder has collected the blob; [A fetch of a collected blob stays pending instead of ending with Deleted](#a-fetch-of-a-collected-blob-stays-pending-instead-of-ending-with-deleted) tried that, and it did not occur either.
-- **Waiting longer**: after a 2 MB attachment was replaced and a document with a 1 MB attachment was deleted, no blob was collected in 12 minutes with the store open. `fs_usage_attachment` kept growing by about 16 KB every 30 seconds; this was the SQLite write-ahead log of the attachment metadata (`ditto_attachments/db.sql-wal`), not blobs.
-- **Collection intervals**: `SHOW ALL` on 5.2.0 lists `ATTACHMENTS_GC_INTERVAL_SECS` (600) and `ATTACHMENTS_RETAINED_CLAIM_IDLE_SECS` (600; not present on 5.1.0), among others. With the collection interval set to 15 seconds (accepted with `ALTER SYSTEM` on 5.1.0, and with `systemParameters` and with `ALTER SYSTEM` on 5.2.0), the number of blob files stayed at 5 for 3 minutes.
-- Later checks found why nothing was collected while the store was open: the app still held the JavaScript attachment objects, or JavaScript garbage collection had not run (see [Unreferenced blobs are collected after about 10 minutes](#unreferenced-blobs-are-collected-after-about-10-minutes)).
-- **Identical content**: attachments with the same bytes get the same ID, and only one copy is stored on disk. Attaching a file with the same content to another document does not add a blob.
 
-**Used in:** [Availability](../best-practices/attachments.md#availability), [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Attachments Are Immutable](../best-practices/attachments.md#attachments-are-immutable), [Attachment Architecture](../best-practices/attachments.md#attachment-architecture), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
+**Used in:** [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Availability](../best-practices/attachments.md#availability), [Attachments Are Immutable](../best-practices/attachments.md#attachments-are-immutable), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
 
 ### An interrupted fetch resumes, and identical content is not downloaded again
 
@@ -91,6 +97,21 @@ Time until a small document reached the other side (median / maximum; the same t
 
 ## Garbage Collection of Blobs
 
+### Blobs of replaced and deleted attachments stayed while the store was open
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each. Waiting 12 minutes: one run on 5.2.0. A collection interval of 15 seconds: one run each on 5.1.0 and 5.2.0 |
+| Setup | A device replaced a 2 MB attachment with another 2 MB attachment and deleted a document with a 1 MB attachment, and we watched `fs_usage_attachment` in `system:system_info` and the blob files on disk. Separately, attachments with the same bytes in two documents |
+
+- **Replacing an attachment**: after a 2 MB attachment was replaced with another 2 MB attachment, `fs_usage_attachment` stayed at about 4.26 MB for 60 seconds: the old blob was not collected. This value is updated about every 10 seconds.
+- **Waiting longer**: after a 2 MB attachment was replaced and a document with a 1 MB attachment was deleted, no blob was collected in 12 minutes with the store open. `fs_usage_attachment` kept growing by about 16 KB every 30 seconds; this was the SQLite write-ahead log of the attachment metadata (`ditto_attachments/db.sql-wal`), not blobs.
+- **Collection intervals**: `SHOW ALL` on 5.2.0 lists `ATTACHMENTS_GC_INTERVAL_SECS` (600) and `ATTACHMENTS_RETAINED_CLAIM_IDLE_SECS` (600; not present on 5.1.0), among others. With the collection interval set to 15 seconds (accepted with `ALTER SYSTEM` on 5.1.0, and with `systemParameters` and with `ALTER SYSTEM` on 5.2.0), the number of blob files stayed at 5 for 3 minutes.
+- Later checks found why nothing was collected while the store was open: the app still held the JavaScript attachment objects, or JavaScript garbage collection had not run (see [Unreferenced blobs are collected after about 10 minutes](#unreferenced-blobs-are-collected-after-about-10-minutes)).
+- **Identical content**: attachments with the same bytes get the same ID, and only one copy is stored on disk. Attaching a file with the same content to another document does not add a blob.
+
+**Used in:** none yet.
+
 ### Unreferenced blobs are collected after about 10 minutes
 
 | | |
@@ -118,6 +139,6 @@ Time until a small document reached the other side (median / maximum; the same t
 | Documentation | The 5.2.0 release notes (DS-842): "Requesting an attachment that no document references anymore now delivers a terminal `Deleted` status" |
 
 - B received the deletion, and its copy of the document was gone, but the fetch stayed pending for 30 seconds, and no event arrived.
-- Together with the procedures in [Attachments relay only through devices that fetched them](#attachments-relay-only-through-devices-that-fetched-them), none of our procedures reproduced DS-842, on 5.1.0 or on 5.2.0.
+- Together with the procedures in [A fetch waits while no device holds the blob, and a device that deleted the document still serves it](#a-fetch-waits-while-no-device-holds-the-blob-and-a-device-that-deleted-the-document-still-serves-it), none of our procedures reproduced DS-842, on 5.1.0 or on 5.2.0.
 
 **Used in:** [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).

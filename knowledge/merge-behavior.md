@@ -10,7 +10,7 @@ How concurrent writes from several devices merge: registers, maps, and removals 
 - A counter, a map keyed by ID, and an audit log keyed by timestamp kept every change from three offline devices, and a randomized test with four to six devices, also with SDK releases mixed, always converged without losing an increment or a latest write. Peers on 5.0.3, 5.1.0, and 5.2.0 merged concurrent edits as on a single release ([With three offline devices, counters and maps keep every change](#with-three-offline-devices-counters-and-maps-keep-every-change), [A randomized merge test always converged](#a-randomized-merge-test-always-converged), [Peers on different releases merged to the same documents](#peers-on-different-releases-merged-to-the-same-documents)).
 - Each device evaluates conditions and arithmetic on the documents it holds: a conditional update is not a lock, a bulk `UPDATE` misses documents that other devices added, and `reg = reg + 1` on six connected devices kept only 101 to 129 of 600 increments ([Conditional updates on two offline devices both succeed](#conditional-updates-on-two-offline-devices-both-succeed), [UPDATE changes only the documents that the writing device holds](#update-changes-only-the-documents-that-the-writing-device-holds), [Read-modify-write increments lose most concurrent updates](#read-modify-write-increments-lose-most-concurrent-updates)).
 - A reorder survives a concurrent reorder only when it writes just the moved entry, with a value between its new neighbors; renaming a field in place hides what older app versions write ([Reordering on two offline devices keeps both moves only with gap positions](#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions), [Renaming a field in place hides older versions' edits](#renaming-a-field-in-place-hides-older-versions-edits)).
-- A stored total keeps one device's partial result after the line items merge, and changing a register to a counter in a new app version leaves both values in the field ([A stored total keeps one device's partial result](#a-stored-total-keeps-one-devices-partial-result), [Changing a register to a counter leaves both values](#changing-a-register-to-a-counter-leaves-both-values)).
+- A stored total keeps one device's partial result after the line items merge, and changing a register to a counter in a new app version leaves both values in the field, of which a read without a declaration returns the one written later ([A stored total keeps one device's partial result](#a-stored-total-keeps-one-devices-partial-result), [Changing a register to a counter leaves both values](#changing-a-register-to-a-counter-leaves-both-values)).
 - Counters accept only integers. An upsert that writes a number into a counter restarts it, and two devices that create the same counter document with a regular `INSERT` lose an increment, while `INITIAL DOCUMENTS` keeps both ([Counters accept only integers](#counters-accept-only-integers), [An upsert that declares a counter restarts it](#an-upsert-that-declares-a-counter-restarts-it), [INITIAL DOCUMENTS keeps concurrent counter increments](#initial-documents-keeps-concurrent-counter-increments)).
 - Counters inside map entries add up. An undeclared `SET` leaves a second value beside a counter, a deletion that meets a concurrent increment leaves a count of 0, and `INSERT ... SELECT` copies counters and attachments as plain values unless both sides declare them ([Counters inside map entries add up](#counters-inside-map-entries-add-up), [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values), [Deleting a counter during a concurrent increment leaves a husk](#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk), [INSERT ... SELECT copies counters and attachments as plain values](#insert--select-copies-counters-and-attachments-as-plain-values)).
 
@@ -242,12 +242,11 @@ Results were the same on both releases.
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0, in the tests for an earlier version of this guide; the number of runs was not recorded |
-| Setup | An order with line items and a stored `subtotal`. Two devices added line items concurrently while offline, and each recomputed and stored the subtotal from its own view of the items. Then they synced |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
+| Setup | An order with one line item of 200 and a stored `subtotal` of 200, on two devices. While offline, device A added an item of 200 and stored the subtotal of the items it held (400); device B, later, added an item of 400 and stored its own subtotal (600). Then they synced |
 
-- The line items merged to a total of 800, while the stored `subtotal` kept one device's value, 600. A value computed from other fields is a separate register: each device writes the total of its partial view, and the later write wins, so the merged inputs and the stored total disagree.
-
-**Not tested:** SDK 5.2.0.
+- On both devices, the line items merged to a total of 800, while the stored `subtotal` was 600, B's partial total.
+- A value computed from other fields is a separate register: each device writes the total of its partial view, and the later write wins, so the merged inputs and the stored total disagree.
 
 **Used in:** [Do not store derived values that can diverge](../best-practices/data-modeling.md#do-not-store-derived-values-that-can-diverge).
 
@@ -255,12 +254,17 @@ Results were the same on both releases.
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0, in the tests for an earlier version of this guide; the number of runs was not recorded |
-| Setup | A document with `stock: 10` as a plain number (a register). An old app version, offline, wrote `SET stock = 9`, while a new version concurrently ran `APPLY stock INCREMENT BY -1`, treating the field as a `COUNTER`. Then they synced |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
+| Setup | A document with `stock: 10` as a plain number (a register), on two devices. While offline, one device wrote `SET stock = 9`, as an old app version would, and the other ran `APPLY stock INCREMENT BY -1`, as a new version that treats the field as a `COUNTER`, once with each write the later one. Then they synced, and both devices read `stock` without a declaration, declared as `REGISTER`, and declared as `COUNTER` |
 
-- After sync, an undeclared `SELECT` returned a stock of `-1` on both versions: the new counter started at 0, and its value is the one shown without a declaration. Only a statement that declared the field as `REGISTER` still returned `9`. The register and the counter coexist under the same key (see [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values) for the opposite direction).
+| Written later | Undeclared `SELECT` | Declared `REGISTER` | Declared `COUNTER` |
+|---|---|---|---|
+| The counter increment | `-1` | `9` | `-1` |
+| The register write | `9` | `9` | `-1` |
 
-**Not tested:** SDK 5.2.0.
+- Both values remained under the same key, the same on both devices: the register kept `9`, and the counter, which started at 0, held `-1`.
+- A read without a declaration returned the value of the type written later. Which value an app shows therefore depends on which app version wrote last, and can change with the next write.
+- [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values) describes the opposite direction.
 
 **Used in:** [Changing CRDT types](../best-practices/data-modeling.md#changing-crdt-types), [Keep type declarations consistent](../best-practices/data-modeling.md#keep-type-declarations-consistent).
 

@@ -17,7 +17,7 @@ Checks:
 - every knowledge entry of an observation (a section with an "Observed on"
   row) has a "Setup" row and a "Used in" line, and the "Used in" line lists
   every section of another page that links to the entry
-- every relative link in the repository's Markdown files points to an
+- every relative link in the repository's Markdown files is well formed and points to an
   existing file, and every #anchor to an existing heading (GitHub anchors)
 - audit/reference/scanner-rules.md matches `scan.py --list-rules`
 
@@ -128,7 +128,13 @@ def check_links(files: list[Path], root: Path) -> list[str]:
     errors = []
     anchor_cache: dict[Path, set[str]] = {}
     for path in files:
-        for number, target in parse_links(path.read_text(encoding="utf-8")):
+        text = path.read_text(encoding="utf-8")
+        for number, line in prose_lines(text):
+            prose = INLINE_CODE.sub("code", line)
+            if prose.count("](") != len(LINK.findall(prose)):
+                errors.append(f"{path.relative_to(root)}:{number}: a malformed link (a \"](\" that does not "
+                              "start a link, such as a target without its closing parenthesis)")
+        for number, target in parse_links(text):
             if SCHEME.match(target):
                 continue
             file_part, _, anchor = target.partition("#")
