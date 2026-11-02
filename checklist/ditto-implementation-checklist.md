@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.25
+> **Version**: 2.26
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1092,7 +1092,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 **What this means:** Inside the callback, run every statement through the `Transaction` passed in (`tx.execute`). Never call `ditto.store.execute` there, never start a read-write transaction inside another one, and never keep the `Transaction` object after the callback returns.
 
-**Why this matters:** In Flutter, `ditto.store.execute` inside a transaction throws a `DittoException`; on other platforms it can deadlock. Only one read-write transaction runs at a time, so a nested one waits forever for the outer one to finish. Flutter has no guard against this.
+**Why this matters:** In Flutter, `ditto.store.execute` inside a transaction throws a `DittoException`; on other platforms it does not throw, and in our testing with the JavaScript SDK 5.0.3 to 5.2.0, a write through it never completed. Only one read-write transaction runs at a time, so a nested one waits forever for the outer one to finish. Flutter has no guard against this.
 
 **Best-practices guide:** Transaction Rules
 
@@ -1100,7 +1100,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 **What this means:** A transaction should only read, decide, write, and return. Prepare network responses, files, user input, and attachments (`newAttachment`) before the transaction starts, and never make network calls, show dialogs, or await timers inside it. Track pending transactions and await them before `ditto.close()`.
 
-**Why this matters:** While a read-write transaction runs, every other read-write transaction and plain write waits. Once a transaction has run for 10 seconds, Ditto logs a message about it every 5 seconds, starting at debug level and escalating to higher levels. `close()` does not wait for in-flight transactions. While a read-write transaction is open, even one that only reads, changes from other devices do not reach the store either: in our testing with SDK 5.1.0 and 5.2.0, they arrived only when it ended. Use `isReadOnly: true` for transactions that only read.
+**Why this matters:** While a read-write transaction runs, every other read-write transaction and plain write waits. Once a transaction has run for 10 seconds, Ditto logs a message about it every 5 seconds, starting at debug level and escalating to higher levels: in our testing with SDK 5.1.0 and 5.2.0, info from 20 seconds, warning from 35 seconds, and error from 60 seconds. In Flutter, `close()` does not wait for in-flight transactions. While a read-write transaction is open, even one that only reads, changes from other devices do not reach the store either: in our testing with SDK 5.1.0 and 5.2.0, they arrived only when it ended. Use `isReadOnly: true` for transactions that only read.
 
 **Best-practices guide:** Transaction Rules, Concurrency and Duration
 

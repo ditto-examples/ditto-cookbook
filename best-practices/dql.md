@@ -289,7 +289,7 @@ Future<List<String>> openOrdersAsJson(Ditto ditto) async {
 
 **✅ DO:**
 - Convert each row to a `Map` or to your own model class once, then work with those objects.
-- Iterate `items` once. Each pass over `items` creates new `QueryResultItem` wrappers, so `result.items.first.value` evaluated twice decodes the row twice.
+- Iterate `items` once. Each pass over `items` creates new `QueryResultItem` wrappers, so `result.items.first.value` evaluated twice decodes the row twice. (JavaScript differs: `items` and `item.value` return the same objects every time; see [Platform Differences](../knowledge/platform-differences.md).)
 - Keep only the data you need; let the `QueryResult` go out of scope.
 
 **❌ DON'T:**

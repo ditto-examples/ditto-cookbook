@@ -17,7 +17,7 @@ The patterns in [SKILL.md](../SKILL.md) apply to every platform; the API shapes 
 | Platform | API | Explicit rollback | Inside the scope |
 |---|---|---|---|
 | Flutter | `ditto.store.transaction(hint:, isReadOnly:, (tx) async {...})` | Return `TransactionCompletionAction.rollback` | `store.execute` throws a `DittoException`; a nested read-write transaction deadlocks (the SDK does not detect it) |
-| JavaScript | `ditto.store.transaction(async (tx) => {...}, { isReadOnly, hint })` | Return `'rollback'` | `store.execute` writes or nested read-write transactions can deadlock (no error is thrown); never do it |
+| JavaScript | `ditto.store.transaction(async (tx) => {...}, { isReadOnly, hint })` | Return `'rollback'` | `store.execute` writes and nested read-write transactions deadlocked without an error in testing (5.0.3 to 5.2.0); never do it. `close()` waits for open transactions |
 | Swift | `try await ditto.store.transaction(hint:isReadOnly:) { tx in ... }` | Return `.rollback` | `store.execute` or nesting can deadlock; never do it |
 | Kotlin | `ditto.store.transaction(hint, isReadOnly) { tx -> ... }` | Return `DittoTransaction.Result.Rollback` | `store.execute` or nesting can deadlock; never do it |
 
@@ -48,7 +48,9 @@ transaction<T = TransactionCompletionAction>(
 - Options are the **second** argument.
 - Returning `'commit'` or `'rollback'` applies that action. Any other value, including `undefined`, `null`, or `false`, commits and is returned by `transaction()`.
 - A mutating statement in a read-only transaction throws a `DittoError` with code `'store/transaction-read-only'`.
-- Calling `ditto.store.execute()` or starting a nested read-write transaction inside a transaction can deadlock; the SDK does not throw. Use only the `tx` passed to the scope.
+- Calling `ditto.store.execute()` or starting a nested read-write transaction inside a transaction deadlocked in testing with SDK 5.0.3 to 5.2.0: the write never completed, the SDK did not throw, and the process kept running with only a `has been running for` log line every 5 seconds. A read through `store.execute` completes but does not see the transaction's writes. Use only the `tx` passed to the scope.
+- `ditto.close()` waits for open transactions and other running operations, so a stuck transaction also keeps `close()` from completing.
+- An exception thrown in an observer callback is discarded without any report (`uncaughtException` and `unhandledRejection` stay silent), and the observer keeps running; catch and log errors inside the callback.
 
 ```js
 // ✅ GOOD: Explicit rollback, options as the second argument.
