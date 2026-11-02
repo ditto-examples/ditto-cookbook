@@ -282,7 +282,7 @@ For widget tests of screens that own observers, keep the observer behind your ow
 
 ## Testing Subscription Rules
 
-`registerSubscription` validates the query when it is called, even before sync starts. It throws a `DittoException` for projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, `USE IDS`, and (while the system parameter `DQL_RESTRICT_SUBSCRIPTIONS` has its default value `true`) `ORDER BY` and `LIMIT`. `WHERE` filters are allowed (see [Subscription Rules](sync-and-subscriptions.md#subscription-rules)). A test that registers every subscription your app uses catches invalid subscription queries without a network. You can also assert that the forms your app must not use are rejected:
+`registerSubscription` validates the query when it is called, even before sync starts. It throws a `DittoException` for projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, `USE IDS`, and (while the system parameter `DQL_RESTRICT_SUBSCRIPTIONS` has its default value `true`) `ORDER BY` and `LIMIT`. `WHERE` filters are allowed (see [Subscription Rules](sync-and-subscriptions.md#subscription-rules) and [The sending peer evaluates a subscription's WHERE clause like a local query](../knowledge/observations/subscriptions-and-replication.md#the-sending-peer-evaluates-a-subscriptions-where-clause-like-a-local-query)). A test that registers every subscription your app uses catches invalid subscription queries without a network. You can also assert that the forms your app must not use are rejected:
 
 <!-- expect-error -->
 ```dart
@@ -380,9 +380,9 @@ Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment 
 
 ### Several peers in one test process
 
-The helpers below open several small peers in one `integration_test` process and connect them over TCP on `127.0.0.1` only:
+The helpers below open several small peers in one `integration_test` process and connect them over TCP on `127.0.0.1` only (see [A device that only connects also listens for TCP connections](../knowledge/observations/connections-and-presence.md#a-device-that-only-connects-also-listens-for-tcp-connections)):
 - Each peer has its own persistence directory, and all peers share one Database ID.
-- Each group of peers needs its own port and Database ID. Pass different values when a test opens two groups (two stores, for example) and in test processes that can run at the same time on one machine (parallel CI jobs). In our testing, a second hub listened on a port that another Ditto hub already used, without an error, and a client that reconnected then moved to the newer hub and mixed the documents of both groups; with different Database IDs, the groups did not mix, and the test failed visibly (see [A second hub listened on a port already in use without an error](../knowledge/observations/connections-and-presence.md#a-second-hub-listened-on-a-port-already-in-use-without-an-error)).
+- Each group of peers needs its own port and Database ID. Pass different values when a test opens two groups (two stores, for example) and in test processes that can run at the same time on one machine (parallel CI jobs). In our testing, a second hub listened on a port that another Ditto hub already used, without an error, and a client that reconnected then moved to the newer hub and mixed the documents of both groups; with different Database IDs, the groups did not mix, and the test failed visibly (see [A second hub listened on a port already in use without an error](../knowledge/observations/connections-and-presence.md#a-second-hub-listened-on-a-port-already-in-use-without-an-error) and [Devices with different Database IDs do not sync](../knowledge/observations/persistence-directory.md#devices-with-different-database-ids-do-not-sync)).
 - Peer-to-peer transports are disabled, so a test never connects to devices nearby.
 - `whileDisconnected` stops sync on every peer, runs the writes, and reconnects the peers. Writes made inside it are concurrent, like edits on devices that are offline at the same time. Writes made while the peers are connected reach the other peers within milliseconds and do not test a merge.
 - `waitForConvergence` waits, with a timeout, until every peer returns the same rows.
@@ -573,7 +573,7 @@ void main() {
 This setup does not cover the following, so keep a few tests on real devices:
 - All peers share one clock. Clock skew between devices is not simulated.
 - Only TCP is exercised. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, and app lifecycle need real devices.
-- A listening peer accepts at most 6 TCP connections by default (observed with 5.1.0; 5.2.0 counts accepted and outgoing connections together, see [Transport Configuration](setup-and-lifecycle.md#transport-configuration)). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
+- A listening peer accepts at most 6 TCP connections by default (in our testing with SDK 5.1.0 and 5.2.0; see [A device accepts six TCP connections by default](../knowledge/observations/connections-and-presence.md#a-device-accepts-six-tcp-connections-by-default)). On 5.2.0, the connections that a peer opened itself count toward the limit too (see [Transport Configuration](setup-and-lifecycle.md#transport-configuration)). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
 
 Scenarios worth covering (with the helpers above, or on real devices):
 - Two devices edit **different fields** and the **same field** of one document while offline, then reconnect.

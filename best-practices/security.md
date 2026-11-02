@@ -224,7 +224,7 @@ Ditto collections are schema-free, so the application is responsible for validat
 - Treat documents received from other peers as untrusted input when you render or process them.
 
 **❌ DON'T:**
-- Filter subscriptions by personal data or secrets, such as an email address. The subscription query and its arguments go to directly connected devices, and both devices write them to their on-disk logs (see [On-disk logs and exporting them](logging-and-observability.md#on-disk-logs-and-exporting-them)). Filter by IDs that mean nothing on their own.
+- Filter subscriptions by personal data or secrets, such as an email address. The subscription query and its arguments go to directly connected devices, and both devices write them to their on-disk logs (see [On-disk logs and exporting them](logging-and-observability.md#on-disk-logs-and-exporting-them) and [Subscription queries and arguments appear in other devices' logs](../knowledge/observations/configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)). Filter by IDs that mean nothing on their own.
 - Build DQL strings by interpolating user input. In our testing, the input `nobody' OR '1'='1` embedded as a string literal made a `SELECT` return every document and a `DELETE` delete every document; passed as an argument, it matched none (see [User input embedded in a statement changes what it matches](../knowledge/observations/dql-behavior.md#user-input-embedded-in-a-statement-changes-what-it-matches)).
 
 ```dart
@@ -290,7 +290,7 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 - Model access-control attributes in `_id`.
 - Reject identities in the webhook before creating a revocation, and keep revocation checking enabled.
 - Always use a `privateKey` in small-peers-only deployments, and provision it securely.
-- Decide which devices accept connections from other devices. A device that only sets `connect.tcpServers` also listens on all interfaces; bind `listen.tcp` to `127.0.0.1` where it must not (see [Transport Configuration](setup-and-lifecycle.md#transport-configuration)).
+- Decide which devices accept connections from other devices. A device that only sets `connect.tcpServers` also listens on all interfaces; bind `listen.tcp` to `127.0.0.1` where it must not (see [Transport Configuration](setup-and-lifecycle.md#transport-configuration) and [A device that only connects also listens for TCP connections](../knowledge/observations/connections-and-presence.md#a-device-that-only-connects-also-listens-for-tcp-connections)).
 - Validate input and pass all values as DQL parameters.
 - Protect sensitive data at rest: with `DittoConfig.encryptionKey` on Swift and Kotlin (SDK 5.2+), and elsewhere with OS protections and application-level encryption.
 - Verify webhook signatures.

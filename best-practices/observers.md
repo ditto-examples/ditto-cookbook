@@ -252,7 +252,7 @@ Behavior:
 
 ### registerObserverWithSignalNext (Experimental)
 
-`registerObserverWithSignalNext` delivers one result and then waits until you call `signalNext()` (the callback parameter or `observer.signalNext()`). **If you never call it, the observer stops delivering updates.** Do not use pause and resume on the `changes` stream of such an observer; the SDK logs a warning if you do.
+`registerObserverWithSignalNext` delivers one result and then waits until you call `signalNext()` (the callback parameter or `observer.signalNext()`; see [Local writes are coalesced into callbacks about 30 ms apart](../knowledge/observations/observer-behavior.md#local-writes-are-coalesced-into-callbacks-about-30-ms-apart)). **If you never call it, the observer stops delivering updates.** Do not use pause and resume on the `changes` stream of such an observer; the SDK logs a warning if you do.
 
 ```dart
 // ✅ GOOD: registerObserverWithSignalNext (Experimental): request the next update when done.
@@ -332,7 +332,7 @@ Backpressure works differently on each platform. Do not port Flutter code one-to
 | Platform | Default observer | Backpressure |
 |---|---|---|
 | Flutter | `registerObserver(query, arguments:)` + `changes`; no backpressure | `registerObserverV2` (auto, follows pause/resume) or `registerObserverWithSignalNext` (manual); both experimental |
-| JavaScript | `registerObserver(query, handler, args)` signals the next update automatically when the handler **returns**; an `async` handler is not awaited | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` for asynchronous work |
+| JavaScript | `registerObserver(query, handler, args)` signals the next update automatically when the handler **returns**; an `async` handler is not awaited (see [In JavaScript, registerObserver does not await async callbacks](../knowledge/observations/observer-behavior.md#in-javascript-registerobserver-does-not-await-async-callbacks)) | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` for asynchronous work |
 | Swift | `registerObserver(query:arguments:deliverOn:handler:)` signals automatically when the handler returns; delivered on the main queue by default | `handlerWithSignalNext:` for manual `signalNext()`; pass `deliverOn:` to move heavy work off the main queue |
 | Kotlin | `registerObserver(query, args) { result -> }` with a suspending handler, or `observe(...)` returning a `Flow` (use `.conflate()` for slow collectors). Observers and subscriptions are released with `close()` | No `signalNext`; `collect(query, args) { result -> }` requests the next event only after the suspending handler returns |
 

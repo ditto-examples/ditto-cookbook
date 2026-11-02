@@ -31,6 +31,8 @@ SHOW DQL_STRICT_MODE
 | `SELECT` / `WHERE` on fields stored as MAP, COUNTER, or ATTACHMENT without a declaration | Values are visible | **Fields are invisible**: `SELECT *` omits them and `WHERE` conditions on them do not match |
 | Index use | Indexes are used | Indexes are not used (see the note below) |
 
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+
 > **Note (SDK 5.1.0 and 5.2.0):** With `DQL_STRICT_MODE = true`, the query planner does not use indexes: `EXPLAIN` shows a full collection scan even for a query on an indexed field (ID lookups are not affected; see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types) and [With strict mode on, the planner does not use secondary indexes](../knowledge/observations/dql-behavior.md#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)). Keep the default (`false`) if you rely on indexes for query performance.
 
 ### When to choose strict mode
@@ -80,7 +82,7 @@ Future<void> setShippingAddress(
 
 ### Keep type declarations consistent
 
-A field can hold more than one CRDT value at the same time when statements disagree about its type. Each statement reads or writes the value of the type it declares (or infers), and an undeclared `SELECT` shows the most recently written type. Mixed declarations therefore produce results that look like data loss, even on a single device:
+A field can hold more than one CRDT value at the same time when statements disagree about its type. Each statement reads or writes the value of the type it declares (or infers), and an undeclared `SELECT` shows the most recently written type (see [Changing a register to a counter leaves both values](../knowledge/observations/merge-behavior.md#changing-a-register-to-a-counter-leaves-both-values)). Mixed declarations therefore produce results that look like data loss, even on a single device:
 
 | Sequence (default settings) | Result |
 |---|---|
@@ -88,7 +90,9 @@ A field can hold more than one CRDT value at the same time when statements disag
 | Undeclared `INSERT ... {"cnt": 10}`, then `APPLY cnt INCREMENT BY 1` | `cnt` becomes `1`, not `11`: the increment created a new COUNTER that started at 0 |
 | `APPLY pn PN_INCREMENT BY 4` twice, then `APPLY pn INCREMENT BY 1` | `pn` becomes `1`: the COUNTER hides the legacy PN_COUNTER value |
 | `INSERT INTO COLLECTION t (price REGISTER) ... {"price": {"amount": 1}}`, then `UPDATE COLLECTION t (price MAP) SET price.amount = 25`, on this or another device | Undeclared and `MAP` reads return `25`, while a `SELECT` that declares `price REGISTER` keeps returning `1`. An app version that declares the field differently from the others shows stale values and never sees their updates (in our testing; see [Mixed type declarations change what a query reads, not the index results](../knowledge/observations/dql-behavior.md#mixed-type-declarations-change-what-a-query-reads-not-the-index-results)) |
-| A counter at 3, an undeclared `UPDATE ... SET cnt = 0` to reset it, then `APPLY cnt INCREMENT BY 1` on any device | An undeclared `SELECT` returns `0` until the increment, then `4`: the `SET` wrote a REGISTER next to the COUNTER, and the increment made the COUNTER the latest value again. Reset a counter with `APPLY cnt RESTART` (see [RESTART](#restart)) |
+| A counter at 3, an undeclared `UPDATE ... SET cnt = 0` to reset it, then `APPLY cnt INCREMENT BY 1` on any device | An undeclared `SELECT` returns `0` until the increment, then `4`: the `SET` wrote a REGISTER next to the COUNTER, and the increment made the COUNTER the latest value again (see [Resetting a counter with SET leaves two values](../knowledge/observations/merge-behavior.md#resetting-a-counter-with-set-leaves-two-values)). Reset a counter with `APPLY cnt RESTART` (see [RESTART](#restart)) |
+
+In our testing, the first three rows of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
 
 **✅ DO:**
 - Use the same declaration for a field in **every** `INSERT`, `UPDATE`, and `SELECT` that touches it.
@@ -128,7 +132,7 @@ The remedies are to use the same setting on all peers (recommended) or to declar
 
 ## Arrays and Maps
 
-Arrays are registers: the whole array is replaced on every write, and when two devices change the same array concurrently, one version wins and the other change is lost silently. Maps keyed by ID merge each entry independently. Choose the shape as follows:
+Arrays are registers: the whole array is replaced on every write, and when two devices change the same array concurrently, one version wins and the other change is lost silently (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)). Maps keyed by ID merge each entry independently (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)). Choose the shape as follows:
 
 | Use a **map keyed by ID** when | Use an **array** when |
 |---|---|
@@ -139,7 +143,7 @@ Arrays are registers: the whole array is replaced on every write, and when two d
 **✅ DO:**
 - Store collections of editable items as maps keyed by a stable ID (a natural key such as a SKU, or a UUID).
 - Keep the item's own data inside the entry, and store any display order as a field (for example, `position`).
-- When the user moves an item, write only that entry's `position`, with a value between its new neighbors (for example, the midpoint). Renumbering every entry makes a reorder that another device made at the same time disappear, and renumbering only the shifted entries mixes the numbers of both devices (see [Reordering on Two Devices](../knowledge/crdt-types.md#reordering-on-two-devices)). Sort entries with equal positions by a fixed key, such as the entry key, and renumber the whole list only when no other device reorders it at the same time.
+- When the user moves an item, write only that entry's `position`, with a value between its new neighbors (for example, the midpoint). Renumbering every entry makes a reorder that another device made at the same time disappear, and renumbering only the shifted entries mixes the numbers of both devices (see [Reordering on Two Devices](../knowledge/crdt-types.md#reordering-on-two-devices) and [Reordering on two offline devices keeps both moves only with gap positions](../knowledge/observations/merge-behavior.md#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions)). Sort entries with equal positions by a fixed key, such as the entry key, and renumber the whole list only when no other device reorders it at the same time.
 - Use arrays for immutable lists or lists that a single device owns.
 
 **❌ DON'T:**
@@ -205,7 +209,7 @@ WHERE _id = :id
 
 DQL parameters bind **values**, not field paths, and DQL has no bracket syntax for dynamic keys (`items[:key]` is a parser error). In application code the key is usually a variable. Two patterns cover this without building queries from untrusted strings:
 
-1. **Add or update an entry** by upserting a partial document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`. Because objects merge, only the entry you pass is written, and unchanged values are not rewritten.
+1. **Add or update an entry** by upserting a partial document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`. Because objects merge, only the entry you pass is written (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)), and unchanged values are not rewritten.
 2. **Remove an entry** with `UNSET`, after validating that the key matches a strict pattern (for example, a UUID), and only then placing it inside backticks.
 
 ```dart
@@ -297,7 +301,7 @@ SELECT * FROM products WHERE :tag IN tags
 SELECT * FROM products WHERE array_contains(tags, :tag)
 ```
 
-An index on an array field matches only the complete array value, so element lookups such as these scan the collection. Scalar fields inside map entries, by contrast, can be indexed with their full path (see [Creating Indexes](indexing-and-performance.md#creating-indexes)).
+An index on an array field matches only the complete array value, so element lookups such as these scan the collection. Scalar fields inside map entries, by contrast, can be indexed with their full path (see [Creating Indexes](indexing-and-performance.md#creating-indexes) and [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
 
 ### Incremental adoption
 
@@ -309,7 +313,7 @@ You do not have to convert every array at once. Start with the simple shape, and
 
 Update only the fields that the user changed, so that concurrent edits to other fields survive. The rule and its examples are in [Prefer field-level updates over whole-document rewrites](dql.md#prefer-field-level-updates-over-whole-document-rewrites); this subsection covers the one case that an upsert does not make safe, a stale in-memory copy.
 
-`ON ID CONFLICT DO UPDATE_LOCAL_DIFF` compares the incoming document with the local document and skips fields whose values are equal (those fields keep their timestamps); every field that differs is written. That suits upserts and re-imports of data that another system owns, but it does not protect a stale copy: if a change from another device has already reached the local store and your in-memory copy still holds the old value, the old value differs from the stored one and is written back. (`DO UPDATE` writes every field you pass, even unchanged ones, which gives those fields new timestamps and can override a concurrent change from another device.) See [INSERT and Conflict Handling](dql.md#insert-and-conflict-handling) for all conflict policies.
+`ON ID CONFLICT DO UPDATE_LOCAL_DIFF` compares the incoming document with the local document and skips fields whose values are equal (those fields keep their timestamps); every field that differs is written. That suits upserts and re-imports of data that another system owns, but it does not protect a stale copy: if a change from another device has already reached the local store and your in-memory copy still holds the old value, the old value differs from the stored one and is written back (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)). (`DO UPDATE` writes every field you pass, even unchanged ones, which gives those fields new timestamps and can override a concurrent change from another device.) See [INSERT and Conflict Handling](dql.md#insert-and-conflict-handling) for all conflict policies.
 
 **✅ DO:**
 - Write only the fields that the user changed, with `UPDATE ... SET` (or with a partial document in an upsert).
@@ -408,9 +412,9 @@ Once a document has replicated, Ditto syncs only the fields that change, but eve
 ### Field names
 
 - Field names are always strings. Use one convention (this guide uses camelCase).
-- If a field name collides with a DQL keyword or contains special characters, quote it with backticks in queries (for example, `` `value` ``).
+- If a field name collides with a DQL keyword or contains special characters (see [Field names can contain dots and backticks, or be empty](../knowledge/observations/dql-behavior.md#field-names-can-contain-dots-and-backticks-or-be-empty)), quote it with backticks in queries (for example, `` `value` ``).
 - Never name a collection `collection`; it is a DQL keyword.
-- Names are case-sensitive: `Orders` and `orders` are different collections, and `createdAt` and `createdat` are different fields.
+- Names are case-sensitive: `Orders` and `orders` are different collections, and `createdAt` and `createdat` are different fields (see [Names are case-sensitive, and most DQL keywords work as bare names](../knowledge/observations/dql-behavior.md#names-are-case-sensitive-and-most-dql-keywords-work-as-bare-names)).
 
 ## Document Size Limits
 
@@ -419,7 +423,7 @@ Ditto enforces two thresholds on the **size of each stored document**:
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | The write succeeds and a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below). SDK 5.0.3 did not check the limit in our testing (see [SDK 5.0.3 does not check the hard size limit when a document is written](../knowledge/observations/documents-and-limits.md#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)) |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below and [An oversized merge ends differently on each release](../knowledge/observations/documents-and-limits.md#an-oversized-merge-ends-differently-on-each-release)). SDK 5.0.3 did not check the limit in our testing (see [SDK 5.0.3 does not check the hard size limit when a document is written](../knowledge/observations/documents-and-limits.md#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)) |
 
 Log and error messages:
 
@@ -441,7 +445,7 @@ In Flutter, a failed statement throws a `DittoException`; catch it like any othe
 - Design documents to stay well below 256 KiB.
 - Store images, PDFs, and other binary content as attachments; attachments are fetched separately and do not count toward the document size (see [Attachments](attachments.md)).
 - Move data that grows without bound (order history, readings, comments) into its own collection.
-- Leave both limits at their defaults. If you change them, change them on every peer in the same release: a device with a lower hard limit cannot update documents that arrive larger than its limit. (In SDK 5.1.0 and 5.2.0, a hard limit set below the soft limit is not enforced.)
+- Leave both limits at their defaults. If you change them, change them on every peer in the same release: a device with a lower hard limit cannot update documents that arrive larger than its limit. (In SDK 5.1.0 and 5.2.0, a hard limit set below the soft limit is not enforced; see [The documented parameter defaults match SHOW ALL](../knowledge/observations/configuration-and-diagnostics.md#the-documented-parameter-defaults-match-show-all).)
 
 **❌ DON'T:**
 - Embed base64-encoded files in documents.
@@ -468,7 +472,7 @@ Future<bool> saveNotes(Ditto ditto, String visitId, String notes) async {
 ### Monitoring size
 
 - Search application logs for `exceeds recommended limit` to find documents above the soft limit.
-- Estimate the size of a document with `object_size()` (SDK 5.1+). It returns an approximate size in bytes of the value, which can differ from the stored size, so leave headroom:
+- Estimate the size of a document with `object_size()` (SDK 5.1+; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)). It returns an approximate size in bytes of the value, which can differ from the stored size, so leave headroom:
 
 ```sql
 SELECT _id, object_size(o) AS approxBytes
@@ -649,7 +653,7 @@ Every document has an `_id` that is unique within its collection. If you omit `_
 | Floating-point number | ❌ `Floats are not supported in document IDs` |
 | `null` | ❌ `Null document ID not allowed` |
 
-Key order inside a composite `_id` does not matter: `{"storeId": "s1", "orderId": "o1"}` and `{"orderId": "o1", "storeId": "s1"}` identify the same document.
+Key order inside a composite `_id` does not matter: `{"storeId": "s1", "orderId": "o1"}` and `{"orderId": "o1", "storeId": "s1"}` identify the same document. In our testing, every row of this table and this key order held on SDK 5.0.3, 5.1.0, and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
 
 Otherwise IDs compare by type and exact value. In our testing, `1` and `'1'`, `true` and `'true'`, `'A'` and `'a'`, and `'1'` and `' 1'` were different documents, and so were two strings that look the same but use different Unicode forms: Ditto does not normalize them (see [Document IDs compare by type and exact value](../knowledge/observations/dql-behavior.md#document-ids-compare-by-type-and-exact-value)). The empty string was accepted as an ID; `-0` was rejected as a float (`Invalid document id`).
 
@@ -742,7 +746,7 @@ Future<String> createOrder(Ditto ditto, String storeId) async {
 
 ### Composite IDs for permission scoping and grouping
 
-Ditto permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` lets you grant access at any level, for example a whole region (`"_id.region == 'eu'"`) or a single store (`"_id.storeId == 'store-12'"`); see [Design `_id` for permission scoping](security.md#design-_id-for-permission-scoping) for the rule format. The same subfields can filter subscriptions and queries (`WHERE _id.storeId = :storeId`), and they can be indexed. Filtering on the complete `_id` value uses a direct ID lookup.
+Ditto permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` lets you grant access at any level, for example a whole region (`"_id.region == 'eu'"`) or a single store (`"_id.storeId == 'store-12'"`); see [Design `_id` for permission scoping](security.md#design-_id-for-permission-scoping) for the rule format. The same subfields can filter subscriptions and queries (`WHERE _id.storeId = :storeId`), and they can be indexed (see [The sending peer evaluates a subscription's WHERE clause like a local query](../knowledge/observations/subscriptions-and-replication.md#the-sending-peer-evaluates-a-subscriptions-where-clause-like-a-local-query)). Filtering on the complete `_id` value uses a direct ID lookup.
 
 ```dart
 Future<void> createStoreOrder(
@@ -779,7 +783,7 @@ Put only **immutable** attributes into a composite `_id`. A store that might mov
 
 ### Never use sequential or timestamp-only IDs
 
-Devices that are offline cannot coordinate a sequence. Two of them will generate the same "next" ID, and after sync the two documents become one document whose fields merge: data from different orders ends up mixed together. Timestamp-only IDs fail the same way whenever two devices create a record in the same millisecond, and device clocks are not reliable anyway (see [Timestamps](#timestamps)).
+Devices that are offline cannot coordinate a sequence. Two of them will generate the same "next" ID, and after sync the two documents become one document whose fields merge: data from different orders ends up mixed together (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)). Timestamp-only IDs fail the same way whenever two devices create a record in the same millisecond, and device clocks are not reliable anyway (see [Timestamps](#timestamps)).
 
 ```dart
 // ❌ BAD: Collides when two offline devices create the 42nd order of the day.
@@ -820,11 +824,11 @@ Future<void> createOrderWithLabel(
 
 ## Counters
 
-A `COUNTER` field holds an integer that any device can increment or decrement. Increments and decrements from all devices are combined, so concurrent changes add up instead of overwriting each other. Counter operations use the `APPLY` clause, not `SET`:
+A `COUNTER` field holds an integer that any device can increment or decrement. Increments and decrements from all devices are combined, so concurrent changes add up instead of overwriting each other (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)). Counter operations use the `APPLY` clause, not `SET`:
 
 | Operation | Statement |
 |---|---|
-| Increment or decrement | `APPLY f INCREMENT BY n` (use a negative `n` to decrement; `n` must be an integer) |
+| Increment or decrement | `APPLY f INCREMENT BY n` (use a negative `n` to decrement; `n` must be an integer; see [Counters accept only integers](../knowledge/observations/merge-behavior.md#counters-accept-only-integers)) |
 | Set to a specific value | `APPLY f RESTART WITH n` |
 | Reset to zero | `APPLY f RESTART` |
 
@@ -899,7 +903,7 @@ A value that a statement writes into a counter, other than with `INCREMENT BY`, 
 - Create a document that holds a counter on each device, such as a stock document that every till creates on first launch, with `INSERT INTO COLLECTION ... INITIAL DOCUMENTS`. `ON ID CONFLICT DO NOTHING` protects only against a copy that is already on this device.
 - Leave counter fields out of documents that you re-import or upsert (for example a product list from your backend), and apply a change to the count with `APPLY ... INCREMENT BY` the difference.
 - Count per item inside one document in map entries, with `APPLY items.<key>.qty INCREMENT BY n`. A path inside a map cannot be declared (`(items.sku1.qty COUNTER)` is a parser error), so write the statement without a declaration; in our testing, the increments of two offline devices were both kept, and an undeclared `SELECT` returned the count (see [Counters inside map entries add up](../knowledge/observations/merge-behavior.md#counters-inside-map-entries-add-up)).
-- Remove documents and map entries that hold a counter with a flag, not with `DELETE` or `UNSET`: a deletion that merges with a concurrent increment leaves the count at 0 (see [Husk documents](deletion-and-storage.md#husk-documents)).
+- Remove documents and map entries that hold a counter with a flag, not with `DELETE` or `UNSET`: a deletion that merges with a concurrent increment leaves the count at 0 (see [Husk documents](deletion-and-storage.md#husk-documents) and [Deleting a counter during a concurrent increment leaves a husk](../knowledge/observations/merge-behavior.md#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk)).
 
 **❌ DON'T:**
 - Upsert a whole document that contains a counter, declared or not. Without the declaration, the upsert stores the number as a separate REGISTER next to the counter, and the field then reads differently depending on whether a statement declares it (see [Keep type declarations consistent](#keep-type-declarations-consistent)).
@@ -910,7 +914,7 @@ A value that a statement writes into a counter, other than with `INCREMENT BY`, 
 
 > **Note (SDK 5.1.0 and 5.2.0):** A `RESTART` discards **every increment that the restarting device had not received when it ran the restart**. That includes increments that other devices make *after* the restart (by the clock) until the restart reaches them. Only increments made after a device has received the restart are added to the new value. In our testing, a counter at 10 restarted with 100 on one peer while another peer, which had not yet received the restart, incremented it by 5, ended at 100 whichever peer wrote first by the clock, and at 105 only when the restart had already synced before the increment (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)).
 
-A typical consequence: a stock recount with `RESTART WITH :counted` silently erases the sales that offline devices record until they receive the recount. Re-importing the stock list with an upsert has the same effect (see [Writing documents that contain counters](#writing-documents-that-contain-counters)).
+A typical consequence: a stock recount with `RESTART WITH :counted` silently erases the sales that offline devices record until they receive the recount. Re-importing the stock list with an upsert has the same effect (see [Writing documents that contain counters](#writing-documents-that-contain-counters) and [An upsert that declares a counter restarts it](../knowledge/observations/merge-behavior.md#an-upsert-that-declares-a-counter-restarts-it)).
 
 Use `RESTART` only for occasional corrections made by one authority while no other device is incrementing the same counter unsynced, for example a recount done while every till is online and in sync. If devices keep recording changes offline during a recount, keep the recounts and the changes as separate event documents and derive the stock from them (see [When counters are appropriate](#when-counters-are-appropriate)).
 
@@ -934,7 +938,7 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
 | ✅ Good fit | ❌ Poor fit, and what to use instead |
 |---|---|
 | Likes, votes, view counts | **Unique sequence numbers** (invoice or ticket numbers): two offline devices both read 41 and both produce 42. Use UUIDs plus a display label (see [Document IDs](#document-ids)) |
-| Usage metrics and tallies from many devices (a counter grows with the number of devices that incremented it; see [A document grows with the number of devices that wrote it](../knowledge/observations/documents-and-limits.md#a-document-grows-with-the-number-of-devices-that-wrote-it)) | **Balances that must be validated** (account balances, "never below zero"): a counter cannot enforce a constraint, and concurrent decrements can drive it negative. Record transactions as events and validate when you derive the balance |
+| Usage metrics and tallies from many devices (a counter grows with the number of devices that incremented it; see [A document grows with the number of devices that wrote it](../knowledge/observations/documents-and-limits.md#a-document-grows-with-the-number-of-devices-that-wrote-it)) | **Balances that must be validated** (account balances, "never below zero"): a counter cannot enforce a constraint, and concurrent decrements can drive it negative (see [Conditional updates on two offline devices both succeed](../knowledge/observations/merge-behavior.md#conditional-updates-on-two-offline-devices-both-succeed)). Record transactions as events and validate when you derive the balance |
 | Inventory adjustments where every device records its own sales or receipts | **Values derivable from documents you already store** (number of open orders): compute them with a query such as `SELECT COUNT(*) ...` |
 | Values recalibrated occasionally with `RESTART WITH`, while all devices that change them are in sync | **Fractional amounts**: `COUNTER` is integer-only (`INCREMENT BY 1.5` fails with `Expected 1.5 to be an integer value`, and a declared `INSERT` of 2.5 fails too; values are never rounded). Count in minor units such as cents or grams. The legacy `PN_COUNTER` accepts fractions, but rounding errors accumulate: in our testing, ten increments of 0.1 gave `0.9999999999999999` (see [Counters accept only integers](../knowledge/observations/merge-behavior.md#counters-accept-only-integers)) |
 
@@ -975,7 +979,7 @@ When every change matters (status transitions, adjustments, sensor readings), re
 
 ### Pattern 1: Audit-log map inside the document
 
-For a bounded history that belongs to one document, such as an order's status transitions, store a **map keyed by a millisecond-precision ISO-8601 UTC timestamp**. Each device adds its own keys, and add-wins merge keeps every entry whose key is distinct. Two transitions recorded in the same millisecond on different devices share a key, and only one of them is kept; if that matters, append a device identifier to the key (for example, `2026-10-08T10:05:12.437Z_t3`), which keeps the keys sortable by time. Derive the current status when you read the document.
+For a bounded history that belongs to one document, such as an order's status transitions, store a **map keyed by a millisecond-precision ISO-8601 UTC timestamp**. Each device adds its own keys, and add-wins merge keeps every entry whose key is distinct (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)). Two transitions recorded in the same millisecond on different devices share a key, and only one of them is kept; if that matters, append a device identifier to the key (for example, `2026-10-08T10:05:12.437Z_t3`), which keeps the keys sortable by time. Derive the current status when you read the document.
 
 ```json
 {
@@ -1159,9 +1163,11 @@ Behavior on a device:
 | The document was evicted earlier on this device | The document is inserted again |
 | Combined with `ON ID CONFLICT ...` | Parser error; the conflict policy cannot be changed |
 
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+
 Across devices, the same rules apply when the deletion came from another device. In our testing with SDK 5.1.0 and 5.2.0, the effects were these (see [Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0](../knowledge/observations/storage-and-deletion.md#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-520)):
 - **A seed for an `_id` that another device deleted** stays deleted if its content is identical. If its content differs, it becomes a document with `null` fields **on every device**. This also happens when a newly installed device seeds before it first connects.
-- **Two devices that seed the same `_id` with different content** are merged field by field: `{v: 'A', onlyA: 1}` and `{v: 'B', onlyB: 1}` became `{v: 'B', onlyA: 1, onlyB: 1}`. A field that both seeds set is decided by its value, not by which device seeded later. A regular `INSERT` of the same `_id` wins over the seed.
+- **Two devices that seed the same `_id` with different content** are merged field by field: `{v: 'A', onlyA: 1}` and `{v: 'B', onlyB: 1}` became `{v: 'B', onlyA: 1, onlyB: 1}`. A field that both seeds set is decided by its value, not by which device seeded later. A regular `INSERT` of the same `_id` wins over the seed (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)).
 
 ```dart
 // Default categories that every device creates at startup. Running this on
@@ -1180,7 +1186,7 @@ Future<void> seedDefaultCategories(Ditto ditto) async {
 }
 ```
 
-Counters can be seeded the same way, with a declaration:
+Counters can be seeded the same way, with a declaration (see [INITIAL DOCUMENTS keeps concurrent counter increments](../knowledge/observations/merge-behavior.md#initial-documents-keeps-concurrent-counter-increments)):
 
 ```sql
 INSERT INTO COLLECTION inventory (stockCount COUNTER)
@@ -1294,7 +1300,7 @@ Use one of two representations consistently within a field (in JavaScript, never
 
 > **Note:** In Dart, `DateTime.now().toIso8601String()` returns local time **without** a zone designator (for example, `2026-10-08T19:30:00.123456`). DQL date functions return `MISSING` for such strings (`date_part`, `date_diff`, `date_add`, `date_cast`, and the others), and no error is raised. Always call `toUtc()` first. <!-- lint-ignore -->
 
-**Use one fixed-precision helper for timestamps that are sorted or compared.** On native platforms (iOS, Android, and desktop), Dart's `toIso8601String()` includes microseconds only when they are non-zero, so one device produces both `.123456Z` and `.123Z`; on the Web it includes only milliseconds (`.123Z`). ISO strings sort chronologically as text only when they share the same format: `'2026-10-08T10:30:45.123456Z'` sorts before `'2026-10-08T10:30:45.123Z'` although it is later, because `4` comes before `Z` in string order, and `'2026-10-08T10:30:45Z'` sorts after `'2026-10-08T10:30:45.123Z'` because `Z` comes after `.`. When a field is used in `ORDER BY`, range filters, or comparisons, produce every value with one helper that fixes the precision, such as `utcTimestamp()` below. Other examples in this guide inline `DateTime.now().toUtc().toIso8601String()` for brevity; use the helper in their place wherever the field is sorted or compared.
+**Use one fixed-precision helper for timestamps that are sorted or compared.** On native platforms (iOS, Android, and desktop), Dart's `toIso8601String()` includes microseconds only when they are non-zero, so one device produces both `.123456Z` and `.123Z`; on the Web it includes only milliseconds (`.123Z`). ISO strings sort chronologically as text only when they share the same format: `'2026-10-08T10:30:45.123456Z'` sorts before `'2026-10-08T10:30:45.123Z'` although it is later, because `4` comes before `Z` in string order, and `'2026-10-08T10:30:45Z'` sorts after `'2026-10-08T10:30:45.123Z'` because `Z` comes after `.` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)). When a field is used in `ORDER BY`, range filters, or comparisons, produce every value with one helper that fixes the precision, such as `utcTimestamp()` below. Other examples in this guide inline `DateTime.now().toUtc().toIso8601String()` for brevity; use the helper in their place wherever the field is sorted or compared.
 
 ```dart
 /// Returns the current time as an ISO-8601 UTC string with exactly
@@ -1359,4 +1365,4 @@ Device clocks drift and can be set wrong. iOS clocks are usually within 100 ms o
 - Rely on your own timestamp fields to decide which of two conflicting writes should win. Ditto resolves concurrent register writes with its own Hybrid Logical Clock, independently of your fields; and if you compare your own timestamps at read time, a device with a fast clock always wins. Where order matters, model the data so that the merge cannot go wrong: a counter, a map keyed by ID, or an audit log with a derivation such as "most advanced state" (see [Event History and Audit Logs](#event-history-and-audit-logs)).
 - Use timestamps as document IDs (see [Document IDs](#document-ids)).
 
-> **Note (SDK 5.1.0 and 5.2.0):** Ditto's last-writer-wins follows device clocks too: its Hybrid Logical Clock starts from the device's clock and moves ahead to the clock of each running peer that the device syncs with. In our testing, a device whose clock was 5 seconds ahead won over a write of the same field made 2 seconds later, and a clock that ran ahead spread to every device that synced with that device, directly or through a hub, for every document and until the apps restarted (see [Clocks and Time](../knowledge/observations/clocks-and-time.md)). Fields that devices may write at the same time therefore need a shape whose merge does not depend on which write is later, as the list above describes.
+> **Note (SDK 5.1.0 and 5.2.0):** Ditto's last-writer-wins follows device clocks too: its Hybrid Logical Clock starts from the device's clock and moves ahead to the clock of each running peer that the device syncs with (see [Receiving future timestamps does not advance Ditto's clock](../knowledge/observations/clocks-and-time.md#receiving-future-timestamps-does-not-advance-dittos-clock)). In our testing, a device whose clock was 5 seconds ahead won over a write of the same field made 2 seconds later (see [A device whose clock runs ahead wins concurrent edits](../knowledge/observations/clocks-and-time.md#a-device-whose-clock-runs-ahead-wins-concurrent-edits)), and a clock that ran ahead spread to every device that synced with that device, directly or through a hub, for every document and until the apps restarted (see [Clocks and Time](../knowledge/observations/clocks-and-time.md), [A clock running ahead spreads to devices that sync with it](../knowledge/observations/clocks-and-time.md#a-clock-running-ahead-spreads-to-devices-that-sync-with-it), and [Ditto's clock stays ahead until the app restarts](../knowledge/observations/clocks-and-time.md#dittos-clock-stays-ahead-until-the-app-restarts)). Fields that devices may write at the same time therefore need a shape whose merge does not depend on which write is later, as the list above describes.

@@ -28,7 +28,7 @@ With the default `DQL_STRICT_MODE = false` (see [Strict Mode](../best-practices/
 
 Ditto's [CRDT documentation](https://docs.ditto.live/key-concepts/syncing-data#crdts) and [conflict resolution patterns](https://docs.ditto.live/best-practices/conflict-resolution-patterns) describe how concurrent writes from different devices merge:
 
-- **REGISTER (last-writer-wins).** When two devices write the same register concurrently, the write with the later HLC timestamp wins on every device. The losing write is discarded silently: there is no error and no notification.
+- **REGISTER (last-writer-wins).** When two devices write the same register concurrently, the write with the later HLC timestamp wins on every device, whichever arrived first (see [The later write wins by when it was written, not when it arrived](observations/merge-behavior.md#the-later-write-wins-by-when-it-was-written-not-when-it-arrived)). The losing write is discarded silently: there is no error and no notification.
 - **MAP (add-wins).** When two devices add different keys to the same map, both keys survive. Each scalar inside a map entry is its own register, so two devices that edit *different fields* of the same entry both keep their changes. Two devices that edit the *same* field fall back to last-writer-wins for that field.
 - **Arrays.** An array is a register. If one device appends an element and another device removes a different element at the same time, the merged document contains one of the two arrays, not a combination.
 - **COUNTER.** Increments and decrements from every device are combined. Concurrent `RESTART` operations resolve by last-writer-wins. A `RESTART` also discards every increment that the restarting device had not yet received, even increments made later by the clock (see [RESTART](../best-practices/data-modeling.md#restart)).
@@ -46,7 +46,7 @@ The table shows how two devices' edits to the same document merged in our testin
 | `SET obj.a = 2` | `SET obj.b = 3` | `{"a": 2, "b": 3}`: different keys of a map both survive |
 | `SET obj = {'a': 10}` | `SET obj.b = 20` | `{"a": 10, "b": 20}`: assigning an object merges; it does not replace (see [Assigning an object merges it](../best-practices/dql.md#assigning-an-object-merges-it)) |
 | `UNSET obj` | `SET obj.c = 5` | `{"c": 5}`: the removed keys stay removed, the new key survives |
-| `SET obj.c = 5` | `UNSET obj` (later) | `{"c": null}`: the key added concurrently stays, with `null` |
+| `SET obj.c = 5` | `UNSET obj` (later) | `{"c": null}`: the key added concurrently stays, with `null` (see [A key added concurrently survives a later removal as null](observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null)) |
 | `SET address.zip = 'Z9'` | `UNSET address` and `SET address = {...}` in one transaction (later) | The new object plus `"zip": null`: a replacement keeps a key added concurrently, as `null` |
 | `` UNSET items.`item-1` `` | `` SET items.`item-1`.quantity = 5 `` | The entry survives: `{"quantity": 5}` if the removal was first, `{"quantity": null}` if it was later (see [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps)) |
 | `SET tags = [1, 2, 3]` | `SET tags = [0, 1, 2]` (later) | `[0, 1, 2]`: the whole array is one value; A's change is lost |
@@ -113,11 +113,13 @@ Several MAP behaviors differ from what developers expect from a JSON document st
 | `UNSET obj`, then `SET obj = {'w': 1}`, in one transaction | `{"w": 1}` | Clearing first, then writing, replaces the object |
 | `INSERT ... ON ID CONFLICT DO UPDATE` with `{"obj": {"c": 3}}` | `{"a": 1, "b": 2, "c": 3}` | Upserts merge too; omitted keys and fields remain |
 
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+
 **✅ DO:**
 - Update individual fields with `UPDATE ... SET obj.field = :value`.
 - Remove keys explicitly with `UNSET`.
 - Read replaced or removed objects defensively: a key that another device added concurrently can remain with the value `null` (see the table above).
-- When an object must be replaced as a whole, either declare it as a register (`COLLECTION orders (shippingAddress REGISTER)`) or run `UNSET` followed by `SET` in one transaction. Only the register guarantees that concurrent edits never mix two versions: with `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object. It can even bring back a key that the replacement removed: in our testing, replacing `{street, city, zip}` with `{street, city}` while another device set `zip` kept `zip`, with the value `null` (see [A key added concurrently survives a later removal as null](observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null)).
+- When an object must be replaced as a whole, either declare it as a register (`COLLECTION orders (shippingAddress REGISTER)`) or run `UNSET` followed by `SET` in one transaction. Only the register guarantees that concurrent edits never mix two versions (see [The merge table held on SDK 5.1.0 and 5.2.0](observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)): with `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object. It can even bring back a key that the replacement removed: in our testing, replacing `{street, city, zip}` with `{street, city}` while another device set `zip` kept `zip`, with the value `null` (see [A key added concurrently survives a later removal as null](observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null)).
 
 **❌ DON'T:**
 - Assume `SET obj = {...}` or `ON ID CONFLICT DO UPDATE` removes keys that you left out.

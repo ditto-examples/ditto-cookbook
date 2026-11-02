@@ -329,7 +329,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - Even when nothing changes, the observer is called about every 15 seconds. With 4 and 7 devices watched for 60 seconds, after the callback right after registration, it was called four times, from about 11 seconds on, 15.0 seconds apart (the same on 5.1.0 and 5.2.0; 7 devices on 5.2.0 only). Each graph was identical to the previous one: the peer keys, connections, metadata, and `deviceName`.
 - The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](observer-behavior.md#differ-reports-every-shifted-item-as-a-move) and [ANY over a parameter array returns no rows since SDK 5.1.0](dql-behavior.md#any-over-a-parameter-array-returns-no-rows-since-sdk-510).
 
-**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Diffing Results](../../best-practices/observers.md#diffing-results), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence).
 
 ### The presence graph includes indirect peers and all of their connections
 

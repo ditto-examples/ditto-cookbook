@@ -114,7 +114,7 @@ SDK 5.1 uses a new on-disk index format and migrates existing indexes automatica
 
 ## Index Usage Rules
 
-The query planner chooses indexes by rules, not by statistics about your data. `EXPLAIN` shows these plans (11 of the conditions below, tested with SDK 5.1.0 and 5.2.0 on 50,000 documents, produced the listed plans; for example, `status = 'open'` with 5,000 matches took 6 ms through the index, and `LIKE '%001%'` or `lower(status) = 'open'` took 43 to 64 ms as a collection scan):
+The query planner chooses indexes by rules, not by statistics about your data. `EXPLAIN` shows these plans (11 of the conditions below, tested with SDK 5.1.0 and 5.2.0 on 50,000 documents, produced the listed plans; for example, `status = 'open'` with 5,000 matches took 6 ms through the index, and `LIKE '%001%'` or `lower(status) = 'open'` took 43 to 64 ms as a collection scan; see [The conditions of the Index Usage Rules table produced the plans it lists](../knowledge/observations/performance-measurements.md#the-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists)):
 
 | Predicate | Plan | Notes |
 |---|---|---|
@@ -134,7 +134,7 @@ The query planner chooses indexes by rules, not by statistics about your data. `
 | `address.city = 'Tokyo'` (index on `address.city`) | Index scan | Index the full path you filter on |
 | `tags = ['x', 'y']` (index on `tags`) | Index scan | Whole-value match only |
 | `array_contains(tags, 'x')`, `:tag IN tags` | Collection scan | Element lookups cannot use an index |
-| `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan | Does not read documents |
+| `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan | Does not read documents (see [A full COUNT(*) is fast, and indexes made selective queries several times faster](../knowledge/observations/performance-measurements.md#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster)) |
 
 ### Composite indexes and key order (SDK 5.1+)
 
@@ -162,7 +162,7 @@ ORDER BY createdAt ASC
 
 **Why:** The planner can read a composite index in key order and stop early. When the sort direction or key order does not match, it has to collect all matching documents and sort them, which costs memory and time on large results.
 
-On SDK 5.1.0, this advice applies only to indexes whose keys all have the same direction. With an index that mixes `ASC` and `DESC` keys, such as `(customerId, createdAt DESC)`, 5.1.0 skips the sort but returns the results in the wrong order, and with `LIMIT` it returns the wrong documents. Use `(customerId, createdAt)` on 5.1.0 and accept the extra sort step (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+On SDK 5.1.0, this advice applies only to indexes whose keys all have the same direction. With an index that mixes `ASC` and `DESC` keys, such as `(customerId, createdAt DESC)`, 5.1.0 skips the sort but returns the results in the wrong order, and with `LIMIT` it returns the wrong documents. Use `(customerId, createdAt)` on 5.1.0 and accept the extra sort step (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order](../knowledge/observations/dql-behavior.md#on-sdk-510-composite-indexes-with-a-descending-key-return-rows-in-the-wrong-order)).
 
 ### Covering scans
 
@@ -207,7 +207,7 @@ Example output (one row, formatted for readability):
 }
 ```
 
-SDK 5.1.0 and 5.2.0 return the same suggestion. On 5.1.0, do not create it as suggested: it mixes `ASC` and `DESC` keys, which returns the results in the wrong order on that release (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+SDK 5.1.0 and 5.2.0 return the same suggestion (see [ADVISE returned the documented output](../knowledge/observations/dql-behavior.md#advise-returned-the-documented-output)). On 5.1.0, do not create it as suggested: it mixes `ASC` and `DESC` keys, which returns the results in the wrong order on that release (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
 
 When related indexes already exist, they are listed in `existingIndexes`, and the suggestion builds on the query's predicates:
 
@@ -263,7 +263,7 @@ Future<void> printIndexAdvice(
 
 ## EXPLAIN and PROFILE
 
-`EXPLAIN` and `PROFILE` answer different questions (the table was checked on SDK 5.1.0 and 5.2.0):
+`EXPLAIN` and `PROFILE` answer different questions (the table was checked on SDK 5.1.0 and 5.2.0; see [EXPLAIN runs no statement, and PROFILE runs it](../knowledge/observations/dql-behavior.md#explain-runs-no-statement-and-profile-runs-it)):
 
 | | `EXPLAIN` | `PROFILE` |
 |---|---|---|
@@ -372,7 +372,7 @@ SELECT * FROM orders USE INDEX 'idx_orders_customerId' WHERE customerId = :custo
 - `USE INDEX ''` explicitly requests a collection scan (also used to allow a JOIN without an index on the inner collection).
 - Comment-style directives (`/*+ {...} */`) and `USE DIRECTIVES` give finer control. Place them after `SELECT` or after the collection name; a directive comment after `WHERE` is ignored.
 - The system parameter `DQL_DEFAULT_DIRECTIVES` sets default directives for every statement.
-- Do not put directives in subscription queries; indexes and directives only affect local query execution.
+- Do not put directives in subscription queries; indexes and directives only affect local query execution (see [The sending peer evaluates a subscription's WHERE clause like a local query](../knowledge/observations/subscriptions-and-replication.md#the-sending-peer-evaluates-a-subscriptions-where-clause-like-a-local-query)).
 
 See the [DQL directives documentation](https://docs.ditto.live/dql/directives) for the available directives.
 

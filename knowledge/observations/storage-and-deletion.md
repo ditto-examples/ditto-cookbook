@@ -57,7 +57,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 - **When the reaper runs**: on a new store, the first run happens at a random time within `REAPER_TIMING_RANDOM_VARIATION_SECONDS` (600 by default) after startup: after 59, 89, 253, and 471 seconds, and not within 90 seconds in three more runs (seven runs). With the parameter set to 0, it ran 0.35 seconds after startup. On a reopened store, it runs at startup if `DAYS_BETWEEN_REAPING` (1 day) has passed since the previous run by the device clock, and not otherwise: reopened 2 hours later, it did not run; 26 hours later, it did. The time of the previous run is kept in the store.
 - The random delay is drawn again at every start. With the default settings, six starts of 8 seconds each, with the clock moved 11 minutes ahead between them, never reaped. Opening once more with the delay set to 0 then reaped at startup (5.1.0 and 5.2.0, one run each by hand). An app that is used again and again for less than 10 minutes therefore reaps only by chance, at some of its starts.
 
-**Used in:** [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [A clock running ahead spreads to devices that sync with it](clocks-and-time.md#a-clock-running-ahead-spreads-to-devices-that-sync-with-it), [Receiving future timestamps does not advance Ditto's clock](clocks-and-time.md#receiving-future-timestamps-does-not-advance-dittos-clock).
+**Used in:** [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
 ### Reaping at a preferred hour runs only at hourly checks within that hour
 
@@ -229,7 +229,7 @@ What a new peer received in its first sync:
 - **Document size**: a new device received 1.4 KiB for the document written once, 1.3 KiB for the document updated 10,000 times, and 1.3 KiB for the document whose COUNTER was incremented 10,000 times, on all three releases. The history of updates does not stay in the document and does not add to what is sent.
 - **Write time**: 10,000 `UPDATE` statements and 10,000 increments each took 14.3 to 15.2 seconds, 1.4 to 1.5 ms per write (5.0.3: 20.7 to 21.4 seconds, about 2.1 ms per write).
 
-**Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage).
+**Used in:** none yet.
 
 ### The write-ahead log grows to about 20 MB
 

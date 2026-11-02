@@ -32,15 +32,15 @@ What happens when a document is deleted:
 - **The values are removed.** Ditto keeps a small *tombstone* that consists of the document ID, metadata such as the deletion time, and the field names the document had at the time of deletion. All values are removed. Tombstones are internal and cannot be queried.
 - **The tombstone propagates.** Peers learn about the deletion through the tombstone. Tombstones are only shared with peers that have seen the document before it was deleted; a peer never receives a tombstone for a document it never knew about. As a consequence, in our testing, a device that never had the document accepted a stale copy from a device that had been offline and passed it on until it met a peer that held the tombstone (see [Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0](../knowledge/observations/storage-and-deletion.md#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-520)).
 - **The document disappears locally at once.** After `DELETE`, the document no longer appears in `SELECT`, is not counted by `COUNT(*)`, and an `UPDATE` no longer matches it.
-- **The ID can be reused.** A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear. The exception is edits that another device made to the old document concurrently (for example, while offline): in our testing, those edits merged into the new document (see [Husk documents](#husk-documents) and [A key added concurrently survives a later removal as null](../knowledge/observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null)).
+- **The ID can be reused.** A later `INSERT` with the same `_id` creates a new document; fields of the deleted document do not reappear. The exception is edits that another device made to the old document concurrently (for example, while offline): in our testing, those edits merged into the new document (see [Husk documents](#husk-documents), [A key added concurrently survives a later removal as null](../knowledge/observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null), and [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)).
 
 **✅ DO:**
-- Target documents by ID with `WHERE _id = :id` or `WHERE _id IN :ids` (both are planned as an ID scan).
+- Target documents by ID with `WHERE _id = :id` or `WHERE _id IN :ids` (both are planned as an ID scan; see [Long ID lists are faster with USE IDS LIST than with WHERE _id IN](../knowledge/observations/performance-measurements.md#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
 - Use `RETURNING` (SDK 5.1+) when you need the content of the deleted documents, for example for an undo message or an audit record.
 - Make sure every device connects within the tombstone TTL (7 days by default; see [Tombstone TTL and reaping](#tombstone-ttl-and-reaping)), or use a soft delete instead.
 
 **❌ DON'T:**
-- Use `DELETE ... USE IDS ...` without a `WHERE` predicate while any device runs SDK 5.1.0, where it removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)). Use `WHERE _id IN :ids`; it is planned as an ID scan, so it is just as efficient.
+- Use `DELETE ... USE IDS ...` without a `WHERE` predicate while any device runs SDK 5.1.0, where it removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing](../knowledge/observations/dql-behavior.md#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-remove-nothing)). Use `WHERE _id IN :ids`, which works on every release; it gets slower with long lists, so split more than about 1,000 IDs into chunks of 1,000 (see [USE IDS](dql.md#use-ids)).
 - Use `DELETE` for data that is updated concurrently on other devices (see [Husk documents](#husk-documents)).
 - Use `DELETE` to free space on one device; it removes the data for every peer. Use [EVICT](#evict) instead.
 
@@ -67,7 +67,7 @@ DELETE FROM orders WHERE _id IN :ids
 DELETE FROM orders USE IDS LIST :ids
 ```
 
-**Why:** The ID-based `WHERE` form is the reliable way to target specific documents for removal on every release, and `RETURNING` is the only way to read a document's content after `DELETE`, because the tombstone keeps no values.
+**Why:** The ID-based `WHERE` form is the reliable way to target specific documents for removal on every release (see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)), and `RETURNING` is the only way to read a document's content after `DELETE`, because the tombstone keeps no values.
 
 ### Capturing deleted content with RETURNING (SDK 5.1+)
 
@@ -114,7 +114,7 @@ const config = DittoConfig(
 );
 ```
 
-Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. Ditto reads them only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in `DittoConfig.systemParameters`. `REAPER_PREFERRED_HOUR` is an hour of the device's **local** time (0 to 23; 0 by default), and a device reaps only when it runs during that hour: in our testing with SDK 5.1.0 and 5.2.0, it checked at startup and then every hour after it had started, not at the start of that hour (see [Reaping at a preferred hour runs only at hourly checks within that hour](../knowledge/observations/storage-and-deletion.md#reaping-at-a-preferred-hour-runs-only-at-hourly-checks-within-that-hour)). A point-of-sale app that is closed at night and keeps the default hour 0 would never remove its tombstones. WASM-based platforms (JavaScript Web and Flutter Web) do not support these parameters. Contact Ditto support before relying on them.
+Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. Ditto reads them only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in `DittoConfig.systemParameters` (see [DITTO_ environment variables set system parameters at startup](../knowledge/observations/configuration-and-diagnostics.md#ditto_-environment-variables-set-system-parameters-at-startup)). `REAPER_PREFERRED_HOUR` is an hour of the device's **local** time (0 to 23; 0 by default), and a device reaps only when it runs during that hour: in our testing with SDK 5.1.0 and 5.2.0, it checked at startup and then every hour after it had started, not at the start of that hour (see [Reaping at a preferred hour runs only at hourly checks within that hour](../knowledge/observations/storage-and-deletion.md#reaping-at-a-preferred-hour-runs-only-at-hourly-checks-within-that-hour)). A point-of-sale app that is closed at night and keeps the default hour 0 would never remove its tombstones. WASM-based platforms (JavaScript Web and Flutter Web) do not support these parameters. Contact Ditto support before relying on them.
 
 ### Husk documents
 
@@ -137,7 +137,7 @@ After merge:        {"_id": "abc123", "color": null}        // make, year: MISSI
 - Husks count in `SELECT COUNT(*)`, but a value filter such as `WHERE year >= 2000` excludes them.
 - Running the `DELETE` again after the merge removes the husk on every device.
 
-In our testing, these shapes were consistent for both orders of operations, regardless of which device issued the `DELETE` (see [A key added concurrently survives a later removal as null](../knowledge/observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null)).
+In our testing, these shapes were consistent for both orders of operations, regardless of which device issued the `DELETE` (see [A key added concurrently survives a later removal as null](../knowledge/observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null) and [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)). Every point of the list above held on SDK 5.1.0 and 5.2.0 (see [Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0](../knowledge/observations/storage-and-deletion.md#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-520)).
 
 > **Note (SDK 5.1.0 and 5.2.0):** A counter in a husk document is 0. In our testing, when one device deleted a stock document whose counter stood at 10 while another device added -3, the document came back as `{_id, cnt: 0}` in both orders, and `UNSET` of a map entry that held a counter left `{qty: 0}` the same way; with a soft-delete flag instead, the count was kept (see [Deleting a counter during a concurrent increment leaves a husk](../knowledge/observations/merge-behavior.md#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk)). Remove documents and entries that hold counts, such as stock items, with a flag (see [Soft Delete](#soft-delete)).
 
@@ -166,7 +166,7 @@ There is no `DROP COLLECTION` statement. `DELETE FROM orders` without a `WHERE` 
 A soft delete marks a document as deleted with an ordinary `UPDATE` instead of removing it. Because the flag is just a field, it syncs like any other change and has none of the tombstone limitations:
 
 - **No TTL dependency:** the flag stays on the document, so a device that was offline for weeks still learns that the document is deleted.
-- **No husk documents:** a concurrent update merges with the flag instead of resurrecting a partially deleted document. In our testing, an edit made offline on another device was kept, and the document stayed flagged (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)).
+- **No husk documents:** a concurrent update merges with the flag instead of resurrecting a partially deleted document. In our testing, an edit made offline on another device was kept, and the document stayed flagged (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520) and [Deleting a counter during a concurrent increment leaves a husk](../knowledge/observations/merge-behavior.md#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk)).
 - **Recoverable:** setting the flag back to `false` restores the document. If one device soft-deletes a document while another restores it, the later write wins.
 
 The trade-off is that soft-deleted documents still occupy storage and must be filtered out of every query, so you need a cleanup step (see [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)).
@@ -241,6 +241,8 @@ See [MISSING and NULL](dql.md#missing-and-null) for the general rules.
 | `status = :status AND coalesce(isDeleted, false) = false` with an index that starts with `status` | Index scan on `status`; the `coalesce` condition is applied as a filter |
 | `(isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false)` with an index on `isDeleted` | Index scan (returns the same documents as the `coalesce` form) |
 | `isDeleted = false` with an index on `isDeleted`, when every document is guaranteed to have the field | Index scan |
+
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
 
 Flagged documents cost query time until they are removed, while tombstones and evicted documents do not: in our testing with SDK 5.1.0 and 5.2.0, 49,000 flagged documents next to 1,000 live ones made `COUNT(*)` and filtered queries 15 to 20 times slower, and an index on `isDeleted` (with every document carrying the field) brought them back to the same speed (see [Tombstones and evicted documents do not slow queries, but flagged documents do](../knowledge/observations/storage-and-deletion.md#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
 
@@ -378,7 +380,7 @@ What eviction does and does not do:
 - The documents are removed from this device immediately and disappear from local queries.
 - The removal is not propagated to other peers and no tombstone is created. The documents remain on every other peer, including the Ditto Server. (Each eviction still triggers a resync with every connected peer; see the **Why** below.)
 - The same `_id` can be inserted again later without a conflict. The new insert is not a new document across the mesh: in our testing with SDK 5.1.0 and 5.2.0, it merged with the copies that other peers still held, so fields from both appeared (see [Inserting with an evicted document's ID merges with the old version](../knowledge/observations/storage-and-deletion.md#inserting-with-an-evicted-documents-id-merges-with-the-old-version)). To start over without the old fields, use a new ID.
-- **If an active subscription on this device still matches an evicted document, connected peers notice that it is missing and sync it back.** This can turn into a loop of evicting and re-syncing.
+- **If an active subscription on this device still matches an evicted document, connected peers notice that it is missing and sync it back.** In our testing with SDK 5.1.0 and 5.2.0, such a document came back in about 0.26 seconds (see [Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0](../knowledge/observations/storage-and-deletion.md#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-520)). This can turn into a loop of evicting and re-syncing.
 
 **✅ DO:**
 - Cancel or narrow the affected subscriptions **before** evicting, and evict only documents that are outside the scope of every remaining subscription.
@@ -408,7 +410,7 @@ Future<SyncSubscription> evictAndResubscribeEverything(
 }
 ```
 
-**Why:** Each eviction triggers a resync with every connected peer, which costs network traffic and processing. If the subscription still covers the evicted documents, that resync simply sends them back, and you pay the cost without freeing any space.
+**Why:** Each eviction triggers a resync with every connected peer, which costs network traffic and processing. If the subscription still covers the evicted documents, that resync simply sends them back, and you pay the cost without freeing any space (see [Deletion flags and DELETE transfer little, and eviction under a subscription refetches](../knowledge/observations/storage-and-deletion.md#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)).
 
 ### Time-based eviction
 
@@ -489,7 +491,7 @@ Future<void> evictFlaggedOrders(Ditto ditto) async {
 
 Because the subscription never matches flagged documents, the device does not need to cancel and re-register it before each eviction.
 
-Evicting flagged documents on a device that relays data can bring old versions back. A device that missed the flag still holds the unflagged version, and after the eviction, the relay receives that version again as a matching document (see [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)). Use flag-based eviction where every device can receive the flag before the relays evict, for example through a Ditto Server.
+Evicting flagged documents on a device that relays data can bring old versions back. A device that missed the flag still holds the unflagged version, and after the eviction, the relay receives that version again as a matching document (see [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup) and [A relay that evicts flagged documents receives old versions back](../knowledge/observations/storage-and-deletion.md#a-relay-that-evicts-flagged-documents-receives-old-versions-back)). Use flag-based eviction where every device can receive the flag before the relays evict, for example through a Ditto Server.
 
 ### Batching evictions
 
@@ -513,7 +515,7 @@ Future<int> evictInBatches(Ditto ditto, String cutoff) async {
 }
 ```
 
-Batching keeps individual write transactions short. It does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule (see [Eviction frequency](#eviction-frequency)), not as many separate cleanups.
+Batching keeps individual write transactions short (see [Evicting in chunks costs little more than one statement](../knowledge/observations/performance-measurements.md#evicting-in-chunks-costs-little-more-than-one-statement)). It does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule (see [Eviction frequency](#eviction-frequency)), not as many separate cleanups.
 
 ### Eviction frequency
 
@@ -528,10 +530,10 @@ Batching keeps individual write transactions short. It does not reduce the sync 
 | Requirement | `DELETE` | Soft delete | `EVICT` |
 |---|---|---|---|
 | Remove data for every peer | ✅ (tombstone) | ✅ (flag, then cleanup) | ❌ (local only) |
-| Safe when devices stay offline longer than the tombstone TTL (7 days by default) | ❌ (data can be resurrected) | ✅ | ✅ (other peers are unaffected) |
+| Safe when devices stay offline longer than the tombstone TTL (7 days by default) | ❌ (data can be resurrected; see [A device with an old copy resurrects a document after its tombstone is reaped](../knowledge/observations/storage-and-deletion.md#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped)) | ✅ | ✅ (other peers are unaffected) |
 | Safe with concurrent updates on other devices | ❌ (husk documents) | ✅ | ✅ |
 | Can be undone | ❌ | ✅ | ✅ (data syncs back if a subscription matches it again) |
-| Frees local storage | ✅ (the space is reused at once and reclaimed later; tombstones after reaping) | ❌ (until cleanup) | ✅ (the space is reused at once and reclaimed later) |
+| Frees local storage (see [Evicting data does not free disk space at once](../knowledge/observations/storage-and-deletion.md#evicting-data-does-not-free-disk-space-at-once)) | ✅ (the space is reused at once and reclaimed later; tombstones after reaping) | ❌ (until cleanup) | ✅ (the space is reused at once and reclaimed later) |
 | Effect on queries | None: tombstones are not read | Queries read the flagged documents until cleanup (much slower with many flagged documents and no index on the flag; see [Tombstones and evicted documents do not slow queries, but flagged documents do](../knowledge/observations/storage-and-deletion.md#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)) | None |
 | Extra query complexity | None | Every query filters the flag | Subscription and eviction scopes must be complementary |
 | Data sent to other devices (see [Deletion flags and DELETE transfer little, and eviction under a subscription refetches](../knowledge/observations/storage-and-deletion.md#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)) | Small (about 43 bytes per document) | Small (about 28 bytes per document) | None, unless a subscription still matches: then every evicted document is downloaded again |

@@ -117,7 +117,7 @@ Future<File> exportDittoLogs(Directory directory) async {
 }
 ```
 
-Because the on-disk logs always include debug-level entries, setting the console level to `warning` in production does not reduce what you can retrieve later for support.
+Because the on-disk logs always include debug-level entries, setting the console level to `warning` in production does not reduce what you can retrieve later for support (see [Exported logs include debug lines regardless of the console level](../knowledge/observations/configuration-and-diagnostics.md#exported-logs-include-debug-lines-regardless-of-the-console-level)).
 
 ### Configuration snapshots in data bundles (SDK 5.1+)
 

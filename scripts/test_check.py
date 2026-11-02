@@ -438,9 +438,51 @@ class UsedInTest(unittest.TestCase):
 
             Six clients (see [the limit](../knowledge/connections.md#a-hub-accepts-six-clients)).
             """)
+        unlisted = [error for error in errors if error.startswith("best-practices/page.md:5")]
+        self.assertEqual(len(unlisted), 1)
+        self.assertIn("clients", unlisted[0])
+
+    def test_reports_used_in_sections_that_do_not_link_to_the_entry(self):
+        errors = self.check("""
+            # Page
+
+            ## Hubs
+
+            A hub accepts six clients.
+            """)
         self.assertEqual(len(errors), 1)
-        self.assertIn("best-practices/page.md:5", errors[0])
-        self.assertIn("clients", errors[0])
+        self.assertIn("knowledge/connections.md:12", errors[0])
+        self.assertIn("best-practices/page.md#hubs", errors[0])
+
+    def test_a_link_in_a_subsection_does_not_count_for_its_parent(self):
+        errors = self.check("""
+            # Page
+
+            ## Hubs
+
+            ### Limits
+
+            Six clients (see [the limit](../knowledge/connections.md#a-hub-accepts-six-clients)).
+            """)
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(any("#limits" in error for error in errors))
+        self.assertTrue(any("best-practices/page.md#hubs" in error for error in errors))
+
+    def test_a_page_link_in_used_in_needs_a_link_somewhere_on_the_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = write(root, "knowledge/connections.md",
+                              self.KNOWLEDGE.replace("(../best-practices/page.md#hubs)", "(../best-practices/page.md)"))
+            page = write(root, "best-practices/page.md", """
+                # Page
+
+                ## Clients
+
+                A hub accepts six clients.
+                """)
+            errors = check.check_used_in([page, knowledge], [knowledge], root)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("best-practices/page.md", errors[0])
 
     def test_a_page_link_in_used_in_covers_every_section(self):
         with tempfile.TemporaryDirectory() as tmp:

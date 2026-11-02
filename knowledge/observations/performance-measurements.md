@@ -104,7 +104,7 @@ Time for `COUNT(*)` (nearly the same on both releases; no value was recorded for
 - A subscription by an ID list also makes the initial sync slower (5.1.0 and 5.2.0, two runs each). A subscription with `WHERE _id IN :ids` and 10,000 IDs took 3.32 to 3.38 s, and one with `WHERE grp = 'a'`, which selects the same documents, took 0.85 to 0.86 s (with 3,000 IDs: 1.2 s; with 1,000 IDs: 0.64 s and 0.38 s). After the initial sync, an update of one document arrived in about 31 ms with either subscription. For the initial sync, subscribing by a field that identifies the device or the store is therefore faster than subscribing by a list of document IDs.
 - `USE IDS :ids` with an array treats the whole array as one ID. With a small array, it silently returns 0 documents; above 256 bytes, it fails with `SerializedFormOverLimit { limit: 256, ... }`.
 
-**Used in:** [USE IDS](../../best-practices/dql.md#use-ids), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
+**Used in:** [USE IDS](../../best-practices/dql.md#use-ids), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones).
 
 ### A full COUNT(*) is fast, and indexes made selective queries several times faster
 
@@ -236,7 +236,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 - With `LIMIT 50`, the query took 2 to 4 ms even without an index: it reads from the start and stops after 50 documents. With the combined plan (with indexes on `store`, `status`, and `total`), the median was 6 to 7 ms, but individual queries with the same plan varied from 2 to 69 ms.
 - `Ditto.open()` took 10 to 21 ms for an empty store and for 100,000 documents (about 70 MB): it does not depend on the size of the store. Without indexes, the first query after opening was as fast as the second (1 to 4 ms).
 
-**Used in:** [Creating Indexes](../../best-practices/indexing-and-performance.md#creating-indexes), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Where indexes live](../../best-practices/indexing-and-performance.md#where-indexes-live).
+**Used in:** [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Where indexes live](../../best-practices/indexing-and-performance.md#where-indexes-live).
 
 ### Constant query strings were not faster
 

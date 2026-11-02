@@ -216,7 +216,7 @@ void main() {
 Keep a few tests on real devices for these:
 - All peers share one clock. Clock skew between devices is not simulated.
 - Only TCP is exercised. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, and app lifecycle need real devices.
-- A listening peer accepts at most 6 TCP connections by default (observed with 5.1.0; 5.2.0 counts accepted and outgoing connections together, see `§ Transport Configuration`). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
+- A listening peer accepts at most 6 TCP connections by default (in testing with SDK 5.1.0 and 5.2.0; see `§ A device accepts six TCP connections by default`). On 5.2.0, the connections that a peer opened itself count toward the limit too (see `§ Transport Configuration`). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
 
 ## Scenarios worth covering
 

@@ -37,7 +37,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - **Part of a composite ID**: a subscription with `WHERE _id.storeId = :s` delivered only the documents of that store. A document whose `_id` is a string and that holds the same `storeId` in another field did not arrive. `CREATE INDEX ... (_id.storeId)` also works, and the local query then uses an index scan (one run on 5.1.0 and 5.2.0).
 - **Directives**: subscriptions with directives (`USE INDEX 'idx_status'`, `USE INDEX ''`, `/*+ {...} */`, and `USE INDEX 'nope'` for an index that does not exist) were registered without an error. Each registered on its own peer, every one of them delivered only the matching document, the one `open` document (one run on each of 5.1.0 and 5.2.0). A directive in a subscription does not break it.
 
-**Used in:** [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules), [Testing Subscription Rules](../../best-practices/testing.md#testing-subscription-rules), [Composite IDs for permission scoping and grouping](../../best-practices/data-modeling.md#composite-ids-for-permission-scoping-and-grouping), [Directives](../../best-practices/indexing-and-performance.md#directives), [clock() in a subscription uses the sending device's clock](clocks-and-time.md#clock-in-a-subscription-uses-the-sending-devices-clock).
+**Used in:** [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules), [Testing Subscription Rules](../../best-practices/testing.md#testing-subscription-rules), [Composite IDs for permission scoping and grouping](../../best-practices/data-modeling.md#composite-ids-for-permission-scoping-and-grouping), [Directives](../../best-practices/indexing-and-performance.md#directives).
 
 ### A LIMIT in a subscription limits only the first download
 
@@ -75,7 +75,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - The document that the client wrote reached the hub, although the client had no subscription. Whether a change travels depends on the subscriptions of the receiving device (the same on all three releases).
 - After the client registered the subscription again, the update and the new document both arrived within about 110 ms (the same on all three releases).
 
-**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Complete app startup](../../best-practices/setup-and-lifecycle.md#complete-app-startup).
+**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
 ### Sync scopes behaved as documented on SDK 5.2.0
 

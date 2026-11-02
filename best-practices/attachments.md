@@ -13,9 +13,9 @@ An attachment has two parts that sync differently:
 
 Key properties:
 
-- **Subscriptions never download blobs.** A device that receives a document gets only the token. It must call `fetchAttachment` to download the bytes.
+- **Subscriptions never download blobs.** A device that receives a document gets only the token. It must call `fetchAttachment` to download the bytes (see [Attachments relay only through devices that fetched them](../knowledge/observations/attachment-behavior.md#attachments-relay-only-through-devices-that-fetched-them)).
 - **Content-addressed:** The attachment `id` is a cryptographic hash of the contents. Identical blobs are stored once, and several documents can reference the same blob.
-- **Resumable:** If a transfer is interrupted, progress is not lost; the transfer resumes when connectivity returns or when another peer that has the blob is available.
+- **Resumable:** If a transfer is interrupted, progress is not lost; the transfer resumes when connectivity returns or when another peer that has the blob is available (see [An interrupted fetch resumes, and identical content is not downloaded again](../knowledge/observations/attachment-behavior.md#an-interrupted-fetch-resumes-and-identical-content-is-not-downloaded-again)).
 - **Metadata** is a map of string values (file name, MIME type, dimensions) that syncs with the token, so you can show information about an attachment before fetching it.
 
 ## Creating and Inserting Attachments
@@ -77,7 +77,7 @@ Read the token from the document, then call `ditto.store.fetchAttachment(token, 
 |---|---|---|
 | `AttachmentFetchEventProgress` | Zero or more times; a fast fetch can report none (see [Fast fetches can complete without progress events](../knowledge/observations/attachment-behavior.md#fast-fetches-can-complete-without-progress-events)) | `downloadedBytes`, `totalBytes` |
 | `AttachmentFetchEventCompleted` | At most once | `attachment` (read the bytes with `await attachment.data`) |
-| `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched. According to the 5.2.0 release notes, a fetch of an attachment that no document references anymore now ends with this event instead of retrying forever, but we did not observe it on SDK 5.1.0 or 5.2.0: when the referencing document was deleted while no peer could deliver the blob, or after the only holder had collected the blob, the fetch stayed pending without any event. Keep a stall timeout on both releases |
+| `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched. According to the 5.2.0 release notes, a fetch of an attachment that no document references anymore now ends with this event instead of retrying forever, but we did not observe it on SDK 5.1.0 or 5.2.0: when the referencing document was deleted while no peer could deliver the blob, or after the only holder had collected the blob, the fetch stayed pending without any event (see [A fetch waits while no device holds the blob, and a device that deleted the document still serves it](../knowledge/observations/attachment-behavior.md#a-fetch-waits-while-no-device-holds-the-blob-and-a-device-that-deleted-the-document-still-serves-it) and [A fetch of a collected blob stays pending instead of ending with Deleted](../knowledge/observations/attachment-behavior.md#a-fetch-of-a-collected-blob-stays-pending-instead-of-ending-with-deleted)). Keep a stall timeout on both releases |
 
 | `AttachmentFetcher` member | Meaning |
 |---|---|
@@ -348,8 +348,8 @@ class PhotoRow extends StatelessWidget {
 An attachment can only be fetched while a peer that **holds the blob** is reachable. Documents and blobs travel separately, so a device can have a token for an attachment that no reachable peer can deliver at the moment.
 
 - A blob exists on a device only if that device created it or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) notes that Ditto Server can hold a document with an attachment token but not the blob, for example when Small Peers replicate the document among themselves without fetching the attachment.
-- An interrupted transfer resumes from where it stopped, from the same peer or from another peer that has the blob.
-- The fetch API has no "not available" event: while no peer can deliver the blob, the fetch simply makes no progress. Handle this with a timeout and a retry in the UI (see the `AttachmentImage` example).
+- An interrupted transfer resumes from where it stopped, from the same peer or from another peer that has the blob (see [An interrupted fetch resumes, and identical content is not downloaded again](../knowledge/observations/attachment-behavior.md#an-interrupted-fetch-resumes-and-identical-content-is-not-downloaded-again)).
+- The fetch API has no "not available" event: while no peer can deliver the blob, the fetch simply makes no progress (see [A fetch waits while no device holds the blob, and a device that deleted the document still serves it](../knowledge/observations/attachment-behavior.md#a-fetch-waits-while-no-device-holds-the-blob-and-a-device-that-deleted-the-document-still-serves-it)). Handle this with a timeout and a retry in the UI (see the `AttachmentImage` example).
 - Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available (for example, a product image), make sure a well-connected device or Ditto Server fetches it. In our testing with three devices in a line (A–B–C), C could not fetch a blob that only A held until B had fetched the blob itself, even though B subscribed to the documents (see [Attachments relay only through devices that fetched them](../knowledge/observations/attachment-behavior.md#attachments-relay-only-through-devices-that-fetched-them)).
 
 **✅ DO:**
@@ -368,7 +368,7 @@ An attachment can only be fetched while a peer that **holds the blob** is reacha
 | Blob storage | Stored outside the document database; does not count toward the per-device key-value storage guidance (about 2 GB; see [Key Characteristics](../knowledge/understanding-ditto.md#key-characteristics)) |
 | Uploads through the HTTP API | A separate 1 MB request body limit applies (can be raised on request) |
 | Documents | 256 KiB soft limit (warning) and 5 MiB hard limit (writes that exceed it fail); see [Document Size Limits](data-modeling.md#document-size-limits) |
-| Transfer progress | Reported only through fetch events; `system:data_sync_info` does not include attachments. A fast fetch can complete without any progress event, so make progress displays work without one |
+| Transfer progress | Reported only through fetch events; `system:data_sync_info` does not include attachments. A fast fetch can complete without any progress event, so make progress displays work without one (see [Fast fetches can complete without progress events](../knowledge/observations/attachment-behavior.md#fast-fetches-can-complete-without-progress-events)) |
 
 **✅ DO:**
 - Store images, documents, audio, and other binary files as attachments rather than inside documents.

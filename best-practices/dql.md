@@ -119,7 +119,7 @@ When you do write values inline (constants such as `'open'`, or examples in the 
 | String | `'open'` or `"open"` | Single and double quotes both delimit strings. Double quotes never refer to a field. |
 | Escapes in strings | `'line1\nline2'`, `'it\'s'`, `'caf\u00e9'` | JSON escape sequences are interpreted in both quote styles. `'it''s'` (doubled quote) is a syntax error. An unknown escape such as `\q` drops the backslash. A literal backslash must be written `\\`. This changed in 5.1.0: on 5.0.x, `''` was the escape for `'` and backslashes were not interpreted, so string literals written for 5.0.x can fail or change meaning after an upgrade. |
 | Identifier | `` `my field` ``, `` `collection` `` | Backticks quote field names, aliases, and collection names that contain special characters or are reserved words. Identifiers are case-sensitive: `Orders` and `orders` are different collections. |
-| Number | `42`, `-1`, `2.5`, `1e3` | `1e3` is a float. Integer division stays integer: `5 / 2` is `2`, `5.0 / 2` is `2.5`. Division and modulo by zero (`1 / 0`, `1 % 0`) give MISSING, not an error. |
+| Number | `42`, `-1`, `2.5`, `1e3` | `1e3` is a float. Integer division stays integer: `5 / 2` is `2`, `5.0 / 2` is `2.5`. Division and modulo by zero (`1 / 0`, `1 % 0`) give MISSING, not an error (see [Comparisons across types are MISSING, and strings sort by code point](../knowledge/observations/dql-behavior.md#comparisons-across-types-are-missing-and-strings-sort-by-code-point)). |
 | Hexadecimal | `0xFF` | Integer constant (`255`). |
 | Boolean / null | `true`, `FALSE`, `null` | Case-insensitive keywords. |
 | Array | `[1, 'a']` | JSON-style. |
@@ -199,6 +199,8 @@ Which documents each `WHERE` expression matches, when `isDeleted` is `true`, `fa
 | `isDeleted IS NOT MISSING AND isDeleted IS NOT NULL` | ✓ | ✓ | | | <!-- lint-ignore -->
 | `ismissingornull(isDeleted)` | | | ✓ | ✓ |
 
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+
 Note that `IS NOT NULL` is true for a missing field, and that `!= true` drops both `null` and missing rows. <!-- lint-ignore -->
 
 In the JavaScript SDK, a field whose value is `undefined` is stored as `null`, not left out, so it no longer matches `IS MISSING`, also inside arrays and objects (in our testing; see [JavaScript values that are not plain JSON change when stored](../knowledge/observations/dql-behavior.md#javascript-values-that-are-not-plain-json-change-when-stored)). Omit the key to leave a field missing.
@@ -235,8 +237,8 @@ Future<List<Map<String, dynamic>>> activeTasksWrong(Ditto ditto) async {
 
 Related behavior:
 - In projections, an expression that evaluates to MISSING is omitted from the result row (the key is absent from `item.value`), while `null` appears as a `null` value.
-- Comparing values of different types, including with `=` and `!=` (`1 = 'a'`, `1 != 'a'`, `1 < 'a'`), also evaluates to MISSING, as do operators applied to the wrong types (`'a' || 1`). Integers and floats compare normally (`1 = 1.0` is `true`). <!-- lint-ignore -->
-- `ORDER BY` sorts `null` and missing values after all other values in ascending order (see [ORDER BY](#order-by)).
+- Comparing values of different types, including with `=` and `!=` (`1 = 'a'`, `1 != 'a'`, `1 < 'a'`), also evaluates to MISSING (see [Comparisons across types are MISSING, and strings sort by code point](../knowledge/observations/dql-behavior.md#comparisons-across-types-are-missing-and-strings-sort-by-code-point)), as do operators applied to the wrong types (`'a' || 1`). Integers and floats compare normally (`1 = 1.0` is `true`). <!-- lint-ignore -->
+- `ORDER BY` sorts `null` and missing values after all other values in ascending order (see [ORDER BY](#order-by) and [Descending order puts missing and null first](../knowledge/observations/dql-behavior.md#descending-order-puts-missing-and-null-first)).
 - Aggregates other than `COUNT` return MISSING, not `0`, over zero matching documents (see [Aggregates](#aggregates)).
 
 ### Working with Query Results
@@ -289,7 +291,7 @@ Future<List<String>> openOrdersAsJson(Ditto ditto) async {
 
 **✅ DO:**
 - Convert each row to a `Map` or to your own model class once, then work with those objects.
-- Iterate `items` once. Each pass over `items` creates new `QueryResultItem` wrappers, so `result.items.first.value` evaluated twice decodes the row twice. (JavaScript differs: `items` and `item.value` return the same objects every time; see [Platform Differences](../knowledge/platform-differences.md).)
+- Iterate `items` once. Each pass over `items` creates new `QueryResultItem` wrappers, so `result.items.first.value` evaluated twice decodes the row twice. (JavaScript differs: `items` and `item.value` return the same objects every time; see [Platform Differences](../knowledge/platform-differences.md) and [In JavaScript, query results return the same objects](../knowledge/observations/observer-behavior.md#in-javascript-query-results-return-the-same-objects).)
 - Keep only the data you need; let the `QueryResult` go out of scope.
 
 **❌ DON'T:**
@@ -499,7 +501,7 @@ Results have no guaranteed order unless you specify `ORDER BY`. The default dire
 
 `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing
 
-`DESC` reverses the whole sequence, so documents with a missing sort field come **first** in descending order, followed by those with `null`: a newest-first list (`ORDER BY createdAt DESC`) shows documents without `createdAt` at the top.
+`DESC` reverses the whole sequence, so documents with a missing sort field come **first** in descending order, followed by those with `null`: a newest-first list (`ORDER BY createdAt DESC`) shows documents without `createdAt` at the top (see [Descending order puts missing and null first](../knowledge/observations/dql-behavior.md#descending-order-puts-missing-and-null-first)).
 
 Strings compare by Unicode code point, not in the alphabetical order of a language: uppercase letters sort before lowercase ones (`'B'` before `'a'`), accented letters after `'z'`, and digits as characters (`'10'` before `'9'`). `LIKE` is case-sensitive too; use `ILIKE` to ignore case (in our testing; see [Comparisons across types are MISSING, and strings sort by code point](../knowledge/observations/dql-behavior.md#comparisons-across-types-are-missing-and-strings-sort-by-code-point)).
 
@@ -586,7 +588,7 @@ SELECT * FROM orders USE IDS LIST :ids
 | `USE IDS ('a', 'b')` | ❌ Error: `('a', 'b') is not supported` | <!-- lint-ignore -->
 | `USE IDS :ids` with an array | ❌ Treats the whole array as a single ID and returns nothing |
 
-A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids` and 20 to 65 ms with `USE IDS LIST :ids`, for reads and writes alike. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents); see [Long ID lists are faster with USE IDS LIST than with WHERE _id IN](../knowledge/observations/performance-measurements.md#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in). For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (SDK 5.0.3 rejected `USE IDS` in `DELETE` as a syntax error in our testing; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)) (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids`, for reads and writes alike, and 17 to 65 ms with `USE IDS LIST :ids`. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents); see [Long ID lists are faster with USE IDS LIST than with WHERE _id IN](../knowledge/observations/performance-measurements.md#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in). For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (SDK 5.0.3 rejected `USE IDS` in `DELETE` as a syntax error in our testing; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)) (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing](../knowledge/observations/dql-behavior.md#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-remove-nothing)).
 
 ```dart
 // ✅ GOOD: Direct ID lookup with an array parameter
@@ -611,7 +613,7 @@ Future<List<Map<String, dynamic>>> ordersByIds(Ditto ditto, List<String> ids) as
 | A single value instead of an array | `status IN :statuses` with `'open'` | ❌ Matches nothing, without an error |
 | Equality with an array parameter | `status = :statuses` | ❌ Compares with the whole array, so only array fields with the same elements match |
 
-An empty array returns no rows, also without an error. Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded` (see [Conditions fail at 100 levels of nested parentheses](../knowledge/observations/dql-behavior.md#conditions-fail-at-100-levels-of-nested-parentheses)).
+An empty array returns no rows, also without an error (see [Wrong argument types fail silently](../knowledge/observations/dql-behavior.md#wrong-argument-types-fail-silently)). Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [Long OR chains crashed SDK 5.1.0](../knowledge/observations/dql-behavior.md#long-or-chains-crashed-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded` (see [Conditions fail at 100 levels of nested parentheses](../knowledge/observations/dql-behavior.md#conditions-fail-at-100-levels-of-nested-parentheses)).
 
 ```dart
 // ✅ GOOD: Membership against an array parameter
@@ -650,6 +652,8 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 | `LEFT [OUTER] JOIN` | Every left row, matched or not | Right-side fields are MISSING |
 | `RIGHT [OUTER] JOIN` | Every right row, matched or not | Left-side fields are MISSING; allowed only as the first join |
 
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+
 `FULL OUTER JOIN`, `CROSS JOIN`, comma joins (`FROM a, b`), and joins in `UPDATE` / `DELETE` are not supported.
 
 The `ON` clause can be any condition over the aliases introduced so far, including `AND` / `OR` and filters on one side:
@@ -687,6 +691,8 @@ JOIN customers c ON c.email = o.customerEmail
 ```text
 Query failed: `Joining to "c" disallowed without appropriate index support. Please run ADVISE for recommendations.`
 ```
+
+In our testing on SDK 5.1.0 and 5.2.0, a join without an index failed with this error, while a join on `_id` and a join with `USE INDEX ''` worked without an index (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
 
 The fix is to index the join key of the inner collection (here `CREATE INDEX IF NOT EXISTS idx_customers_email ON customers (email)`). For example, joining orders by `customerId` needs this index:
 
@@ -734,6 +740,8 @@ Run `ADVISE` on a join query to get the `CREATE INDEX` statements it needs; see 
 | `SELECT _id` | A composite ID per joined row: `{"c": "c1", "o": "o1"}` |
 | `SELECT name` (field exists on both sides) | Error: `Ambiguous reference to field: name` |
 
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+
 Always qualify fields with their alias (`c.name`, `o.total`) and alias projected fields that would otherwise collide (`o._id AS orderId`).
 
 #### Restrictions
@@ -741,12 +749,12 @@ Always qualify fields with their alias (`c.name`, `o.total`) and alias projected
 - **Local data only**: A join reads only documents already in the local store. It never fetches missing documents from peers, so every joined collection needs its own subscription.
 - **Not in subscriptions**: `registerSubscription` rejects joins (`Unsupported feature: Joining`). Subscribe to each collection separately with `SELECT * FROM c WHERE ...`.
 - **Not on Ditto Server**: Joins are a Small Peer feature; Ditto Server queries (including the HTTP API) do not support them.
-- **`RIGHT JOIN` only as the first join**: A later `RIGHT JOIN` fails with `RIGHT OUTER join that isn't the first join is not supported`. Because Ditto rewrites a `RIGHT JOIN` as a `LEFT JOIN` with the sides swapped, the collection written on the left then becomes the inner side and needs the index (or the `_id` join).
+- **`RIGHT JOIN` only as the first join**: A later `RIGHT JOIN` fails with `RIGHT OUTER join that isn't the first join is not supported` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)). Because Ditto rewrites a `RIGHT JOIN` as a `LEFT JOIN` with the sides swapped, the collection written on the left then becomes the inner side and needs the index (or the `_id` join).
 - **At most 10 joins per statement** by default (directive `#max_joins`; see [Directives](indexing-and-performance.md#directives)). More fail with `Too many joins: the number of joined terms exceeds the maximum permitted.`
 
 #### Joins in observers
 
-`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
+`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)). On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
 
 ```dart
 // ✅ GOOD: Subscribe per collection (app or feature scope), join locally
@@ -849,6 +857,8 @@ The number of statements matters more than the number of documents. In our testi
 | `DO UPDATE` | Fields from the new document are written into the existing one. Fields you do not supply are kept, and nested objects are merged. Every supplied field is written, even if the value is identical, so the document is reported as mutated and observers can fire again (a `SELECT *` observer on the collection does). A field written again with its current value still wins over an earlier concurrent edit of that field on another device. |
 | `DO UPDATE_LOCAL_DIFF` | Same merge, but only fields whose values differ from the local document are written. If nothing changed, nothing is written and `mutatedDocumentIDs()` is empty. A value from a stale copy differs from the local one and is written. |
 
+In our testing on one device with SDK 5.1.0 and 5.2.0, the four policies behaved as this table describes (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+
 **✅ DO:**
 - Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports (for example when refreshing reference data from your backend).
 - Use `DO NOTHING` for "create if absent" logic.
@@ -857,7 +867,7 @@ The number of statements matters more than the number of documents. In our testi
 **❌ DON'T:**
 - Use `DO UPDATE` to "replace" a document. It merges; fields missing from the new document stay.
 - Use `DO UPDATE` for periodic re-upserts of unchanged data. Every run rewrites all supplied fields, records a mutation, can wake observers, and overwrites concurrent edits of those fields that other devices made earlier.
-- Upsert documents that contain a `COUNTER` field. The upserted value restarts the counter and discards increments that have not reached this device yet (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
+- Upsert documents that contain a `COUNTER` field. The upserted value restarts the counter and discards increments that have not reached this device yet (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters) and [An upsert that declares a counter restarts it](../knowledge/observations/merge-behavior.md#an-upsert-that-declares-a-counter-restarts-it)).
 
 ```dart
 // ✅ GOOD: Re-upserting unchanged data is a no-op
@@ -891,15 +901,15 @@ Future<void> doUpdateMerges(Ditto ditto) async {
 }
 ```
 
-**Why:** With the default `DQL_STRICT_MODE = false`, objects are stored as CRDT maps that merge field by field (see [Strict Mode](data-modeling.md#strict-mode) and [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)). A field that is written again, even with the value it already has, is a new write that wins over an earlier concurrent edit of that field on another device (see [Writing a Value That Did Not Change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change)). Writing only what changed avoids that, and it keeps sync deltas small.
+**Why:** With the default `DQL_STRICT_MODE = false`, objects are stored as CRDT maps that merge field by field (see [Strict Mode](data-modeling.md#strict-mode) and [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)). A field that is written again, even with the value it already has, is a new write that wins over an earlier concurrent edit of that field on another device (see [Writing a Value That Did Not Change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change) and [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)). Writing only what changed avoids that, and it keeps sync deltas small.
 
 #### INITIAL DOCUMENTS
 
 `INSERT INTO c INITIAL DOCUMENTS (...)` seeds default data, such as default settings or a starter catalog, that every peer may create independently. The syntax is the same as for `DOCUMENTS`: pass each document as a parameter.
 
 - If no document with that `_id` exists locally, it is inserted; if one exists, nothing happens and no error is raised.
-- When several devices create the same document independently, the initial values do not replace what other devices have already changed. This makes `INITIAL DOCUMENTS` the way to create a document with a `COUNTER` on each device (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
-- `ON ID CONFLICT` cannot be combined with `INITIAL DOCUMENTS` (parser error), and the source cannot be a `SELECT`.
+- When several devices create the same document independently, the initial values do not replace what other devices have already changed. This makes `INITIAL DOCUMENTS` the way to create a document with a `COUNTER` on each device (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters) and [INITIAL DOCUMENTS keeps concurrent counter increments](../knowledge/observations/merge-behavior.md#initial-documents-keeps-concurrent-counter-increments)).
+- `ON ID CONFLICT` cannot be combined with `INITIAL DOCUMENTS` (parser error), and the source cannot be a `SELECT` (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
 
 How initial documents merge across peers, and what happens after a seeded document is deleted or evicted, is described in [Default Data with INITIAL Documents](data-modeling.md#default-data-with-initial-documents).
 
@@ -939,7 +949,7 @@ SELECT status AS _id, COUNT(*) AS orderCount FROM orders GROUP BY status
 ON ID CONFLICT DO UPDATE
 ```
 
-The `SELECT` follows `INSERT INTO c` directly. Wrapping it in parentheses or in `DOCUMENTS (...)` is a syntax error, and `INITIAL DOCUMENTS` cannot be combined with a `SELECT` source.
+The `SELECT` follows `INSERT INTO c` directly. Wrapping it in parentheses or in `DOCUMENTS (...)` is a syntax error, and `INITIAL DOCUMENTS` cannot be combined with a `SELECT` source (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
 
 A query result contains plain values, so declare `COUNTER` and `ATTACHMENT` fields on **both** sides when the copied documents have them. Without the declarations, the copy stores a counter as a plain number, which a later `INCREMENT` on the copy hides behind a new counter that starts at 0, and an attachment as an ordinary map that cannot be fetched (in our testing; see [INSERT ... SELECT copies counters and attachments as plain values](../knowledge/observations/merge-behavior.md#insert--select-copies-counters-and-attachments-as-plain-values)). Do not add `ON ID CONFLICT DO UPDATE` here: an upsert restarts the copied counters (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
 
@@ -998,6 +1008,8 @@ Errors to expect:
 - Setting the same path twice in one statement fails: `More than one modification specified for the path ...`.
 - Array elements cannot be assigned (`SET items[0] = ...` is a syntax error). Replace the whole array, or model the collection as a map keyed by ID (see [Arrays and Maps](data-modeling.md#arrays-and-maps)).
 
+In our testing, SDK 5.1.0 and 5.2.0 reported each of these errors (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+
 Not reported as an error: a nested `SET a.b = 1` adds `b` when `a` is an object, but when `a` holds a string, a number, an array, or `null`, it replaces `a` with `{"b": 1}`, and the old value is lost (in our testing; see [Statements without WHERE change every document](../knowledge/observations/dql-behavior.md#statements-without-where-change-every-document)).
 
 #### Assigning an object merges it
@@ -1044,7 +1056,7 @@ Future<void> replaceAddress(
 
 **❌ DON'T:**
 - Read a document, modify it in Dart, and write the whole map back with `INSERT ... ON ID CONFLICT DO UPDATE`.
-- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
+- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result; see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits) and [Relay, rewrite, and subscription behavior held on SDK 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-520)).
 
 ```dart
 // ❌ BAD: Read-modify-write of the whole document
@@ -1086,6 +1098,8 @@ Add `RETURNING` to `INSERT`, `UPDATE`, `DELETE`, or `EVICT` to get the affected 
 | `INSERT ... RETURNING` | The documents written (documents skipped by `DO NOTHING` or left unchanged by `DO UPDATE_LOCAL_DIFF` are not returned) |
 | `UPDATE ... RETURNING` | The documents **after** the update |
 | `DELETE ... RETURNING` / `EVICT ... RETURNING` | The documents **before** they were removed |
+
+In our testing on SDK 5.1.0 and 5.2.0, `INSERT`, `UPDATE`, and `DELETE` returned the rows this table describes (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
 
 `commitID` is populated as usual when `RETURNING` is used, and so is `mutatedDocumentIDs()`. With `RETURNING`, read the affected documents from `items`, and include `_id` in the `RETURNING` projection when you need the IDs instead of relying on `mutatedDocumentIDs()`.
 
@@ -1134,8 +1148,8 @@ DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
 Choosing between them, tombstone lifetime, soft delete, and storage cleanup are covered in [Deletion and Storage Management](deletion-and-storage.md).
 
 **❌ DON'T:**
-- Build the `WHERE` clause of a `DELETE`, `EVICT`, or `UPDATE` from optional filters in a way that can leave it empty. Without `WHERE`, the statement changes every document in the collection, and nothing asks for confirmation or logs a warning. Write one fixed statement per case and pass the values as parameters.
+- Build the `WHERE` clause of a `DELETE`, `EVICT`, or `UPDATE` from optional filters in a way that can leave it empty. Without `WHERE`, the statement changes every document in the collection, and nothing asks for confirmation or logs a warning (see [Statements without WHERE change every document](../knowledge/observations/dql-behavior.md#statements-without-where-change-every-document)). Write one fixed statement per case and pass the values as parameters.
 
-To select documents by ID, use `WHERE _id = :id` or `WHERE _id IN :ids`; it is planned as an ID lookup and also works on SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+To select documents by ID, use `WHERE _id = :id` or `WHERE _id IN :ids`; it is planned as an ID lookup and also works on SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing](../knowledge/observations/dql-behavior.md#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-remove-nothing)).
 
 `RETURNING` (SDK 5.1+) on `DELETE` and `EVICT` returns the documents as they were before removal; see [DELETE and Tombstones](deletion-and-storage.md#delete-and-tombstones) for more examples.

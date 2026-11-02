@@ -17,7 +17,7 @@ Checks:
   outside the knowledge entry that describes it links to that entry
 - every knowledge entry of an observation (a section with an "Observed on"
   row) has a "Setup" row and a "Used in" line, and the "Used in" line lists
-  every section of another page that links to the entry
+  exactly the sections of other pages that link to the entry
 - every knowledge page with observation entries has an "In brief" list that
   links to each of them
 - every relative link in the repository's Markdown files is well formed and points to an
@@ -339,22 +339,27 @@ def check_in_brief(knowledge_pages: list[Path], root: Path) -> list[str]:
 
 
 def check_used_in(pages: list[Path], knowledge_pages: list[Path], root: Path) -> list[str]:
-    """Every section that links to an observation entry is listed in the entry's "Used in".
+    """An observation entry's "Used in" lists exactly the sections that link to it.
 
-    Links from the entry's own page (its summary and other entries) and from
-    inside other entries do not count. A "Used in" link without an anchor
-    covers every section of that page.
+    Every section that links to an entry is listed, and every listed section
+    links to it. A section is the text under one heading, without its
+    subsections. Links from the entry's own page (its summary and other
+    entries) and from inside other entries do not count. A "Used in" link
+    without an anchor stands for every section of that page.
     """
     used_in: dict[tuple[Path, str], tuple[str, set[tuple[Path, str]]]] = {}
+    used_in_lines: dict[tuple[Path, str], int] = {}
     for page in knowledge_pages:
         for _, anchor, lines in observation_sections(page.read_text(encoding="utf-8")):
             listed = set()
-            for _, line in lines:
+            for number, line in lines:
                 if line.startswith(USED_IN):
+                    used_in_lines[(page.resolve(), anchor)] = number
                     for _, target in parse_links(line):
                         path, _, section = unquote(target).partition("#")
                         listed.add(((page.parent / path).resolve() if path else page.resolve(), section))
             used_in[(page.resolve(), anchor)] = (f"{page.relative_to(root)}#{anchor}", listed)
+    linked: dict[tuple[Path, str], set[tuple[Path, str]]] = {entry: set() for entry in used_in}
     errors = []
     for page in pages:
         text = page.read_text(encoding="utf-8")
@@ -381,9 +386,19 @@ def check_used_in(pages: list[Path], knowledge_pages: list[Path], root: Path) ->
                 if entry not in used_in or entry[0] == page.resolve():
                     continue
                 name, listed = used_in[entry]
+                linked[entry].update({(page.resolve(), section), (page.resolve(), "")})
                 if (page.resolve(), section) not in listed and (page.resolve(), "") not in listed:
                     errors.append(f"{page.relative_to(root)}:{number}: links to the observation {name}, "
                                   f"whose Used in does not list the section #{section}")
+    scanned = {page.resolve() for page in pages}
+    for entry, (name, listed) in used_in.items():
+        knowledge_page = entry[0]
+        for target_page, section in sorted(listed):
+            if target_page not in scanned or (target_page, section) in linked[entry]:
+                continue
+            target = Path(os.path.relpath(target_page, root.resolve())).as_posix() + (f"#{section}" if section else "")
+            errors.append(f"{knowledge_page.relative_to(root.resolve())}:{used_in_lines[entry]}: "
+                          f"the Used in of {name} lists {target}, which does not link to the entry")
     return errors
 
 

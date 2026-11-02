@@ -65,7 +65,7 @@ The results were the same on every release tested, and they matched these sectio
 - **Document IDs** ([Allowed values](../../best-practices/data-modeling.md#allowed-values)): strings, objects, integers, booleans, and arrays were accepted; a float failed with `Floats are not supported in document IDs`, and `null` with `Null document ID not allowed`. Two composite IDs whose keys differ only in order identify the same document: inserting the second failed with `Identifier conflict`, and a lookup with the keys in the other order found the document. Without `_id`, Ditto generated a string ID. More ID comparisons are in [Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value).
 - **Timestamps** ([Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator)): `'2026-10-08T10:30:45Z' < '2026-10-08T10:30:45.123Z'` is `false`. `ORDER BY` on strings with a mixed number of fractional digits is not chronological: three documents with `'2026-10-08T10:30:45Z'`, `'2026-10-08T10:30:45.000500Z'`, and `'2026-10-08T10:30:45.123Z'` (in chronological order) came back as `...45.000500Z`, `...45.123Z`, `...45Z`. `date_part` of a string without a time zone is MISSING.
 
-**Used in:** [Joining Collections (SDK 5.1+)](../../best-practices/dql.md#joining-collections-sdk-51), [Index requirement](../../best-practices/dql.md#index-requirement), [Join types](../../best-practices/dql.md#join-types), [Result shape](../../best-practices/dql.md#result-shape), [Restrictions](../../best-practices/dql.md#restrictions), [Joins in observers](../../best-practices/dql.md#joins-in-observers), [RETURNING (SDK 5.1+)](../../best-practices/dql.md#returning-sdk-51), [Allowed values](../../best-practices/data-modeling.md#allowed-values), [Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator).
+**Used in:** [Index requirement](../../best-practices/dql.md#index-requirement), [Join types](../../best-practices/dql.md#join-types), [Result shape](../../best-practices/dql.md#result-shape), [Restrictions](../../best-practices/dql.md#restrictions), [Joins in observers](../../best-practices/dql.md#joins-in-observers), [RETURNING (SDK 5.1+)](../../best-practices/dql.md#returning-sdk-51), [Allowed values](../../best-practices/data-modeling.md#allowed-values), [Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator).
 
 ### ADVISE returned the documented output
 
@@ -204,7 +204,7 @@ The results were the same on every release tested, and they matched these sectio
 
 **Not tested:** more than one collection; `_id` values other than strings, including composite IDs; more than one tied value; `JOIN`; sorting after `GROUP BY`; an index on only one of the two devices.
 
-**Used in:** [ORDER BY](../../best-practices/dql.md#order-by), [Stable ordering](../../best-practices/observers.md#stable-ordering).
+**Used in:** [ORDER BY](../../best-practices/dql.md#order-by).
 
 ### OFFSET pages repeat rows after inserts, and keyset pages do not
 
@@ -445,7 +445,7 @@ The results were the same on every release tested, and they matched these sectio
 - Moving between 5.2.0 and 5.1.0, in both directions, kept the documents, the indexes, and the composite index created on 5.2.0 usable.
 - Back on 5.0.3, the composite index `idx_status_n (status, n)` became two single-field indexes, `idx_status_n_status` and `idx_status_n_n`. All documents could be read, including those written on 5.1.0 and 5.2.0.
 
-**Used in:** [Upgrading and downgrading](../../best-practices/indexing-and-performance.md#upgrading-and-downgrading), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510), [Mixed Releases](../upgrading.md#mixed-releases), [Rolling Back](../upgrading.md#rolling-back).
+**Used in:** [Upgrading and downgrading](../../best-practices/indexing-and-performance.md#upgrading-and-downgrading), [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510), [Rolling Back](../upgrading.md#rolling-back).
 
 ## Long Conditions and ANY
 
@@ -525,7 +525,7 @@ Some statements failed because they use features marked (SDK 5.1+) or (SDK 5.2+)
 | `UPDATE inventory SET stockLevel = stockLevel - 1` | [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate) (the ❌ BAD example) | `Forbidden: Document references in mutation values`; the statement succeeds on 5.1.0 and later |
 | `serialize_json()` | [Arithmetic, Conversion, and Other Functions](../dql-functions.md#arithmetic-conversion-and-other-functions) | `Function "serialize_json" not found` (also found by the check of the expression examples) |
 
-**Used in:** [How to Use This Guide](../../best-practices/README.md#how-to-use-this-guide), [Applying System Parameters](../../best-practices/setup-and-lifecycle.md#applying-system-parameters), [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [System Parameters Reference](../system-reference.md#system-parameters-reference), [Object Functions](../dql-functions.md#object-functions), [Monitoring size](../../best-practices/data-modeling.md#monitoring-size), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate), [Arithmetic, Conversion, and Other Functions](../dql-functions.md#arithmetic-conversion-and-other-functions), [USE IDS](../../best-practices/dql.md#use-ids).
+**Used in:** [How to Use This Guide](../../best-practices/README.md#how-to-use-this-guide), [Applying System Parameters](../../best-practices/setup-and-lifecycle.md#applying-system-parameters), [System Parameters Reference](../system-reference.md#system-parameters-reference), [Object Functions](../dql-functions.md#object-functions), [Monitoring size](../../best-practices/data-modeling.md#monitoring-size), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate), [Arithmetic, Conversion, and Other Functions](../dql-functions.md#arithmetic-conversion-and-other-functions), [USE IDS](../../best-practices/dql.md#use-ids).
 
 ### On SDK 5.0.3, SELECT _id on an indexed collection returned too few rows
 

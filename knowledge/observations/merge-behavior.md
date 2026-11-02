@@ -319,7 +319,7 @@ Results were the same on all three releases.
 
 - In every case, the new version sees 1, the value at the time of the rename, without an error or a warning. Reading both fields, as in `coalesce(quantity, qty)`, cannot recover the 5 in the first case.
 
-**Used in:** [Schema Evolution](../../best-practices/data-modeling.md#schema-evolution), [Prefer additive changes](../../best-practices/data-modeling.md#prefer-additive-changes).
+**Used in:** [Prefer additive changes](../../best-practices/data-modeling.md#prefer-additive-changes).
 
 ## Counter Writes and Merges
 
@@ -425,7 +425,7 @@ Results were the same on all three releases.
 - In both cases, the two devices held the same values; they did not diverge. The value comes back because `SET` writes a REGISTER beside the COUNTER, and an undeclared read returns whichever of the two was written most recently.
 - The failed checks with undeclared reads in the extended version of [A randomized merge test always converged](#a-randomized-merge-test-always-converged) probably had the same cause.
 
-**Used in:** [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [RESTART](../../best-practices/data-modeling.md#restart).
+**Used in:** [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent).
 
 ### INSERT ... SELECT copies counters and attachments as plain values
 
