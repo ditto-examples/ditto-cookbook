@@ -85,6 +85,14 @@ Entries of a map have no order, so an app that lets users reorder a list stores 
 
 Midpoints run out: inserting each new entry halfway between b (2) and the entry after it produced 51 distinct values, and the 52nd equaled 2. Positions kept their exact double values through sync. See [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps) for the rules.
 
+## Conditions and arithmetic across devices
+
+Devices sync the effects of statements (changed documents), not the statements themselves, and each device evaluates conditions against the documents it has at that moment. In our testing with SDK 5.1.0 and 5.2.0:
+
+- **A conditional update is not a lock.** Two offline devices both ran `UPDATE tasks SET status = 'assigned', assignee = :me WHERE _id = 't1' AND status = 'open'`, and each statement changed one document, so each device concluded that it had claimed the task. After sync, only one assignee remained, and the other device's claim disappeared without notice. Claims written to a map keyed by device (`claims.A`, `claims.B`) both survived, so that every device can pick the winner by the same rule (the earliest time, then the smallest ID).
+- **A bulk update covers only the documents the device has.** One device ran `UPDATE orders SET status = 'closed' WHERE status = 'open' AND day <= 2` while another, offline, inserted a matching order. After sync, that order was still open. Run closing jobs and migrations where every change has arrived (for example on Ditto Server, afterwards), or evaluate the condition when reading.
+- **Arithmetic on a register loses concurrent changes, even online.** Six connected devices each ran `UPDATE c SET n = n + 1` 100 times: a register ended at 101 to 129 instead of 600, without an error, while a `COUNTER` reached 600 every time. Selling the last item from two offline devices left a register at 0, which hides the oversale, and a `COUNTER` at -1, which shows it.
+
 ## Local write semantics you must know
 
 Several MAP behaviors differ from what developers expect from a JSON document store. With the default settings:

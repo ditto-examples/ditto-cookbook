@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.18
+> **Version**: 2.19
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -49,7 +49,7 @@ Before you release the upgrade, check on every platform you ship that an install
 
 **What this means:** Open Ditto once at app start with `await Ditto.open(DittoConfig(...))` and pass the instance to the parts of the app that need it, for example through dependency injection or a service object. If several callers may open Ditto at the same time, let them share one in-flight `Future`. Never open a new instance per screen or request, and never reopen a directory before `close()` has completed. Never read, write, or delete files inside the persistence directory, and never copy it to another device; to remove the local data, delete the whole directory after `close()` has completed.
 
-**Why this matters:** In Flutter (SDK 5.1.0), a second `Ditto.open()` on a directory that is already open may never complete, and it does not throw. The code that awaits it then stops without any error. Only one `Ditto` instance can use a persistence directory at a time. The directory also holds the device's identity and its sync state, so a copied or partly deleted directory breaks sync without an error: in our testing with SDK 5.1.0 and 5.2.0, a copy and the original never converged, and a device that reopened its directory without `ditto_store` did not send some of its new documents.
+**Why this matters:** In Flutter (SDK 5.1.0), a second `Ditto.open()` on a directory that is already open may never complete, and it does not throw. The code that awaits it then stops without any error. Only one `Ditto` instance can use a persistence directory at a time; while another process holds it, `Ditto.open()` fails with `store/persistence-directory-locked`. Include the Database ID in a path you choose: a directory written with another Database ID opens without an error, and its documents sync to the new database. The directory also holds the device's identity and its sync state, so a copied or partly deleted directory breaks sync without an error: in our testing with SDK 5.1.0 and 5.2.0, a copy and the original never converged, and a device that reopened its directory without `ditto_store` did not send some of its new documents.
 
 **Best-practices guide:** One instance per persistence directory
 
@@ -545,7 +545,7 @@ Future<void> replaceAddress(
 - Do not use counters for unique sequence numbers or for balances that must never go below zero
 - Do not use counters for values you can compute with `COUNT(*)`
 
-**Why this matters:** When two devices run `SET stock = stock - 1` concurrently, one of the decrements is lost. Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. An undeclared `INSERT` stores the initial value as a register, so a later increment starts a separate counter at 0. A `RESTART` discards every increment that the restarting device has not received yet, including increments that other devices make later while offline (SDK 5.1.0 and 5.2.0). An upsert or a plain `INSERT` that writes a counter value restarts the counter in the same way.
+**Why this matters:** When two devices run `SET stock = stock - 1` concurrently, one of the decrements is lost, even while both are online: in our testing with SDK 5.1.0 and 5.2.0, six connected devices that each added 1 a hundred times kept only 101 to 129 of 600 increments. Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. An undeclared `INSERT` stores the initial value as a register, so a later increment starts a separate counter at 0. A `RESTART` discards every increment that the restarting device has not received yet, including increments that other devices make later while offline (SDK 5.1.0 and 5.2.0). An upsert or a plain `INSERT` that writes a counter value restarts the counter in the same way.
 
 **Best-practices guide:** Counters, Writing documents that contain counters
 
@@ -1099,7 +1099,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 **What this means:** A transaction should only read, decide, write, and return. Prepare network responses, files, user input, and attachments (`newAttachment`) before the transaction starts, and never make network calls, show dialogs, or await timers inside it. Track pending transactions and await them before `ditto.close()`.
 
-**Why this matters:** While a read-write transaction runs, every other read-write transaction and plain write waits. Once a transaction has run for 10 seconds, Ditto logs a message about it every 5 seconds, starting at debug level and escalating to higher levels. `close()` does not wait for in-flight transactions.
+**Why this matters:** While a read-write transaction runs, every other read-write transaction and plain write waits. Once a transaction has run for 10 seconds, Ditto logs a message about it every 5 seconds, starting at debug level and escalating to higher levels. `close()` does not wait for in-flight transactions. While a read-write transaction is open, even one that only reads, changes from other devices do not reach the store either: in our testing with SDK 5.1.0 and 5.2.0, they arrived only when it ended. Use `isReadOnly: true` for transactions that only read.
 
 **Best-practices guide:** Transaction Rules, Concurrency and Duration
 

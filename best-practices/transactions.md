@@ -4,7 +4,7 @@ A transaction runs several DQL statements against the local store **atomically**
 
 **When to use a transaction:**
 - Changes that span several documents and must never be visible half-done, such as closing an order and creating its invoice, or moving an item between two lists (dual writes)
-- Read-check-write sequences on the local store, where the write depends on what you just read
+- Read-check-write sequences on the local store, where the write depends on what you just read. Without a transaction, such sequences lose updates even on one device: in our testing with the JavaScript SDK, 500 concurrent read-then-write increments left the value at 2 or 3, while the same sequence in transactions ran one after another and reached exactly the expected count. Between devices, a transaction does not help; use a `COUNTER` (see [Counters](data-modeling.md#counters))
 - Several reads that must see one consistent snapshot (read-only transaction)
 
 **When not to use one:** A single `INSERT`, `UPDATE`, or `DELETE` statement is already atomic. Wrapping it in a transaction adds nothing.
@@ -123,7 +123,7 @@ Future<(int open, int closed)> orderCounts(Ditto ditto) {
 **❌ DON'T:**
 - Call `ditto.store.execute(...)` inside the callback. In Flutter it throws a `DittoException` ("Attempting to use `ditto.store.execute` while in a transaction scope. Use `transaction.execute` instead ..."). In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies.
 - Start a read-write transaction inside another read-write transaction. Only one read-write transaction runs at a time, so the inner one waits for the outer one forever (deadlock). Flutter has no guard against this.
-- Make network calls, show dialogs, wait for user input, or `await` timers inside a transaction.
+- Make network calls, show dialogs, wait for user input, or `await` timers inside a transaction. While it waits, this device also stops taking in changes from other devices (see [Concurrency and Duration](#concurrency-and-duration)).
 - Store the `Transaction` object or use it after the callback returns; Flutter throws a `DittoException` when it is used outside its scope.
 - Read `commitID` inside the transaction to track sync status; it is `null` until the transaction commits. Keep the `QueryResult` of the write (for example, return it from the callback) and read its `commitID` after `transaction()` completes.
 
@@ -180,6 +180,7 @@ Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() charg
 - **Read-only transactions** can run concurrently with each other and with the active read-write transaction. A mutating statement inside a read-only transaction throws (`A mutating DQL query was attempted using a read-only transaction.`).
 - **Arrival order (SDK 5.1+):** Small Peer write transactions are processed in arrival order, which prevents a write from being starved indefinitely by competing operations.
 - **Long transactions are logged:** After a transaction has run for 10 seconds, Ditto logs a message about it (including the `hint`) every 5 seconds, starting at debug level and escalating to higher levels. The thresholds are configurable with the system parameters `TRANSACTION_DURATION_BEFORE_LOGGING_MS` and `TRANSACTION_TRACE_INTERVAL_MS`.
+- **Incoming changes wait too:** **Note (SDK 5.1.0 and 5.2.0)**: in our testing, while a read-write transaction was open (even one that only read) or a large statement ran, changes from other devices did not reach the store or observers until it ended; they arrived right after. A transaction held open for 15 seconds delayed them by 15 seconds, without dropping the connection. With `isReadOnly: true`, changes kept arriving within about 20 ms. In the other direction, a device that received a 30,000-document transaction made its own small writes wait up to about 1.3 seconds. Split migrations and bulk rewrites into statements of about 1,000 documents with an indexed condition (updates then waited at most about 60 ms), and use one transaction only for changes that must appear at once.
 - **Closing:** `ditto.close()` in Flutter does not wait for in-flight transactions. Track pending transactions yourself and await them before closing (see [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown)).
 
 ```dart

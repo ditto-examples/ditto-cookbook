@@ -64,7 +64,7 @@ A Ditto instance is created from an immutable `DittoConfig`:
 |---|---|---|---|
 | `databaseID` | `String?` | All-zero UUID | Your Database ID. It must be a valid UUID. Do not rely on `Ditto.open()` to reject an invalid value; check that no placeholder is left in your configuration. |
 | `connect` | `DittoConfigConnect` | `DittoConfigConnectSmallPeersOnly()` | `DittoConfigConnectServer(url: ...)` or `DittoConfigConnectSmallPeersOnly(privateKey: ...)`. |
-| `persistenceDirectory` | `String?` | `null` | `null` uses `ditto-<databaseID>` inside `Ditto.defaultRootDirectory`. A relative path is resolved against the application support directory (`getApplicationSupportDirectory()`). |
+| `persistenceDirectory` | `String?` | `null` | `null` uses `ditto-<databaseID>` inside `Ditto.defaultRootDirectory`. A relative path is resolved against the application support directory (`getApplicationSupportDirectory()`). If you choose the path yourself, include the Database ID in it: in our testing, a directory written with one Database ID opened without an error with another, and its documents synced to the new database (development data mixing into production, for example). |
 | `systemParameters` (SDK 5.2+) | `Map<String, Object>` | `{}` | System parameters applied before Ditto starts (see [Applying System Parameters](#applying-system-parameters)). |
 
 **Default location (SDK 5.2+)**: `Ditto.defaultRootDirectory` now resolves to the application support directory instead of the documents directory; the release notes describe the move for desktop platforms. With `persistenceDirectory: null`, Ditto still finds a database in the previous default location after the upgrade. That fallback applies only to `null`. If your app passes a relative path, check on every platform you ship that an upgraded installation still opens its existing data before you release 5.2.
@@ -115,7 +115,7 @@ Future<Ditto> openWithoutAwaitingOpen() async {
 
 ## One instance per persistence directory
 
-Only one `Ditto` instance can use a persistence directory at a time, and only one app can use a database at the same time. Open Ditto once at app start, share the instance (for example through your app's dependency injection or a service object), and close it only when the app no longer needs it.
+Only one `Ditto` instance can use a persistence directory at a time, and only one app can use a database at the same time. In our testing with SDK 5.1.0 and 5.2.0, `Ditto.open()` on a directory that another process held (a second window of the app, an old process left behind by a development server, or a suspended process) failed after about one second with the error code `store/persistence-directory-locked`. The lock of a process that crashed did not remain: another process could open the directory at once and read every committed write. Open Ditto once at app start, share the instance (for example through your app's dependency injection or a service object), and close it only when the app no longer needs it.
 
 > **Note (SDK 5.1.0):** In the Flutter SDK, calling `Ditto.open()` on a persistence directory that is already open may never complete instead of throwing. Instead of opening the directory again, share the existing instance.
 

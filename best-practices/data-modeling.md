@@ -935,7 +935,7 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 - Use `RESTART WITH` to recalibrate a counter that other devices keep changing while offline.
 
-**Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. Everything else (registers, map entries) keeps one of the concurrent values, so `SET stockLevel = stockLevel - 1` on two devices loses one of the decrements.
+**Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together, also between devices that are online (see [Conditions and arithmetic across devices](../knowledge/crdt-types.md#conditions-and-arithmetic-across-devices)). Everything else (registers, map entries) keeps one of the concurrent values, so `SET stockLevel = stockLevel - 1` on two devices loses one of the decrements.
 
 ```dart
 // ❌ BAD: Read-modify-write on a register. Two devices that each sell one item

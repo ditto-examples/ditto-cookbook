@@ -188,3 +188,5 @@ A value written into a counter other than with `INCREMENT BY` works like `RESTAR
 
 **❌ DON'T:**
 - Upsert a whole document with a counter. Undeclared, the number is stored as a separate REGISTER next to the counter, and reads then depend on the declaration (`§ Keep type declarations consistent`).
+
+Across devices, conditions and arithmetic do not coordinate (**Note (SDK 5.1.0 and 5.2.0)**, in testing; `§ Conditions and arithmetic across devices`): a conditional `UPDATE ... WHERE status = 'open'` on two offline devices succeeded on both and only one claim survived, so record claims in a map keyed by device and pick the winner by one rule; a bulk `UPDATE ... WHERE` missed a matching document that another device inserted meanwhile; and `SET n = n + 1` on six connected devices kept 101 to 129 of 600 increments, while a `COUNTER` kept all.
