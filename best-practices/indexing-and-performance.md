@@ -68,7 +68,7 @@ Example output for the indexes created above:
 - **Indexes persist.** After closing Ditto and reopening the same persistence directory, all indexes are still present and used by the planner.
 - **Indexes are local to each device.** `CREATE INDEX` and `DROP INDEX` run on the local SDK. Create the indexes your queries need on every device, as part of startup.
 - **`CREATE INDEX` / `DROP INDEX` run only through `execute`.**
-- **Indexes speed up `execute` and store observers;** subscriptions and Ditto Server queries do not use them, and custom indexes are not supported on the Ditto Server.
+- **Indexes speed up `execute` and store observers;** subscriptions and Ditto Server queries do not use them (in our testing, the peer that served a subscription read the whole collection even with an index for the filter), and custom indexes are not supported on the Ditto Server.
 - **In-memory stores do not support indexes.** On the Web (Flutter Web and JavaScript Web), where the store is in memory, skip index creation; `CREATE INDEX` fails there with `the database implementation does not support indexing`.
 
 **✅ DO:**

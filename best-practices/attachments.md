@@ -77,7 +77,7 @@ Read the token from the document, then call `ditto.store.fetchAttachment(token, 
 |---|---|---|
 | `AttachmentFetchEventProgress` | Zero or more times | `downloadedBytes`, `totalBytes` |
 | `AttachmentFetchEventCompleted` | At most once | `attachment` (read the bytes with `await attachment.data`) |
-| `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched. Not observed in our testing with SDK 5.1.0: when the referencing document was deleted while no peer could deliver the blob, the fetch stayed pending. According to the 5.2.0 release notes, a fetch of an attachment that no document references anymore now ends with this event instead of retrying forever. Keep a stall timeout on both releases |
+| `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched. According to the 5.2.0 release notes, a fetch of an attachment that no document references anymore now ends with this event instead of retrying forever, but we did not observe it on SDK 5.1.0 or 5.2.0: when the referencing document was deleted while no peer could deliver the blob, or after the only holder had collected the blob, the fetch stayed pending without any event. Keep a stall timeout on both releases |
 
 | `AttachmentFetcher` member | Meaning |
 |---|---|
@@ -229,7 +229,9 @@ Map<String, dynamic>? imageToken(Map<String, dynamic> photo) {
 
 ## Attachments Are Immutable
 
-Once created, an attachment's contents never change. To "edit" a file, create a new attachment and replace the token in the document. The old blob is removed by garbage collection once no document on the device references it (in our testing, this happened both on the device that replaced it and on the devices that had fetched it). In our testing with the JavaScript SDK, an `Attachment` object that the app still held in memory also kept its blob from being collected, so do not cache `Attachment` objects longer than you need them.
+Once created, an attachment's contents never change. To "edit" a file, create a new attachment and replace the token in the document. The old blob is removed by garbage collection once no document on the device references it (in our testing, this happened both on the device that replaced it and on the devices that had fetched it). In our testing with the JavaScript SDK, an `Attachment` object that the app still held in memory also kept its blob from being collected, so do not cache `Attachment` objects longer than you need them. Without such objects, unreferenced blobs were collected within about 10 minutes while Ditto stayed open, and at once when the store was opened again (SDK 5.1.0 and 5.2.0).
+
+Deleting a document does not remove its blob from other devices at once. In our testing, a device that still had the token fetched the attachment completely from a peer that had deleted the document but had not yet collected the blob. Do not rely on a deletion to make a sensitive file unavailable right away.
 
 ```dart
 // ✅ GOOD: Replace an attachment by creating a new one and updating the token field.
@@ -345,7 +347,7 @@ An attachment can only be fetched while a peer that **holds the blob** is reacha
 - A blob exists on a device only if that device created it or fetched it. Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) notes that Ditto Server can hold a document with an attachment token but not the blob, for example when Small Peers replicate the document among themselves without fetching the attachment.
 - An interrupted transfer resumes from where it stopped, from the same peer or from another peer that has the blob.
 - The fetch API has no "not available" event: while no peer can deliver the blob, the fetch simply makes no progress. Handle this with a timeout and a retry in the UI (see the `AttachmentImage` example).
-- Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available (for example, a product image), make sure a well-connected device or Ditto Server fetches it. In our testing with SDK 5.1.0 and three devices in a line (A–B–C), C could not fetch a blob that only A held until B had fetched the blob itself, even though B subscribed to the documents. Once B had the blob, C's fetch completed in milliseconds.
+- Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available (for example, a product image), make sure a well-connected device or Ditto Server fetches it. In our testing with SDK 5.1.0 and 5.2.0 and three devices in a line (A–B–C), C could not fetch a blob that only A held until B had fetched the blob itself, even though B subscribed to the documents. Once B had the blob, C's fetch completed in milliseconds.
 
 **✅ DO:**
 - Show a placeholder with the attachment's metadata while the blob is unavailable.

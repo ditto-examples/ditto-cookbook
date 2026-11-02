@@ -23,7 +23,7 @@ Ditto is an **offline-first edge sync platform**. The **Ditto Edge SDK** embeds 
 **Offline-first operation**
 - The local database is always readable and writable, with or without connectivity.
 - Writes are committed locally first and synced when a connection to another peer or to Ditto Server becomes available.
-- Sync is incremental: peers exchange only the changes the other side has not seen yet.
+- Sync is incremental: each connection carries only the changes that the other side is not known to have. In a mesh, a device can still receive the same change from several neighbors (see [Multi-hop relay](../best-practices/sync-and-subscriptions.md#multi-hop-relay)).
 
 **Distributed synchronization**
 - No server is required for peers to sync with each other. Ditto Server is optional.

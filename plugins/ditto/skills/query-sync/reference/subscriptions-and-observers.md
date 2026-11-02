@@ -59,7 +59,7 @@ Consequences:
 
 ## Subscription Lifecycle
 
-- Avoid changing subscriptions more often than about every 15 minutes: each change makes peers re-evaluate which documents they must send to the device. The guideline is about that re-evaluation work, not data transfer: documents already held are not downloaded again, and an identical second registration transferred nothing in our testing, but data keeps syncing until **every** copy of it is cancelled.
+- Avoid changing subscriptions more often than about every 15 minutes: each change makes peers re-evaluate which documents they must send to the device. The guideline is about that re-evaluation work, not data transfer: documents already held are not downloaded again, and an identical second registration transferred nothing in our testing, but data keeps syncing until **every** copy of it is cancelled. The re-evaluation reads the whole collection on the serving peer, indexes and `_id` filters do not shorten it, and each new registration repeats it for all of the device's subscriptions (in testing with 50,000 documents: about 0.1 s of hub CPU for the first, 0.2 s for the tenth). Register the long-lived set together, before `sync.start()` where possible (about a sixth of the cost); cancelling and reconnecting cost almost nothing.
 - Register when data becomes relevant (app start, login, entering a workspace) in an app- or feature-level service; keep every `SyncSubscription` reference.
 - Re-register only when the set of data the device needs changes (switching store or tenant). Search, tabs, filters, and sort orders change observers.
 - Subscriptions stay active until `cancel()` or `ditto.close()`. Always release them explicitly; do not rely on garbage collection to cancel them.

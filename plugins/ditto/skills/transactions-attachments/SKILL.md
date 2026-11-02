@@ -109,7 +109,7 @@ Subscriptions never download blobs; a token is not image data. Fetching every at
 | `AttachmentFetchEventCompleted` | At most once | `attachment` (read bytes with `await attachment.data`) |
 | `AttachmentFetchEventDeleted` | At most once (instead of Completed) | The attachment was deleted while being fetched |
 
-**Note (SDK 5.1.0)**: `AttachmentFetchEventDeleted` was not observed in our testing: when the document was deleted while no peer could deliver the blob, the fetch stayed pending. The 5.2.0 release notes say a fetch of an attachment that no document references now ends with this event; keep a stall timeout (rule 7) on both releases.
+**Note (SDK 5.1.0 and 5.2.0)**: `AttachmentFetchEventDeleted` was not observed in our testing: when the document was deleted while no peer could deliver the blob, the fetch stayed pending, on 5.2.0 too (whose release notes say it now ends with this event); keep a stall timeout (rule 7).
 
 `AttachmentFetcher`: `stop()` cancels an in-flight fetch (not needed after completion); `isStopped`; `attachment` is a `Future<Attachment?>` that never completes after `stop()`, so do not await it once you have stopped the fetcher. `ditto.store.attachmentFetchers` lists active fetchers. Attachments already in the local blob store complete right away, typically without progress events.
 
@@ -214,7 +214,7 @@ Store a small preview next to the full-size attachment (`INSERT INTO COLLECTION 
 
 An attachment can be fetched only while a peer that **holds the blob** is reachable. A blob exists on a device only if that device created or fetched it; Ditto Server can hold a token without the blob ([details](reference/sync-and-storage.md#multi-hop-blob-availability)). An interrupted transfer resumes from where it stopped. If a blob must be widely available, make sure a well-connected device or Ditto Server fetches it.
 
-**Note (SDK 5.1.0)**: In testing, a blob did not pass through a relay device until the relay had fetched it itself, even though the relay subscribed to the documents; the waiting fetch emitted no events. Do not depend on a particular relay behavior for blobs across hops ([multi-hop test](reference/sync-and-storage.md#multi-hop-blob-availability)).
+**Note (SDK 5.1.0 and 5.2.0)**: In testing, a blob did not pass through a relay device until the relay had fetched it itself, even though the relay subscribed to the documents; the waiting fetch emitted no events. Do not depend on a particular relay behavior for blobs across hops ([multi-hop test](reference/sync-and-storage.md#multi-hop-blob-availability)).
 
 **✅ DO**:
 - Show a placeholder with metadata while the blob is unavailable

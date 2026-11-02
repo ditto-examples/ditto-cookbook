@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.16
+> **Version**: 2.17
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -831,7 +831,7 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 
 **What this means:** Register a subscription when its data becomes relevant, such as at app start, at login, or when the user enters a store, and register it again after every `Ditto.open()`: subscriptions are not persisted. Keep a reference to each subscription in an app-level or feature-level service, and call `cancel()` on logout, when the user leaves the workspace, or when you register a replacement. Never register subscriptions in `build()` or on every screen visit. Use `ditto.sync.subscriptions` only for debugging, and read only `queryString` and `isCancelled` from it. In SDK 5.1.0, reading `queryArguments` of a subscription registered without arguments can terminate the app.
 
-**Why this matters:** A subscription registered in `build()` adds a new mesh-wide subscription on every rebuild, because subscriptions stay active until they are cancelled or Ditto is closed. Do not rely on garbage collection to cancel them. In our testing with SDK 5.1.0 and 5.2.0, a device that opened Ditto again without registering its subscriptions received nothing from other devices, without an error.
+**Why this matters:** A subscription registered in `build()` adds a new mesh-wide subscription on every rebuild, because subscriptions stay active until they are cancelled or Ditto is closed. Do not rely on garbage collection to cancel them. In our testing with SDK 5.1.0 and 5.2.0, a device that opened Ditto again without registering its subscriptions received nothing from other devices, without an error. Each new registration also makes the peer that holds the data read the whole collection again for all of the device's subscriptions, so register the long-lived set together, before sync starts where possible: that cost about a sixth of registering the same subscriptions one at a time.
 
 **Best-practices guide:** Subscription Lifecycle
 
@@ -886,7 +886,7 @@ class OrderSync {
 
 **What this means:** Filter subscriptions by fields that partition your data and never change during a document's lifetime, such as `storeId`, `tenantId`, or `region`, and keep the predicates simple. Give devices in the same role the same subscriptions, and give relay or hub devices at least everything that the devices behind them need. Subscribe to an entire collection only when it holds small reference data.
 
-**Why this matters:** Unfiltered subscriptions on large collections cost storage, bandwidth, and battery on every device. Filters on fields that change (`status`, `assignee`) leave devices without data, and so do relay devices that subscribe to less than the devices behind them need: a device can relay only documents that it stores itself.
+**Why this matters:** Unfiltered subscriptions on large collections cost storage, bandwidth, and battery on every device. Filters on fields that change (`status`, `assignee`) leave devices without data, and so do relay devices that subscribe to less than the devices behind them need: a device can relay only documents that it stores itself. When many devices reconnect at once with changes made offline, each device that subscribes to everything receives everyone else's changes, so the time until all devices agree grows faster than their number (SDK 5.1.0 and 5.2.0).
 
 **Best-practices guide:** Scope subscriptions to what the device needs, Multi-hop relay
 
@@ -1539,7 +1539,7 @@ Future<AttachmentFetcher?> showPhoto(Ditto ditto, String photoId) async {
 
 **What this means:** While the blob is unavailable, show a placeholder built from the attachment's metadata, and give the UI a timeout and a retry. Have hub devices, or a backend connected to Ditto Server, fetch the attachments that many devices need.
 
-**Why this matters:** A device can fetch a blob only while it can reach a peer that holds the blob, and a device holds a blob only if it created or fetched it. The fetch API has no "not available" event: the fetch simply makes no progress. Do not rely on relays to pass blobs on across multiple hops. In our testing with SDK 5.1.0, a device two hops away could fetch a blob only after the device in between had fetched it itself.
+**Why this matters:** A device can fetch a blob only while it can reach a peer that holds the blob, and a device holds a blob only if it created or fetched it. The fetch API has no "not available" event: the fetch simply makes no progress. Do not rely on relays to pass blobs on across multiple hops. In our testing with SDK 5.1.0 and 5.2.0, a device two hops away could fetch a blob only after the device in between had fetched it itself, and a fetch whose document had been deleted stayed pending without any event on both releases, although the 5.2.0 release notes say it now ends.
 
 **Best-practices guide:** Availability
 

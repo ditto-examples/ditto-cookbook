@@ -6,8 +6,9 @@
 // Ditto has no fetch timeout and no "not available" event. While no
 // reachable peer can deliver the blob, the fetch simply makes no progress.
 // (According to the 5.2.0 release notes, a fetch of an attachment that no
-// document references anymore now ends with AttachmentFetchEventDeleted
-// instead of retrying forever; keep the stall timeout on every release.)
+// document references anymore now ends with AttachmentFetchEventDeleted, but
+// in testing such fetches stayed pending on 5.2.0 as well; keep the stall
+// timeout on every release.)
 //
 // PATTERNS DEMONSTRATED:
 // 1. ✅ Stall timeout: restart a timer on every progress event

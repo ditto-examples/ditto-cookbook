@@ -409,6 +409,7 @@ To restore a default, use `ALTER SYSTEM RESET <parameter>`. To list everything, 
 - `ditto.sync.isActive` tells you whether sync is running.
 - After `stop()`, the local store remains fully usable; only network sync stops. `stop()` closes all connections right away, on both sides. Subscriptions stay registered, and changes made on either side while sync was stopped are exchanged after `start()`.
 - Subscriptions can be registered before `start()` or while sync is stopped; they take effect when sync runs.
+- When many devices start sync at once with changes they made offline, staggering the starts spreads the work. In our testing with SDK 5.1.0 and 5.2.0, with 20 devices started half a second apart, new documents kept reaching the devices that had already synced within about 0.1 seconds, but all devices agreed only after the last one had started, and the hub did the same total work (see [Scope subscriptions to what the device needs](sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs)).
 
 Start sync **after** the expiration handler is set (server connections) or the offline license token is set (small-peers-only), and after system parameters have been applied.
 

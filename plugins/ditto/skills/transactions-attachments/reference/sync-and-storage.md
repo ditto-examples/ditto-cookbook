@@ -8,13 +8,13 @@ Atomicity is guaranteed on the device that commits. **Note (SDK 5.1.0 and 5.2.0)
 
 ## Blob Garbage Collection
 
-On Small Peers, blobs that are no longer referenced are garbage-collected automatically every 10 minutes; garbage collection runs only on Small Peers, not on Ditto Server. **Note (SDK 5.1.0)**: in our testing with the JavaScript SDK, an `Attachment` object the app still held also kept its blob alive, so do not cache `Attachment` objects longer than needed. Every blob referenced by a token (including old tokens kept in history documents) stays on the device.
+On Small Peers, blobs that are no longer referenced are garbage-collected automatically every 10 minutes; garbage collection runs only on Small Peers, not on Ditto Server. **Note (SDK 5.1.0 and 5.2.0)**: in our testing with the JavaScript SDK, an `Attachment` object the app still held also kept its blob alive, so do not cache `Attachment` objects longer than needed; without such objects, unreferenced blobs were collected within about 10 minutes, and at once when the store was opened again. Deleting a document does not remove its blob from other devices at once: a device with the token still fetched it from a peer that had deleted the document but not yet collected the blob. Every blob referenced by a token (including old tokens kept in history documents) stays on the device.
 
 ## Multi-Hop Blob Availability
 
 Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/working-with-attachments) describes that Ditto Server can hold a document with an attachment token but not the blob, for example when Small Peers replicate the document among themselves without fetching the attachment.
 
-**Note (SDK 5.1.0)**: In our testing with SDK 5.1.0 and devices in a line (A–B–C), C could not fetch a blob held only by A until B had fetched it itself, even though B subscribed to the documents; the fetch emitted no events in the meantime. Once B had the blob, C's fetch completed in milliseconds. Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available, make sure a well-connected device or Ditto Server fetches it.
+**Note (SDK 5.1.0 and 5.2.0)**: In our testing with devices in a line (A–B–C), C could not fetch a blob held only by A until B had fetched it itself, even though B subscribed to the documents; the fetch emitted no events in the meantime. Once B had the blob, C's fetch completed in milliseconds. Do not design workflows that depend on a particular relay behavior for blobs across multiple hops; if a blob must be widely available, make sure a well-connected device or Ditto Server fetches it.
 
 ## Attachment Size
 
