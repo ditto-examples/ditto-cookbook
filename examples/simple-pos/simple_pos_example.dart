@@ -301,12 +301,15 @@ class PosRepository {
   }
 
   /// Available, not soft-deleted menu items of this store.
+  ///
+  /// DQL compares strings by Unicode code point, so uppercase names sort
+  /// before lowercase ones; `_id` breaks ties between equal names.
   Future<List<MenuItem>> getAvailableMenuItems() async {
     final result = await _ditto.store.execute(
       'SELECT * FROM menuItems '
       'WHERE storeId = :storeId AND isAvailable = true '
       'AND coalesce(isDeleted, false) = false '
-      'ORDER BY category ASC, name ASC',
+      'ORDER BY category ASC, name ASC, _id',
       arguments: {'storeId': storeId},
     );
     return result.items.map((item) => MenuItem.fromDitto(item.value)).toList();

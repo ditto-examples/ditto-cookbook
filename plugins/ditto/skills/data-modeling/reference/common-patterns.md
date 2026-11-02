@@ -127,6 +127,7 @@ Guide: `§ Event History and Audit Logs`, `§ EVICT`. Examples: [event-history.d
 - **Keep fields at the top level** when that reads better; nested paths such as `customer.phone` are indexable too.
 - **Use a REGISTER object** only when the parts must never mix (for example, a GPS `position`), declared in every statement.
 - **Avoid unbounded growth** inside one document: a map that keeps receiving entries belongs in its own collection.
+- **Keep nesting shallow.** In our testing with SDK 5.1.0 and 5.2.0, an argument could nest at most 125 levels of objects (126 failed with `Invalid query arguments: recursion limit exceeded`) and a literal in a statement 97 levels; `UPDATE ... SET a.b.c...` paths can build deeper documents, which then cannot be passed back as an argument (for example, in an upsert of what was read).
 
 ### Exclude Transient and Unnecessary Fields
 
@@ -141,6 +142,7 @@ Every stored field costs storage and memory on every device that holds the docum
 - Use one convention (camelCase in the guide).
 - Quote field names that collide with DQL keywords or contain special characters with backticks (`` `value` ``).
 - Never name a collection `collection`; it is a DQL keyword.
+- Names are case-sensitive: `Orders` and `orders` are different collections.
 
 Guide: `§ Document Structure`, `§ MISSING and NULL`.
 
@@ -153,7 +155,7 @@ Guide: `§ Document Structure`, `§ MISSING and NULL`.
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | Write succeeds; a warning is logged |
 | Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
 
-The soft-limit warning reads `exceeds recommended limit`. **Note (SDK 5.1.0):** merges from other devices are not checked against the hard limit: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data. **Note (SDK 5.2.0):** a receiving device instead drops such a change: in testing, the two devices kept different versions (each only its own large field), the document was listed in `system:sync_degradations` with `documentTooBig` on both, and updates of it stopped in both directions. Evicting it on one device brought back the other version within 15 seconds and **discarded that device's own changes**; evict on the device whose changes you can lose (`§ Document Size Limits`).
+The soft-limit warning reads `exceeds recommended limit`. In testing, SDK 5.0.3 did not check the hard limit (it stored a 6 MiB document). **Note (SDK 5.1.0):** merges from other devices are not checked against the hard limit: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data. **Note (SDK 5.2.0):** a receiving device instead drops such a change: in testing, the two devices kept different versions (each only its own large field), the document was listed in `system:sync_degradations` with `documentTooBig` on both, and updates of it stopped in both directions. Evicting it on one device brought back the other version within 15 seconds and **discarded that device's own changes**; evict on the device whose changes you can lose (`§ Document Size Limits`).
 
 The limits apply to the size of each stored document. Size affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes more than 10 seconds to replicate the first time.
 
@@ -166,7 +168,7 @@ Two patterns keep growing although the stored values do not (**Note (SDK 5.1.0 a
 | One document holding data for many users or locations | Split by owner or location (often simplifies permissions too) |
 | Status history | A bounded audit-log map, or an event collection (see [Event History and Audit Logs](#pattern-2-event-history-and-audit-logs)) |
 
-Estimate the size of a value with `object_size()`; it is approximate and can differ from the stored size, so leave headroom. To bring an oversized document back under the limits, move large values to attachments or to a separate collection and remove them from the document with `UNSET`:
+Estimate the size of a value with `object_size()` (SDK 5.1+); it is approximate and can differ from the stored size, so leave headroom. To bring an oversized document back under the limits, move large values to attachments or to a separate collection and remove them from the document with `UNSET`:
 
 ```sql
 SELECT _id, object_size(o) AS approxBytes

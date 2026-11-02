@@ -117,7 +117,7 @@ The planner chooses indexes by rules, not data statistics. `EXPLAIN` shows these
 | `SELECT COUNT(*) FROM orders` (no `WHERE`) | Count scan |
 
 - Index the full nested path you filter on (`address.city`).
-- Keep type declarations consistent: only the most recently written CRDT type of a field is indexed, so a field written with different declarations (for example once as `REGISTER` and once as `MAP`) can give incorrect or mis-ordered index results. Do not index fields that are written with more than one type.
+- Keep type declarations consistent: according to Ditto's documentation, only the most recently written CRDT type of a field is indexed, so a field written with different declarations (for example once as `REGISTER` and once as `MAP`) can give incorrect or mis-ordered index results. In our testing with SDK 5.1.0 and 5.2.0, results were the same with and without the index (queries that declared a type did not use it), but reads with different declarations returned different values (`§ Keep type declarations consistent`). Do not index fields that are written with more than one type.
 - With `DQL_STRICT_MODE = true`, the planner of SDK 5.1.0 and 5.2.0 does not use secondary indexes (queries fall back to a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default (`false`) if you rely on indexes.
 - In-memory stores (Flutter Web) do not support indexes.
 

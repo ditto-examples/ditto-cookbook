@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 3.12
+> **Version**: 3.13
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -32,12 +32,12 @@ The guide has two parts: these best practices, which say what to do and what to 
 
 - **Code examples** use Flutter (Dart) with `import 'package:ditto_live/ditto_live.dart';`. The DQL statements, the data modeling guidance, and the sync behavior apply to every SDK; where the JavaScript, Swift, or Kotlin APIs or behavior differ, the guide says so (see [Platform Differences](../knowledge/platform-differences.md)).
 - **✅ DO / ❌ DON'T**: Each topic lists recommended practices and anti-patterns, followed by examples marked `// ✅ GOOD` and `// ❌ BAD`.
-- **(SDK 5.1+)** / **(SDK 5.2+)**: Marks features introduced in Ditto SDK 5.1 or 5.2. Everything else is available in 5.0 and later.
+- **(SDK 5.1+)** / **(SDK 5.2+)**: Marks features introduced in Ditto SDK 5.1 or 5.2 (a few small features, such as `object_size()`, carry the mark because SDK 5.0.3 did not support them in our testing). Everything else is available in 5.0 and later.
 - **(Experimental)** / **(Beta)**: Marks APIs that the SDK itself marks as experimental or beta. Their signatures or behavior may change in a future release.
 - **Note (SDK ...)**: Describes behavior that is easy to miss and can lead to wrong results, lost data, crashes, or hangs, together with the pattern that avoids it. The label names the releases on which we observed it: **Note (SDK 5.1.0 and 5.2.0)** was confirmed on both releases, and **Note (SDK 5.1.0)** was observed on 5.1.0 and has not yet been repeated on 5.2.0 (the 5.2.0 release notes describe no change unless the note says so). Search for "Note (SDK" to list them all, and review them when you upgrade the SDK: a later release may change the behavior. Issues that 5.2.0 fixed are collected in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 - **Placeholders** such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
 
-**How the content was verified**: The Dart examples were compiled against `ditto_live` 5.1.0, and every DQL statement in the guide was run on Ditto SDK 5.1.0 and 5.2.0 (in an empty store, with placeholder arguments). Statements that say a behavior was observed "in our testing" come from SDK peers on one machine: mostly the JavaScript SDK on Node.js, with the peers in one process or in separate processes connected over TCP (some cases through a relay that limits bandwidth or pauses traffic), and the key cases on 5.1.0 also with Flutter on macOS. Each such statement, and each **Note (SDK ...)**, names the releases on which we observed it; one that names only 5.1.0 has not yet been repeated on 5.2.0. These observations describe how those releases behaved, not a documented guarantee. The examples that use APIs added in 5.2 (such as `DittoConfig.systemParameters`) follow the `ditto_live` 5.2.0 API reference. Statements that the 5.2.0 release notes are the only source for say so.
+**How the content was verified**: The Dart examples were compiled against `ditto_live` 5.1.0, and every DQL statement in the guide was run on Ditto SDK 5.1.0 and 5.2.0 (in an empty store, with placeholder arguments). Statements that say a behavior was observed "in our testing" come from SDK peers on one machine: mostly the JavaScript SDK on Node.js, with the peers in one process or in separate processes connected over TCP (some cases through a relay that limits bandwidth or pauses traffic), and the key cases on 5.1.0 also with Flutter on macOS. Each such statement, and each **Note (SDK ...)**, names the releases on which we observed it; one that names only 5.1.0 has not yet been repeated on 5.2.0. The tables of observed results, such as those in MISSING and NULL, ON ID CONFLICT, and Local write semantics you must know, were checked on both releases. These observations describe how those releases behaved, not a documented guarantee. The examples that use APIs added in 5.2 (such as `DittoConfig.systemParameters`) follow the `ditto_live` 5.2.0 API reference. Statements that the 5.2.0 release notes are the only source for say so.
 
 ## The Essentials
 

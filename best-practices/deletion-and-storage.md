@@ -63,7 +63,7 @@ Future<List<Map<String, dynamic>>> deleteOrders(
 -- ✅ GOOD: planned as an ID scan, deletes the listed documents on every SDK 5.x release
 DELETE FROM orders WHERE _id IN :ids
 
--- Deletes the listed documents on SDK 5.2.0, but nothing on SDK 5.1.0
+-- Deletes the listed documents on SDK 5.2.0, nothing on SDK 5.1.0, and is a syntax error on SDK 5.0
 DELETE FROM orders USE IDS LIST :ids
 ```
 

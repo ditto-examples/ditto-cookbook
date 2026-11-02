@@ -136,10 +136,10 @@ Numbers keep their integer or float type: `type(1)` is `'integer'`, `type(1.5)` 
 
 | Function / operator | Description | Example → result |
 |---|---|---|
-| `a \|\| b`, `concat(a, b, ...)` | Concatenation (strings only; other types give MISSING) | `'n' \|\| cast(1 AS string)` → `'n1'` |
+| `a \|\| b`, `concat(a, b, ...)` | Concatenation (strings only; other types give MISSING, and `null` gives `null`) | `'n' \|\| cast(1 AS string)` → `'n1'`; `'a' \|\| null` → `null` |
 | `starts_with(s, prefix)` / `ends_with(s, suffix)` | Prefix / suffix test | `ends_with(email, '@example.com')` |
 | `contains(s, sub)` | Substring test | `contains(title, 'urgent')` |
-| `s LIKE pattern` / `s ILIKE pattern` | `%` matches any sequence, `_` one character; `ILIKE` ignores case | `sku LIKE 'AB-%'` |
+| `s LIKE pattern` / `s ILIKE pattern` | `%` matches any sequence, `_` one character; `LIKE` is case-sensitive, `ILIKE` ignores case | `sku LIKE 'AB-%'` |
 | `s SIMILAR TO pattern` | `LIKE` wildcards plus `\|` alternatives, `[chars]` lists, grouping, and the repetition operators `*`, `+`, `?`, `{n}` | `code SIMILAR TO '(A\|B)%'` |
 | `regexp_like(s, pattern[, flags])` | Regular expression match; `'i'` for case-insensitive | `regexp_like(code, '^[a-z]-[0-9]{3}$', 'i')` |
 | `char_length(s)` / `character_length(s)` | Number of Unicode code points, which is neither the UTF-16 length that Dart and JavaScript report nor the number of characters a user sees | `char_length('café')` → `4`, `char_length('👍')` → `1` |
@@ -185,7 +185,7 @@ If user input can contain `%` or `_`, escape them before building the pattern, o
 | `object_unset(o, key[, ignoreMissing])` | Copy without a key; pass `true` to ignore a key that does not exist (without it, the result is MISSING) | `object_unset(o, 'b')` |
 | `object_concat(o1, o2, ...)` | Shallow merge; the last object wins | `object_concat({'a': 1}, {'a': 3, 'b': 2})` → `{'a': 3, 'b': 2}` |
 | `object_rename(o, old, new)` | Copy with a key renamed | `object_rename(o, 'a', 'z')` |
-| `object_size(o)` | Approximate size in bytes, for comparisons | `object_size(orders) > 200000` |
+| `object_size(o)` (SDK 5.1+) | Approximate size in bytes, for comparisons | `object_size(orders) > 200000` |
 
 These functions shape query **results**; they do not modify stored documents. Use `UPDATE ... SET` / `UNSET` to change data.
 
@@ -285,10 +285,10 @@ Use transformations to shape data for the UI in the query instead of post-proces
 
 | Function / operator | Description | Example → result |
 |---|---|---|
-| `+ - * / %` | Arithmetic; integer operands give integer results | `7 % 3` → `1`; `5 / 2` → `2` |
+| `+ - * / %` | Arithmetic; integer operands give integer results, and division or modulo by zero gives MISSING | `7 % 3` → `1`; `5 / 2` → `2` |
 | `abs(x)`, `ceil(x)`, `floor(x)` | Absolute value, round up, round down | `ceil(1.2)` → `2.0` (a float) |
 | `cast(v AS type)` / `cast(v, 'type')` | Convert to `string`, `integer`, `float`, `boolean`, or `binary`; MISSING if not possible | `cast('42' AS integer)` → `42` |
-| `serialize_json(v)` | JSON text of a value | `serialize_json({'a': [1]})` → `'{"a":[1]}'` |
+| `serialize_json(v)` (SDK 5.1+) | JSON text of a value | `serialize_json({'a': [1]})` → `'{"a":[1]}'` |
 | `deserialize_json(s)` | Parse JSON text (also usable in `INSERT` and `UPDATE`) | `deserialize_json(:json)` |
 | `request_info()` | Metadata about the running request (`app_id`, `request_id`, `start_time`) | `SELECT request_info() FROM system:dual` |
 

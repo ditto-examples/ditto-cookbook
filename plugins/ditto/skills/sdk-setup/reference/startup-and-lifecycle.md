@@ -410,7 +410,7 @@ Future<Ditto> openWithSystemParameters({
 
 **SDK 5.1**: `DittoConfig` has no `systemParameters`. Run `ALTER SYSTEM SET ...` every time you open Ditto, after `Ditto.open()` and before `ditto.sync.start()`, running queries, or registering observers (subscriptions may be registered first). Parameters that Ditto reads only at startup cannot be set this way.
 
-To restore a default, use `ALTER SYSTEM RESET <parameter>`. To list everything, use `SHOW ALL` (optionally filtered, for example `SHOW ALL LIKE 'dql%'`). The parameters most relevant to app developers are listed in `§ System Parameters Reference`; others are described in the section that uses them.
+To restore a default, use `ALTER SYSTEM RESET <parameter>`. To list everything, use `SHOW ALL` (optionally filtered, for example `SHOW ALL LIKE 'dql%'`; the filter needs SDK 5.1+). The parameters most relevant to app developers are listed in `§ System Parameters Reference`; others are described in the section that uses them.
 
 `§ Applying System Parameters`
 

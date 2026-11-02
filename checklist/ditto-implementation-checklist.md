@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.22
+> **Version**: 2.23
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -295,8 +295,9 @@ Future<void> findOrdersUnsafe(Ditto ditto, String customerId) async {
 **What this means:** To match any value in a list, pass the list as an array parameter without parentheses: `WHERE status IN :statuses`. To test whether an array field contains a value, use `:tag IN tags` or `array_contains(tags, :tag)`.
 - Do not write `IN (:statuses)`: the parentheses wrap the array in a one-element list, so nothing matches
 - Do not filter with `ANY` or `EVERY ... SATISFIES ... END` over a parameter or literal array in `WHERE`. For example, `ANY s IN :statuses SATISFIES s = status END` returns no rows in SDK 5.1.0 and 5.2.0; use `status IN :statuses` instead
+- Do not pass a single value where the statement expects an array: in our testing with SDK 5.1.0 and 5.2.0, `status IN :statuses` with a string instead of a list matched nothing
 
-**Why this matters:** Both mistakes return an empty result without an error, so the bug looks like missing data. `status IN :statuses` can also use an index on `status`.
+**Why this matters:** These mistakes return an empty result without an error, so the bug looks like missing data. `status IN :statuses` can also use an index on `status`.
 
 **Best-practices guide:** Filtering by Membership
 
@@ -576,9 +577,9 @@ Future<void> sellOne(Ditto ditto, String itemId) async {
 
 ### ☐ Use collision-free document IDs
 
-**What this means:** Use UUIDs (version 4), composite IDs that combine stable scope fields with a UUID (`{"storeId": "s1", "orderId": "<uuid>"}`), or let Ditto generate the ID. Never use sequential numbers or timestamp-only IDs. Keep human-readable numbers such as "#A-0042" in a separate field, and put only immutable attributes into `_id`.
+**What this means:** Use UUIDs (version 4), composite IDs that combine stable scope fields with a UUID (`{"storeId": "s1", "orderId": "<uuid>"}`), or let Ditto generate the ID. Never use sequential numbers or timestamp-only IDs. Keep human-readable numbers such as "#A-0042" in a separate field, and put only immutable attributes into `_id`. Use one type for the IDs of a collection, and normalize IDs built from user input (one Unicode form, one letter case).
 
-**Why this matters:** Offline devices cannot coordinate a sequence, so two of them can create the same ID. After sync, the two documents become one document with their fields mixed together. `_id` cannot be changed after creation, so keep attributes that may change out of it.
+**Why this matters:** Offline devices cannot coordinate a sequence, so two of them can create the same ID. After sync, the two documents become one document with their fields mixed together. `_id` cannot be changed after creation, so keep attributes that may change out of it. IDs compare by type and exact value: `1` and `'1'`, or the same name in two Unicode forms, identify different documents.
 
 **Best-practices guide:** Document IDs
 
@@ -733,7 +734,7 @@ Future<void> seedDefaultCategories(Ditto ditto) async {
 
 **What this means:** Add new fields, and read them with a default value when an older document lacks them. Instead of changing a field's meaning, unit, or type, add a new field (for example `mileageKm`). For breaking changes, version the data (a schema version in a composite `_id`, or a new collection per version). Ship an app version that reads both formats before one that writes the new format.
 
-**Why this matters:** Devices run different app versions for weeks or months, so old and new formats coexist. Changing the CRDT type of an indexed field (for example, from REGISTER to MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed. Backfilling old documents does not work either: devices that are offline during the backfill bring the old documents back. Renaming a field in place loses what old versions write: in our testing with SDK 5.1.0 and 5.2.0, an offline old version's edit of the old field either disappeared or never reached the new version.
+**Why this matters:** Devices run different app versions for weeks or months, so old and new formats coexist. Changing the CRDT type of a field (for example, from REGISTER to MAP) leaves the old and the new value under the same key, so app versions that declare the field differently read different values; according to Ditto's documentation, an index on such a field can also return wrong results. Backfilling old documents does not work either: devices that are offline during the backfill bring the old documents back. Renaming a field in place loses what old versions write: in our testing with SDK 5.1.0 and 5.2.0, an offline old version's edit of the old field either disappeared or never reached the new version.
 
 **Best-practices guide:** Schema Evolution
 
@@ -782,7 +783,7 @@ Future<void> setShippingAddress(
 
 **What this means:** Keep the `REGISTER`, `COUNTER`, and `ATTACHMENT` declarations of a field identical in every `INSERT`, `UPDATE`, and `SELECT` that touches it, and keep these statements in one place, such as a repository class. Never write a counter field with `SET`. Instead of changing a field's CRDT type, introduce a new field.
 
-**Why this matters:** When statements disagree, a field holds several CRDT values at once, and each statement sees a different one. An undeclared `INSERT` of 10 followed by `INCREMENT BY 1` yields 1, not 11, which looks like data loss even on a single device.
+**Why this matters:** When statements disagree, a field holds several CRDT values at once, and each statement sees a different one. An undeclared `INSERT` of 10 followed by `INCREMENT BY 1` yields 1, not 11, which looks like data loss even on a single device. In our testing with SDK 5.1.0 and 5.2.0, after another device updated a `REGISTER` field with a `MAP` declaration, a `SELECT` that declared `REGISTER` kept returning the old value.
 
 **Best-practices guide:** Keep type declarations consistent
 
@@ -981,7 +982,7 @@ class _OrdersListState extends State<OrdersList> {
 
 **What this means:** Whenever the order of results matters, add `ORDER BY` with a unique tie-breaker such as `_id`, for example `ORDER BY createdAt DESC, _id`. Give each list row a `ValueKey` based on `_id`.
 
-**Why this matters:** Without `ORDER BY`, observer results have no guaranteed order, so rows can change position on every update. Sorting by a timestamp is reliable only when every value is written with the same fixed-precision helper (`utcTimestamp()`). Rows with equal sort keys came back in ascending `_id` order on SDK 5.1.0 and 5.2.0 in our testing, but that is not documented, and SDK 5.0 used another order.
+**Why this matters:** Without `ORDER BY`, observer results have no guaranteed order, so rows can change position on every update. Sorting by a timestamp is reliable only when every value is written with the same fixed-precision helper (`utcTimestamp()`). Rows with equal sort keys came back in ascending `_id` order on SDK 5.1.0 and 5.2.0 in our testing, but that is not documented, and SDK 5.0 used another order. With `DESC`, documents without the sort field, then those with `null`, come first.
 
 **Best-practices guide:** Stable ordering
 
@@ -1397,7 +1398,7 @@ ORDER BY c.name, o.total DESC
 - Match the key order and sort direction of a composite index, and index the full path you filter on, such as `address.city`
 - Keep each field's CRDT type declaration consistent, and do not index fields that are written with more than one type
 
-**Why this matters:** The planner picks indexes by rules, not by statistics. A function on the field, an `OR` branch without an index, or `starts_with()` makes the query fall back to a collection scan. An indexed field written with mixed CRDT type declarations can produce incorrect or mis-ordered results.
+**Why this matters:** The planner picks indexes by rules, not by statistics. A function on the field, an `OR` branch without an index, or `starts_with()` makes the query fall back to a collection scan. According to Ditto's documentation, an indexed field written with mixed CRDT type declarations can produce incorrect or mis-ordered results.
 
 **Best-practices guide:** Index Usage Rules
 

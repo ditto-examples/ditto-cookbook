@@ -35,7 +35,7 @@ There is no statement to create or drop a collection: a collection exists as soo
 
 ## Parameters
 
-- Placeholders are `:name`; values go in `arguments`. Names are case-sensitive, and a placeholder without an argument fails with `Parameter <name> was not provided`.
+- Placeholders are `:name`; values go in `arguments`. Names are case-sensitive, and a placeholder without an argument fails with `Parameter <name> was not provided`. Argument names have no colon (`{':id': ...}` leaves `:id` without a value); unused arguments are ignored; `$id` is a syntax error.
 - `LIMIT` and `OFFSET` accept parameters.
 - Pass whole documents as one parameter: `DOCUMENTS (:order)`, or several: `DOCUMENTS (:first), (:second)`, or an array parameter for many documents.
 - Parameters keep their exact value and type (an `int` stays an integer). Inline strings interpret backslash escapes, and inside a Dart string they are interpreted twice (Dart, then DQL).
@@ -46,8 +46,8 @@ There is no statement to create or drop a collection: a collection exists as soo
 |---|---|---|
 | String | `'open'` or `"open"` | Both quote styles delimit strings; double quotes never refer to a field |
 | Escapes | `'it\'s'`, `'line1\nline2'` | JSON escapes in both quote styles; `'it''s'` is a syntax error; a literal backslash is `\\`. Changed in 5.1.0: on 5.0.x, `''` escaped a quote and backslashes were literal |
-| Identifier | `` `my field` `` | Backticks quote names with special characters or reserved words |
-| Number | `42`, `2.5`, `1e3`, `0xFF` | `5 / 2` is `2`; `5.0 / 2` is `2.5` |
+| Identifier | `` `my field` `` | Backticks quote names with special characters or reserved words. Names are case-sensitive: `Orders` and `orders` are different collections |
+| Number | `42`, `2.5`, `1e3`, `0xFF` | `5 / 2` is `2`; `5.0 / 2` is `2.5`; `1 / 0` and `1 % 0` are MISSING, not an error |
 | Boolean / null | `true`, `FALSE`, `null` | Case-insensitive |
 | Object | `{'status': 'open'}` | Every key quoted; unquoted keys fail in `INSERT` (`Cannot convert to a literal`) and are evaluated as field references in `SELECT` (usually `{}`). Prefer passing documents as parameters |
 
@@ -56,7 +56,7 @@ SELECT 'it\'s' AS a, "double quoted" AS b, `my field` AS c, 0xFF AS d
 FROM orders
 ```
 
-- DQL keywords cannot be bare identifiers: `SELECT * FROM collection` is a parser error. Choose non-reserved names, or quote with backticks.
+- Some DQL keywords cannot be bare identifiers: `SELECT * FROM collection` is a parser error. Most others (`order`, `value`, `key`, `count`) worked as bare collection and field names in our testing with SDK 5.1.0 and 5.2.0. A bare `true`, `false`, or `null` is always the literal value, never a field. Choose non-reserved names, or quote with backticks.
 - Comments: `-- line` and `/* block */`. Comments starting with `/*+` or `--+` are query directives.
 
 ## MISSING and NULL
@@ -90,6 +90,8 @@ Related behavior:
 | Literal list | `status IN ('open', 'pending')` | ✅ |
 | Array field contains a value | `:tag IN tags` / `array_contains(tags, :tag)` | ✅ No index |
 | Array parameter in parentheses | `status IN (:statuses)` | ❌ Matches nothing |
+| A single value instead of an array | `status IN :statuses` with `'open'` | ❌ Matches nothing, without an error (an empty array also returns no rows) |
+| Equality with an array parameter | `status = :statuses` | ❌ Compares with the whole array |
 
 > **Note (SDK 5.1.0 and 5.2.0):** `ANY ... SATISFIES ... END` in a `WHERE` clause that iterates over a parameter or literal array returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`). The bug (new in 5.1.0, not fixed in 5.2.0) affects local queries and observers; a subscription with the same predicate syncs correctly. `ANY` and `EVERY` over a document's own array field work in `WHERE`; on SDK 5.1.0, only when the condition checks a single property (a condition on several properties of an element matches every document; see `§ Known Issues in SDK 5.1.0`).
 
@@ -162,7 +164,8 @@ ORDER BY day
 ## ORDER BY, LIMIT, and OFFSET
 
 - No `ORDER BY` means no guaranteed order (observers included). Default direction is `ASC`.
-- Ascending type order: `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing. `DESC` reverses it, so missing values come first.
+- Ascending type order: `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing. `DESC` reverses it, so missing values come first, then `null`: `ORDER BY createdAt DESC` lists documents without `createdAt` at the top.
+- Strings compare by Unicode code point: `'B'` before `'a'`, `'é'` after `'z'`, `'10'` before `'9'`; `LIKE` is case-sensitive (`ILIKE` is not). Sort display names in the app with the user's locale, or on `lower(name)` for small results.
 - `ORDER BY status = 'urgent'` puts matching documents last in ascending order; use `DESC` or a `CASE` expression.
 - Add a unique tie-breaker: `ORDER BY createdAt DESC, _id`. Store sortable values in one consistent type.
 - Combine `LIMIT`/`OFFSET` with `ORDER BY`. Prefer keyset pagination over large offsets, with an `_id` tie-breaker in the `WHERE` clause (`createdAt < :after OR (createdAt = :after AND _id < :afterId)`).
@@ -260,8 +263,8 @@ UPDATE collection [USE IDS ...]
 [RETURNING projection]
 ```
 
-- At least one of `APPLY`, `SET`, `UNSET`, in this order: `APPLY` before `SET`, and `UNSET` after `SET`. Without `WHERE`, every document in the collection is updated. Counters: see `§ Counters`.
-- Missing intermediate objects in nested `SET` paths are created.
+- At least one of `APPLY`, `SET`, `UNSET`, in this order: `APPLY` before `SET`, and `UNSET` after `SET`. Without `WHERE`, every document in the collection is updated, without a warning. Counters: see `§ Counters`.
+- Missing intermediate objects in nested `SET` paths are created. If `a` holds a string, number, array, or `null`, `SET a.b = 1` replaces it with `{"b": 1}` without an error (in our testing with SDK 5.1.0 and 5.2.0).
 - Errors: `SET _id = ...` (``The document id `_id` cannot be modified``); the same path twice (`More than one modification specified for the path ...`); `SET items[0] = ...` (syntax error; replace the array or use a map keyed by ID).
 - An `UPDATE` that writes the current value is still a mutation: it appears in `mutatedDocumentIDs()` and can wake observers. Skip unchanged documents in `WHERE` (`coalesce(status, :none) != :status`).
 
@@ -301,5 +304,7 @@ DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
 | `EVICT FROM c WHERE ...` | Removes from this device only; can sync back while a matching subscription is active |
 
 To select documents by ID, use `WHERE _id = :id` or `WHERE _id IN :ids`; it is planned as an ID lookup and works on every release. On SDK 5.1.0, `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (no `WHERE` clause, or `WHERE true`) completes without an error but removes nothing (`§ Known Issues in SDK 5.1.0`).
+
+**❌ DON'T** build the `WHERE` clause of a `DELETE`, `EVICT`, or `UPDATE` from optional filters in a way that can leave it empty: without `WHERE`, the statement changes every document in the collection, and nothing warns. Write one fixed statement per case.
 
 Choosing between them, soft delete, and tombstones: `§ Deletion and Storage Management`.

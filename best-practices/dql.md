@@ -54,7 +54,7 @@ Future<List<Map<String, dynamic>>> loadOpenOrders(Ditto ditto) async {
 
 #### Always pass values as parameters
 
-Reference values with `:name` placeholders and pass them in `arguments`. Parameter names are case-sensitive (`:Status` and `:status` are different), and a placeholder without a matching argument fails with `Parameter Status was not provided`.
+Reference values with `:name` placeholders and pass them in `arguments`. Parameter names are case-sensitive (`:Status` and `:status` are different), and a placeholder without a matching argument fails with `Parameter Status was not provided`. Write argument names without the colon: an argument named `':status'` leaves `:status` without a value, which fails the same way. Arguments that the statement does not use are ignored, and `$status` is a syntax error.
 
 **✅ DO:**
 - Use parameters for every value that comes from your app: IDs, user input, dates, limits, whole documents.
@@ -64,6 +64,7 @@ Reference values with `:name` placeholders and pass them in `arguments`. Paramet
 **❌ DON'T:**
 - Build DQL strings with string interpolation or concatenation.
 - Write `IN (:statuses)` with an array parameter. The parentheses turn it into a one-element list whose only element is the array, so nothing matches.
+- Pass a single value where the statement expects an array. In our testing with SDK 5.1.0 and 5.2.0, `status IN :statuses` with a string instead of a list matched nothing, without an error; wrap a single value in a list.
 
 ```dart
 // ✅ GOOD: Values travel as typed parameters
@@ -117,8 +118,8 @@ When you do write values inline (constants such as `'open'`, or examples in the 
 |---|---|---|
 | String | `'open'` or `"open"` | Single and double quotes both delimit strings. Double quotes never refer to a field. |
 | Escapes in strings | `'line1\nline2'`, `'it\'s'`, `'caf\u00e9'` | JSON escape sequences are interpreted in both quote styles. `'it''s'` (doubled quote) is a syntax error. An unknown escape such as `\q` drops the backslash. A literal backslash must be written `\\`. This changed in 5.1.0: on 5.0.x, `''` was the escape for `'` and backslashes were not interpreted, so string literals written for 5.0.x can fail or change meaning after an upgrade. |
-| Identifier | `` `my field` ``, `` `collection` `` | Backticks quote field names, aliases, and collection names that contain special characters or are reserved words. |
-| Number | `42`, `-1`, `2.5`, `1e3` | `1e3` is a float. Integer division stays integer: `5 / 2` is `2`, `5.0 / 2` is `2.5`. |
+| Identifier | `` `my field` ``, `` `collection` `` | Backticks quote field names, aliases, and collection names that contain special characters or are reserved words. Identifiers are case-sensitive: `Orders` and `orders` are different collections. |
+| Number | `42`, `-1`, `2.5`, `1e3` | `1e3` is a float. Integer division stays integer: `5 / 2` is `2`, `5.0 / 2` is `2.5`. Division and modulo by zero (`1 / 0`, `1 % 0`) give MISSING, not an error. |
 | Hexadecimal | `0xFF` | Integer constant (`255`). |
 | Boolean / null | `true`, `FALSE`, `null` | Case-insensitive keywords. |
 | Array | `[1, 'a']` | JSON-style. |
@@ -167,11 +168,12 @@ The recommended form is to avoid inline objects entirely and pass the document a
 
 #### Reserved words
 
-DQL keywords cannot be used as bare identifiers. A collection named `collection` is the most common trap: `SELECT * FROM collection` is a parser error (`expected identifier`). Aliases such as `all` fail the same way.
+Some DQL keywords cannot be used as bare identifiers. A collection named `collection` is the most common trap: `SELECT * FROM collection` is a parser error (`expected identifier`). Aliases such as `all` fail the same way. Most other keywords are accepted: in our testing with SDK 5.1.0 and 5.2.0, `order`, `select`, `from`, `where`, `value`, `key`, and `count` worked as bare collection and field names. Literals are a different case: a bare `true`, `false`, or `null` is read as the value, never as a field of that name, and the statement runs without an error.
 
 **✅ DO:**
 - Choose collection and field names that are not DQL keywords (`orders`, `tasks`, `createdAt`).
 - Quote an existing reserved name with backticks if you cannot rename it: ``SELECT * FROM `collection` ``.
+- Quote fields named like a literal with backticks (`` `null` ``, `` `true` ``).
 
 The full keyword list is in the [DQL identifiers, paths, strings, and keywords](https://docs.ditto.live/dql/ids-paths-strings-keywords) reference.
 
@@ -496,12 +498,15 @@ Results have no guaranteed order unless you specify `ORDER BY`. The default dire
 
 `false` < `true` < numbers < binary < strings < arrays < objects < `null` < missing
 
-`DESC` reverses the whole sequence, so documents with a missing sort field come **first** in descending order.
+`DESC` reverses the whole sequence, so documents with a missing sort field come **first** in descending order, followed by those with `null`: a newest-first list (`ORDER BY createdAt DESC`) shows documents without `createdAt` at the top.
+
+Strings compare by Unicode code point, not in the alphabetical order of a language: uppercase letters sort before lowercase ones (`'B'` before `'a'`), accented letters after `'z'`, and digits as characters (`'10'` before `'9'`). `LIKE` is case-sensitive too (in our testing with SDK 5.1.0 and 5.2.0); use `ILIKE` to ignore case.
 
 **✅ DO:**
 - Add `ORDER BY` to every observer query whose order matters in the UI. Observers do not guarantee a stable order without it.
 - Add a unique tie-breaker such as `_id` when the sort key can repeat: `ORDER BY createdAt DESC, _id`. In our testing, SDK 5.1.0 and 5.2.0 returned rows with equal sort keys in ascending `_id` order, also with `DESC`, but that is not documented; SDK 5.0 returned them in another order without an index, and `LIMIT n` then did not return the first n rows. Give the tie-breaker the same direction as the sort key (`ORDER BY createdAt DESC, _id DESC`) if ties should reverse too.
-- Store sortable values in one consistent type (for example, all timestamps as ISO-8601 UTC strings produced by one helper with a fixed precision; see [Timestamps](data-modeling.md#timestamps)).
+- Store sortable values in one consistent type (for example, all timestamps as ISO-8601 UTC strings produced by one helper with a fixed precision; see [Timestamps](data-modeling.md#timestamps)), and numbers as numbers, not as strings of digits.
+- Sort names for display in your app with the user's locale, or on `lower(name)` for small results (a function on the field cannot use an index); `ORDER BY name` puts `Zoe` before `adam`.
 
 **❌ DON'T:**
 - Rely on insertion order.
@@ -580,7 +585,7 @@ SELECT * FROM orders USE IDS LIST :ids
 | `USE IDS ('a', 'b')` | ❌ Error: `('a', 'b') is not supported` | <!-- lint-ignore -->
 | `USE IDS :ids` with an array | ❌ Treats the whole array as a single ID and returns nothing |
 
-A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids` and 20 to 65 ms with `USE IDS LIST :ids`, for reads and writes alike. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents). For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids` and 20 to 65 ms with `USE IDS LIST :ids`, for reads and writes alike. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents). For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (SDK 5.0.3 rejected `USE IDS` in `DELETE` as a syntax error in our testing) (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
 
 ```dart
 // ✅ GOOD: Direct ID lookup with an array parameter
@@ -602,8 +607,10 @@ Future<List<Map<String, dynamic>>> ordersByIds(Ditto ditto, List<String> ids) as
 | Literal list | `status IN ('open', 'pending')` | ✅ |
 | Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` | ✅ Element lookups cannot use an index |
 | Array parameter, wrapped in parentheses | `status IN (:statuses)` | ❌ Matches nothing |
+| A single value instead of an array | `status IN :statuses` with `'open'` | ❌ Matches nothing, without an error |
+| Equality with an array parameter | `status = :statuses` | ❌ Compares with the whole array, so only array fields with the same elements match |
 
-Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded`.
+An empty array returns no rows, also without an error. Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded`.
 
 ```dart
 // ✅ GOOD: Membership against an array parameter
@@ -628,7 +635,7 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 }
 ```
 
-> **Note (SDK 5.1.0 and 5.2.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a known issue since 5.1.0, and 5.2.0 does not fix it; 5.0.x returned the matching documents. A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](../knowledge/dql-functions.md#any-and-every). <!-- lint-ignore -->
+> **Note (SDK 5.1.0 and 5.2.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a known issue since 5.1.0, and 5.2.0 does not fix it; in our testing, 5.0.3 returned the matching documents. A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](../knowledge/dql-functions.md#any-and-every). <!-- lint-ignore -->
 
 ### Joining Collections (SDK 5.1+)
 
@@ -951,7 +958,7 @@ UPDATE collection [USE IDS ...]
 [RETURNING projection]
 ```
 
-At least one of `APPLY`, `SET`, or `UNSET` is required. Without `WHERE`, every document in the collection is updated. The clauses must appear in this order: `APPLY` (counters) before `SET`, and `UNSET` after `SET`. Counter updates are covered in [Counters](data-modeling.md#counters).
+At least one of `APPLY`, `SET`, or `UNSET` is required. Without `WHERE`, every document in the collection is updated, without a warning. The clauses must appear in this order: `APPLY` (counters) before `SET`, and `UNSET` after `SET`. Counter updates are covered in [Counters](data-modeling.md#counters).
 
 ```dart
 // ✅ GOOD: Change only the fields that changed
@@ -987,6 +994,8 @@ Errors to expect:
 - `SET _id = ...` fails: ``The document id `_id` cannot be modified``.
 - Setting the same path twice in one statement fails: `More than one modification specified for the path ...`.
 - Array elements cannot be assigned (`SET items[0] = ...` is a syntax error). Replace the whole array, or model the collection as a map keyed by ID (see [Arrays and Maps](data-modeling.md#arrays-and-maps)).
+
+Not reported as an error: a nested `SET a.b = 1` adds `b` when `a` is an object, but when `a` holds a string, a number, an array, or `null`, it replaces `a` with `{"b": 1}`, and the old value is lost (in our testing with SDK 5.1.0 and 5.2.0).
 
 #### Assigning an object merges it
 
@@ -1120,6 +1129,9 @@ DELETE FROM sessions WHERE expiresAt < :now RETURNING COUNT(*) AS removed
 | `EVICT FROM c WHERE ...` | Removes the documents from this device only. Other peers keep them, and they can be synced back while a matching subscription is active (see [EVICT](deletion-and-storage.md#evict)). |
 
 Choosing between them, tombstone lifetime, soft delete, and storage cleanup are covered in [Deletion and Storage Management](deletion-and-storage.md).
+
+**❌ DON'T:**
+- Build the `WHERE` clause of a `DELETE`, `EVICT`, or `UPDATE` from optional filters in a way that can leave it empty. Without `WHERE`, the statement changes every document in the collection, and nothing asks for confirmation or logs a warning. Write one fixed statement per case and pass the values as parameters.
 
 To select documents by ID, use `WHERE _id = :id` or `WHERE _id IN :ids`; it is planned as an ID lookup and also works on SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
 

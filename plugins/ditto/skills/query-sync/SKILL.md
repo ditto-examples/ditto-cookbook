@@ -180,7 +180,7 @@ Lifecycle: `changes` is single-subscription (a second `listen()` throws, even af
 | Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` (no index) |
 | ❌ Array parameter in parentheses | `status IN (:statuses)` matches nothing |
 
-> **Note (SDK 5.1.0 and 5.2.0):** `ANY ... SATISFIES ... END` in `WHERE` over a parameter or literal array returns no rows (5.0.x returned matches). Use `status IN :statuses` or `array_contains(:statuses, status)`. Only local queries and observers are affected; a subscription with the same predicate syncs the documents, so the data arrives but the list shows empty.
+> **Note (SDK 5.1.0 and 5.2.0):** `ANY ... SATISFIES ... END` in `WHERE` over a parameter or literal array returns no rows (5.0.3 returned matches). Use `status IN :statuses` or `array_contains(:statuses, status)`. Only local queries and observers are affected; a subscription with the same predicate syncs the documents, so the data arrives but the list shows empty.
 
 `§ Filtering by Membership`
 

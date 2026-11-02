@@ -136,7 +136,7 @@ collections:
 
     query_patterns:
       - "INSERT INTO menuItems DOCUMENTS (:items) ON ID CONFLICT DO UPDATE_LOCAL_DIFF"
-      - "SELECT * FROM menuItems WHERE storeId = :storeId AND isAvailable = true AND coalesce(isDeleted, false) = false ORDER BY category ASC, name ASC"
+      - "SELECT * FROM menuItems WHERE storeId = :storeId AND isAvailable = true AND coalesce(isDeleted, false) = false ORDER BY category ASC, name ASC, _id"
       - "UPDATE menuItems SET priceCents = :priceCents, updatedAt = :updatedAt WHERE _id = :id"
       - "UPDATE menuItems SET isAvailable = :isAvailable, updatedAt = :updatedAt WHERE _id = :id"
       - "UPDATE menuItems SET isDeleted = true, deletedAt = :deletedAt, updatedAt = :updatedAt WHERE _id = :id"

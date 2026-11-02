@@ -87,6 +87,7 @@ A field can hold more than one CRDT value at the same time when statements disag
 | `INSERT INTO COLLECTION orders (obj REGISTER) ... {"obj": {"a": 1, "b": 2}}`, then an undeclared `UPDATE orders SET obj.a = 11` | Undeclared `SELECT` returns `"obj": {"a": 11}`: `b` seems to have vanished. The REGISTER value `{"a": 1, "b": 2}` still exists beside a new MAP value |
 | Undeclared `INSERT ... {"cnt": 10}`, then `APPLY cnt INCREMENT BY 1` | `cnt` becomes `1`, not `11`: the increment created a new COUNTER that started at 0 |
 | `APPLY pn PN_INCREMENT BY 4` twice, then `APPLY pn INCREMENT BY 1` | `pn` becomes `1`: the COUNTER hides the legacy PN_COUNTER value |
+| `INSERT INTO COLLECTION t (price REGISTER) ... {"price": {"amount": 1}}`, then `UPDATE COLLECTION t (price MAP) SET price.amount = 25`, on this or another device | Undeclared and `MAP` reads return `25`, while a `SELECT` that declares `price REGISTER` keeps returning `1`. An app version that declares the field differently from the others shows stale values and never sees their updates (in our testing with SDK 5.1.0 and 5.2.0) |
 | A counter at 3, an undeclared `UPDATE ... SET cnt = 0` to reset it, then `APPLY cnt INCREMENT BY 1` on any device | An undeclared `SELECT` returns `0` until the increment, then `4`: the `SET` wrote a REGISTER next to the COUNTER, and the increment made the COUNTER the latest value again. Reset a counter with `APPLY cnt RESTART` (see [RESTART](#restart)) |
 
 **✅ DO:**
@@ -345,6 +346,7 @@ Both shapes are valid; choose by how the data is edited and read:
 - **Keep fields at the top level** when they are queried and indexed on their own; paths such as `customer.phone` are indexable too, so this is a readability choice more than a performance one.
 - **Use a REGISTER object** only when the parts must never mix (see [Strict Mode](#strict-mode)).
 - **Avoid unbounded growth** inside one document: a map that keeps receiving new entries forever belongs in its own collection (see [Document Size Limits](#document-size-limits)).
+- **Keep nesting shallow.** In our testing with SDK 5.1.0 and 5.2.0, an argument could nest at most 125 levels of objects below its root (126 levels failed with `Invalid query arguments: recursion limit exceeded`), and an object or array literal in a statement at most 97 levels (`DQL parser error`). `UPDATE ... SET a.b.c = ...` paths are not limited the same way, so they can build a document that is too deep to pass back as an argument, for example in an upsert of the document that was read. Real data models rarely need more than a few levels.
 
 ### Do not store derived values that can diverge
 
@@ -408,6 +410,7 @@ Once a document has replicated, Ditto syncs only the fields that change, but eve
 - Field names are always strings. Use one convention (this guide uses camelCase).
 - If a field name collides with a DQL keyword or contains special characters, quote it with backticks in queries (for example, `` `value` ``).
 - Never name a collection `collection`; it is a DQL keyword.
+- Names are case-sensitive: `Orders` and `orders` are different collections, and `createdAt` and `createdat` are different fields.
 
 ## Document Size Limits
 
@@ -416,7 +419,7 @@ Ditto enforces two thresholds on the **size of each stored document**:
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | The write succeeds and a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below) |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below). In our testing, SDK 5.0.3 did not check the limit and stored a 6 MiB document without an error |
 
 Log and error messages:
 
@@ -465,7 +468,7 @@ Future<bool> saveNotes(Ditto ditto, String visitId, String notes) async {
 ### Monitoring size
 
 - Search application logs for `exceeds recommended limit` to find documents above the soft limit.
-- Estimate the size of a document with `object_size()`. It returns an approximate size in bytes of the value, which can differ from the stored size, so leave headroom:
+- Estimate the size of a document with `object_size()` (SDK 5.1+). It returns an approximate size in bytes of the value, which can differ from the stored size, so leave headroom:
 
 ```sql
 SELECT _id, object_size(o) AS approxBytes
@@ -647,6 +650,12 @@ Every document has an `_id` that is unique within its collection. If you omit `_
 | `null` | ❌ `Null document ID not allowed` |
 
 Key order inside a composite `_id` does not matter: `{"storeId": "s1", "orderId": "o1"}` and `{"orderId": "o1", "storeId": "s1"}` identify the same document.
+
+Otherwise IDs compare by type and exact value. In our testing with SDK 5.1.0 and 5.2.0, `1` and `'1'`, `true` and `'true'`, `'A'` and `'a'`, and `'1'` and `' 1'` were different documents (`WHERE _id = 1` returned only the number), and so were two strings that look the same but use different Unicode forms: `'é'` as one code point and as `e` followed by a combining accent. Ditto does not normalize them. The empty string was accepted as an ID; `-0` was rejected as a float (`Invalid document id`).
+
+**✅ DO:**
+- Use one type for the IDs of a collection.
+- Normalize an ID that you build from user input (for example, a name or a code) before you use it: one Unicode form (NFC), one letter case, no surrounding spaces. Different keyboards and platforms can produce the same text in different forms, and each form becomes a separate document.
 
 ### IDs are immutable
 
@@ -935,7 +944,7 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 - Use `RESTART WITH` to recalibrate a counter that other devices keep changing while offline.
 
-**Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together, also between devices that are online (see [Conditions and arithmetic across devices](../knowledge/crdt-types.md#conditions-and-arithmetic-across-devices)). Everything else (registers, map entries) keeps one of the concurrent values, so `SET stockLevel = stockLevel - 1` on two devices loses one of the decrements.
+**Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together, also between devices that are online (see [Conditions and arithmetic across devices](../knowledge/crdt-types.md#conditions-and-arithmetic-across-devices)). Everything else (registers, map entries) keeps one of the concurrent values, so `SET stockLevel = stockLevel - 1` on two devices loses one of the decrements. (A field reference in a `SET` value needs SDK 5.1 or later; in our testing, 5.0.3 rejected it with `Forbidden: Document references in mutation values`.)
 
 ```dart
 // ❌ BAD: Read-modify-write on a register. Two devices that each sell one item
@@ -1217,7 +1226,7 @@ Instead of changing the meaning or unit of a field (`mileage` from miles to kilo
 
 **❌ DON'T:**
 
-- Change a field's type, remove it, or rename it without a versioning pattern. Old peers may crash or show wrong data. A change of CRDT type on an **indexed** field (for example, from a REGISTER to a MAP) can also make queries return wrong results, because only the most recently written CRDT type of a field is indexed (see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types)).
+- Change a field's type, remove it, or rename it without a versioning pattern. Old peers may crash or show wrong data. A change of CRDT type (for example, from a REGISTER to a MAP) leaves both values under the key, so app versions that declare the field differently read different values (see [Keep type declarations consistent](#keep-type-declarations-consistent)); according to Ditto's documentation, an index on such a field can also return wrong results (see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types)).
 
 > **Note (SDK 5.1.0 and 5.2.0):** Renaming a field in place silently loses what old app versions write. In our testing, a new version renamed `qty` to `quantity` with `UPDATE orders SET quantity = qty UNSET qty` while an old version, offline, set `qty = 5`. When the old version's edit came first, the merged document was `{qty: null, quantity: 1}`: the 5 was gone. When the rename came first, the result was `{qty: 5, quantity: 1}`: the old field came back with the old version's value, but the new version still read 1. An old version that had already received the rename kept writing `qty`, which the new version never read. Reading both fields (`coalesce(quantity, qty)`) cannot recover the first case. Add the new field and let each version read the field it understands (see [Prefer additive changes](#prefer-additive-changes)), or version the documents ([Pattern 1](#pattern-1-schema-version-in-a-composite-_id)).
 

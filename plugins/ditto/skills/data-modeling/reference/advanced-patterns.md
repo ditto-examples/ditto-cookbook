@@ -103,7 +103,7 @@ Devices run different app versions for weeks or months, so a schema change must 
 
 **✅ Prefer additive changes.** Old versions ignore unknown fields; new versions must tolerate documents without the field (`MISSING`). Instead of changing a field's meaning or unit (`mileage` from miles to kilometers), add a new field (`mileageKm`).
 
-**❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. A change of CRDT type on an **indexed** field (for example, from a REGISTER to a MAP) can make queries return wrong results, because only the most recently written CRDT type of a field is indexed.
+**❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. A change of CRDT type (for example, from a REGISTER to a MAP) leaves both values under the key, and statements with different declarations read different values: in testing with SDK 5.1.0 and 5.2.0, after an `UPDATE COLLECTION t (price MAP) SET price.amount = 25` of a REGISTER `price`, a `SELECT` that declared `price REGISTER` kept returning the old amount, also on another device. According to Ditto's documentation, an index on such a field can also return wrong results.
 
 **Note (SDK 5.1.0 and 5.2.0)**: renaming in place (`SET quantity = qty UNSET qty`) loses old versions' edits without an error. In testing, an offline old version's `qty = 5` made before the rename merged into `{qty: null, quantity: 1}`; made after it, into `{qty: 5, quantity: 1}`, which the new version still read as 1. Add a new field and let each version read its own, or version the documents (`§ Schema Evolution`).
 
@@ -134,6 +134,8 @@ Guide: `§ Schema Evolution`. Example: [composite-id-patterns.dart](../examples/
 ---
 
 ## Pattern 4: Composite IDs and Display Numbers
+
+**ID values compare by type and exact value.** In testing with SDK 5.1.0 and 5.2.0, `1` and `'1'`, `'A'` and `'a'`, `'1'` and `' 1'`, and two Unicode forms of `'é'` (one code point, or `e` plus a combining accent) were different documents; Ditto does not normalize IDs. Use one ID type per collection, and normalize IDs built from user input (Unicode NFC, one letter case, trimmed) before use. `''` was accepted as an ID; `-0` was rejected as a float.
 
 Permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` grants access at any level (`"_id.region == 'eu'"`, `"_id.storeId == 'store-12'"` in the permission rules; see § Design `_id` for permission scoping for the rule format); the same subfields filter subscriptions and queries (`WHERE _id.storeId = :storeId`) and can be indexed. Key order inside a composite `_id` does not matter.
 

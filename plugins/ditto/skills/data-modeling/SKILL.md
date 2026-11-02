@@ -156,7 +156,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 - Put only immutable attributes into a composite `_id`; filter and index its subfields (`_id.storeId`).
 - Keep human-readable numbers (`#A-0042`) in a separate field: labels, not keys.
 
-`§ Document IDs` · Examples: [examples/id-generation-patterns.dart](examples/id-generation-patterns.dart), [examples/composite-id-patterns.dart](examples/composite-id-patterns.dart), [examples/id-immutability-workaround.dart](examples/id-immutability-workaround.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (changing an ID, composite IDs, display numbers)
+`§ Document IDs` · Examples: [examples/id-generation-patterns.dart](examples/id-generation-patterns.dart), [examples/composite-id-patterns.dart](examples/composite-id-patterns.dart), [examples/id-immutability-workaround.dart](examples/id-immutability-workaround.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (ID types, changing an ID, composite IDs, display numbers)
 
 ### 6. Embed by default; JOIN separate collections locally (HIGH)
 

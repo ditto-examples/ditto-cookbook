@@ -109,7 +109,7 @@ ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
 ```
 
 - `ALTER SYSTEM SET <name> = <value>` and `ALTER SYSTEM SET <name> TO <value>` are equivalent; `SET <name> TO DEFAULT` and `RESET <name>` restore the default (`RESET ALL` restores every parameter).
-- `SHOW ALL` returns a single row with every parameter; `SHOW ALL LIKE '<pattern>'` (or `ILIKE`) narrows it.
+- `SHOW ALL` returns a single row with every parameter; `SHOW ALL LIKE '<pattern>'` (or `ILIKE`; SDK 5.1+) narrows it.
 - Parameter names are case-insensitive (`DQL_STRICT_MODE` and `dql_strict_mode` are the same parameter).
 - Unknown names fail with `unknown parameter '<name>'`, and values of the wrong type fail with a type error. In `DittoConfig.systemParameters`, the same mistakes make `Ditto.open()` fail.
 - **Settings are not persisted.** After closing and reopening Ditto, every parameter is back at its default. Pass your settings in `DittoConfig.systemParameters` on every open (on SDK 5.1, run `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()` and before queries or observers run); see [Applying System Parameters](../best-practices/setup-and-lifecycle.md#applying-system-parameters).

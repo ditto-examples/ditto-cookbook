@@ -161,7 +161,7 @@ Constraints (`§ Creating Indexes`, `§ Strict mode and data types`):
 - `IF NOT EXISTS` checks only the index **name**; to change a definition, create it under a new name or drop and recreate it.
 - `DROP INDEX` requires `ON <collection>`.
 - With `DQL_STRICT_MODE` set to `true`, the planner of SDK 5.1.0 and 5.2.0 uses no secondary indexes; queries that would use an index scan fall back to a collection scan. ID lookups and full-collection `COUNT(*)` are not affected, and `ADVISE` returns no suggestions.
-- Only the most recently written CRDT type of a field is indexed. If the same field is written with different type declarations (for example `REGISTER` and `MAP`), an index on it can return incorrect or mis-ordered results; keep type declarations consistent, and do not index fields written with more than one type.
+- According to Ditto's documentation, only the most recently written CRDT type of a field is indexed. If the same field is written with different type declarations (for example `REGISTER` and `MAP`), an index on it can return incorrect or mis-ordered results. In our testing with SDK 5.1.0 and 5.2.0, results did not change, because queries that declared a type did not use the index; reads with different declarations did return different values. Keep type declarations consistent, and do not index fields written with more than one type.
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_orders_city ON orders (address.city)
