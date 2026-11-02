@@ -5,13 +5,13 @@ How long Ditto's statements, queries, and observers took, how many writes a devi
 **In brief**
 
 - Each `execute` call has a fixed cost of about 1.7 ms, so the number of statements matters more than the number of documents: 2,000 inserts took 3,930 to 4,659 ms one by one and 16 to 18 ms as one statement on SDK 5.1.0 and 5.2.0 ([The number of execute calls matters more than the number of documents](#the-number-of-execute-calls-matters-more-than-the-number-of-documents)).
-- Awaited one at a time, statements that write one document each top out at about 600 documents a second and cost about 2 ms of CPU per document on the writing and the receiving device; 50 to 100 documents per statement reached 5,000 to 10,000 a second ([One document per statement tops out at about 600 writes a second](#one-document-per-statement-tops-out-at-about-600-writes-a-second)).
-- `WHERE _id IN :ids` slows down as the list of IDs grows, and `USE IDS LIST :ids` much less: with 10,000 IDs, a count took 686 to 725 ms against 17 to 21 ms, and writes took 693 to 732 ms against 20 to 65 ms ([Long ID lists are faster with USE IDS LIST than with WHERE _id IN](#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
-- A full-collection `COUNT(*)` took 1.7 to 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 11 times faster, the conditions of the Index Usage Rules produced the listed plans, and a query answered from the index alone was about a third faster ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [The conditions of the Index Usage Rules table produced the plans it lists](#the-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone was about a third faster](#a-query-answered-from-the-index-alone-was-about-a-third-faster)); an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([An index on a field with two values made queries slower](#an-index-on-a-field-with-two-values-made-queries-slower)).
+- On SDK 5.1.0 and 5.2.0, awaited one at a time, statements that write one document each top out at about 600 documents a second and cost about 2 ms of CPU per document on the writing and the receiving device; 50 to 100 documents per statement reached 5,000 to 10,000 a second ([One document per statement tops out at about 600 writes a second](#one-document-per-statement-tops-out-at-about-600-writes-a-second)).
+- `WHERE _id IN :ids` slows down as the list of IDs grows, and `USE IDS LIST :ids` much less: with 10,000 IDs, a count took 686 to 725 ms against 17 to 21 ms, and writes on 5.2.0 took 693 to 732 ms against 20 to 65 ms, while on 5.1.0, `EVICT` and `DELETE` with `USE IDS LIST` removed nothing ([Long ID lists are faster with USE IDS LIST than with WHERE _id IN](#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
+- A full-collection `COUNT(*)` took 1.7 to 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 11 times faster, 11 conditions of the Index Usage Rules table produced the listed plans, and a query answered from the index alone took about two thirds of the time ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [Eleven conditions of the Index Usage Rules table produced the plans it lists](#eleven-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone took about two thirds of the time](#a-query-answered-from-the-index-alone-took-about-two-thirds-of-the-time)); on 5.1.0 and 5.2.0, an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index](#on-sdk-510-and-520-an-index-on-a-field-with-two-values-made-a-query-slower-than-no-index)).
 - Query strings built for each value were not slower than constant strings with parameters ([Constant query strings were not faster](#constant-query-strings-were-not-faster)).
-- An observer of 5,000 documents was called about six times later after a write than an observer of 50, and evicting in chunks and opening a large store cost little ([An observer of 5,000 documents was called about six times later than one of 50](#an-observer-of-5000-documents-was-called-about-six-times-later-than-one-of-50), [Evicting in chunks costs little more than one statement](#evicting-in-chunks-costs-little-more-than-one-statement), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
-- Large query results raise the process's memory, which does not come back after the results are released; 5.2.0 used about 30% less than 5.1.0 ([Large query results keep process memory after they are released](#large-query-results-keep-process-memory-after-they-are-released)).
-- An observer that returned 200 documents while other devices kept updating them grew the process's memory by about 13 to 24 KiB on every callback; an observer of one row leveled off ([An observer of 200 documents grows memory on every callback](#an-observer-of-200-documents-grows-memory-on-every-callback)).
+- On 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later after a write than an observer of 50, and evicting in chunks and opening a large store cost little ([On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50](#on-sdk-510-and-520-an-observer-of-5000-documents-was-called-about-5-to-6-times-later-than-one-of-50), [Evicting in chunks costs little more than one statement](#evicting-in-chunks-costs-little-more-than-one-statement), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
+- Large query results raise the process's memory, which does not come back after the results are released; 5.2.0 used about 20 to 30% less than 5.1.0 while holding them, and about 35% less after reading them ([Large query results keep process memory after they are released](#large-query-results-keep-process-memory-after-they-are-released)).
+- An observer that returned 200 documents while other devices kept updating them grew the process's memory by about 13 to 24 KiB on every callback; an observer of one row leveled off after about 5 minutes on 5.1.0 and 5.2.0 ([An observer of 200 documents grows memory on every callback](#an-observer-of-200-documents-grows-memory-on-every-callback)).
 - The CPU that a hub spends on each change grows with the number of connected devices, and when every device writes, the hub's CPU grows faster than the number of devices ([Hub CPU per change grows with the number of connected devices](#hub-cpu-per-change-grows-with-the-number-of-connected-devices)).
 
 ## Statements and Write Rates
@@ -129,7 +129,7 @@ Time for `COUNT(*)` (nearly the same on both releases; no value was recorded for
 
 **Used in:** [Counting documents](../../best-practices/indexing-and-performance.md#counting-documents), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
 
-### The conditions of the Index Usage Rules table produced the plans it lists
+### Eleven conditions of the Index Usage Rules table produced the plans it lists
 
 | | |
 |---|---|
@@ -155,7 +155,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 **Used in:** [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
 
-### A query answered from the index alone was about a third faster
+### A query answered from the index alone took about two thirds of the time
 
 | | |
 |---|---|
@@ -174,7 +174,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 **Used in:** [Covering scans](../../best-practices/indexing-and-performance.md#covering-scans).
 
-### An observer of 5,000 documents was called about six times later than one of 50
+### On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50
 
 | | |
 |---|---|
@@ -215,7 +215,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 **Used in:** none yet.
 
-### An index on a field with two values made queries slower
+### On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index
 
 | | |
 |---|---|
@@ -275,7 +275,7 @@ RSS as the increase from the start; the JavaScript heap started at 7 MB. In MB:
 | After reading every value | +743 to 784 | +1,150 to 1,190 | About 325 to 334 |
 | After dropping the results and garbage collection | +745 to 784 | +1,184 to 1,187 | About 91 to 101 |
 
-- 5.2.0 used about 30% less memory than 5.1.0 while holding the results, and about 35% less after the values were read, in line with the release notes.
+- 5.2.0 used about 20 to 30% less memory than 5.1.0 while holding the results, and about 35% less after the values were read, in line with the release notes.
 - After the results were dropped and garbage-collected, the process's RSS did not shrink. The JavaScript heap shrank, but not to its first 7 MB: 91 to 101 MB remained. Once a process has built a large result, expect its memory not to come back.
 - Reading the values added about 1.1 KB per row to the JavaScript heap, about the size of a document.
 

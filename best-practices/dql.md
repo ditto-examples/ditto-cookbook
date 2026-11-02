@@ -330,7 +330,7 @@ Every row of a `SELECT` is materialized in the result. To keep results small on 
 - **Filter** in `WHERE` rather than in Dart.
 - **Page** with `ORDER BY ... LIMIT` (see [LIMIT and OFFSET](#limit-and-offset)).
 - **Count** with `SELECT COUNT(*)` instead of loading documents to call `.length`.
-- **Let large results go** once you have extracted what you need, and read very large sets in pages. In our testing with the JavaScript SDK, the process's resident memory did not shrink after a large result had been released and garbage-collected; on 5.2.0, the same result used about a third less memory than on 5.1.0, in line with the release notes, which say that query results stay compact until they are read (see [Large query results keep process memory after they are released](../knowledge/observations/performance-measurements.md#large-query-results-keep-process-memory-after-they-are-released)).
+- **Let large results go** once you have extracted what you need, and read very large sets in pages. In our testing with the JavaScript SDK, the process's resident memory did not shrink after a large result had been released and garbage-collected; on 5.2.0, the same result used about 20 to 30% less memory than on 5.1.0 while it was held, and about 35% less once it was read, in line with the release notes, which say that query results stay compact until they are read (see [Large query results keep process memory after they are released](../knowledge/observations/performance-measurements.md#large-query-results-keep-process-memory-after-they-are-released)).
 - **Check existence** with `LIMIT 1`.
 
 ## Reading Data with SELECT

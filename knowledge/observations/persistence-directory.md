@@ -4,17 +4,17 @@ What the persistence directory holds, and what happens when it is copied, restor
 
 **In brief**
 
-- A copy of a directory that runs at the same time as its original has the same peer key, and the two never converge: updates from one of them stop reaching the other devices, without an error ([A copied directory and its original never converge](#a-copied-directory-and-its-original-never-converge)).
-- A copy that replaces the original, and a device that goes back to an older copy of its own directory, sync normally ([A copy that replaces the original syncs normally](#a-copy-that-replaces-the-original-syncs-normally), [Restoring an older copy of a directory loses nothing](#restoring-an-older-copy-of-a-directory-loses-nothing)).
+- A copy of a directory that runs at the same time as its original has the same peer key, and updates from one of them stop reaching the other devices, without an error, so the two never converge ([Updates from a copied directory and its original never converge](#updates-from-a-copied-directory-and-its-original-never-converge)).
+- A copy that replaces the original, and a device that goes back to an older copy of its own directory, sync normally ([A copy that replaces the original syncs normally](#a-copy-that-replaces-the-original-syncs-normally), [Restoring an older copy of a directory loses nothing that had synced](#restoring-an-older-copy-of-a-directory-loses-nothing-that-had-synced)).
 - Peers with different Database IDs never see each other, but a directory written with one Database ID opens with another, and its documents sync into the new database ([Devices with different Database IDs do not sync](#devices-with-different-database-ids-do-not-sync), [A directory written with another Database ID opens and syncs its documents](#a-directory-written-with-another-database-id-opens-and-syncs-its-documents)).
-- A device whose `ditto_store` subdirectory alone was deleted keeps its peer key, and on SDK 5.1.0 and 5.2.0 some documents that it creates before sync starts do not reach other devices, without an error; a device whose whole directory was deleted comes back with a new peer key and syncs everything ([Deleting only ditto_store keeps the peer key and loses some writes](#deleting-only-ditto_store-keeps-the-peer-key-and-loses-some-writes)).
+- A device whose `ditto_store` subdirectory alone was deleted keeps its peer key, and on SDK 5.1.0 and 5.2.0 some documents that it creates before sync starts do not reach other devices, without an error; a device whose whole directory was deleted comes back with a new peer key and syncs everything ([Deleting only ditto_store keeps the peer key, and on SDK 5.1.0 and 5.2.0 leaves some writes unsynced](#deleting-only-ditto_store-keeps-the-peer-key-and-on-sdk-510-and-520-leaves-some-writes-unsynced)).
 - A directory deleted after `close()` opens as an empty store with a new peer key, and no earlier value remains in any file; in a small store, the values stay in the write-ahead log file after `close()` ([Deleting the directory after close() leaves no data behind](#deleting-the-directory-after-close-leaves-no-data-behind), [After close(), a small store keeps its values in the write-ahead log](#after-close-a-small-store-keeps-its-values-in-the-write-ahead-log)).
-- Deleting the directory while Ditto is open raises no error, but the writes made afterwards are lost when Ditto closes ([Deleting the directory while Ditto is open loses later writes](#deleting-the-directory-while-ditto-is-open-loses-later-writes)).
-- A directory that another process holds, even a suspended one, fails to open after about 1 second; the lock of a process that crashed does not remain ([A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second), [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails), [The lock file keeps a process ID after the process ends](#the-lock-file-keeps-a-process-id-after-the-process-ends)).
+- On macOS, deleting the directory while Ditto is open raises no error, but the writes made afterwards are lost when Ditto closes ([On macOS, deleting the directory while Ditto is open loses later writes](#on-macos-deleting-the-directory-while-ditto-is-open-loses-later-writes)).
+- A directory that another process holds, even a suspended one, fails to open after about 1 second; the lock of a process that crashed does not remain ([A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second), [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails), [The lock file keeps a process ID after the process is killed](#the-lock-file-keeps-a-process-id-after-the-process-is-killed)).
 
 ## Copies of a Directory
 
-### A copied directory and its original never converge
+### Updates from a copied directory and its original never converge
 
 | | |
 |---|---|
@@ -45,7 +45,7 @@ The tendency was the same on both releases:
 
 **Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
-### Restoring an older copy of a directory loses nothing
+### Restoring an older copy of a directory loses nothing that had synced
 
 | | |
 |---|---|
@@ -54,7 +54,7 @@ The tendency was the same on both releases:
 
 - X, reopened on the older copy, received `v = 2` and the new document from the hub again within 6 seconds.
 - The changes that it wrote after going back (another field, another document, and a new document) reached the hub and a device that joined later.
-- Going back to an older copy of the same device lost nothing; the problem in [A copied directory and its original never converge](#a-copied-directory-and-its-original-never-converge) is that the original keeps running.
+- Going back to an older copy of the same device lost nothing; the problem in [Updates from a copied directory and its original never converge](#updates-from-a-copied-directory-and-its-original-never-converge) is that the original keeps running.
 
 **Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
@@ -87,7 +87,7 @@ The tendency was the same on both releases:
 
 ## Deleting a Directory or Part of It
 
-### Deleting only ditto_store keeps the peer key and loses some writes
+### Deleting only ditto_store keeps the peer key, and on SDK 5.1.0 and 5.2.0 leaves some writes unsynced
 
 | | |
 |---|---|
@@ -115,7 +115,7 @@ The tendency was the same on both releases:
 
 **Used in:** [Authentication](../../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](../platform-differences.md).
 
-### Deleting the directory while Ditto is open loses later writes
+### On macOS, deleting the directory while Ditto is open loses later writes
 
 | | |
 |---|---|
@@ -140,7 +140,7 @@ The tendency was the same on both releases:
 
 **Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
-### The lock file keeps a process ID after the process ends
+### The lock file keeps a process ID after the process is killed
 
 | | |
 |---|---|
