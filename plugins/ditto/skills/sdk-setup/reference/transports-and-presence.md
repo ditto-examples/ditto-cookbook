@@ -101,6 +101,8 @@ void startHub(Ditto ditto) {
 }
 ```
 
+> **Note (SDK 5.1.0 and 5.2.0):** A device that only connects also accepts connections. In our testing with the JavaScript SDK on macOS, a device with the peer-to-peer transports disabled and only `connect.tcpServers` set listened for TCP on all interfaces at a free port, and another device connected to that port through the machine's LAN address and synced. To accept no TCP connections from other devices, enable `listen.tcp` with `interfaceIP` set to `127.0.0.1` (`port` 0 picks a free port); the device then accepted connections only from the same machine. Only devices with the same Database ID and valid credentials can sync, so this matters most for small-peers-only deployments without a shared key and for network reviews.
+
 **Hub load**: the CPU that a hub spends on each change grows with the number of devices connected to it, even when no other device subscribes to the changed document. In our testing on a 14-core Mac with the JavaScript SDK (5.1.0 and 5.2.0), one change cost the hub at most about 6 ms of CPU with one client and about 40 ms with 30 clients. When every client wrote, the hub's CPU grew faster than the number of clients: 30 clients that each wrote 5 times a second used about 2.6 cores. Each connected client also added about 4.5 MiB of memory to the hub on 5.2.0. Before you use a mobile device as a hub, estimate the number of clients and how often they write, and write frequently changing values (positions, sensor readings) less often or in batches.
 
 **Replacing a hub**: a new, empty hub device recovers the data from its clients. In our testing with SDK 5.1.0 and 5.2.0, a new hub held all 950 live documents about 4 seconds after it opened, most of it the clients' retry interval. The 50 deleted documents stayed deleted, also when a device that had been offline since before the deletion came back, because the clients still held the tombstones (until they are reaped; see `§ Tombstone TTL and reaping`). Documents that only the old hub held, in a collection that no client subscribed to, were not recovered. Back up data that only the hub writes, or let a client subscribe to it.
@@ -124,6 +126,8 @@ Future<void> connectToKnownPeer(Ditto ditto) async {
 ## WebSocket sync between Small Peers
 
 WebSocket sync between Small Peers (accepting WebSocket connections on the HTTP listener) is **off by default** (`listen.http.websocketSync = false`). Enable it only when you need it and configure TLS (`tlsKeyPath` and `tlsCertificatePath`); without them the listener uses plain HTTP.
+
+Connections that a hub accepts over WebSocket do not count toward its TCP limit. In our testing with SDK 5.0.3, 5.1.0, and 5.2.0, a Small Peer hub that accepted WebSocket connections synced with all of 30 clients, while over TCP it served six, and with its TCP limit lowered to 2, it still served 8 WebSocket clients next to 2 TCP clients. This is an alternative to raising `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` for hubs with more clients, with limits of its own: Ditto does not document a limit for WebSocket connections, we tested at most 30 clients on one machine without TLS, and a WebSocket connection that stops responding takes about 15 seconds to be dropped, against about 7 for TCP (`§ Key Characteristics`). Test the number of devices you plan before you rely on it.
 
 ## Diagnosing transport problems (SDK 5.1+)
 

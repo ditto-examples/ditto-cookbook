@@ -290,6 +290,7 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 - Model access-control attributes in `_id`.
 - Reject identities in the webhook before creating a revocation, and keep revocation checking enabled.
 - Always use a `privateKey` in small-peers-only deployments, and provision it securely.
+- Decide which devices accept connections from other devices. A device that only sets `connect.tcpServers` also listens on all interfaces; bind `listen.tcp` to `127.0.0.1` where it must not (see [Transport Configuration](setup-and-lifecycle.md#transport-configuration)).
 - Validate input and pass all values as DQL parameters.
 - Protect sensitive data at rest: with `DittoConfig.encryptionKey` on Swift and Kotlin (SDK 5.2+), and elsewhere with OS protections and application-level encryption.
 - Verify webhook signatures.

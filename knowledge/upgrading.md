@@ -6,6 +6,8 @@ In our testing, peers on 5.1.0 and 5.2.0, and on 5.0.3 and 5.2.0, synced in both
 
 One result differs while releases are mixed: a merge that pushes a document over the hard size limit. The 5.1.0 peer held the combined 6 MiB document and could no longer update it, the 5.2.0 peer kept only its own part and listed the document in `system:sync_degradations`, and a 5.0.3 peer held the 6 MiB document and could still update it. The protection is the same on every release: keep documents far below the limit (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)).
 
+Devices on 5.0.3 also could not read a collection that held a document 30 or more levels deep: in our testing, every query on that collection ended the process, also when the document had arrived through sync from a device on a later release. Keep nesting shallow (see [Flat or nested](../best-practices/data-modeling.md#flat-or-nested)).
+
 ## Changes in SDK 5.2.0
 
 Review these changes when you upgrade:

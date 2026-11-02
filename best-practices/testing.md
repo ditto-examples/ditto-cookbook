@@ -440,6 +440,12 @@ Future<List<Ditto>> openSyncedPeers(
           ..port = port;
       } else {
         config.connect.tcpServers = {'127.0.0.1:$port'};
+        // A device that only connects still listens on every interface, so
+        // bind its listener to this machine: test peers stay off the network.
+        config.listen.tcp
+          ..isEnabled = true
+          ..interfaceIP = '127.0.0.1'
+          ..port = 0;
       }
     });
     // App setup after open, such as indexes. On SDK 5.2+, pass system

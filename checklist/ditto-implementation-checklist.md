@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.27
+> **Version**: 2.28
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -229,7 +229,7 @@ class SyncLifecycle with WidgetsBindingObserver {
 
 **What this means:** `TransportConfig` is immutable. Call `ditto.updateTransportConfig((config) { ... })` instead: it starts from the current configuration, so you change only what you need, for example with `setAllPeerToPeerEnabled()` or one transport under `peerToPeer`. Treat `global.syncGroup` as an optimization, not as a security boundary. If more than six devices connect to a hub over TCP, raise `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` on the hub so that it is in effect before `ditto.sync.start()`: pass it in `DittoConfig.systemParameters` (SDK 5.2+), or on SDK 5.1 run `ALTER SYSTEM SET` after every open. Check how many clients your hub admits, and confirm the setting with Ditto support before you rely on it in production.
 
-**Why this matters:** A hand-built configuration can silently stop devices from finding each other. A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Changes are applied asynchronously, and invalid values do not throw. In our testing with SDK 5.1.0 and 5.2.0, a device accepted 6 TCP connections by default. Additional clients of a hub received no data, no API reported an error, and only a `WARN` log line showed the problem. On 5.2.0, the default is still 6, and the connections that a device opened itself also count when it decides whether to accept another one, so a hub that also connects to other devices admits fewer clients. Changes of `connect.tcpServers` and of the TCP listener take effect while sync runs, and a device that loses a TCP connection tries again after `connect.retryInterval` (5 seconds by default).
+**Why this matters:** A hand-built configuration can silently stop devices from finding each other. A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Changes are applied asynchronously, and invalid values do not throw. In our testing with SDK 5.1.0 and 5.2.0, a device accepted 6 TCP connections by default. Additional clients of a hub received no data, no API reported an error, and only a `WARN` log line showed the problem. On 5.2.0, the default is still 6, and the connections that a device opened itself also count when it decides whether to accept another one, so a hub that also connects to other devices admits fewer clients. Changes of `connect.tcpServers` and of the TCP listener take effect while sync runs, and a device that loses a TCP connection tries again after `connect.retryInterval` (5 seconds by default). A device that only sets `connect.tcpServers` also listens for TCP on all interfaces; bind `listen.tcp` to `127.0.0.1` where it must not accept connections. Connections that a hub accepted over WebSocket did not count toward its TCP limit in our testing (30 clients synced), but Ditto documents no limit for them.
 
 **Best-practices guide:** Transport Configuration
 
@@ -1090,7 +1090,7 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 ### ☐ Use only tx.execute inside a transaction, and never nest read-write transactions
 
-**What this means:** Inside the callback, run every statement through the `Transaction` passed in (`tx.execute`). Never call `ditto.store.execute` there, never start a read-write transaction inside another one, and never keep the `Transaction` object after the callback returns.
+**What this means:** Inside the callback, run every statement through the `Transaction` passed in (`tx.execute`), and await each one before the callback returns: in our testing with the JavaScript SDK, a statement that was not awaited was not applied. Never call `ditto.store.execute` there, never start a read-write transaction inside another one, and never keep the `Transaction` object after the callback returns.
 
 **Why this matters:** In Flutter, `ditto.store.execute` inside a transaction throws a `DittoException`; on other platforms it does not throw, and in our testing with the JavaScript SDK 5.0.3 to 5.2.0, a write through it never completed. Only one read-write transaction runs at a time, so a nested one waits forever for the outer one to finish. Flutter has no guard against this.
 

@@ -127,7 +127,7 @@ Guide: `§ Event History and Audit Logs`, `§ EVICT`. Examples: [event-history.d
 - **Keep fields at the top level** when that reads better; nested paths such as `customer.phone` are indexable too.
 - **Use a REGISTER object** only when the parts must never mix (for example, a GPS `position`), declared in every statement.
 - **Avoid unbounded growth** inside one document: a map that keeps receiving entries belongs in its own collection.
-- **Keep nesting shallow.** In our testing with SDK 5.1.0 and 5.2.0, an argument could nest at most 125 levels of objects (126 failed with `Invalid query arguments: recursion limit exceeded`) and a literal in a statement 97 levels; `UPDATE ... SET a.b.c...` paths can build deeper documents, which then cannot be passed back as an argument (for example, in an upsert of what was read).
+- **Keep nesting shallow.** In our testing with SDK 5.1.0 and 5.2.0, an argument could nest at most 125 levels of objects (126 failed with `Invalid query arguments: recursion limit exceeded`) and a literal in a statement 97 levels; `UPDATE ... SET a.b.c...` paths can build deeper documents, which then cannot be passed back as an argument (for example, in an upsert of what was read). Model trees (folders, comment threads) as documents with a `parentId`, not as nested maps: documents 800 or more levels deep made a peer's process end during sync.
 
 ### Exclude Transient and Unnecessary Fields
 

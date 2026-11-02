@@ -29,7 +29,8 @@ Atomic multi-statement writes with `ditto.store.transaction`, and binary files s
 
 ## Prevents
 
-- `ditto.store.execute` inside a transaction (throws in Flutter, can deadlock in JavaScript, Swift, and Kotlin)
+- `ditto.store.execute` inside a transaction (throws in Flutter, deadlocks elsewhere)
+- `tx.execute` calls not awaited before the callback returns (they are not applied)
 - Nested read-write transactions (can deadlock; the SDK does not detect it)
 - Network calls, dialogs, or timers inside a transaction, blocking all other writes
 - Caught statement errors that silently commit the rest of a transaction
@@ -45,13 +46,13 @@ A transaction runs several DQL statements against the local store atomically. It
 
 ### 1. Use only tx.execute inside a transaction, and never nest (CRITICAL)
 
-Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. In JavaScript, Swift, and Kotlin the SDKs do not throw; a write through `store.execute` inside a transaction can deadlock, so the same rule applies. Starting a read-write transaction inside another one deadlocks in Flutter and JavaScript (and can deadlock in Swift and Kotlin), because only one read-write transaction runs at a time; the Flutter SDK does not detect it.
+Calling `ditto.store.execute` inside the callback throws a `DittoException` in Flutter. Other SDKs do not throw; a `store.execute` write inside can deadlock, so the same rule applies. Starting a read-write transaction inside another one deadlocks in Flutter and JavaScript (and can deadlock in Swift and Kotlin), because only one read-write transaction runs at a time; the Flutter SDK does not detect it.
 
 **✅ DO**: Run every read and write of the transaction through the `tx` passed to the callback.
 **❌ DON'T**:
 - Call `ditto.store.execute(...)` inside the callback
 - Call `ditto.store.transaction(...)` (read-write) inside another read-write transaction, directly or through a helper method
-- Store the `Transaction` object or use it after the callback returns (Flutter throws a `DittoException`)
+- Store the `Transaction` object or use it after the callback returns
 
 `§ Transaction Rules`, `§ Platform Differences` · Full code: [reference/flutter-code.md](reference/flutter-code.md) · Examples: [transaction-good.dart](examples/transaction-good.dart), [transaction-bad.dart](examples/transaction-bad.dart), [transaction-good.js](examples/transaction-good.js), [transaction-bad.js](examples/transaction-bad.js)
 
