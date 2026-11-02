@@ -147,7 +147,7 @@ What a device whose subscription excludes soft-deleted documents (`WHERE coalesc
 | A restore (`isDeleted = false`) | ✅ Together with the edits made while flagged |
 | A `DELETE` of the flagged document | ❌ The flagged copy stays until the device evicts it |
 
-Such a device does not receive flagged documents it did not already hold (it joined later or evicted them), so it cannot relay the flag: a device that missed the flag and syncs only with it keeps showing the document as active. Keep flagged documents in the subscriptions of devices that relay data. How they are eventually removed depends on the subscription design:
+Such a device does not receive flagged documents it did not already hold (it joined later or evicted them), so it cannot relay the flag: a device that missed the flag and syncs only with it keeps showing the document as active. The relay itself is affected too: in testing with SDK 5.1.0 and 5.2.0, a relay that evicted the flagged document received the old, unflagged version back within a second from a device that had missed the flag. Keep flagged documents in the subscriptions of devices that relay data. How they are eventually removed depends on the subscription design:
 
 | | Variant A: whole-collection subscription | Variant B: retention-window subscription |
 |---|---|---|
@@ -171,7 +171,7 @@ EVICT FROM orders WHERE storeId = :storeId AND isDeleted = true AND deletedAt < 
 
 In Variant B, cancel the old subscription before evicting, use the same cutoff value for the eviction and the new subscription, and choose a retention window longer than the longest expected offline period. A flagged document without `deletedAt` matches neither condition and is never evicted, so set both fields in one `UPDATE`. An evicted document that is restored later matches the subscription again and syncs back. See [examples/soft-delete-relay.dart](../examples/soft-delete-relay.dart).
 
-Subscribing to active documents only and evicting flagged ones (flag-based eviction with `isDeleted` as the flag, as in Ditto's deletion documentation) needs no cutoff. Use it only when every device syncs directly with a peer that subscribes to the whole collection, such as the Ditto Server, and have each device evict flagged documents, because a `DELETE` on the server does not reach them.
+Subscribing to active documents only and evicting flagged ones (flag-based eviction with `isDeleted` as the flag, as in Ditto's deletion documentation) needs no cutoff. Use it only when every device syncs directly with a peer that subscribes to the whole collection, such as the Ditto Server (a relay that evicts flagged documents can receive old, unflagged versions back from devices that missed the flag), and have each device evict flagged documents, because a `DELETE` on the server does not reach them.
 
 Guide: `§ Soft delete, subscriptions, and cleanup`
 

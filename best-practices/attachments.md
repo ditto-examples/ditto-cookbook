@@ -226,6 +226,9 @@ Map<String, dynamic>? imageToken(Map<String, dynamic> photo) {
 - Fetch every attachment of every document as soon as it syncs; this downloads data the user may never look at.
 - Start a new fetch for the same token on every rebuild or observer update; keep one fetcher per token.
 - Treat a fetch that has not made progress as an error immediately; peers that have the blob may connect later.
+- Start a fetch again because the connection dropped. In our testing with SDK 5.1.0 and 5.2.0, a 20 MB fetch that lost its connection halfway stayed pending without an error and completed about 75 ms after sync resumed, transferring only the remaining 8 MiB. Use the stall timeout for fetches that make no progress at all.
+
+Because the attachment ID is a hash of the content, a device that already holds the same bytes does not download them again: in our testing, a device that created an attachment from the same bytes as another device's got the same ID, and a later fetch of the other device's attachment completed without any transfer.
 
 ## Attachments Are Immutable
 

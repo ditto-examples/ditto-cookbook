@@ -263,7 +263,7 @@ The deletion flag is an ordinary update, but a subscription that excludes soft-d
 | A restore (`isDeleted = false`) | ✅ Together with the edits made while the document was flagged |
 | A `DELETE` of the flagged document (cleanup) | ❌ The device kept the flagged copy until it evicted it |
 
-Such a device does not receive soft-deleted documents that it did not already hold, for example because it joined the mesh later or evicted them, so it cannot pass the flag for those documents on to other devices. In our testing, a device that had missed the flag kept showing the document as active while it synced only with such a peer. When that peer subscribed to the whole collection or to a retention window, the flag arrived. Keep in mind:
+Such a device does not receive soft-deleted documents that it did not already hold, for example because it joined the mesh later or evicted them, so it cannot pass the flag for those documents on to other devices. In our testing, a device that had missed the flag kept showing the document as active while it synced only with such a peer. When that peer subscribed to the whole collection or to a retention window, the flag arrived. The relay itself is affected too: in our testing with SDK 5.1.0 and 5.2.0, a relay that had received the flag and then evicted the flagged document received the old, unflagged version back within a second from a device that had missed the flag, and from then on held it as an active document. Keep in mind:
 
 - A subscription filter does not hide documents in local results. Every local query and observer must filter flagged documents itself, for example with `coalesce(isDeleted, false) = false`.
 - Cancelling or narrowing a subscription never deletes local data; only `DELETE` and `EVICT` remove documents.
@@ -488,6 +488,8 @@ Future<void> evictFlaggedOrders(Ditto ditto) async {
 ```
 
 Because the subscription never matches flagged documents, the device does not need to cancel and re-register it before each eviction.
+
+Evicting flagged documents on a device that relays data can bring old versions back. A device that missed the flag still holds the unflagged version, and after the eviction, the relay receives that version again as a matching document (see [Soft delete, subscriptions, and cleanup](#soft-delete-subscriptions-and-cleanup)). Use flag-based eviction where every device can receive the flag before the relays evict, for example through a Ditto Server.
 
 ### Batching evictions
 

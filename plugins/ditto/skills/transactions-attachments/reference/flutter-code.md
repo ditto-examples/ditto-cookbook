@@ -97,6 +97,8 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
 
 ## PhotoLoader: One Fetcher per Token (Rule 4)
 
+Keep the fetcher when the connection drops: in testing with SDK 5.1.0 and 5.2.0, an interrupted 20 MB fetch stayed pending and completed about 75 ms after sync resumed, transferring only the rest. The stall timeout below is for fetches that make no progress at all.
+
 ```dart
 // ✅ GOOD: One fetcher per token, owned by the code that displays it.
 class PhotoLoader {

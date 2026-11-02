@@ -2,6 +2,10 @@
 
 To upgrade, change the dependency to 5.2.0; most apps need no code changes. SDK 5.2 syncs with devices on earlier 5.x releases, so you can roll it out gradually. While you do, some devices still run 5.1.0, and the [known issues of that release](#known-issues-in-sdk-510) apply to them.
 
+In our testing, peers on 5.1.0 and 5.2.0, and on 5.0.3 and 5.2.0, synced in both directions. The concurrent edits that statements alone can reproduce, 22 rows of [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce) including counters, `RESTART`, husks, and `INITIAL DOCUMENTS`, merged to the same documents on both peers, and a 200 KB attachment could be fetched in both directions. Each peer saw the other's `dittoSdkVersion` in its presence graph, which helps to find the devices that still run an older release (see [Presence](../best-practices/setup-and-lifecycle.md#presence)).
+
+One result differs while releases are mixed: a merge that pushes a document over the hard size limit. The 5.1.0 peer held the combined 6 MiB document and could no longer update it, the 5.2.0 peer kept only its own part and listed the document in `system:sync_degradations`, and a 5.0.3 peer held the 6 MiB document and could still update it. The protection is the same on every release: keep documents far below the limit (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)).
+
 ## Changes in SDK 5.2.0
 
 Review these changes when you upgrade:

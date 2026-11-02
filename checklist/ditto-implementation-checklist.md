@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.26
+> **Version**: 2.27
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -39,9 +39,9 @@ dependencies:
 - Do not test several properties of an array element in one `ANY ... SATISFIES` condition in `WHERE`
 - Write the field on the left of a comparison (`a > 1`, not `1 < a`)
 
-Before you release the upgrade, check on every platform you ship that an installation that passes a relative `persistenceDirectory` still opens its existing data. If your diagnostics read `system:request_history`, set `DQL_REQUEST_HISTORY_SIZE` explicitly: its default drops from 4096 to 128 entries.
+Before you release the upgrade, check on every platform you ship that an installation that passes a relative `persistenceDirectory` still opens its existing data. If your diagnostics read `system:request_history`, set `DQL_REQUEST_HISTORY_SIZE` explicitly: its default drops from 4096 to 128 entries. To find the devices that still run an older release, read `dittoSdkVersion` of the peers in the presence graph.
 
-**Why this matters:** These 5.1.0 issues raise no error, so they look like missing, misordered, or unexpectedly changed data. For example, an index that mixes `ASC` and `DESC` keys returns rows in the wrong order (with `LIMIT`, the wrong rows), and a multi-property `ANY ... SATISFIES` condition matches every document, so an `UPDATE` or `DELETE` that uses it changes them all. SDK 5.2.0 fixes these issues but does not repair data written before the upgrade: Kotlin and Java apps on 5.1 stored negative integers passed in map arguments as one less (`-5` as `-6`). Since 5.2, a relative `persistenceDirectory` is resolved against the application support directory, and only `persistenceDirectory: null` falls back to the previous default location. SDK 5.2 keeps the on-disk format of 5.1, so an app can go back to 5.1 without special steps.
+**Why this matters:** In our testing, peers on 5.1.0 and 5.2.0 merged concurrent edits to the same documents, but a merge that pushed a document over the hard size limit ended differently on each release. These 5.1.0 issues raise no error, so they look like missing, misordered, or unexpectedly changed data. For example, an index that mixes `ASC` and `DESC` keys returns rows in the wrong order (with `LIMIT`, the wrong rows), and a multi-property `ANY ... SATISFIES` condition matches every document, so an `UPDATE` or `DELETE` that uses it changes them all. SDK 5.2.0 fixes these issues but does not repair data written before the upgrade: Kotlin and Java apps on 5.1 stored negative integers passed in map arguments as one less (`-5` as `-6`). Since 5.2, a relative `persistenceDirectory` is resolved against the application support directory, and only `persistenceDirectory: null` falls back to the previous default location. SDK 5.2 keeps the on-disk format of 5.1, so an app can go back to 5.1 without special steps.
 
 **Best-practices guide:** Upgrading from SDK 5.1, Changes in SDK 5.2.0, Known Issues in SDK 5.1.0, Rolling Back
 
