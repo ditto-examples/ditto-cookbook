@@ -5,7 +5,7 @@ description: Searches the complete Ditto SDK best practices guide (SDK 5.2.0) bu
 
 # Ditto Best Practices Guide
 
-The full guide (SDK 5.2.0, about 8,200 lines in 24 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works and the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary). Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
+The full guide (SDK 5.2.0, about 12,300 lines in 37 pages) is in two directories: [reference/best-practices/](reference/best-practices/README.md), what to do and what to avoid, one page per topic; and [reference/knowledge/](reference/knowledge/README.md), how Ditto works, the reference material (CRDT merge rules, DQL functions, system collections and parameters, platform differences, SDK releases, glossary), and the observations from our testing with their numbers. Do not read them whole: search them and read only the sections you need. The focused skills (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`, `audit`) summarize the guide; use this skill for details they leave out.
 
 ## How to Search
 
@@ -47,12 +47,30 @@ Knowledge, in `reference/knowledge/`:
 | `dql-functions.md` | Date and time, conditional, type checking, string, object, array, ANY/EVERY, conversion functions |
 | `system-reference.md` | System virtual collections, system parameters reference |
 | `platform-differences.md` | API differences between Flutter, JavaScript, Swift, and Kotlin |
-| `upgrading.md` | Changes in SDK 5.2.0, known issues of 5.1.0 that 5.2.0 fixed (for devices that still run 5.1.0), rolling back |
+| `upgrading.md` | Changes in SDK 5.2.0, known issues of 5.1.0 that 5.2.0 fixed (for devices that still run 5.1.0), mixed releases, rolling back |
 | `glossary.md`, `references.md` | Terms and external documentation links |
+
+Observations from our testing, in `reference/knowledge/`, one entry per observation with the SDK releases, the setup, every number, and what was not tested. Read them for the evidence behind a rule, or when a question is about how Ditto behaved:
+
+| Page | Covers |
+|---|---|
+| `how-we-tested.md` | The test environment and its limits, how to read the results, the checks of the guide |
+| `subscriptions-and-replication.md` | What subscriptions deliver, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, sync status |
+| `connections-and-presence.md` | The TCP connection limit, meshes, WebSocket hubs, retries, detecting lost connections, presence, peer metadata, accepting connections, shared keys |
+| `merge-behavior.md` | Concurrent edits, conditional updates, read-modify-write, reordering, renaming, counters |
+| `clocks-and-time.md` | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |
+| `storage-and-deletion.md` | Soft delete, tombstones and reaping, eviction, disk space, the write-ahead log, deleted data on disk |
+| `documents-and-limits.md` | The hard size limit across devices, document weight, nesting depth, many fields and collections |
+| `persistence-directory.md` | Copies of a directory, Database IDs, deleting parts of a directory, locks |
+| `dql-behavior.md` | Statements that held, writes and arguments, comparison and ordering, IDs and field names, type declarations, limits, SDK 5.0.3 differences |
+| `performance-measurements.md` | Statements and write rates, queries and indexes, memory, hub load |
+| `transactions-and-observers.md` | Concurrency and reads, transactions in JavaScript, closing, when observers fire |
+| `attachment-behavior.md` | Relaying and fetching attachments, slow links, garbage collection of blobs |
+| `configuration-and-diagnostics.md` | Parameter defaults, environment variables, the offline license token, request diagnostics, logs |
 
 ## Answering
 
-- Quote or paraphrase the guide precisely; keep its qualifiers ("in our testing", "SDK 5.1.0", "according to the 5.2.0 release notes", "Experimental"). Statements marked "in our testing" are behavior observed on the releases the statement names (mostly with JavaScript SDK peers on one machine), not documented guarantees.
+- Quote or paraphrase the guide precisely; keep its qualifiers ("in our testing", "SDK 5.1.0", "according to the 5.2.0 release notes", "Experimental"). Statements marked "in our testing" are behavior observed on the releases the statement names (mostly with JavaScript SDK peers on one machine), not documented guarantees; the observation pages give the setup and the numbers.
 - Cite the section you used as `§ <Heading>` so the user can find it.
 - If the guide does not cover the question, say so, and point to Ditto's documentation (https://docs.ditto.live) instead of guessing.
 - Code examples in the guide are Flutter (Dart) and were compiled against `ditto_live` 5.1.0; examples that use APIs added in 5.2 (such as `DittoConfig.systemParameters`) follow the `ditto_live` 5.2.0 API reference. For other platforms, use `§ Platform Differences` and the platform notes in each section.

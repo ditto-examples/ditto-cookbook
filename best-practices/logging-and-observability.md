@@ -28,7 +28,7 @@ Future<void> configureDittoLogging() async {
 - Use `LogLevel.verbose` only for short, targeted investigations.
 
 **❌ DON'T:**
-- Leave `LogLevel.verbose` enabled in production; verbose logging can significantly slow down replication.
+- Leave `LogLevel.verbose` enabled in production. It multiplies the log output: in our testing, 2,000 writes produced about 83,000 log lines at verbose, against 154 at info, while the write rate itself did not change (see [Exported logs include debug lines regardless of the console level](../knowledge/configuration-and-diagnostics.md#exported-logs-include-debug-lines-regardless-of-the-console-level)).
 - Set `DittoLogger` properties before `Ditto.init()` (or `Ditto.open`) has completed; they throw.
 
 ### Log levels
@@ -41,7 +41,7 @@ Future<void> configureDittoLogging() async {
 | `warning` | Unexpected situations Ditto handled (recommended for production) |
 | `info` | High-level lifecycle events |
 | `debug` | Detailed diagnostics (recommended while debugging) |
-| `verbose` | Very detailed tracing; can slow down replication |
+| `verbose` | Very detailed tracing; a very large log volume |
 
 Defaults: `DittoLogger.isEnabled` is `true`, `DittoLogger.minimumLogLevel` is `LogLevel.info`, and `customLogCallback` is `null`. Set the level explicitly instead of relying on the default.
 
@@ -94,9 +94,9 @@ In Flutter, `DittoLogger.isDevtoolsLoggingEnabled = true` additionally sends Dit
 
 Independently of `isEnabled` and `minimumLogLevel`, Ditto always collects a limited amount of logs at `LogLevel.debug` and above in the persistence directory of the most recently created `Ditto` instance. By default, Ditto retains about 15 MB of compressed logs or 15 days of logs, and periodically discards older entries once one of these limits is reached.
 
-On-disk logs rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`). In our testing with SDK 5.1.0 and 5.2.0, each write added about 1.5 KB of debug log, the active file grew to 15 to 18 MB before it rotated, and each rotated file was about 0.6 MB compressed, so the files kept the log of about 200,000 writes: about 5 hours at 10 writes a second. Leave these at their defaults unless Ditto support advises otherwise.
+On-disk logs rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`). In our testing, the files kept the log of about 200,000 writes, about 5 hours at 10 writes a second (see [Repeated updates do not grow a document, and the write-ahead log grows to about 20 MB](../knowledge/storage-and-deletion.md#repeated-updates-do-not-grow-a-document-and-the-write-ahead-log-grows-to-about-20-mb)). Leave these at their defaults unless Ditto support advises otherwise.
 
-**What the logs contain**: in our testing with SDK 5.1.0 and 5.2.0, the on-disk logs of a device, and of each device directly connected to it, contained the text and the argument values of the device's subscriptions, at every console log level. Document IDs and values, `execute` statements and their arguments, observer arguments, and peer metadata did not appear. The logs leave the device when you export them or request them through the Portal, so do not filter subscriptions by personal data (see [Input Validation and Query Parameters](security.md#input-validation-and-query-parameters)). Error messages can contain document IDs (`Identifier conflict on document "<id>"`); keep that in mind when you forward exceptions to your own logging.
+**What the logs contain**: in our testing with SDK 5.0.3 to 5.2.0, the on-disk logs of a device, and of each device directly connected to it, contained the text and the argument values of the device's subscriptions, at every console log level, while document IDs and values, `execute` statements, observer arguments, and peer metadata did not appear (see [Subscription queries and arguments appear in other devices' logs](../knowledge/configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)). The logs leave the device when you export them or request them through the Portal, so do not filter subscriptions by personal data (see [Input Validation and Query Parameters](security.md#input-validation-and-query-parameters)). Error messages can contain document IDs (`Identifier conflict on document "<id>"`); keep that in mind when you forward exceptions to your own logging.
 
 The on-disk logs can be retrieved in two ways:
 
@@ -133,7 +133,7 @@ EXECUTE FUNCTION system_request_support_bundle({'metadata': {'requested_by': 'su
 SELECT * FROM system:support_bundles ORDER BY _id.created_at DESC
 ```
 
-The function returns one document with `_id` (the peer key and the capture time), `reason` (`USER_INITIATED`), and `file`, an attachment token for the archive. Fetch the archive with `fetchAttachment()` like any other attachment (see [Fetching Attachments](attachments.md#fetching-attachments)). In our testing with the JavaScript SDK 5.2.0, the archive contained `ditto-logs.log.gz`, `device_logs_METADATA.json`, and `config_snapshot.json`.
+The function returns one document with `_id` (the peer key and the capture time), `reason` (`USER_INITIATED`), and `file`, an attachment token for the archive. Fetch the archive with `fetchAttachment()` like any other attachment (see [Fetching Attachments](attachments.md#fetching-attachments)). In our testing with the JavaScript SDK 5.2.0, the archive contained the logs, the device metadata, and a configuration snapshot (see [A support bundle holds the logs, device metadata, and a configuration snapshot](../knowledge/configuration-and-diagnostics.md#a-support-bundle-holds-the-logs-device-metadata-and-a-configuration-snapshot)).
 
 ```dart
 // ✅ GOOD: Create a support bundle and save it, for example to share it with

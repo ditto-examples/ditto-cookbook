@@ -2,11 +2,11 @@
 
 To upgrade, change the dependency to 5.2.0; most apps need no code changes. SDK 5.2 syncs with devices on earlier 5.x releases, so you can roll it out gradually. While you do, some devices still run 5.1.0, and the [known issues of that release](#known-issues-in-sdk-510) apply to them.
 
-In our testing, peers on 5.1.0 and 5.2.0, and on 5.0.3 and 5.2.0, synced in both directions. The concurrent edits that statements alone can reproduce, 22 rows of [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce) including counters, `RESTART`, husks, and `INITIAL DOCUMENTS`, merged to the same documents on both peers, and a 200 KB attachment could be fetched in both directions. Each peer saw the other's `dittoSdkVersion` in its presence graph, which helps to find the devices that still run an older release (see [Presence](../best-practices/setup-and-lifecycle.md#presence)).
+In our testing, peers on 5.1.0 and 5.2.0, and on 5.0.3 and 5.2.0, synced in both directions, merged concurrent edits to the same documents, and fetched attachments from each other; each peer saw the other's `dittoSdkVersion` in its presence graph, which helps to find the devices that still run an older release (see [Mixed Releases and Migration in Our Testing](#mixed-releases-and-migration-in-our-testing)).
 
-One result differs while releases are mixed: a merge that pushes a document over the hard size limit. The 5.1.0 peer held the combined 6 MiB document and could no longer update it, the 5.2.0 peer kept only its own part and listed the document in `system:sync_degradations`, and a 5.0.3 peer held the 6 MiB document and could still update it. The protection is the same on every release: keep documents far below the limit (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)).
+One result differs while releases are mixed: a merge that pushes a document over the hard size limit ends differently on each release (see [An oversized merge ends differently on each release](#an-oversized-merge-ends-differently-on-each-release)). The protection is the same on every release: keep documents far below the limit (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)).
 
-Devices on 5.0.3 also could not read a collection that held a document 30 or more levels deep: in our testing, every query on that collection ended the process, also when the document had arrived through sync from a device on a later release. Keep nesting shallow (see [Flat or nested](../best-practices/data-modeling.md#flat-or-nested)).
+Devices on 5.0.3 also could not read a collection that held a document 30 or more levels deep, also when the document had arrived through sync from a device on a later release (see [Very deep documents end a peer's process during sync](documents-and-limits.md#very-deep-documents-end-a-peers-process-during-sync)). Keep nesting shallow (see [Flat or nested](../best-practices/data-modeling.md#flat-or-nested)).
 
 ## Changes in SDK 5.2.0
 
@@ -47,6 +47,64 @@ SDK 5.2.0 fixes the following issues of 5.1.0. They apply to every device that s
 - A fetch of an attachment that no document references anymore retries forever instead of ending. The 5.2.0 release notes list this as fixed, but in our testing such fetches stayed pending on 5.2.0 as well; keep a stall timeout on both releases (see [Fetching Attachments](../best-practices/attachments.md#fetching-attachments)).
 - Peers that authenticate right after a certificate revocation is created are rejected, although a revocation should apply only to certificates issued before it (see [Certificate Revocation (SDK 5.1+)](../best-practices/security.md#certificate-revocation-sdk-51)).
 - Flutter: hot restarting an app while a store observer is active during sync can crash it, and `Ditto.open()` can crash on 32-bit Android devices that report the `armv8l` architecture.
+
+## Mixed Releases and Migration in Our Testing
+
+The observations behind the mixed-release results at the top of this page, and behind the migration issue in [Known Issues in SDK 5.1.0](#known-issues-in-sdk-510). How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md).
+
+### Peers on different releases merged to the same documents
+
+| | |
+|---|---|
+| Observed on | Three pairs of releases, one run each: 5.2.0 with 5.1.0, 5.1.0 with 5.2.0 (the same two releases in the other order), and 5.0.3 with 5.2.0 |
+| Setup | Two peers on different releases, each in its own process. They made the concurrent edits of the 22 rows of [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce) that statements alone can reproduce, including counters, `RESTART`, husks, and `INITIAL DOCUMENTS`, and fetched a 200 KB attachment in both directions |
+| Documentation | According to the release notes, SDK 5.1 and 5.2 sync with each other |
+
+- In every pair, all 22 rows gave the results that the table describes, and both peers held the same documents.
+- The 200 KB attachment could be fetched in both directions, and its hash matched.
+
+**Used in:** [Upgrading from SDK 5.1](#upgrading-from-sdk-51).
+
+### An oversized merge ends differently on each release
+
+| | |
+|---|---|
+| Observed on | The same three pairs of releases as in the previous entry, one run each |
+| Setup | Two peers on different releases, each in its own process. Each peer added 3 MiB to the same document, so that the merged document would be 6 MiB, over the hard size limit of 5 MiB |
+
+- **5.1.0 and 5.2.0**: the 5.1.0 peer held the 6 MiB document that combined both 3 MiB parts, and a later `UPDATE` of it failed. The 5.2.0 peer kept only its own part and listed the document in `system:sync_degradations` with `documentTooBig`.
+- **5.0.3 and 5.2.0**: the 5.0.3 peer held the 6 MiB document, and **a later `UPDATE` of it succeeded**. 5.0.3 does not check the hard limit when a document is written (see [SDK 5.0.3 differs in the size limit, constant comparisons, and defaults](dql-behavior.md#sdk-503-differs-in-the-size-limit-constant-comparisons-and-defaults)).
+
+**Used in:** [Upgrading from SDK 5.1](#upgrading-from-sdk-51).
+
+### Presence shows each peer's SDK version
+
+| | |
+|---|---|
+| Observed on | Three pairs of releases, one run each: 5.0.3 with 5.2.0, 5.1.0 with 5.2.0, and 5.2.0 with 5.1.0 |
+| Setup | Two peers on different releases, each in its own process, each with peer metadata set. We read the other peer in each peer's presence graph |
+
+- In every pair, the presence graph showed the other peer's `dittoSdkVersion` (`5.0.3`, `5.1.0`, or `5.2.0`), `os`, and `isCompatible` (`true`), and the peer metadata that the other peer had set arrived.
+- During a rollout, `dittoSdkVersion` therefore identifies the devices that still run an older release.
+
+**Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Upgrading from SDK 5.1](#upgrading-from-sdk-51).
+
+### An index created on an empty collection breaks in the 5.1.0 migration
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs; every run gave the same result. The repair by dropping and re-creating the index, and the 5.0.3 `SELECT _id` result in the last item: one run |
+| Setup | Each release ran in its own process. One persistence directory was opened on 5.0.3, 5.1.0, 5.2.0, 5.1.0, 5.0.3, and 5.2.0, in that order, and another one on 5.0.3 and then on 5.2.0. On 5.0.3, an index `idx_empty` was created on an empty collection `emptyc`, and another collection held documents and an index. A composite index was created on 5.2.0 |
+| Documentation | The 5.2.0 release notes list as fixed (CCB-88) that an `INSERT` into an indexed collection that was empty before the upgrade failed |
+
+- After the index on the empty collection `emptyc` was created on 5.0.3 and the directory was closed and opened on 5.1.0, an `INSERT` into that collection failed with `no such table: ___idx_coll_...`. Opened next on 5.2.0, and then again on 5.1.0, the same `INSERT` still failed. The collection that held documents kept its indexes and documents on every release.
+- In the directory opened on 5.0.3 and then directly on 5.2.0, the same `INSERT` succeeded: the fix of CCB-88 works in the migration by 5.2.0. A directory that 5.1.0 has migrated once is not repaired by 5.2.0.
+- In the broken directory, `DROP INDEX idx_empty ON emptyc` on 5.2.0 made the `INSERT` succeed, and it kept succeeding after the index was created again (one run). Opening and closing the directory on 5.0.3, and then opening it again on 5.2.0, also repaired it; this was also checked once with 5.0.3 only opening the directory, without writing. We think this is because going back to 5.0.3 returns the index to the 5.0 format, so that 5.2.0 migrates it again.
+- Moving between 5.2.0 and 5.1.0, in both directions, kept the documents, the indexes, and the composite index created on 5.2.0 usable.
+- Back on 5.0.3, the composite index `idx_status_n (status, n)` became two single-field indexes, `idx_status_n_status` and `idx_status_n_n`. All documents could be read, including those written on 5.1.0 and 5.2.0.
+- A separate issue (one run): on 5.0.3, `SELECT _id FROM c` without `WHERE` on an indexed collection does not return the correct number of rows: 0 of 2 in a new store, and 1 of 5 in the directory that had moved between releases. The plan was an index scan and a `groupBy`. `SELECT *` and `COUNT(*)` returned the correct results, and so did 5.1.0 and 5.2.0. The same pattern appeared in [Rows with equal sort keys come back in _id order since SDK 5.1](dql-behavior.md#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51): there, the rows did not come back in `_id` order in any of the three runs, and in one run of a separate reproduction, the query returned a single row, `{}`, for 40 documents. In every case so far, the query returned at most one row.
+
+**Used in:** [Upgrading and downgrading](../best-practices/indexing-and-performance.md#upgrading-and-downgrading), [Known Issues in SDK 5.1.0](#known-issues-in-sdk-510), [Rolling Back](#rolling-back).
 
 ## Rolling Back
 

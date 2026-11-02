@@ -170,5 +170,44 @@ class ChecklistSectionsTest(unittest.TestCase):
         self.assertEqual(errors, ["checklist/list.md:3: section Hard Delete is not a heading of the guide"])
 
 
+class ObservationLinksTest(unittest.TestCase):
+    def check(self, text: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = write(root, "best-practices/page.md", text)
+            return check.check_observation_links([page], root)
+
+    def test_reports_observations_without_a_knowledge_link(self):
+        errors = self.check("""
+            # Page
+
+            - In our testing with SDK 5.2.0, the hub accepted six clients.
+            """)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("best-practices/page.md:3", errors[0])
+
+    def test_accepts_observations_that_link_to_knowledge(self):
+        self.assertEqual(self.check("""
+            # Page
+
+            > **Note (SDK 5.2.0):** in our testing, the hub accepted six clients (see [The limit](../knowledge/connections.md#the-limit)).
+            """), [])
+
+    def test_matches_in_testing_and_ignores_code_and_other_words(self):
+        errors = self.check("""
+            # Page
+
+            | Case | In testing with SDK 5.1.0, it failed |
+
+            ```dart
+            // in our testing this is code
+            ```
+
+            Contesting the result is not an observation, nor is integration testing.
+            """)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("best-practices/page.md:3", errors[0])
+
+
 if __name__ == "__main__":
     unittest.main()

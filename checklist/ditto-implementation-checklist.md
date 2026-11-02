@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.28
+> **Version**: 2.29
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1668,7 +1668,7 @@ Future<void> updateOrderStatus(Ditto ditto, String orderId, String status) async
 
 **What this means:** Before `Ditto.open()`, call `await Ditto.init()` and then set `DittoLogger.minimumLogLevel`, for example to `kReleaseMode ? LogLevel.warning : LogLevel.debug`. Forward warnings and errors with `DittoLogger.customLogCallback`. Set the callback again before every `Ditto.open()`, because `ditto.close()` resets it. Use `LogLevel.verbose` only for short, targeted investigations.
 
-**Why this matters:** `DittoLogger` throws until the SDK is initialized. Verbose logging can significantly slow down replication. A production console level of `warning` does not limit later diagnosis: on-disk logs always include debug-level entries, which you can export with `DittoLogger.exportLogs()`, request from the Ditto Portal, or, since SDK 5.2, package on the device as a support bundle with `EXECUTE FUNCTION system_request_support_bundle()`.
+**Why this matters:** `DittoLogger` throws until the SDK is initialized. Verbose logging produces a very large log volume. A production console level of `warning` does not limit later diagnosis: on-disk logs always include debug-level entries, which you can export with `DittoLogger.exportLogs()`, request from the Ditto Portal, or, since SDK 5.2, package on the device as a support bundle with `EXECUTE FUNCTION system_request_support_bundle()`.
 
 **Best-practices guide:** Logging, Support bundles (SDK 5.2+)
 

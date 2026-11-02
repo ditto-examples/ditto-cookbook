@@ -12,6 +12,8 @@ Checks:
   heading of the guide
 - every section that a checklist item names under "Best-practices guide" is
   a heading of the guide
+- every line of the best practices that reports an observation ("in our
+  testing") links to the knowledge page that describes it
 - every relative link in the repository's Markdown files points to an
   existing file, and every #anchor to an existing heading (GitHub anchors)
 - audit/reference/scanner-rules.md matches `scan.py --list-rules`
@@ -58,6 +60,9 @@ CITATION_CODE = re.compile(r"(?<!`)`§ ([^`]+)`(?!`)")
 CITATION_TEXT = re.compile(r"(?<![`{])§ ([A-Za-z][^`|\]\n,;(){}]*)")
 
 CHECKLIST_FIELD = "**Best-practices guide:**"
+
+# An observation from testing, as the best practices report it.
+OBSERVATION = re.compile(r"\bin (?:our )?testing\b", re.IGNORECASE)
 
 
 # --- Markdown -----------------------------------------------------------------
@@ -206,6 +211,22 @@ def check_checklist_sections(checklist: Path, headings: set[str], root: Path) ->
     return errors
 
 
+
+def check_observation_links(pages: list[Path], root: Path) -> list[str]:
+    """Lines that report an observation ("in our testing") must link to the knowledge pages.
+
+    The best practices summarize observations; the knowledge pages describe
+    them in full. Paragraphs, list items, and table rows are single lines.
+    """
+    errors = []
+    for page in pages:
+        for number, line in prose_lines(page.read_text(encoding="utf-8")):
+            if OBSERVATION.search(INLINE_CODE.sub("code", line)) and "../knowledge/" not in line:
+                errors.append(f"{page.relative_to(root)}:{number}: an observation without a link "
+                              "to the knowledge page that describes it")
+    return errors
+
+
 # --- Skills -------------------------------------------------------------------
 
 
@@ -279,6 +300,7 @@ def main() -> int:
     pages = guide_pages(ROOT)
     headings = guide_headings(pages)
     errors += check_unique_headings(pages, ROOT)
+    errors += check_observation_links([p for p in pages if p.parent.name == "best-practices"], ROOT)
     for skill in sorted(p.parent for p in SKILLS.glob("*/SKILL.md")):
         skill_errors, skill_warnings = check_skill(skill, headings)
         errors += skill_errors

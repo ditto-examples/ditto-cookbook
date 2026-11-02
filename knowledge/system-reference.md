@@ -34,7 +34,7 @@ The `system:` namespace contains virtual collections that describe the local dev
 
 ### system:system_info
 
-Each row has `namespace`, `key`, `value`, and `timestamp`. Namespaces include `core`, `store`, `logs`, `replication`, `sync_scopes`, and `backend_sqlite3`.
+Each row has `namespace`, `key`, `value`, and `timestamp`. Namespaces include `core`, `store`, `logs`, `replication`, `sync_scopes`, and `backend_sqlite3`; in our testing with SDK 5.1.0 and 5.2.0, the collection had rows in `backend_sqlite3`, `core`, `logs`, `replication`, and `sync_scopes` (see [The diagnostics snapshot queries return rows on both releases](configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-return-rows-on-both-releases)).
 
 ```sql
 -- SDK version, database ID, peer key, storage usage
@@ -63,7 +63,7 @@ SELECT text, state, times, `~qualifier` AS qualifier FROM system:request_history
 ```
 
 - `system:request_history` is held in memory and is not persisted across restarts. Its size is controlled by `DQL_REQUEST_HISTORY_SIZE` (default `128` entries in SDK 5.2; `4096` in 5.1). Bundles requested through the Ditto Portal include these entries.
-- Which requests are recorded is controlled by `DQL_REQUEST_HISTORY_QUALIFIERS`, for example failed requests and requests slower than a threshold. Setting this parameter replaces the whole qualifier object; see the [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) for the available qualifiers. **Note (SDK 5.2.0):** the documentation describes a `threshold` qualifier of 1,000 ms that is always active, but in our testing, 5.2.0 with the default setting did not record queries that took 2 or 8 seconds, while 5.1.0 recorded them. Failed requests and `DELETE FROM system:request_history` were recorded by default on both releases. To record slow queries on 5.2.0, set the threshold explicitly, for example `{'threshold': 1000}`.
+- Which requests are recorded is controlled by `DQL_REQUEST_HISTORY_QUALIFIERS`, for example failed requests and requests slower than a threshold. Setting this parameter replaces the whole qualifier object; see the [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) for the available qualifiers. **Note (SDK 5.2.0):** the documentation describes a `threshold` qualifier of 1,000 ms that is always active, but in our testing, 5.2.0 with the default setting did not record queries that took 1.9 and 8 seconds, while 5.1.0 recorded them (see [Slow-request warnings and timeouts work, and 5.2.0 needs an explicit history threshold](configuration-and-diagnostics.md#slow-request-warnings-and-timeouts-work-and-520-needs-an-explicit-history-threshold)). Failed requests and `DELETE FROM system:request_history` were recorded by default on both releases. To record slow queries on 5.2.0, set the threshold explicitly, for example `{'threshold': 1000}`.
 - On Small Peers, querying `system:active_requests` at exactly the right moment is often impractical; the slow-request warning (see [Long-running requests (SDK 5.1+)](../best-practices/indexing-and-performance.md#long-running-requests-sdk-51)) writes the same details to the log.
 
 ```dart

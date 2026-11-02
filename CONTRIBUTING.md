@@ -26,7 +26,13 @@ A change to the guide is complete only when the derived content agrees with it. 
 ### Where content belongs
 
 - **`best-practices/`**: guidance on what to do, with ✅ DO / ❌ DON'T lists, recommended patterns, and review lists. Each page covers one topic.
-- **`knowledge/`**: how Ditto behaves and reference material: concepts, merge rules, functions, system collections and parameters, platform differences, changes between SDK releases, and terms.
+- **`knowledge/`**: how Ditto behaves and reference material: concepts, merge rules, functions, system collections and parameters, platform differences, changes between SDK releases, and terms; and what we observed in testing, one entry per observation.
+
+Observations from testing flow in one direction: test → `knowledge/` → `best-practices/` → Skills and checklist.
+
+1. **Record the observation in `knowledge/`.** Add an entry to the observation page for its topic, in the format of the existing entries: a heading that states the behavior; a table with "Observed on" (the SDK releases and the number of runs), "Setup", and, when Ditto's documentation or release notes describe the behavior, "Documentation"; the results with every number, separately for each release; "Not tested"; and "Used in". [How We Tested](knowledge/how-we-tested.md) describes the environment that all entries share.
+2. **Derive the rule in `best-practices/`.** State what to do, give the reason in a sentence or two with only the numbers that the rule needs, label release-specific behavior with **Note (SDK ...)**, and link to the knowledge entry for the evidence.
+3. **Propagate the rule** to the Skills and the checklist (see [Synchronizing a Change to the Guide](#synchronizing-a-change-to-the-guide)).
 
 When new material both explains a behavior and recommends a pattern, put the recommendation in `best-practices/` and link to the explanation in `knowledge/`. Keep each page readable on its own, and follow the conventions in [How to Use This Guide](best-practices/README.md#how-to-use-this-guide), such as the **Note (SDK ...)** labels.
 
