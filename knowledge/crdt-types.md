@@ -81,6 +81,12 @@ A write records a value with a new timestamp even when the value is the same as 
 
 Write only the fields that the user changed, and never write back values from a copy that may be stale (see [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites)). Counters are the exception to "the latest write wins": a value written into a counter restarts it (see [Writing documents that contain counters](../best-practices/data-modeling.md#writing-documents-that-contain-counters)).
 
+## What syncs after offline edits
+
+Ditto syncs the current state of each document, not the history of writes. In our testing with SDK 5.1.0 and 5.2.0, a device that reconnected after 1,000 offline updates of one field sent about as much as after one update (4 to 6 KiB including the session overhead, and caught up within about 60 ms), and rewriting a 1 KB value 1,000 times sent about 6 KiB. Other devices therefore never see the intermediate values; write each event as its own entry when the history matters (see [Event History and Audit Logs](../best-practices/data-modeling.md#event-history-and-audit-logs)).
+
+Changes sync as field-level differences whichever way they were written: changing one field of a 50 KB document sent about 1.3 KiB with `UPDATE ... SET` or `DO UPDATE_LOCAL_DIFF`, and 1.6 KiB with a whole-document `DO UPDATE`. The reason to write only what changed is the merge result in the previous section, not the transfer. Sync traffic is also compressed: the first sync of 200 documents of 1 KB took 206 KiB with random content and 6 KiB with repeated characters.
+
 ## Reordering on two devices
 
 Entries of a map have no order, so an app that lets users reorder a list stores a `position` in each entry and sorts by it. Each `position` is a register, so which positions a reorder writes decides what survives a concurrent reorder on another device. In our testing with SDK 5.1.0 and 5.2.0, five entries a, b, c, d, e had the positions 0 to 4. Two offline devices reordered them, device A moving e to the top and device B, about 50 ms later, moving a to the end:

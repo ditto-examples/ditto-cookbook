@@ -101,7 +101,7 @@ On-disk logs rotate in files of up to 1 MB or 24 hours each, and at most 15 file
 The on-disk logs can be retrieved in two ways:
 
 - **From the Ditto Portal:** request logs from a device on the device dashboard (see [Remote Diagnostics](#remote-diagnostics)).
-- **From the app:** `DittoLogger.exportLogs(path)` writes them to a gzip-compressed JSON Lines file and returns the number of bytes written. The file must not already exist (otherwise it throws a `DittoError`) and its directory must exist. The recommended extension is `.jsonl.gz`. Only logs of the most recently created `Ditto` instance are exported.
+- **From the app:** `DittoLogger.exportLogs(path)` (in JavaScript, `Logger.exportToFile(path)`) writes them to a gzip-compressed JSON Lines file and returns the number of bytes written. The file must not already exist (otherwise it throws a `DittoError`) and its directory must exist. The recommended extension is `.jsonl.gz`. Only logs of the most recently created `Ditto` instance are exported.
 
 ```dart
 import 'dart:io';

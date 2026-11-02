@@ -277,14 +277,14 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 - Filter in `WHERE`, not in Dart
 - Project only the fields you need (subscriptions still sync whole documents and accept only `SELECT *`)
 - Use `ORDER BY ... LIMIT` for local queries and observers that need the first rows
-- Keep query strings constant and pass values as parameters (prepared statements are cached)
+- Keep query strings constant and pass values as parameters, for safety (a string built per value was not measurably slower in testing with SDK 5.0.3 to 5.2.0)
 - Prefer keyset pagination with an `_id` tie-breaker (`WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId) ORDER BY createdAt DESC, _id DESC LIMIT :pageSize`) over large `OFFSET` values, which re-read and skip earlier rows
 - Use `DISTINCT` only on a few low-cardinality fields; it keeps every distinct row in memory
 - Count with `COUNT(*)` and check existence with `LIMIT 1`
 
 **❌ DON'T:**
 - Observe an entire large collection and filter or paginate in Dart
-- Run one query per ID when `WHERE _id IN :ids` returns the same data
+- Run one query per ID when `WHERE _id IN :ids` returns the same data (each `execute` call costs about 1.7 ms in testing: 500 lookups took 841 ms, one `IN` query 14 ms); likewise, insert many documents with one array parameter, not one statement each (2,000 documents: about 4 s against 17 ms)
 - Use `DISTINCT` with `_id` or `*`
 
 ```sql
@@ -398,7 +398,7 @@ Local only, read only, and snapshot-based. Query them with `execute`; do not reg
 | `system:indexes` | Indexes on this device |
 | `system:data_sync_info` | One row per sync connection. `sync_session_status` stays `"Connected"` for about 73 s after a disconnect (SDK 5.1.0 and 5.2.0); use presence for live connectivity |
 | `system:active_requests` | DQL requests executing now |
-| `system:request_history` | Recently completed requests matching the history qualifiers (in memory) |
+| `system:request_history` | Recently completed requests matching the history qualifiers (in memory). **Note (SDK 5.2.0):** with the default qualifiers, slow queries were not recorded in testing; set `DQL_REQUEST_HISTORY_QUALIFIERS` to `{'threshold': 1000}` to record them |
 | `system:shared_statements` | Prepared-statement cache with execution statistics |
 | `system:metrics` | SDK metrics; disabled by default, and enabled only at startup (see the parameter below). SDK 5.2 adds query metrics (`ditto.query.requests`, `ditto.query.failed`, `ditto.query.execution_time`), `ditto.store.observer.retained_bytes`, `ditto.store.database.sync_degraded_document_count`, SQLite WAL values, and transport counters |
 | `system:sync_degradations` (SDK 5.2+) | Documents whose sync is degraded on this device, with the reason (currently `documentTooBig`, see `§ Document Size Limits`). Include it in diagnostics so that a document that stopped syncing is found before a user reports it |

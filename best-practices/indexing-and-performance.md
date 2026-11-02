@@ -114,7 +114,7 @@ SDK 5.1 uses a new on-disk index format and migrates existing indexes automatica
 
 ## Index Usage Rules
 
-The query planner chooses indexes by rules, not by statistics about your data. `EXPLAIN` shows these plans:
+The query planner chooses indexes by rules, not by statistics about your data. `EXPLAIN` shows these plans (11 of the conditions below, tested with SDK 5.1.0 and 5.2.0 on 50,000 documents, produced the listed plans; for example, `status = 'open'` with 5,000 matches took 6 ms through the index, and `LIKE '%001%'` or `lower(status) = 'open'` took 43 to 64 ms as a collection scan):
 
 | Predicate | Plan | Notes |
 |---|---|---|
@@ -173,7 +173,7 @@ When a query projects only fields that are in the index (plus `_id`), the planne
 SELECT _id, status FROM orders WHERE status = :status
 ```
 
-Projecting only the fields a screen needs therefore helps twice: less data is materialized, and some queries avoid document fetches entirely. (On SDK 5.1.0, an indexed query that projects fields and sorts by one of them can return the rows in the wrong order; see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).)
+Projecting only the fields a screen needs therefore helps twice: less data is materialized, and some queries avoid document fetches entirely. The second effect is the larger one: in our testing with SDK 5.1.0 and 5.2.0 (5,000 of 50,000 documents of about 1 KB matching), `SELECT _id, status` answered from the index took 16 ms, while adding one field outside the index or using `SELECT *` took 23 to 26 ms; once documents had to be fetched, projecting fewer fields saved almost nothing. (On SDK 5.1.0, an indexed query that projects fields and sorts by one of them can return the rows in the wrong order; see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).)
 
 ### Strict mode and data types
 
@@ -384,12 +384,12 @@ Indexes are only part of query performance. How much data a query touches and ho
 - **Filter narrowly.** Put every condition you can into `WHERE` instead of filtering in Dart after the query.
 - **Project only what you need.** `SELECT _id, status, total` materializes less data than `SELECT *` and can enable covering scans. (Subscriptions are different: they always sync whole documents and only accept `SELECT *`; see [Subscription Rules](sync-and-subscriptions.md#subscription-rules).)
 - **Use `LIMIT` for local queries** that only need the first rows (for example the latest 50 orders), together with `ORDER BY`.
-- **Keep query strings constant and pass values as parameters.** Ditto caches prepared statements; building a new string for every value defeats that cache and is unsafe (see [Parameters and Literals](dql.md#parameters-and-literals)).
-- **Keep observer result sets small.** A store observer re-runs its query and delivers the full result set whenever relevant data changes. In our testing with the JavaScript SDK (5.1.0 and 5.2.0), an observer that returned 200 documents while other devices kept updating them grew the process's memory by about 13 to 24 KiB per callback, steadily for 10 minutes, even though the callback did not read the result; an observer of one row leveled off within minutes, and cancelling the observer stopped the growth. On devices that run for hours, observe only the rows on screen and cancel observers of screens that are not visible. Prefer several focused observers with `WHERE` and `LIMIT` over one observer of a whole collection (see [Store Observers in Flutter](observers.md#store-observers-in-flutter)). Since SDK 5.2, an observer no longer re-runs its query after writes to collections it does not observe (in our testing with the JavaScript SDK, 50 writes to another collection caused no re-runs), and observers hold less memory between updates, so splitting observers by collection costs less than before.
+- **Keep query strings constant and pass values as parameters.** A string built for every value is unsafe (see [Parameters and Literals](dql.md#parameters-and-literals)). It was not measurably slower in our testing with SDK 5.0.3 to 5.2.0 (1,000 lookups by `_id` took the same time either way), so the reason is safety, not speed.
+- **Keep observer result sets small.** A store observer re-runs its query and delivers the full result set whenever relevant data changes. In our testing with SDK 5.1.0 and 5.2.0, after one write, an observer of 5,000 documents was called after about 41 ms and an observer limited to 50 rows after about 7 ms. In our testing with the JavaScript SDK (5.1.0 and 5.2.0), an observer that returned 200 documents while other devices kept updating them grew the process's memory by about 13 to 24 KiB per callback, steadily for 10 minutes, even though the callback did not read the result; an observer of one row leveled off within minutes, and cancelling the observer stopped the growth. On devices that run for hours, observe only the rows on screen and cancel observers of screens that are not visible. Prefer several focused observers with `WHERE` and `LIMIT` over one observer of a whole collection (see [Store Observers in Flutter](observers.md#store-observers-in-flutter)). Since SDK 5.2, an observer no longer re-runs its query after writes to collections it does not observe (in our testing with the JavaScript SDK, 50 writes to another collection caused no re-runs), and observers hold less memory between updates, so splitting observers by collection costs less than before.
 
 **❌ DON'T:**
 - Observe an entire large collection and filter or paginate in Dart.
-- Run queries in a tight loop when one query with `IN :ids` can return the same data.
+- Run queries in a tight loop when one query with `IN :ids` can return the same data. Each `execute` call has a fixed cost (about 1.7 ms in our testing with the JavaScript SDK 5.1.0 and 5.2.0): reading 500 of 20,000 documents took 841 ms as 500 `_id = :id` queries and 14 ms as one `_id IN :ids` query.
 
 ```dart
 // ❌ BAD: one query per ID
@@ -420,7 +420,7 @@ Future<List<Map<String, dynamic>>> loadOrders(Ditto ditto, List<String> ids) asy
 
 ### Counting documents
 
-A full-collection `COUNT(*)` is answered by a dedicated count scan (SDK 5.1+) without reading documents, so it is cheap enough for badges and dashboard totals. Ditto's 5.1 benchmark reported a full-collection `COUNT(*)` going from 149.03 ms to 0.89 ms (about 167x faster), and a filtered count improving from 60.85 ms to 13.89 ms (about 4.4x). These figures compare median runtimes of SDK 5.0.3 and 5.1.0 on a single Android device (Orion O6) with one retail dataset of about 93,000 documents. Performance depends on the device, data shape, indexes, and query mix, so test representative workloads on your target hardware.
+A full-collection `COUNT(*)` is answered by a dedicated count scan (SDK 5.1+) without reading documents, so it is cheap enough for badges and dashboard totals. Ditto's 5.1 benchmark reported a full-collection `COUNT(*)` going from 149.03 ms to 0.89 ms (about 167x faster), and a filtered count improving from 60.85 ms to 13.89 ms (about 4.4x). These figures compare median runtimes of SDK 5.0.3 and 5.1.0 on a single Android device (Orion O6) with one retail dataset of about 93,000 documents. In our testing with SDK 5.1.0 and 5.2.0 on a Mac, a full-collection `COUNT(*)` over 20,000 documents took 1.8 ms, against 54 to 66 ms for reading every `_id`, and a count filtered by `status` took 20 to 28 ms without an index and 6 ms with one. Performance depends on the device, data shape, indexes, and query mix, so test representative workloads on your target hardware.
 
 A filtered `COUNT(*)` still has to evaluate the filter, so index the filtered fields. To check whether any matching document exists, `SELECT _id ... LIMIT 1` remains the simplest query.
 
@@ -439,7 +439,7 @@ ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10
 ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS = 30
 ```
 
-A lower warning threshold during development surfaces slow queries early. Apply these settings after every open (see [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters)). Before enabling a timeout in production, make sure your code handles the resulting error for every query.
+In our testing with SDK 5.1.0 and 5.2.0, a warning threshold of 1 second logged `Slow DQL request dump entry="{...}"`, with the plan and its statistics as JSON, once a second while the query ran, and a timeout of 1 second failed the query after 1.00 seconds with `Request exceeded maximum permitted execution time.` A lower warning threshold during development surfaces slow queries early. Apply these settings after every open (see [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters)). Before enabling a timeout in production, make sure your code handles the resulting error for every query.
 
 ### Flutter execution model
 

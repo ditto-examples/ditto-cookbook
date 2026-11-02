@@ -21,7 +21,7 @@ Atomic multi-statement writes with `ditto.store.transaction`, and binary files s
 | Inside the callback | Use only `tx.execute(...)`. `ditto.store.execute(...)` throws a `DittoException` |
 | Commit / rollback | Throwing rolls back and rethrows; returning `TransactionCompletionAction.rollback` rolls back; anything else commits |
 | Concurrency | One read-write transaction at a time; read-only transactions run concurrently |
-| `ditto.close()` | Does not wait for in-flight transactions |
+| `ditto.close()` | Does not wait for in-flight transactions (Flutter) |
 | Create an attachment | `await ditto.store.newAttachment(pathOrBytes, AttachmentMetadata({...}))` |
 | Store it | `INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)` |
 | Fetch it | `ditto.store.fetchAttachment(token, (event) {...})` returns an `AttachmentFetcher`; cancel with `stop()` |

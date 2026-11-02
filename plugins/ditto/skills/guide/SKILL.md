@@ -43,7 +43,7 @@ Knowledge, in `reference/knowledge/`:
 | Page | Covers |
 |---|---|
 | `understanding-ditto.md` | What Ditto is, key characteristics, terminology, core principles |
-| `crdt-types.md` | CRDT types, how values are typed, merge semantics, what concurrent edits produce, rewriting an unchanged value, reordering on two devices, local write semantics |
+| `crdt-types.md` | CRDT types, how values are typed, merge semantics, what concurrent edits produce, rewriting an unchanged value, what syncs after offline edits, reordering on two devices, local write semantics |
 | `dql-functions.md` | Date and time, conditional, type checking, string, object, array, ANY/EVERY, conversion functions |
 | `system-reference.md` | System virtual collections, system parameters reference |
 | `platform-differences.md` | API differences between Flutter, JavaScript, Swift, and Kotlin |

@@ -328,6 +328,7 @@ Every row of a `SELECT` is materialized in the result. To keep results small on 
 - **Filter** in `WHERE` rather than in Dart.
 - **Page** with `ORDER BY ... LIMIT` (see [LIMIT and OFFSET](#limit-and-offset)).
 - **Count** with `SELECT COUNT(*)` instead of loading documents to call `.length`.
+- **Let large results go** once you have extracted what you need, and read very large sets in pages. In our testing with the JavaScript SDK 5.1.0 and 5.2.0, reading the values added about 1.1 KB per row to the JavaScript heap, and the process's resident memory did not shrink after the result had been released and garbage-collected. **Note (SDK 5.2.0):** the same result used about 30 to 35% less memory than on 5.1.0, in line with the release notes, which say that query results stay compact until they are read.
 - **Check existence** with `LIMIT 1`.
 
 ## Reading Data with SELECT
@@ -836,6 +837,8 @@ Future<void> importProducts(Ditto ditto, List<Map<String, dynamic>> products) as
 ```
 
 You can also list several parameters: `DOCUMENTS (:first), (:second)`. A multi-document insert is atomic: if one document fails (for example with an ID conflict under `FAIL`), none of them is inserted. Two documents with the same `_id` in one statement fail with `Expected unique document identifiers`.
+
+The number of statements matters more than the number of documents. In our testing with the JavaScript SDK 5.2.0, 2,000 documents took about 4 seconds as 2,000 awaited `INSERT` statements, 0.25 seconds as 2,000 statements in one transaction, and 17 ms as one statement with an array parameter (5.1.0 was similar). Import data in a few large statements, for example in chunks of a few hundred documents.
 
 #### ON ID CONFLICT
 
