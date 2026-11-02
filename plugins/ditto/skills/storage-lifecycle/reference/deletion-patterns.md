@@ -49,6 +49,7 @@ After merge:        {"_id": "abc123", "color": null}        // make, year: MISSI
 - Fields the update did not touch are MISSING (`make IS MISSING` is `true`) in SDK 5.1.0 and 5.2.0, although Ditto's [deletion documentation](https://docs.ditto.live/sdk/latest/crud/delete) shows them as `null`. Make code that reads husk documents handle both cases.
 - Husks count in `SELECT COUNT(*)`, but value filters exclude them.
 - Running the `DELETE` again after the merge removes the husk on every device.
+- **Note (SDK 5.1.0 and 5.2.0):** a counter in a husk is 0. In testing, deleting a stock document at 10 while another device added -3 left `{_id, cnt: 0}` in both orders, and `UNSET` of a map entry with a counter left `{qty: 0}`; a soft-delete flag kept `{cnt: 7, isDeleted: true}`. Remove counted documents and entries with a flag (`§ Husk documents`).
 
 To avoid husk documents:
 

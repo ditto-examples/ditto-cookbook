@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.11
+> **Version**: 2.12
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -47,9 +47,9 @@ Before you release the upgrade, check on every platform you ship that an install
 
 ### ☐ Open one Ditto instance per persistence directory and share it
 
-**What this means:** Open Ditto once at app start with `await Ditto.open(DittoConfig(...))` and pass the instance to the parts of the app that need it, for example through dependency injection or a service object. If several callers may open Ditto at the same time, let them share one in-flight `Future`. Never open a new instance per screen or request, and never reopen a directory before `close()` has completed.
+**What this means:** Open Ditto once at app start with `await Ditto.open(DittoConfig(...))` and pass the instance to the parts of the app that need it, for example through dependency injection or a service object. If several callers may open Ditto at the same time, let them share one in-flight `Future`. Never open a new instance per screen or request, and never reopen a directory before `close()` has completed. Never read, write, or delete files inside the persistence directory, and never copy it to another device; to remove the local data, delete the whole directory after `close()` has completed.
 
-**Why this matters:** In Flutter (SDK 5.1.0), a second `Ditto.open()` on a directory that is already open may never complete, and it does not throw. The code that awaits it then stops without any error. Only one `Ditto` instance can use a persistence directory at a time.
+**Why this matters:** In Flutter (SDK 5.1.0), a second `Ditto.open()` on a directory that is already open may never complete, and it does not throw. The code that awaits it then stops without any error. Only one `Ditto` instance can use a persistence directory at a time. The directory also holds the device's identity and its sync state, so a copied or partly deleted directory breaks sync without an error: in our testing with SDK 5.1.0 and 5.2.0, a copy and the original never converged, and a device that reopened its directory without `ditto_store` did not send some of its new documents.
 
 **Best-practices guide:** One instance per persistence directory
 
@@ -247,9 +247,9 @@ void configureTransports(Ditto ditto) {
 
 ### ☐ Release Ditto objects explicitly and await pending work before close()
 
-**What this means:** Release each Ditto object when you no longer need it: call `cancel()` on `StoreObserver`, `StoreObserverV2`, and `SyncSubscription` objects, and `stop()` on `PresenceObserver`, transport-condition observers, and `AttachmentFetcher` objects. Before `await ditto.close()`, await your own pending queries and transactions, and cancel your observers and the `StreamSubscription`s on their `changes` streams. Call `close()` only when the whole app no longer needs Ditto. Use the instance only from the isolate that opened it. To find observers that are never cancelled, check that the number of `ditto.store.observers` (SDK 5.2+; observers from `registerObserver` only) does not keep growing as the user moves between screens.
+**What this means:** Release each Ditto object when you no longer need it: call `cancel()` on `StoreObserver`, `StoreObserverV2`, and `SyncSubscription` objects, and `stop()` on `PresenceObserver`, transport-condition observers, and `AttachmentFetcher` objects. Before `await ditto.close()`, await your own pending queries and transactions, and cancel your observers and the `StreamSubscription`s on their `changes` streams. Where a write must reach another device before Ditto closes (at logout or at the end of a shift), wait with a timeout until its `commitID` is confirmed in `system:data_sync_info`. Call `close()` only when the whole app no longer needs Ditto. Use the instance only from the isolate that opened it. To find observers that are never cancelled, check that the number of `ditto.store.observers` (SDK 5.2+; observers from `registerObserver` only) does not keep growing as the user moves between screens.
 
-**Why this matters:** Ditto objects hold native resources, so do not rely on garbage collection to release them. `close()` does not clean up for you. It does not wait for in-flight `execute()` calls or transactions, which can then fail with `DittoClosedException`. It does not end an `await for` loop over the `changes` stream of a `StoreObserver` or `StoreObserverV2`, and once Ditto is closed, `cancel()` no longer does anything. It also resets `DittoLogger.customLogCallback` for the whole process.
+**Why this matters:** Ditto objects hold native resources, so do not rely on garbage collection to release them. `close()` does not clean up for you. It does not wait for in-flight `execute()` calls or transactions, which can then fail with `DittoClosedException`. Neither `close()` nor `sync.stop()` waits for changes that are still being sent: in our testing with SDK 5.1.0 and 5.2.0, a 1 MB write made right before `close()` did not leave the device until it synced again. It does not end an `await for` loop over the `changes` stream of a `StoreObserver` or `StoreObserverV2`, and once Ditto is closed, `cancel()` no longer does anything. It also resets `DittoLogger.customLogCallback` for the whole process.
 
 **Best-practices guide:** Resource Cleanup and Shutdown
 
@@ -443,7 +443,7 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
 
 **What this means:** Write only the fields that changed, with `UPDATE ... SET`. When a user edits a document, write only the fields that the user changed. Do not read a document, change it in Dart, and write the whole map back with `ON ID CONFLICT DO UPDATE`. For upserts and re-imports of data that another system owns, use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`. It skips fields whose values are unchanged, but it does not protect you from a stale in-memory copy: any old value that differs from the stored one is written back.
 
-**Why this matters:** A whole-document rewrite can undo another device's edit. Ditto syncs changes field by field, so every field you write takes part in the merge, and an unchanged value written by this device can win against a real concurrent change from another device. Rewriting every field also makes each change larger. Even an `UPDATE` that writes the value that is already stored counts as a mutation and can trigger observers.
+**Why this matters:** A whole-document rewrite can undo another device's edit. Ditto syncs changes field by field, so every field you write takes part in the merge, and an unchanged value written by this device can win against a real concurrent change from another device. Rewriting every field also makes each change larger. Even an `UPDATE` that writes the value that is already stored counts as a mutation and can trigger observers. In our testing with SDK 5.1.0 and 5.2.0, writing a field again with the value it already had replaced another device's earlier offline edit of that field.
 
 **Best-practices guide:** Prefer field-level updates over whole-document rewrites, ON ID CONFLICT
 
@@ -541,13 +541,13 @@ Future<void> replaceAddress(
 
 ### ☐ Use COUNTER for values that several devices change concurrently
 
-**What this means:** Change counters with `APPLY f INCREMENT BY n` (a negative `n` decrements). For an occasional correction, use `APPLY f RESTART WITH n`, and only while every device that changes the counter is in sync. Declare the counter in every statement, including the `INSERT` that sets the initial value, for example `UPDATE COLLECTION inventory (stockCount COUNTER) ...`. Counters hold integers only, so count money in minor units.
+**What this means:** Change counters with `APPLY f INCREMENT BY n` (a negative `n` decrements). For an occasional correction, use `APPLY f RESTART WITH n`, and only while every device that changes the counter is in sync. Declare the counter in every statement, including the `INSERT` that sets the initial value, for example `UPDATE COLLECTION inventory (stockCount COUNTER) ...`. Counters hold integers only, so count money in minor units. Create a counter document that every device creates on its own with `INITIAL DOCUMENTS`, and leave counter fields out of documents that you upsert or re-import.
 - Do not use counters for unique sequence numbers or for balances that must never go below zero
 - Do not use counters for values you can compute with `COUNT(*)`
 
-**Why this matters:** When two devices run `SET stock = stock - 1` concurrently, one of the decrements is lost. Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. An undeclared `INSERT` stores the initial value as a register, so a later increment starts a separate counter at 0. A `RESTART` discards every increment that the restarting device has not received yet, including increments that other devices make later while offline (SDK 5.1.0).
+**Why this matters:** When two devices run `SET stock = stock - 1` concurrently, one of the decrements is lost. Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together. An undeclared `INSERT` stores the initial value as a register, so a later increment starts a separate counter at 0. A `RESTART` discards every increment that the restarting device has not received yet, including increments that other devices make later while offline (SDK 5.1.0 and 5.2.0). An upsert or a plain `INSERT` that writes a counter value restarts the counter in the same way.
 
-**Best-practices guide:** Counters
+**Best-practices guide:** Counters, Writing documents that contain counters
 
 **Code Example**:
 

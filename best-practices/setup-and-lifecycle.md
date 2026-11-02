@@ -124,7 +124,10 @@ Only one `Ditto` instance can use a persistence directory at a time, and only on
 **❌ DON'T:**
 - Open a new instance per screen or per request.
 - Open the same directory twice, or reopen it before `close()` has completed.
-- Read or write files inside the persistence directory yourself.
+- Read, write, or delete files inside the persistence directory yourself. To remove the local data, delete the whole directory after `close()` has completed.
+- Copy a persistence directory to another device or installation while the original stays in use, for example by cloning a device image or an emulator snapshot, or by restoring a backup to a new device and keeping the old one.
+
+> **Note (SDK 5.1.0 and 5.2.0):** The persistence directory holds the device's identity (its peer key) and its record of what it has synced with each peer, so a partial or copied directory breaks sync without an error. In our testing, a copied directory and the original, syncing through the same hub, never converged: new documents reached every device, but updates of existing documents from one of the two did not reach the others (in all nine runs), and each device showed its own updates, so neither could notice. A device that reopened its directory after only the `ditto_store` subdirectory had been deleted kept its peer key, and some of the documents that it created before sync started never reached the hub, while later writes did. A device whose whole directory had been deleted came back with a new peer key and synced everything.
 
 ```dart
 // ✅ GOOD: One shared instance; concurrent callers await the same open.
@@ -492,8 +495,44 @@ To find what is still registered, `ditto.store.observers` (SDK 5.2+) returns the
 - **Idempotent**: calling it twice is safe. Use `ditto.isClosed` to check.
 - **Stops sync** and releases observers, subscriptions, and other resources. Afterwards, observers and subscriptions report `isCancelled == true`, `cancel()` and `stop()` do nothing, and every other API call throws `DittoClosedException`.
 - **Does not wait** for your pending work. In-flight `execute()` calls and transactions can fail with `DittoClosedException`, so await your own pending work before closing.
+- **Does not wait for changes that are still being sent.** An awaited write is in the local store, but it may not have reached any other device yet. `ditto.sync.stop()` does not wait for them either. Such changes stay on the device and sync the next time it syncs.
 - **Resets `DittoLogger.customLogCallback`** to `null` for the whole process. If you reopen Ditto, set it again after `Ditto.init()` and before `Ditto.open()` (see [Forwarding logs to your own pipeline](logging-and-observability.md#forwarding-logs-to-your-own-pipeline)).
 - **Does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2`**: an `await for` loop over it does not end when Ditto closes, and `cancel()` does nothing once Ditto is closed. Cancel observers and your `StreamSubscription`s (or break out of the loop) before closing.
+
+> **Note (SDK 5.1.0 and 5.2.0):** In our testing, a device connected to a hub wrote one document and then called `close()` or `sync.stop()`, exited, or was killed right after the write returned. The hub never received a 1 MB document this way, nor a 300 KB document over a slow link, and a 100-byte document arrived in most runs but not in all. When the device first waited until the hub's `synced_up_to_local_commit_id` reached the write's `commitID`, every write arrived (81 of 81 runs). A write that did not leave the device reached the hub when the device opened the same directory again, so it is lost only if the device never syncs again, for example because its store is deleted. Before you close Ditto at a point where data must reach another device (logout, the end of a shift, before deleting the local store), wait with a timeout until the write is confirmed, and tell the user if unsent changes remain:
+
+```dart
+// ✅ GOOD: Wait (with a timeout) until Ditto Server has confirmed a write.
+Future<bool> waitUntilServerHas(
+  Ditto ditto,
+  int commitId, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final result = await ditto.store.execute(
+      'SELECT * FROM system:data_sync_info WHERE is_ditto_server = true',
+    );
+    final confirmed = result.items.any((item) {
+      final documents = item.value['documents'];
+      if (documents is! Map) return false;
+      final synced = documents['synced_up_to_local_commit_id'];
+      return synced is int && synced >= commitId;
+    });
+    if (confirmed) return true;
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  return false; // The change stays on the device and syncs later.
+}
+
+/// [lastCommitId] is the commitID of the last write that must be uploaded.
+Future<void> endShift(Ditto ditto, int? lastCommitId) async {
+  if (lastCommitId != null && !await waitUntilServerHas(ditto, lastCommitId)) {
+    showError('Some changes have not been uploaded yet.');
+  }
+  await ditto.close();
+}
+```
 
 **Isolates**: `Ditto` and `Store` cannot be sent to another isolate. Use the instance from the isolate that opened it. On native platforms, `store.execute()` already runs queries on a background isolate managed by the SDK, so you do not need your own isolate for that.
 
@@ -526,7 +565,7 @@ class AppShutdown {
     await _changes?.cancel(); // close() does not end the changes stream
     _observer?.cancel();
     _subscription?.cancel();
-    await ditto.close(); // stops sync; does not wait for in-flight queries
+    await ditto.close(); // stops sync; waits neither for in-flight queries nor for unsent changes
   }
 }
 ```

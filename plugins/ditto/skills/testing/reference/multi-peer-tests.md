@@ -216,7 +216,8 @@ With the helpers above, or on real devices:
 - Two devices edit **different fields** and the **same field** of one document while offline, then reconnect.
 - Two devices add, edit, and remove entries of the same map (and, for comparison, the same array) while offline.
 - One device deletes a document while another updates it (expect a husk document, `§ Husk documents`), and the same with a soft delete.
-- A counter that one device recounts with `RESTART WITH` while another keeps incrementing it (`§ RESTART`).
+- A counter that one device recounts with `RESTART WITH`, or re-imports with an upsert, while another keeps incrementing it (`§ RESTART`, `§ Writing documents that contain counters`).
+- Shutdown right after a write: the code waits until the hub confirms the write's `commitID` before `close()`, and the hub then has the document (`§ Resource Cleanup and Shutdown`).
 - A device behind a relay with narrower subscriptions (`§ Multi-hop relay`).
 - A device that missed a soft delete while offline and then syncs only through a relay (`§ Soft delete, subscriptions, and cleanup`).
 - Attachments created offline and fetched by other peers later (`§ Availability`).

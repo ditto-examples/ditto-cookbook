@@ -138,6 +138,8 @@ After merge:        {"_id": "abc123", "color": null}        // make, year: MISSI
 
 In our testing, these shapes were consistent for both orders of operations, regardless of which device issued the `DELETE`.
 
+> **Note (SDK 5.1.0 and 5.2.0):** A counter in a husk document is 0. In our testing, one device deleted a stock document whose counter stood at 10 while another device added -3. In both orders, the document came back as `{_id, cnt: 0}`: the other fields were gone, and the count was neither 10 nor 7. `UNSET` of a map entry that held a counter left `{qty: 0}` the same way. With a soft-delete flag instead, the result was `{cnt: 7, isDeleted: true, name: 'tea'}`. Remove documents and entries that hold counts, such as stock items, with a flag (see [Soft Delete](#soft-delete)).
+
 A related effect can occur on a single device: inserting a document with `INITIAL DOCUMENTS` for an `_id` that was previously deleted can produce a document whose fields are all `null`, because the tombstone is newer than the "initial" data (see [Default Data with INITIAL Documents](data-modeling.md#default-data-with-initial-documents) for when this happens).
 
 To avoid husk documents:

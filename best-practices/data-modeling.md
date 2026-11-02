@@ -876,13 +876,28 @@ SET lastAdjustedAt = :now
 WHERE _id = :id
 ```
 
+### Writing documents that contain counters
+
+A value that a statement writes into a counter, other than with `INCREMENT BY`, works like `RESTART WITH`: it replaces the count, and increments that have not reached this device yet are discarded. That includes an upsert of a whole document and a plain `INSERT` of a document that another device has already created.
+
+> **Note (SDK 5.1.0 and 5.2.0):** In our testing, a counter stood at 7. While two devices were offline, one upserted the document with `cnt: 10` (`INSERT INTO COLLECTION t (cnt COUNTER) DOCUMENTS (:doc) ON ID CONFLICT DO UPDATE`) and the other added 5. After sync, the counter was 10 on both devices, whichever wrote first, exactly as with `RESTART WITH 10`. `DO UPDATE_LOCAL_DIFF` restarted the counter too, even with the value it already had. In another test, two offline devices each created the same stock document with `stockCount: 10` and each sold one item: with a plain `INSERT`, or `ON ID CONFLICT DO NOTHING`, the count ended at 9; with `INITIAL DOCUMENTS`, both sales were kept and it ended at 8.
+
+**✅ DO:**
+- Create a document that holds a counter on each device, such as a stock document that every till creates on first launch, with `INSERT INTO COLLECTION ... INITIAL DOCUMENTS`. `ON ID CONFLICT DO NOTHING` protects only against a copy that is already on this device.
+- Leave counter fields out of documents that you re-import or upsert (for example a product list from your backend), and apply a change to the count with `APPLY ... INCREMENT BY` the difference.
+- Count per item inside one document in map entries, with `APPLY items.<key>.qty INCREMENT BY n`. A path inside a map cannot be declared (`(items.sku1.qty COUNTER)` is a parser error), so write the statement without a declaration; in our testing, the increments of two offline devices were both kept, and an undeclared `SELECT` returned the count.
+- Remove documents and map entries that hold a counter with a flag, not with `DELETE` or `UNSET`: a deletion that merges with a concurrent increment leaves the count at 0 (see [Husk documents](deletion-and-storage.md#husk-documents)).
+
+**❌ DON'T:**
+- Upsert a whole document that contains a counter, declared or not. Without the declaration, the upsert stores the number as a separate REGISTER next to the counter, and the field then reads differently depending on whether a statement declares it (see [Keep type declarations consistent](#keep-type-declarations-consistent)).
+
 ### RESTART
 
 `RESTART WITH n` sets the counter to a specific value and `RESTART` sets it to zero. When devices perform `RESTART` operations concurrently, the last write wins.
 
 > **Note (SDK 5.1.0 and 5.2.0):** A `RESTART` discards **every increment that the restarting device had not received when it ran the restart**. That includes increments that other devices make *after* the restart (by the clock) until the restart reaches them. Only increments made after a device has received the restart are added to the new value. In our testing, a counter at 10 was restarted with 100 on one peer while another peer, which had not yet received the restart, incremented it by 5. The result was 100, whichever peer wrote first by the clock. Only when the restart had already synced before the increment was the result 105.
 
-A typical consequence: a stock recount with `RESTART WITH :counted` silently erases the sales that offline devices record until they receive the recount.
+A typical consequence: a stock recount with `RESTART WITH :counted` silently erases the sales that offline devices record until they receive the recount. Re-importing the stock list with an upsert has the same effect (see [Writing documents that contain counters](#writing-documents-that-contain-counters)).
 
 Use `RESTART` only for occasional corrections made by one authority while no other device is incrementing the same counter unsynced, for example a recount done while every till is online and in sync. If devices keep recording changes offline during a recount, keep the recounts and the changes as separate event documents and derive the stock from them (see [When counters are appropriate](#when-counters-are-appropriate)).
 

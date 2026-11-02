@@ -126,24 +126,18 @@ Choose `true` only when nearly every object needs replacement semantics and you 
 
 ### 4. Use COUNTER with APPLY for concurrent tallies (CRITICAL)
 
-Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add concurrent changes together. Use `APPLY`, not `SET`, and the `COLLECTION` keyword for declarations:
+Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add concurrent changes together. Use `APPLY`, not `SET`, and the `COLLECTION` keyword for declarations: `APPLY f INCREMENT BY n` (integer `n`; negative to decrement), `APPLY f RESTART WITH n` (concurrent `RESTART`s: last writer wins), `APPLY f RESTART` (zero).
 
-| Operation | Statement |
-|---|---|
-| Increment / decrement | `APPLY f INCREMENT BY n` (integer `n`; negative to decrement) |
-| Set a value | `APPLY f RESTART WITH n` (concurrent `RESTART`s: last writer wins) |
-| Reset to zero | `APPLY f RESTART` |
-
-**✅ DO**: initialize with `INSERT INTO COLLECTION products (viewCount COUNTER) DOCUMENTS (:product)` and increment with `UPDATE COLLECTION products (viewCount COUNTER) APPLY viewCount INCREMENT BY 1 WHERE _id = :id`.
+**✅ DO**: initialize with `INSERT INTO COLLECTION products (viewCount COUNTER) DOCUMENTS (:product)` (`INITIAL DOCUMENTS` if every device creates it) and increment with `UPDATE COLLECTION products (viewCount COUNTER) APPLY viewCount INCREMENT BY 1 WHERE _id = :id`.
 
 **❌ DON'T**:
 - `SET stock = stock - 1` (two devices both write 9 from 10; one decrement is lost).
 - Initialize with an undeclared `INSERT` (stored as a REGISTER; the first `INCREMENT` starts a new counter at 0), or overwrite with `SET` (use `RESTART WITH`).
-- Recalibrate with `RESTART WITH` while other devices change the counter offline: increments the restarting device has not received yet are discarded, even later ones (**Note (SDK 5.1.0 and 5.2.0)**). Recount only while all devices are in sync, or derive the value from recount and change events.
+- Write a counter value while devices hold unsynced increments: `RESTART WITH`, an upsert (even `DO UPDATE_LOCAL_DIFF`), or a plain `INSERT` of another device's document discards them, even later ones (**Note (SDK 5.1.0 and 5.2.0)**). Recount only while every device is in sync, or derive the value from events.
 - Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 
-`§ Counters` · Example: [examples/counter-patterns.dart](examples/counter-patterns.dart)
+`§ Counters` · Example: [examples/counter-patterns.dart](examples/counter-patterns.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (Pattern 5)
 
 ### 5. Generate collision-free document IDs (CRITICAL)
 
@@ -161,7 +155,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 - Put only immutable attributes into a composite `_id`; filter and index its subfields (`_id.storeId`).
 - Keep human-readable numbers (`#A-0042`) in a separate field: labels, not keys.
 
-`§ Document IDs`, `§ IDs are immutable`, `§ Never use sequential or timestamp-only IDs` · Examples: [examples/id-generation-patterns.dart](examples/id-generation-patterns.dart), [examples/composite-id-patterns.dart](examples/composite-id-patterns.dart), [examples/id-immutability-workaround.dart](examples/id-immutability-workaround.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (changing an ID, composite IDs, display numbers)
+`§ Document IDs` · Examples: [examples/id-generation-patterns.dart](examples/id-generation-patterns.dart), [examples/composite-id-patterns.dart](examples/composite-id-patterns.dart), [examples/id-immutability-workaround.dart](examples/id-immutability-workaround.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (changing an ID, composite IDs, display numbers)
 
 ### 6. Embed by default; JOIN separate collections locally (HIGH)
 

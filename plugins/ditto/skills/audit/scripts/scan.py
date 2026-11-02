@@ -220,13 +220,24 @@ LINE_RULES: List[LineRule] = [
         "sdk-setup",
         "Certificate Revocation (SDK 5.1+)",
     ),
+    LineRule(
+        "counter-upsert",
+        "CRITICAL",
+        rx(r"\bCOUNTER\b.*\bON\s+ID\s+CONFLICT\s+DO\s+UPDATE"),
+        "An upsert that writes a COUNTER field restarts the counter and discards "
+        "increments not yet received (SDK 5.1.0 and 5.2.0); leave counters out of "
+        "upserted documents and use APPLY ... INCREMENT BY",
+        "data-modeling",
+        "Writing documents that contain counters",
+    ),
     # --- HIGH: sync cost, memory, performance, risky settings ---
     LineRule(
         "upsert-do-update",
         "HIGH",
         rx(r"ON\s+ID\s+CONFLICT\s+DO\s+UPDATE\b(?!_LOCAL_DIFF)"),
-        "DO UPDATE rewrites unchanged fields and wakes observers; prefer "
-        "DO UPDATE_LOCAL_DIFF, and never write back a stale whole document",
+        "DO UPDATE rewrites unchanged fields, which overwrites earlier concurrent edits "
+        "of them and wakes observers; prefer DO UPDATE_LOCAL_DIFF, and never write back "
+        "a stale whole document",
         "query-sync",
         "ON ID CONFLICT",
     ),

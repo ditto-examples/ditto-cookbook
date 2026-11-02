@@ -23,6 +23,7 @@ and filter the matches by eye.
 | `small-peers-without-key` | CRITICAL | `DittoConfigConnectSmallPeersOnly\(\s*\)` | - | sdk-setup | § Small-Peers-Only Deployments |
 | `hardcoded-private-key` | CRITICAL | `privateKey\s*[:=]\s*['\"]` | - | sdk-setup | § Small-Peers-Only Deployments |
 | `revocation-check-disabled` | CRITICAL | `PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED['\"]?\s*(?:=\|:\|\bTO\b)\s*false` | case-insensitive | sdk-setup | § Certificate Revocation (SDK 5.1+) |
+| `counter-upsert` | CRITICAL | `\bCOUNTER\b.*\bON\s+ID\s+CONFLICT\s+DO\s+UPDATE` | case-insensitive | data-modeling | § Writing documents that contain counters |
 | `upsert-do-update` | HIGH | `ON\s+ID\s+CONFLICT\s+DO\s+UPDATE\b(?!_LOCAL_DIFF)` | case-insensitive | query-sync | § ON ID CONFLICT |
 | `strict-mode-enabled` | HIGH | `DQL_STRICT_MODE['\"]?\s*(?:=\|:\|\bTO\b)\s*true` | case-insensitive | data-modeling | § Strict Mode |
 | `restrict-subscriptions-disabled` | HIGH | `DQL_RESTRICT_SUBSCRIPTIONS['\"]?\s*(?:=\|:\|\bTO\b)\s*false` | case-insensitive | query-sync | § Subscription Rules |

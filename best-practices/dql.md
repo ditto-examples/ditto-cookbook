@@ -830,8 +830,8 @@ You can also list several parameters: `DOCUMENTS (:first), (:second)`. A multi-d
 |---|---|
 | `FAIL` (default when omitted) | The statement fails: `Identifier conflict on document "...": using FAIL conflict policy` |
 | `DO NOTHING` | The existing document is left unchanged; no error |
-| `DO UPDATE` | Fields from the new document are written into the existing one. Fields you do not supply are kept, and nested objects are merged. Every supplied field is written, even if the value is identical, so the document is reported as mutated and observers can fire again (a `SELECT *` observer on the collection does). |
-| `DO UPDATE_LOCAL_DIFF` | Same merge, but only fields whose values differ from the local document are written. If nothing changed, nothing is written and `mutatedDocumentIDs()` is empty. |
+| `DO UPDATE` | Fields from the new document are written into the existing one. Fields you do not supply are kept, and nested objects are merged. Every supplied field is written, even if the value is identical, so the document is reported as mutated and observers can fire again (a `SELECT *` observer on the collection does). A field written again with its current value still wins over an earlier concurrent edit of that field on another device. |
+| `DO UPDATE_LOCAL_DIFF` | Same merge, but only fields whose values differ from the local document are written. If nothing changed, nothing is written and `mutatedDocumentIDs()` is empty. A value from a stale copy differs from the local one and is written. |
 
 **✅ DO:**
 - Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports (for example when refreshing reference data from your backend).
@@ -840,7 +840,8 @@ You can also list several parameters: `DOCUMENTS (:first), (:second)`. A multi-d
 
 **❌ DON'T:**
 - Use `DO UPDATE` to "replace" a document. It merges; fields missing from the new document stay.
-- Use `DO UPDATE` for periodic re-upserts of unchanged data. Every run rewrites all supplied fields, records a mutation, and can wake observers.
+- Use `DO UPDATE` for periodic re-upserts of unchanged data. Every run rewrites all supplied fields, records a mutation, can wake observers, and overwrites concurrent edits of those fields that other devices made earlier.
+- Upsert documents that contain a `COUNTER` field. The upserted value restarts the counter and discards increments that have not reached this device yet (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
 
 ```dart
 // ✅ GOOD: Re-upserting unchanged data is a no-op
@@ -874,13 +875,14 @@ Future<void> doUpdateMerges(Ditto ditto) async {
 }
 ```
 
-**Why:** With the default `DQL_STRICT_MODE = false`, objects are stored as CRDT maps that merge field by field (see [Strict Mode](data-modeling.md#strict-mode) and [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)). Writing only what changed keeps sync deltas small and reduces the chance that an unchanged value overwrites a concurrent edit from another peer.
+**Why:** With the default `DQL_STRICT_MODE = false`, objects are stored as CRDT maps that merge field by field (see [Strict Mode](data-modeling.md#strict-mode) and [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)). A field that is written again, even with the value it already has, is a new write that wins over an earlier concurrent edit of that field on another device (see [Writing a value that did not change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change)). Writing only what changed avoids that, and it keeps sync deltas small.
 
 #### INITIAL DOCUMENTS
 
 `INSERT INTO c INITIAL DOCUMENTS (...)` seeds default data, such as default settings or a starter catalog, that every peer may create independently. The syntax is the same as for `DOCUMENTS`: pass each document as a parameter.
 
 - If no document with that `_id` exists locally, it is inserted; if one exists, nothing happens and no error is raised.
+- When several devices create the same document independently, the initial values do not replace what other devices have already changed. This makes `INITIAL DOCUMENTS` the way to create a document with a `COUNTER` on each device (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
 - `ON ID CONFLICT` cannot be combined with `INITIAL DOCUMENTS` (parser error), and the source cannot be a `SELECT`.
 
 How initial documents merge across peers, and what happens after a seeded document is deleted or evicted, is described in [Default Data with INITIAL Documents](data-modeling.md#default-data-with-initial-documents).
@@ -1015,7 +1017,7 @@ Future<void> replaceAddress(
 
 **❌ DON'T:**
 - Read a document, modify it in Dart, and write the whole map back with `INSERT ... ON ID CONFLICT DO UPDATE`.
-- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well.
+- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier.
 
 ```dart
 // ❌ BAD: Read-modify-write of the whole document
@@ -1046,7 +1048,7 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 
 The `coalesce` in the condition keeps documents whose `status` is missing or `null` eligible for the update; a plain `status != :status` would skip them (see [MISSING and NULL](#missing-and-null)).
 
-**Why:** Ditto syncs changes at field level. Rewriting a whole document writes every field again: it makes the change larger, and an unchanged field written by this device can win a merge against a real concurrent change made on another device. Field-level updates touch only what the user actually changed.
+**Why:** Ditto syncs changes at field level, and every field that a statement writes counts as a new write, even when its value did not change. Rewriting a whole document therefore overwrites every concurrent edit that another device made earlier to any of its fields, and it makes the change larger (see [Writing a value that did not change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change)). Field-level updates touch only what the user actually changed.
 
 ### RETURNING (SDK 5.1+)
 

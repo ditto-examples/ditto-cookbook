@@ -228,12 +228,13 @@ Embedding remains the default modeling choice; see `§ Relationships: Embedding,
 |---|---|
 | `FAIL` (default) | Fails: `Identifier conflict on document "...": using FAIL conflict policy` |
 | `DO NOTHING` | Existing document unchanged; no error |
-| `DO UPDATE` | Supplied fields written (merged, nested objects merged) even if identical; mutation recorded, observers can fire again |
+| `DO UPDATE` | Supplied fields written (merged, nested objects merged) even if identical; mutation recorded, observers can fire again, and a rewritten value wins over an earlier concurrent edit on another device |
 | `DO UPDATE_LOCAL_DIFF` | Same merge, only differing fields written; nothing written if nothing changed (for upserts and re-imports; it does not protect a stale in-memory copy) |
 
 - A multi-document insert is atomic. Two documents with the same `_id` in one statement fail with `Expected unique document identifiers`.
 - No `INSERT` policy removes fields; use `UNSET`.
-- `INSERT INTO c INITIAL DOCUMENTS (:doc)` inserts only if no document with that `_id` exists locally (no error otherwise). It cannot be combined with `ON ID CONFLICT`. It does not keep data off the network; subscriptions decide that.
+- Do not upsert a document that contains a `COUNTER` field: the value restarts the counter and discards increments not yet received, also with `DO UPDATE_LOCAL_DIFF` (`§ Writing documents that contain counters`).
+- `INSERT INTO c INITIAL DOCUMENTS (:doc)` inserts only if no document with that `_id` exists locally (no error otherwise). It cannot be combined with `ON ID CONFLICT`. It does not keep data off the network; subscriptions decide that. Use it to create a document with a counter on each device.
 - `INSERT ... SELECT` (SDK 5.1+): each result row becomes a document; projection aliases become field names; a projected `_id` is used as the document ID. Do not wrap the `SELECT` in parentheses or `DOCUMENTS (...)`.
 
 ```sql

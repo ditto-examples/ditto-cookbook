@@ -56,6 +56,20 @@ The table shows how two devices' edits to the same document merged in our testin
 | Adds a 3 MiB field | Adds another 3 MiB field | A 6 MiB document on both devices, above the hard limit; every later `UPDATE` of it fails (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)) |
 | `INSERT ... INITIAL DOCUMENTS` | Same `_id`, different content | Fields are combined; a field both set is decided by its value, not by time (see [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents)) |
 
+## Writing a value that did not change
+
+A write records a value with a new timestamp even when the value is the same as before, so it wins over an earlier concurrent edit of that field on another device. In our testing with SDK 5.1.0 and 5.2.0, the document `{f1: 'old', f2: 'x'}` was on two devices. Device B, offline, set `f1 = 'B-edit'`. Afterwards device A, which still held `f1: 'old'`, changed `f2`. After sync, `f1` was:
+
+| How device A wrote | `f1` after sync |
+|---|---|
+| The whole document with `ON ID CONFLICT DO UPDATE` | `'old'`: B's edit was lost |
+| `UPDATE ... SET f1 = 'old', f2 = :value` (`f1` unchanged) | `'old'`: B's edit was lost |
+| The whole document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` | `'B-edit'` |
+| `UPDATE ... SET f2 = :value` | `'B-edit'` |
+| A copy read before B's edit arrived, written with `DO UPDATE_LOCAL_DIFF` after it arrived | `'old'`: B's edit was lost, because the stale value differed from the local one |
+
+Write only the fields that the user changed, and never write back values from a copy that may be stale (see [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites)). Counters are the exception to "the latest write wins": a value written into a counter restarts it (see [Writing documents that contain counters](../best-practices/data-modeling.md#writing-documents-that-contain-counters)).
+
 ## Local write semantics you must know
 
 Several MAP behaviors differ from what developers expect from a JSON document store. With the default settings:

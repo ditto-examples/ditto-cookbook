@@ -417,7 +417,7 @@ SELECT * FROM system:data_sync_info WHERE is_ditto_server = true
 - Use sync status to **enhance** the user experience (an "uploaded" check mark, a pending-changes badge), never to block the user from working.
 - Query `system:data_sync_info` with `execute` when you need a snapshot (for example, when the user opens a status screen).
 - Keep observer callbacks on `system:data_sync_info` trivial and update the UI only when the derived value actually changes.
-- Track only the commit IDs that matter (payments, submitted forms) and forget them once confirmed.
+- Track only the commit IDs that matter (payments, submitted forms) and forget them once confirmed. Wait for such an ID before you close Ditto at a point where the write must reach another device; closing does not wait for changes that are still being sent (see [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown)).
 - Check `mutatedDocumentIDs()` before tracking a `commitID`; skip statements that changed nothing.
 
 **❌ DON'T:**

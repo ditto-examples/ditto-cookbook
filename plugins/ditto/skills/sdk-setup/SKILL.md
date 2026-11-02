@@ -51,7 +51,7 @@ Only one `Ditto` instance can use a persistence directory at a time.
 > **Note (SDK 5.1.0):** In Flutter, `Ditto.open()` on a directory that is already open may never complete instead of throwing.
 
 **✅ DO**: open at app start and pass the instance through DI or a service; share one in-flight `Future` for concurrent callers (reset it on failure); in debug builds use a randomized `persistenceDirectory` to avoid lock conflicts after a hot restart (each starts empty), and a fixed one in release.
-**❌ DON'T**: open per screen or request; reopen before `close()` completes; touch files in the persistence directory.
+**❌ DON'T**: open per screen or request; reopen before `close()` completes; touch, partly delete, or copy the persistence directory (sync silently diverges).
 
 `Ditto.open()` initializes the SDK (SDK 5.1+). Call `await Ditto.init()` first only before `Ditto.openSync()`, `DittoLogger`, or `Ditto.defaultRootDirectory` (otherwise "Ditto not initialized"), or for custom Web asset URLs.
 
@@ -166,9 +166,9 @@ Certificate revocation (SDK 5.1+) covers server-authenticated identities only an
 
 ### 11. Shut down in order, only when the app is done with Ditto (HIGH)
 
-Release explicitly: `cancel()` observers and subscriptions, `stop()` presence and transport-condition observers and fetchers, `connectionRequestHandler = null`. `ditto.close()` is idempotent, stops sync, and releases resources (later calls throw `DittoClosedException`), but it **does not** wait for in-flight `execute()` or transactions, **does not** end `changes` streams, and **resets** `DittoLogger.customLogCallback`.
+Release explicitly: `cancel()` observers and subscriptions, `stop()` presence and transport-condition observers and fetchers, `connectionRequestHandler = null`. `ditto.close()` is idempotent, stops sync, and releases resources (later calls throw `DittoClosedException`), but it **does not** wait for in-flight `execute()`, transactions, or unsent changes, **does not** end `changes` streams, and **resets** `DittoLogger.customLogCallback`.
 
-**✅ DO**: await pending work, cancel `StreamSubscription`s and observers, then `close()`; set the log callback again before reopening. `ditto.store.observers` (SDK 5.2+; `registerObserver` only) growing across screens reveals observers never cancelled.
+**✅ DO**: await pending work (if data must reach a peer, its confirmed `commitID`), cancel `StreamSubscription`s and observers, then `close()`; set the log callback again before reopening. `ditto.store.observers` (SDK 5.2+; `registerObserver` only) growing across screens reveals observers never cancelled.
 **❌ DON'T**: rely on garbage collection; send `Ditto` or `Store` to another isolate.
 
 `§ Resource Cleanup and Shutdown`, `§ Forwarding logs to your own pipeline` · Example: `AppShutdown` in [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#resource-cleanup-and-shutdown)

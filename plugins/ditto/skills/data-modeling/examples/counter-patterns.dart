@@ -14,7 +14,7 @@
 // This file declares the counter in every statement, which works with strict
 // mode on or off and keeps declarations consistent.
 //
-// Guide: § Counters
+// Guide: § Counters, § Writing documents that contain counters
 
 import 'package:ditto_live/ditto_live.dart';
 
@@ -73,11 +73,11 @@ Future<void> sellOne(Ditto ditto, String itemId) async {
 /// as recalibrating stock after a physical count, run only while every device
 /// that changes the counter is online and in sync.
 ///
-/// Note (SDK 5.1.0 and 5.2.0): a RESTART discards every increment that this device had
-/// not received when it ran the restart, including increments that other
-/// devices make later (by the clock) until the restart reaches them. If tills
-/// keep selling offline during a recount, store recounts and sales as event
-/// documents and derive the stock instead.
+/// Note (SDK 5.1.0 and 5.2.0): a RESTART discards every increment that this
+/// device had not received when it ran the restart, including increments that
+/// other devices make later (by the clock) until the restart reaches them. If
+/// tills keep selling offline during a recount, store recounts and sales as
+/// event documents and derive the stock instead.
 Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
   await ditto.store.execute(
     '''
@@ -86,6 +86,20 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
     WHERE _id = :id
     ''',
     arguments: {'id': itemId, 'counted': counted},
+  );
+}
+
+/// ✅ GOOD: A document with a counter that every device creates on its own,
+/// such as an item's stock on first launch, is seeded with INITIAL DOCUMENTS.
+/// A plain INSERT (or ON ID CONFLICT DO NOTHING) on a second device restarts
+/// the counter and discards sales that the first device has not synced yet.
+Future<void> seedStock(Ditto ditto, String itemId, int initialStock) async {
+  await ditto.store.execute(
+    'INSERT INTO COLLECTION inventory (stockCount COUNTER) '
+    'INITIAL DOCUMENTS (:item)',
+    arguments: {
+      'item': {'_id': itemId, 'stockCount': initialStock},
+    },
   );
 }
 
@@ -134,3 +148,19 @@ Future<void> resetViewsIncorrectly(Ditto ditto, String productId) async {
 //   "Expected 1.5 to be an integer value").
 //   Count in minor units such as cents.
 // - Mixing COUNTER and the legacy PN_INCREMENT operator on one field.
+
+/// ❌ BAD: Re-importing the stock list with an upsert. The imported value
+/// restarts the counter like RESTART WITH and discards the sales that offline
+/// tills have not synced yet, with DO UPDATE_LOCAL_DIFF as well. Leave
+/// stockCount out of imported documents and apply the difference with
+/// APPLY stockCount INCREMENT BY.
+Future<void> importStockIncorrectly(
+  Ditto ditto,
+  Map<String, dynamic> item,
+) async {
+  await ditto.store.execute(
+    'INSERT INTO COLLECTION inventory (stockCount COUNTER) '
+    'DOCUMENTS (:item) ON ID CONFLICT DO UPDATE',
+    arguments: {'item': item},
+  );
+}

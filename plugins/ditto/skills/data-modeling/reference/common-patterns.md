@@ -8,6 +8,7 @@ Frequently needed patterns that complement [SKILL.md](../SKILL.md). Targets Ditt
 - [Pattern 2: Event History and Audit Logs](#pattern-2-event-history-and-audit-logs)
 - [Pattern 3: Document Structure](#pattern-3-document-structure)
 - [Pattern 4: Keeping Documents Small](#pattern-4-keeping-documents-small)
+- [Pattern 5: Documents That Contain Counters](#pattern-5-documents-that-contain-counters)
 
 ---
 
@@ -19,7 +20,7 @@ Write only what changed. A field-level `UPDATE` touches only the named fields, s
 |---|---|
 | `FAIL` (default) | The statement fails |
 | `DO NOTHING` | Existing document unchanged; use for "create if absent" |
-| `DO UPDATE` | Supplied fields are written and merged, **even identical values**: the document is reported as mutated and observers can fire again |
+| `DO UPDATE` | Supplied fields are written and merged, **even identical values**: the document is reported as mutated, observers can fire again, and a rewritten value wins over an earlier concurrent edit of that field on another device |
 | `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; nothing is written when nothing changed. Use it for upserts and re-imports; it does not protect a stale in-memory copy |
 
 No `INSERT` policy deletes fields: use `UNSET`.
@@ -76,6 +77,7 @@ Future<void> replaceAddress(
 **❌ DON'T:**
 - Save a stale in-memory copy with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`. `DO UPDATE` gives every supplied field a new timestamp; `DO UPDATE_LOCAL_DIFF` writes back any old value that differs from the stored one. Both can override a concurrent change from another device.
 - Use `DO UPDATE` for periodic re-upserts of unchanged data (for example, refreshing reference data from a backend).
+- Upsert a document that contains a `COUNTER` field, with either policy. The value restarts the counter and discards increments that have not reached this device yet (see Pattern 5).
 - Expect `DO UPDATE` to replace a document or an object: it merges.
 
 Guide: `§ INSERT and Conflict Handling`, `§ Local write semantics you must know`. Example: [field-level-updates.dart](../examples/field-level-updates.dart).
@@ -171,3 +173,16 @@ WHERE _id = :id
 **❌ DON'T:** embed base64-encoded files, append to a nested map forever, or raise the hard limit to make a large document fit. If you change either limit, change it on every peer in the same release. (In SDK 5.1.0 and 5.2.0, a hard limit set below the soft limit is not enforced.)
 
 Guide: `§ Document Size Limits`, `§ Attachments`. Example: [document-size.dart](../examples/document-size.dart).
+
+## Pattern 5: Documents That Contain Counters
+
+A value written into a counter other than with `INCREMENT BY` works like `RESTART WITH`: increments that have not reached this device yet are discarded (`§ Writing documents that contain counters`). **Note (SDK 5.1.0 and 5.2.0)**: in testing, a declared upsert of `cnt: 10` over a counter at 7 that another offline device increased by 5 gave 10 on both devices, also with `DO UPDATE_LOCAL_DIFF`; two offline devices that each created the same stock document (10) with a plain `INSERT` and each sold one item ended at 9, and with `INITIAL DOCUMENTS` at 8.
+
+**✅ DO:**
+- Create a counter document that every device creates on its own with `INSERT INTO COLLECTION ... (f COUNTER) INITIAL DOCUMENTS (:doc)` ([examples/counter-patterns.dart](../examples/counter-patterns.dart), `seedStock`).
+- Leave counter fields out of re-imported or upserted documents; apply changes with `APPLY f INCREMENT BY`.
+- Count per item inside one document with map entries: `APPLY items.<key>.qty INCREMENT BY n`, without a declaration (a nested path cannot be declared; the declaration is a parser error). Concurrent increments from two offline devices were both kept.
+- Remove counted documents and entries with a flag: a `DELETE` or `UNSET` that merges with a concurrent increment leaves the count at 0 (`§ Husk documents`).
+
+**❌ DON'T:**
+- Upsert a whole document with a counter. Undeclared, the number is stored as a separate REGISTER next to the counter, and reads then depend on the declaration (`§ Keep type declarations consistent`).

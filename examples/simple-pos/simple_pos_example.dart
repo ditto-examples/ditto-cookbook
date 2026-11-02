@@ -256,7 +256,10 @@ class PosService {
   }
 
   /// Call only when the whole app no longer needs Ditto. Await your own
-  /// pending writes first: close() does not wait for in-flight work.
+  /// pending writes first: close() does not wait for in-flight work, nor for
+  /// changes that are still being sent. Those changes stay on the device and
+  /// sync the next time the app runs; if they must reach the server first,
+  /// wait for their commitID (guide: § Resource Cleanup and Shutdown).
   Future<void> close() async {
     _evictionTimer?.cancel();
     _menuSubscription?.cancel();
