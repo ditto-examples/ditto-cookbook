@@ -39,10 +39,10 @@ The client-side setup (expiration handler, `login`, `AuthResponse.exception`, `l
 `DittoConfigConnectSmallPeersOnly(privateKey: key)` lets devices sync without Ditto Server, for example in air-gapped or closed networks. All peers share one private key and trust any peer that holds it.
 
 **✅ DO:**
-- Always pass a `privateKey` in production. Without it, peers do not authenticate each other: any device that runs the SDK with your Database ID (and a valid offline license token) can join the mesh and read and write all data. The SDK's API reference describes this mode as unencrypted in transit. In our testing with SDK 5.1.0 over TCP, the traffic was TLS-wrapped, but no shared secret authenticated the peers, so treat the mode as unprotected.
+- Always pass a `privateKey` in production. Without it, peers do not authenticate each other: any device that runs the SDK with your Database ID (and a valid offline license token) can join the mesh and read and write all data. The SDK's API reference describes this mode as unencrypted in transit. In our testing with SDK 5.1.0 and 5.2.0 over TCP, the traffic was TLS-wrapped with and without a key (a marker string written to a document did not appear in the captured bytes), but without a key no shared secret authenticated the peers, so treat the mode as unprotected.
 - Roll out a new key to all devices together. Peers with different keys, or a peer with a key and one without, never connect. No API reports this; only `WARN` log lines appear on every retry (`invalid peer certificate: BadSignature`, or `DecryptError`).
 - Distribute the key through a controlled channel, such as mobile device management (MDM) or secure provisioning, and keep it in secure storage on the device.
-- Generate the key with Ditto's `ditto-authtool` or OpenSSL as described in the [authentication documentation](https://docs.ditto.live/key-concepts/authentication-and-authorization).
+- Generate the key with Ditto's `ditto-authtool` or OpenSSL as described in the [authentication documentation](https://docs.ditto.live/key-concepts/authentication-and-authorization). `privateKey` takes a P-256 key with a named curve, as PKCS#8 DER encoded in base64 on one line: `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER | base64` (on Linux, `base64 -w 0`). In our testing with SDK 5.1.0 and 5.2.0, `Ditto.open()` failed with a PEM file (`Invalid symbol 45, offset 0`), and with a key in SEC1 DER or with explicit curve parameters (`Invalid Private Key`), which is what `openssl genpkey` produces by default with LibreSSL on macOS.
 - Set the offline license token from Ditto with `ditto.setOfflineOnlyLicenseToken()` before `ditto.sync.start()`, and distribute a new token well before the current one expires. The expiry is checked against the device clock when the token is set: in our testing with SDK 5.1.0 and 5.2.0, a device whose clock was past the expiry failed with `activation/license-token-expired` and could not start sync, while a running device kept syncing after its clock passed the expiry.
 
 **❌ DON'T:**
@@ -187,10 +187,10 @@ See the [revocations documentation](https://docs.ditto.live/cloud/revocations) f
 
 You can decide per connection whether to accept a peer, for example based on the signed `identityServiceMetadata`. The handler must return `allow` or `deny`. A handler that does not respond within about 10 seconds denies the connection, so keep it fast.
 
-In our testing with SDK 5.1.0, the handler behaved as follows:
+In our testing with SDK 5.1.0 and 5.2.0, the handler behaved as follows:
 - **Both directions:** the handler runs not only for incoming connections but also for connections that this device initiates, and `deny` blocks those too.
 - **New connections only:** switching the handler to `deny` does not drop existing connections. Setting it back to `null` lets peers in again.
-- **Retries:** a denied peer retries about once per second, so the handler runs about once per second for each rejected peer. The rejected peer gets no API signal; only an error appears in its log.
+- **Retries:** a denied peer retries at its connection retry interval (`TransportConfig.connect.retryInterval`, 5 seconds by default), so the handler runs again at that interval for each rejected peer: in our testing, at 0.15, 5.3, and 10.4 seconds after the peer opened. The rejected peer gets no API signal; only an error appears in its log.
 - **Errors:** a handler that throws, or whose `Future` fails, denies the connection, but only after the 10-second timeout (observed with the JavaScript SDK). Catch errors and return `deny` explicitly.
 - **Small-peers-only mode:** `identityServiceMetadata` is always empty, because there is no authentication webhook. `peerMetadata` is available, but each peer sets its own, so it is not a security check.
 

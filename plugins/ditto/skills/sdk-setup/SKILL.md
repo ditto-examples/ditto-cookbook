@@ -184,7 +184,7 @@ Only Swift and Kotlin can encrypt the local store at rest (SDK 5.2+): a 32-byte 
 
 ### 13. Filter connections with a fast, non-throwing handler (MEDIUM)
 
-`ditto.presence.connectionRequestHandler` returns `allow` or `deny`; no answer in about 10 seconds denies. In testing with SDK 5.1.0, it also ran for connections this device initiated and did not drop existing ones; `identityServiceMetadata` was empty in small-peers-only mode.
+`ditto.presence.connectionRequestHandler` returns `allow` or `deny`; no answer in about 10 seconds denies. In testing with SDK 5.1.0 and 5.2.0, it also ran for connections this device initiated and did not drop existing ones; `identityServiceMetadata` was empty in small-peers-only mode.
 
 **✅ DO**: catch errors and return `deny` at once; keep permissions as the primary control.
 

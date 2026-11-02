@@ -151,15 +151,18 @@ Multicast is an opt-in transport that sends each update once to a multicast grou
 
 `ditto.presence` shows which peers this device can see and how it is connected to them, which is useful for connection indicators and diagnostics.
 
-- `ditto.presence.observe((graph) { ... })` returns a `PresenceObserver`. The callback is called with the current graph shortly after `observe()` returns (asynchronously), and again whenever peers appear, disappear, or change their connections. Updates are batched: in our testing with SDK 5.1.0 and 5.2.0, callbacks arrived at intervals of about 1 second, so a change reached the callback within about 1 second (a joining peer after about 1.2 seconds), and one callback can cover several changes. The callback was also called with an unchanged graph during the first few seconds and then about every 15 seconds, so compare the graph with the previous one before you rebuild the UI. A peer in the graph is not necessarily up to date: over TCP limited to 20 KB/s, a peer transferring a 500 KB attachment stayed in the graph while other changes waited up to 25 s (in testing). Two connections to a peer in the graph do not mean that sync continues when one stalls: each device sends over one connection, and when it stalls without closing, sync waits until it is dropped (about 7 s for TCP and 15 s for WebSocket in testing with SDK 5.1.0 and 5.2.0); a closed connection is replaced at once. Call `stop()` on the observer when you no longer need it.
-- `graph.localPeer` describes this device, and `graph.remotePeers` is a `Set<Peer>` of the other known peers, including peers that are reachable only through other peers. Each `Peer` has `peerKey`, `deviceName`, `isConnectedToDittoServer`, `connections`, and `peerMetadata`. To tell direct neighbors apart, check whether one of a peer's `connections` has this device's `peerKey` as `peer1` or `peer2`.
+- `ditto.presence.observe((graph) { ... })` returns a `PresenceObserver`. The callback is called with the current graph shortly after `observe()` returns (asynchronously), and again whenever peers appear, disappear, or change their connections. Updates are batched: in our testing with SDK 5.1.0 and 5.2.0, callbacks arrived at intervals of about 1 second, so a change reached the callback within about 1 second (a joining peer after about 1.2 seconds), and one callback can cover several changes. Peers that keep coming and going do not raise the rate: in our testing with SDK 5.0.3, 5.1.0, and 5.2.0, while ten peers each rejoined about every 3 seconds (about six changes a second), a stable device's callback still ran about once per second, its count of `remotePeers` swung between 1 and 11, and its own updates still reached the hub within a few milliseconds. Show a connection state only after it has held for a few seconds, not the raw count. The callback was also called with an unchanged graph during the first few seconds and then about every 15 seconds, so compare the graph with the previous one before you rebuild the UI. A peer in the graph is not necessarily up to date: over TCP limited to 20 KB/s, a peer transferring a 500 KB attachment stayed in the graph while other changes waited up to 25 s (in testing). Two connections to a peer in the graph do not mean that sync continues when one stalls: each device sends over one connection, and when it stalls without closing, sync waits until it is dropped (about 7 s for TCP and 15 s for WebSocket in testing with SDK 5.1.0 and 5.2.0); a closed connection is replaced at once. Call `stop()` on the observer when you no longer need it.
+- `graph.localPeer` describes this device, and `graph.remotePeers` is a `Set<Peer>` of the other known peers, including peers that are reachable only through other peers. Each `Peer` has `peerKey`, `deviceName`, `isConnectedToDittoServer`, `connections`, and `peerMetadata`. To tell direct neighbors apart, check whether one of a peer's `connections` has this device's `peerKey` as `peer1` or `peer2`: a remote peer's `connections` lists all of that peer's connections, not only the one to this device (seen from a client of a TCP hub, the hub had one connection per client). `connectionType` has no TCP value: in our testing with the JavaScript SDK, TCP connections, including those to a hub, were reported as `AccessPoint` (`ConnectionType.accessPoint` in Flutter).
+- A peer that stops responding without closing its connection stays in the graph for several seconds. In our testing over TCP with SDK 5.1.0 and 5.2.0, after the network went silent, both sides removed the other after about 7.3 seconds, and a shorter outage (up to 6.5 seconds) was not noticed at all: the writes made during it arrived about 60 ms after the network came back. A suspended process (5.0.3 to 5.2.0) disappeared after about 9.1 seconds, and a process that ended, whose connection the operating system closes, within 0.25 seconds. Other transports, such as Bluetooth LE, may take a different time; expect a connection indicator to lag by this much.
 - `ditto.presence.graph` returns the current graph once, without observing.
-- `ditto.presence.peerMetadata` sets metadata for this device (a JSON object of at most 4096 bytes when encoded; larger values throw). It reaches every peer in the mesh, but a peer that has just appeared can show empty `peerMetadata` until its metadata arrives.
+- `ditto.presence.peerMetadata` sets metadata for this device (a JSON object of at most 4096 bytes when encoded; larger values throw). It reaches every peer in the mesh, but a peer that has just appeared can show empty `peerMetadata` until its metadata arrives. Setting it again replaces the whole object; keys are not merged. Changes reach other peers about once per second, as the value current at that moment: in our testing with SDK 5.1.0 and 5.2.0, 50 changes made 20 ms apart reached the other peer as three values, one second apart, and the last one arrived about 1.1 seconds after it was set.
+- `ditto.deviceName` is the name that other peers see as `Peer.deviceName`. According to the API reference, it defaults to the host name. Set it before `ditto.sync.start()`: in our testing with SDK 5.1.0 and 5.2.0, a change made while sync was running did not reach other peers until sync was stopped and started again. Other peers also see each peer's `os` and `dittoSdkVersion`, which helps to find devices that run an older SDK.
 
 **✅ DO:**
 - Stop presence observers when the screen or feature that uses them goes away.
 - Keep peer metadata small and non-sensitive, such as a role or a display name. Every connected device receives about twice its size whenever a device joins or changes it: in our testing over TCP, 3 KB of metadata cost each device about 6 KiB per change, so a device joining 30 others that each had 3 KB received about 180 KiB, about 9 seconds over Bluetooth LE. Write large or frequently changing values (positions, task state) to documents instead.
-- Set peer metadata once at startup (for example `ditto.presence.peerMetadata = {'role': 'cashier'};`), not from individual screens.
+- Set peer metadata once at startup (for example `ditto.presence.peerMetadata = {'role': 'cashier'};`), not from individual screens. Other peers see at most about one change per second.
+- Set `ditto.deviceName` to a name that identifies the device for your support staff and not a person, before you start sync.
 
 **❌ DON'T:**
 - Put secrets, tokens, or personal data in peer metadata. Peer metadata, and the `identityServiceMetadata` returned by your authentication webhook, are shared with every peer in the mesh, not only with directly connected peers.
@@ -177,13 +180,17 @@ class PeerList extends StatefulWidget {
 class _PeerListState extends State<PeerList> {
   late final PresenceObserver _presence;
   List<Peer> _peers = const [];
+  String _localPeerKey = '';
 
   @override
   void initState() {
     super.initState();
     _presence = widget.ditto.presence.observe((graph) {
       if (!mounted) return;
-      setState(() => _peers = graph.remotePeers.toList());
+      setState(() {
+        _localPeerKey = graph.localPeer.peerKey;
+        _peers = graph.remotePeers.toList();
+      });
     });
   }
 
@@ -199,12 +206,27 @@ class _PeerListState extends State<PeerList> {
           for (final peer in _peers)
             ListTile(
               title: Text(peer.deviceName),
-              subtitle: Text(peer.isConnectedToDittoServer
-                  ? 'Connected to Ditto Server'
-                  : '${peer.connections.length} connections'),
+              subtitle: Text(_route(peer)),
             ),
         ],
       );
+
+  // A peer's connections include its links to other peers, so only the
+  // connections that have this device at one end make it a direct neighbor.
+  String _route(Peer peer) {
+    final directTypes = {
+      for (final connection in peer.connections)
+        if (connection.peer1 == _localPeerKey ||
+            connection.peer2 == _localPeerKey)
+          connection.connectionType.name,
+    };
+    final route = directTypes.isEmpty
+        ? 'Through other peers'
+        : 'Direct (${directTypes.join(', ')})';
+    return peer.isConnectedToDittoServer
+        ? '$route, connected to Ditto Server'
+        : route;
+  }
 }
 ```
 

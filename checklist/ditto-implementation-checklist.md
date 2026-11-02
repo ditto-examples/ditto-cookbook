@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.23
+> **Version**: 2.24
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1569,7 +1569,7 @@ Future<AttachmentFetcher?> showPhoto(Ditto ditto, String photoId) async {
 
 ### ☐ Provision a privateKey for small-peers-only deployments
 
-**What this means:** In production, always pass a `privateKey` to `DittoConfigConnectSmallPeersOnly`. Distribute the key through a controlled channel such as MDM or secure provisioning, and keep it and the offline license token in secure storage. Never hardcode keys, tokens, or API keys in source code.
+**What this means:** In production, always pass a `privateKey` to `DittoConfigConnectSmallPeersOnly`. Distribute the key through a controlled channel such as MDM or secure provisioning, and keep it and the offline license token in secure storage. Pass the key as one line of base64-encoded PKCS#8 DER (a P-256 key with a named curve); in our testing with SDK 5.1.0 and 5.2.0, a PEM file made `Ditto.open()` fail. Never hardcode keys, tokens, or API keys in source code.
 
 **Why this matters:** Without a key, peers do not authenticate each other: any device with the SDK, your Database ID, and a license token can join and read all data. The SDK also documents this mode as unencrypted. Peers with different keys, or a peer without a key, never connect, and only `WARN` logs show why. A key in an app binary can be extracted by decompiling the app. Shared-key mode has no per-user identity: every key holder has full access, and you cannot revoke individual devices. The offline license token's expiry is checked against the device clock when the token is set, so distribute a new token well before the old one expires.
 
@@ -1692,9 +1692,9 @@ Future<void> configureDittoLogging() async {
 
 ### ☐ Use presence and transport conditions for connectivity diagnostics
 
-**What this means:** Show connection indicators with `ditto.presence.observe(...)`, and stop the returned `PresenceObserver` when you no longer need it. Use `ditto.observeTransportConditions()` (SDK 5.1+) to detect missing permissions or disabled radios, and `DittoSyncPermissions` to find missing runtime permissions on Android. Keep peer metadata small and free of sensitive data.
+**What this means:** Show connection indicators with `ditto.presence.observe(...)`, and stop the returned `PresenceObserver` when you no longer need it. Use `ditto.observeTransportConditions()` (SDK 5.1+) to detect missing permissions or disabled radios, and `DittoSyncPermissions` to find missing runtime permissions on Android. Keep peer metadata small and free of sensitive data, and set it and `ditto.deviceName` once, before you start sync.
 
-**Why this matters:** Transport configuration changes do not throw, so transport conditions are how you find out why peers do not connect. Peer metadata is shared with every peer in the mesh.
+**Why this matters:** Transport configuration changes do not throw, so transport conditions are how you find out why peers do not connect. Peer metadata is shared with every peer in the mesh. In our testing with SDK 5.1.0 and 5.2.0, other peers saw metadata changes at most about once per second, a `deviceName` changed during sync did not reach them until sync restarted, and a peer that stopped responding over TCP stayed in the presence graph for about 7 to 9 seconds.
 
 **Best-practices guide:** Diagnosing transport problems (SDK 5.1+), Presence
 
