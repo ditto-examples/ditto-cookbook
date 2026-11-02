@@ -6,13 +6,13 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 - Husk documents, soft delete with a subscription that excludes flagged documents, eviction, tombstones, and `INITIAL DOCUMENTS` behaved the same on SDK 5.1.0 and 5.2.0 ([Soft delete, husk, eviction, and tombstone behavior held on SDK 5.1.0 and 5.2.0](#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-510-and-520)).
 - Once a device has reaped an expired tombstone, a device that missed the deletion brings the old document back to every device, without an error or a warning. The TTL counts from the tombstone's HLC timestamp, so a deleting device whose clock runs ahead delays reaping ([A device with an old copy resurrects a document after its tombstone is reaped](#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped)).
-- On a new store, reaping first runs at a random time within 10 minutes of starting, drawn again at every start, so apps that run for short periods reap rarely. With a preferred hour, a device reaps only if it runs during that hour of its local time ([Reaping at a preferred hour runs only at hourly checks within that hour](#reaping-at-a-preferred-hour-runs-only-at-hourly-checks-within-that-hour)).
+- On a new store, reaping first runs at a random time within 10 minutes of starting, drawn again at every start, so apps that run for short periods reap rarely. With a preferred hour, a device reaps only if it runs during that hour of its local time ([Reaping at a preferred hour runs at startup or a whole number of hours later, within that hour](#reaping-at-a-preferred-hour-runs-at-startup-or-a-whole-number-of-hours-later-within-that-hour)).
 - A deletion flag sends about 28 bytes per document and `DELETE` about 43 bytes. Evicting documents that a subscription still matches downloads all of them again within seconds ([Deletion flags and DELETE transfer little, and eviction under a subscription refetches](#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)).
-- `EVICT` makes a device forget what it knew: a relay that evicts flagged documents receives the old, unflagged versions back, and a document inserted with an evicted ID merges with the old version that other devices hold ([A relay that evicts flagged documents receives old versions back](#a-relay-that-evicts-flagged-documents-receives-old-versions-back), [Inserting with an evicted document's ID merges with the old version](#inserting-with-an-evicted-documents-id-merges-with-the-old-version)).
-- Tombstones and evicted documents do not slow queries; flagged documents are read by every query unless the flag is indexed ([Tombstones and evicted documents do not slow queries, but flagged documents do](#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
-- Updating a document 10,000 times does not make it heavier, but every map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove them ([Repeated updates do not grow a document](#repeated-updates-do-not-grow-a-document), [Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
-- 10,000 writes grew the write-ahead logs of the document store and of the attachment store to about 20 MB each, and the on-disk logs kept the lines of about 200,000 writes. On 5.2.0, `system:system_info` keeps old rows of each storage value, so read the newest row by `timestamp` ([The write-ahead log grows to about 20 MB](#the-write-ahead-log-grows-to-about-20-mb), [The on-disk logs keep about 200,000 writes](#the-on-disk-logs-keep-about-200000-writes), [On SDK 5.2.0, system:system_info keeps old rows of each storage value](#on-sdk-520-systemsystem_info-keeps-old-rows-of-each-storage-value)).
-- Removing data does not shrink the files at once, and most removed values can still be read from them after Ditto closes. SDK 5.2.0 reclaims free space only above 100 MB ([Evicting data does not free disk space at once](#evicting-data-does-not-free-disk-space-at-once), [Deleted and evicted values remain in the database files](#deleted-and-evicted-values-remain-in-the-database-files)).
+- `EVICT` makes a device forget what it knew: a relay that evicts flagged documents receives the old, unflagged versions back from devices that missed the flag, and a document inserted with an evicted ID merges with the old version that other devices hold ([A relay that evicts flagged documents receives old versions back from devices that missed the flag](#a-relay-that-evicts-flagged-documents-receives-old-versions-back-from-devices-that-missed-the-flag), [Inserting with an evicted document's ID merges with the old version](#inserting-with-an-evicted-documents-id-merges-with-the-old-version)).
+- Tombstones and evicted documents do not slow queries; flagged documents made `COUNT(*)` and filters 15 to 20 times slower unless every document had the flag, it was indexed, and the query used `isDeleted = false`; reads by ID were not affected ([Tombstones and evicted documents do not slow queries, but flagged documents do](#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
+- Updating a document 10,000 times does not make it heavier, but every different map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove them ([Repeated updates do not grow a document](#repeated-updates-do-not-grow-a-document), [Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
+- Since 5.1, 10,000 writes grew the write-ahead logs of the document store and of the attachment store to about 20 MB each, and on 5.2.0, the on-disk logs kept the lines of about 200,000 writes. On 5.2.0, `system:system_info` keeps old rows of each storage value, so read the newest row by `timestamp` ([Since SDK 5.1, the write-ahead log grows to about 20 MB](#since-sdk-51-the-write-ahead-log-grows-to-about-20-mb), [On SDK 5.2.0, the on-disk logs kept about 200,000 writes](#on-sdk-520-the-on-disk-logs-kept-about-200000-writes), [On SDK 5.2.0, system:system_info keeps old rows of each storage value](#on-sdk-520-systemsystem_info-keeps-old-rows-of-each-storage-value)).
+- Removing data does not shrink the files at once, and most removed values can still be read from them after Ditto closes. By default, SDK 5.2.0 reclaims free space only above 100 MB ([Evicting data does not free disk space at once](#evicting-data-does-not-free-disk-space-at-once), [Most deleted and evicted values remain in the database files](#most-deleted-and-evicted-values-remain-in-the-database-files)).
 
 ## Deletion across Devices
 
@@ -59,7 +59,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 **Used in:** [Tombstone TTL and reaping](../../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
-### Reaping at a preferred hour runs only at hourly checks within that hour
+### Reaping at a preferred hour runs at startup or a whole number of hours later, within that hour
 
 | | |
 |---|---|
@@ -114,7 +114,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 **Used in:** [EVICT](../../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Cancelling subscriptions and local data](../../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
 
-### A relay that evicts flagged documents receives old versions back
+### A relay that evicts flagged documents receives old versions back from devices that missed the flag
 
 | | |
 |---|---|
@@ -231,7 +231,7 @@ What a new peer received in its first sync:
 
 **Used in:** none yet.
 
-### The write-ahead log grows to about 20 MB
+### Since SDK 5.1, the write-ahead log grows to about 20 MB
 
 | | |
 |---|---|
@@ -257,7 +257,7 @@ What a new peer received in its first sync:
 
 **Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage).
 
-### The on-disk logs keep about 200,000 writes
+### On SDK 5.2.0, the on-disk logs kept about 200,000 writes
 
 | | |
 |---|---|
@@ -271,7 +271,7 @@ What a new peer received in its first sync:
 
 ## Deleted Data on Disk
 
-### Deleted and evicted values remain in the database files
+### Most deleted and evicted values remain in the database files
 
 | | |
 |---|---|

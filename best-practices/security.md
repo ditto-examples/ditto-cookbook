@@ -266,7 +266,7 @@ The rest of this section applies wherever Ditto does not encrypt the store.
 **❌ DON'T:**
 - Assume that apps installed from a public app store run on devices with encryption enabled; your app cannot enforce it.
 - Store secrets such as tokens or keys in Ditto documents.
-- Rely on `DELETE` or `EVICT` to remove values from the device. **Note (SDK 5.1.0 and 5.2.0):** in our testing, most deleted and evicted values could still be read from the store's database files after Ditto was closed, until the space was reused or reclaimed (see [Deleted and evicted values remain in the database files](../knowledge/observations/storage-and-deletion.md#deleted-and-evicted-values-remain-in-the-database-files)). To remove data from a device for sure, for example when a user logs out of a shared device, close Ditto and delete the persistence directory (`deleteStore` in Swift and Kotlin), or encrypt the values in your app.
+- Rely on `DELETE` or `EVICT` to remove values from the device. **Note (SDK 5.1.0 and 5.2.0):** in our testing, most deleted and evicted values could still be read from the store's database files after Ditto was closed, until the space was reused or reclaimed (see [Most deleted and evicted values remain in the database files](../knowledge/observations/storage-and-deletion.md#most-deleted-and-evicted-values-remain-in-the-database-files)). To remove data from a device for sure, for example when a user logs out of a shared device, close Ditto and delete the persistence directory (`deleteStore` in Swift and Kotlin), or encrypt the values in your app.
 
 In Flutter Web apps, data is kept in memory only and is not written to disk.
 

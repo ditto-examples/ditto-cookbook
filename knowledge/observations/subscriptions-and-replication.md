@@ -9,15 +9,15 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - Subscriptions are not stored: a device that reopens its directory still sends its own changes, but on 5.1.0 and 5.2.0 it receives nothing until it registers its subscriptions again ([Subscriptions are not stored in the persistence directory](#subscriptions-are-not-stored-in-the-persistence-directory)).
 - Each new subscription makes the device that holds the data read the whole collection, also with an index or a filter on `_id`. A set registered together costs a fraction of the same set registered one by one, and the number of subscriptions does not change the transfer ([Each new subscription makes the data holder read the whole collection](#each-new-subscription-makes-the-data-holder-read-the-whole-collection), [The number of subscriptions did not change the transfer](#the-number-of-subscriptions-did-not-change-the-transfer)).
 - A relay forwards only the documents that it holds, also when it carries them between sites that never connect, and a new, empty hub recovers what its clients hold ([A relay forwards only the documents that it holds](#a-relay-forwards-only-the-documents-that-it-holds), [Devices that move between sites carry documents and deletions](#devices-that-move-between-sites-carry-documents-and-deletions), [A new, empty hub recovers the data from its clients](#a-new-empty-hub-recovers-the-data-from-its-clients)).
-- With two relays, sync continued when one of them stopped, if the remaining relay subscribed to the data, and each relay hop added about 4 ms on one machine ([With two relays, sync continued when one of them stopped](#with-two-relays-sync-continued-when-one-of-them-stopped), [Each relay hop added about 4 ms](#each-relay-hop-added-about-4-ms)).
-- An initial sync appears on the receiving device all at once, resumes where it stopped, and holds up that device's other sync until it completes ([An initial sync appears on the receiving device all at once](#an-initial-sync-appears-on-the-receiving-device-all-at-once), [An interrupted initial sync resumes where it stopped](#an-interrupted-initial-sync-resumes-where-it-stopped), [A large initial sync holds up the device's other sync](#a-large-initial-sync-holds-up-the-devices-other-sync)).
+- With two relays, sync continued when one of them stopped, if the remaining relay subscribed to the data (the first update after a relay was suspended took up to 4 seconds in 5 of 11 runs), and each relay hop added about 2 to 4 ms on one machine ([With two relays that both subscribe, sync continued when one of them stopped](#with-two-relays-that-both-subscribe-sync-continued-when-one-of-them-stopped), [Each relay hop added about 2 to 4 ms](#each-relay-hop-added-about-2-to-4-ms)).
+- An initial sync appears on the receiving device all at once, resumes where it stopped after `sync.stop()` and `sync.start()`, and holds up that device's other sync until it completes ([An initial sync appears on the receiving device all at once](#an-initial-sync-appears-on-the-receiving-device-all-at-once), [An initial sync stopped with sync.stop() resumes where it stopped](#an-initial-sync-stopped-with-syncstop-resumes-where-it-stopped), [A large initial sync holds up the device's other sync](#a-large-initial-sync-holds-up-the-devices-other-sync)).
 - Changes written in separate statements arrived in the order written, and large transactions and statements arrived at once, except when a faster relay with narrower subscriptions delivered part of them first ([Changes written in separate statements arrived in the order written](#changes-written-in-separate-statements-arrived-in-the-order-written), [Large transactions and statements arrived all at once](#large-transactions-and-statements-arrived-all-at-once), [A fast relay with narrower subscriptions can show part of a transaction](#a-fast-relay-with-narrower-subscriptions-can-show-part-of-a-transaction)).
-- Sync sends compressed, field-level changes of the current state. In a full mesh, a device receives each new document from several neighbors, and when many devices reconnect at once with offline changes, the time until all of them agree grows faster than their number ([Sync traffic is compressed and carries field-level changes](#sync-traffic-is-compressed-and-carries-field-level-changes), [In a mesh, a new document arrives once from each neighbor](#in-a-mesh-a-new-document-arrives-once-from-each-neighbor), [Convergence after simultaneous reconnects grew faster than the number of devices](#convergence-after-simultaneous-reconnects-grew-faster-than-the-number-of-devices)).
+- Sync sends compressed, field-level changes of the current state. In a full mesh, a device receives each new document from several neighbors, and when many devices that receive each other's changes reconnect at once with offline changes, the time until all of them agree grows faster than their number ([Sync traffic is compressed and carries field-level changes](#sync-traffic-is-compressed-and-carries-field-level-changes), [In a full mesh, a new document arrives from nearly every neighbor](#in-a-full-mesh-a-new-document-arrives-from-nearly-every-neighbor), [Convergence after simultaneous reconnects grew faster than the number of devices](#convergence-after-simultaneous-reconnects-grew-faster-than-the-number-of-devices)).
 - After many offline updates of one field, only the current value syncs: 1,000 updates cost about as much as one ([Only the current state syncs after offline edits](#only-the-current-state-syncs-after-offline-edits)).
 - `close()` and `sync.stop()` do not wait for changes that are still being sent ([A write made right before close or stop may not leave the device](#a-write-made-right-before-close-or-stop-may-not-leave-the-device)).
-- `sync_session_status` keeps showing `Connected` for about 73 seconds after a peer stops sync or closes Ditto, and a statement that changed nothing is confirmed only with the next sync exchange, up to about 27 seconds later ([The sync session status lags about 73 seconds behind a disconnection](#the-sync-session-status-lags-about-73-seconds-behind-a-disconnection), [An empty commit is confirmed only with the next sync exchange](#an-empty-commit-is-confirmed-only-with-the-next-sync-exchange)).
+- `sync_session_status` keeps showing `Connected` for about 73 seconds after a peer stops sync or closes Ditto, and a statement that changed nothing is confirmed only with the next sync exchange, up to about 27 seconds later ([The sync session status lags about 73 seconds behind a peer that stops sync or closes](#the-sync-session-status-lags-about-73-seconds-behind-a-peer-that-stops-sync-or-closes), [An empty commit is confirmed only with the next sync exchange](#an-empty-commit-is-confirmed-only-with-the-next-sync-exchange)).
 - Starting and stopping sync behaved as documented, and a change written right after another device stopped sync did not reach it ([Starting and stopping sync behaved as documented](#starting-and-stopping-sync-behaved-as-documented), [A change written right after another device stops sync did not reach it](#a-change-written-right-after-another-device-stops-sync-did-not-reach-it)).
-- In JavaScript, `queryArguments` of a subscription registered without arguments is empty, and reading it does not end the process ([In JavaScript, queryArguments of a subscription without arguments is empty](#in-javascript-queryarguments-of-a-subscription-without-arguments-is-empty)).
+- In JavaScript, a subscription registered without arguments has no `queryArguments` (`null` or `undefined`), and reading it does not end the process ([In JavaScript, a subscription without arguments has no queryArguments](#in-javascript-a-subscription-without-arguments-has-no-queryarguments)).
 
 ## What a Subscription Delivers
 
@@ -197,7 +197,7 @@ The same with 200,000 documents (the index was compared only with 50,000):
 
 **Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
 
-### With two relays, sync continued when one of them stopped
+### With two relays that both subscribe, sync continued when one of them stopped
 
 | | |
 |---|---|
@@ -211,7 +211,7 @@ The same with 200,000 documents (the index was compared only with 50,000):
 
 **Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Key Characteristics](../understanding-ditto.md#key-characteristics).
 
-### Each relay hop added about 4 ms
+### Each relay hop added about 2 to 4 ms
 
 | | |
 |---|---|
@@ -229,7 +229,7 @@ Median time until the observer had the new value (first run):
 | 4 hops | 19.0 ms | 18.5 ms |
 | 5 hops | 21.1 ms | 20.7 ms |
 
-- Each hop added about 3 to 4 ms. In the slowest run too, the far end had the value within 23 ms.
+- Each hop added about 2 to 4 ms. In the slowest run too, the far end had the value within 23 ms.
 - The peers ran on one Mac over TCP. On real devices, each hop adds its network round trip; the numbers show only that the hops themselves cost little.
 
 **Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
@@ -246,7 +246,7 @@ Median time until the observer had the new value (first run):
 - The presence graph of the hub that the device was visiting did not list the other hub.
 - **A large data set and a short visit**: to carry 20,000 documents of about 400 bytes written at A, the device first visited A for 1 second. None of the documents appeared on the device, and the following visit to B delivered nothing (an initial sync appears only when it completes; see [An initial sync appears on the receiving device all at once](#an-initial-sync-appears-on-the-receiving-device-all-at-once)). On its next visit to A, the device had all of them after 0.54 to 0.55 seconds on 5.0.3 and 0.89 to 1.0 seconds on 5.1.0 and 5.2.0, and on the visit to B after that, B had all of them after 1.2 to 1.5 seconds. The content was the same character repeated, which sync compresses (see [Sync traffic is compressed and carries field-level changes](#sync-traffic-is-compressed-and-carries-field-level-changes)), so real data takes longer.
 
-**Not tested:** how long carrying the 20,000 documents takes without the short first visit. This test therefore cannot tell whether the part received during the 1-second visit was kept (that an interrupted initial sync resumes where it stopped is shown in [An interrupted initial sync resumes where it stopped](#an-interrupted-initial-sync-resumes-where-it-stopped)).
+**Not tested:** how long carrying the 20,000 documents takes without the short first visit. This test therefore cannot tell whether the part received during the 1-second visit was kept (that an interrupted initial sync resumes where it stopped is shown in [An initial sync stopped with sync.stop() resumes where it stopped](#an-initial-sync-stopped-with-syncstop-resumes-where-it-stopped)).
 
 **Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay).
 
@@ -293,7 +293,7 @@ Time from the start of sync until all documents were visible (first run):
 
 **Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
-### An interrupted initial sync resumes where it stopped
+### An initial sync stopped with sync.stop() resumes where it stopped
 
 | | |
 |---|---|
@@ -455,7 +455,7 @@ Orders visible without all their items: how many, and for how long:
 
 **Used in:** [What Syncs after Offline Edits](../crdt-types.md#what-syncs-after-offline-edits).
 
-### In a mesh, a new document arrives once from each neighbor
+### In a full mesh, a new document arrives from nearly every neighbor
 
 | | |
 |---|---|
@@ -594,7 +594,7 @@ Trials (of 9) in which the hub received the document:
 - X's presence graph was empty 0 to 16 ms after `sync.stop()`.
 - The other side noticed later. When the writer wrote at once, the writer's presence graph still listed X in 1 to 12 of the 20 rounds of a run, and through the relay, the relay's graph listed X in 5 to 14 of 20. From 100 ms on, neither listed X. The update did not reach X in those rounds either.
 - After X started sync again, it received the update in every round.
-- In one earlier run of a different test on SDK 5.1.0, X had a flag that a writer set through a relay right after X's presence graph was empty. That test read X only after X had started sync again, so it could not tell when the flag arrived. The next run, on 5.2.0 with the same steps, and eight later runs that waited 1 second before writing did not show it (see [A relay that evicts flagged documents receives old versions back](storage-and-deletion.md#a-relay-that-evicts-flagged-documents-receives-old-versions-back)).
+- In one earlier run of a different test on SDK 5.1.0, X had a flag that a writer set through a relay right after X's presence graph was empty. That test read X only after X had started sync again, so it could not tell when the flag arrived. The next run, on 5.2.0 with the same steps, and eight later runs that waited 1 second before writing did not show it (see [A relay that evicts flagged documents receives old versions back from devices that missed the flag](storage-and-deletion.md#a-relay-that-evicts-flagged-documents-receives-old-versions-back-from-devices-that-missed-the-flag)).
 
 **Not tested:** a write made before X's own presence graph was empty (the first 0 to 16 ms); `close()` instead of `sync.stop()`; transports other than TCP between processes on one machine; large documents; the Flutter SDK.
 
@@ -602,7 +602,7 @@ Trials (of 9) in which the hub received the document:
 
 ## Inspecting Subscriptions
 
-### In JavaScript, queryArguments of a subscription without arguments is empty
+### In JavaScript, a subscription without arguments has no queryArguments
 
 | | |
 |---|---|
@@ -618,7 +618,7 @@ Trials (of 9) in which the hub received the document:
 
 ## How Quickly Sync Status Changes
 
-### The sync session status lags about 73 seconds behind a disconnection
+### The sync session status lags about 73 seconds behind a peer that stops sync or closes
 
 | | |
 |---|---|
@@ -650,7 +650,7 @@ Time until the `commitID` appeared in `synced_up_to_local_commit_id`:
 | 5.2.0 | 27.2 seconds in 2 runs, 2.5 to 4.8 seconds in 5 runs | 0.25 to 0.27 seconds in every run |
 
 - On both releases, an empty commit is not confirmed on its own but with the next sync exchange between the two devices, at most about 27 seconds later. The time until confirmation therefore varies between about 0.8 and 27 seconds, depending on when that exchange happens; it can also be under 1 second. On 5.2.0, the confirmation often came sooner.
-- The 27 seconds match the periodic update that an observer of `system:data_sync_info` showed with an idle peer ([An observer of system:data_sync_info fired about every 27 seconds with an idle peer](observer-behavior.md#an-observer-of-systemdata_sync_info-fired-about-every-27-seconds-with-an-idle-peer)); we think empty commits are confirmed with that update.
+- The 27 seconds match the periodic update that an observer of `system:data_sync_info` showed with an idle peer ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](observer-behavior.md#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)); we think empty commits are confirmed with that update.
 
 **Not tested:** whether a later commit that changes a document confirms an earlier empty commit at once; more than two devices.
 

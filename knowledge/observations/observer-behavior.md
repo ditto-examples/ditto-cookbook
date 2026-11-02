@@ -4,13 +4,13 @@ How store observers behave on one device: when an observer is called, how change
 
 **In brief**
 
-- A `SELECT *` observer is called on every write to a document in its result, even of the same value; an observer that projects fields, only when a projected value changes; an aggregate observer, on every write to the collection ([When an observer fires depends on its query](#when-an-observer-fires-depends-on-its-query), [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing)).
-- Since SDK 5.1, changes are coalesced into callbacks about 30 ms apart, so an observer skips intermediate values. Changes from another device arrive in a few callbacks, and a transaction in one ([Local writes are coalesced into callbacks about 30 ms apart](#local-writes-are-coalesced-into-callbacks-about-30-ms-apart), [A device receives nearly every value of a fast-changing field](#a-device-receives-nearly-every-value-of-a-fast-changing-field), [Remote changes arrive in a few callbacks, and a transaction in one](#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
-- An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0 and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
-- An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info fired about every 27 seconds with an idle peer](#an-observer-of-systemdata_sync_info-fired-about-every-27-seconds-with-an-idle-peer)).
-- `Differ` reports every item whose position shifted as a move, not only the item that was moved ([Differ reports every shifted item as a move](#differ-reports-every-shifted-item-as-a-move)).
-- On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stop every callback ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
-- On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([Since SDK 5.1, an observer does not re-run its query after writes to other collections](#since-sdk-51-an-observer-does-not-re-run-its-query-after-writes-to-other-collections)).
+- A `SELECT *` observer is called on every write to a document in its result, even of the same value; an observer that projects fields, only when a projected value changes; and on 5.1.0 and 5.2.0, an aggregate observer, on every write to the collection ([When an observer fires depends on its query](#when-an-observer-fires-depends-on-its-query), [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing)).
+- Since SDK 5.1, changes are coalesced into callbacks about 30 ms apart, so an observer skips intermediate values. Changes from another device arrive in a few callbacks, and a transaction in one ([Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart), [A device receives nearly every value of a fast-changing field](#a-device-receives-nearly-every-value-of-a-fast-changing-field), [Remote changes arrive in a few callbacks, and a transaction in one](#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
+- An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0, with new `_id` or `timestamp` values in 16 rows, and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
+- An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)).
+- The JavaScript `Differ` reports every item whose position shifted as a move, not only the item that was moved ([The JavaScript Differ reports every shifted item as a move](#the-javascript-differ-reports-every-shifted-item-as-a-move)).
+- On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stopped every callback in our tests, a threshold that may differ by device ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
+- On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection](#on-sdk-510-and-520-an-observer-did-not-re-run-its-query-after-writes-to-another-collection)).
 - In JavaScript, async observer callbacks are not awaited and can finish out of order, exceptions in callbacks are discarded, and garbage collection stops neither observers nor subscriptions ([In JavaScript, registerObserver does not await async callbacks](#in-javascript-registerobserver-does-not-await-async-callbacks), [In JavaScript, exceptions in observer callbacks are discarded](#in-javascript-exceptions-in-observer-callbacks-are-discarded), [In JavaScript, garbage-collected subscriptions and observers keep running](#in-javascript-garbage-collected-subscriptions-and-observers-keep-running)).
 - In JavaScript, query results return the same objects on every read, so changes to them stay in the object but never reach the store, and `store.observers` lists other objects than the ones that the registration returned ([In JavaScript, query results return the same objects](#in-javascript-query-results-return-the-same-objects), [In JavaScript, store.observers exists since 5.0 and lists other objects](#in-javascript-storeobservers-exists-since-50-and-lists-other-objects)).
 
@@ -63,7 +63,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Used in:** [Observing Changes](../../best-practices/observers.md).
 
-### Local writes are coalesced into callbacks about 30 ms apart
+### Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart
 
 | | |
 |---|---|
@@ -138,13 +138,13 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 | 5.1.0 | 10, every 500 ms | In most results, only the `_id` or `timestamp` of 16 rows; the storage keys changed once, at about 1.5 seconds |
 | 5.2.0 | 11 and 12, two about every second (for example at 1.007 and 1.040 seconds) | Most results were identical; the storage and transport keys changed in the first second |
 
-- The observers of `system:data_sync_info` and `system:indexes` were called once, for the first result, on every release. With a connected peer, the observer of `system:data_sync_info` was called a few more times ([An observer of system:data_sync_info fired about every 27 seconds with an idle peer](#an-observer-of-systemdata_sync_info-fired-about-every-27-seconds-with-an-idle-peer)).
+- The observers of `system:data_sync_info` and `system:indexes` were called once, for the first result, on every release. With a connected peer, the observer of `system:data_sync_info` was called a few more times ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)).
 
 **Not tested:** other `system:` collections; the observers of `system:system_info` and `system:indexes` while sync runs.
 
 **Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
 
-### An observer of system:data_sync_info fired about every 27 seconds with an idle peer
+### An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer
 
 | | |
 |---|---|
@@ -165,7 +165,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 ## Observer Differences between SDK Releases
 
-### Since SDK 5.1, an observer does not re-run its query after writes to other collections
+### On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection
 
 | | |
 |---|---|
@@ -182,7 +182,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 | CPU time of 50 writes to the observed collection | 1,068 to 1,175 ms, 13 to 14 callbacks | 600 to 614 ms, 5 callbacks | 562 to 592 ms, 5 callbacks |
 
 - On 5.0.3, the observer ran its query again after writes to another collection, without calling back, and the writes used about three times as much CPU time. On 5.1.0 and 5.2.0, it did not run: the issue that the 5.2.0 release notes list as fixed did not occur on 5.1.0 in this test.
-- Writes to the observed collection ran the query about every third write on 5.0.3, and 4 or 5 times for all 50 writes on 5.1.0 and 5.2.0, which coalesce changes (see [Local writes are coalesced into callbacks about 30 ms apart](#local-writes-are-coalesced-into-callbacks-about-30-ms-apart)).
+- Writes to the observed collection ran the query about every third write on 5.0.3, and 4 or 5 times for all 50 writes on 5.1.0 and 5.2.0, which coalesce changes (see [Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart)).
 - On 5.2.0, `system:metrics` agreed: `ditto.query.requests` did not grow with the 50 writes to another collection, and grew by 4 with the 50 writes to the observed collection. 5.1.0 has no query metrics.
 
 **Not tested:** observers of joins or of several collections; changes that arrive through sync; writes in transactions; whether other conditions make 5.1.0 run an observer after writes to another collection.
@@ -293,7 +293,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Used in:** [Platform Differences](../platform-differences.md).
 
-### Differ reports every shifted item as a move
+### The JavaScript Differ reports every shifted item as a move
 
 | | |
 |---|---|

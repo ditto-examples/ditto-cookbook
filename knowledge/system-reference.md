@@ -34,7 +34,7 @@ The `system:` namespace contains virtual collections that describe the local dev
 
 ### system:system_info
 
-Each row has `namespace`, `key`, `value`, and `timestamp`. Namespaces include `core`, `store`, `logs`, `replication`, `sync_scopes`, and `backend_sqlite3`; in our testing with SDK 5.1.0 and 5.2.0, the collection had rows in `backend_sqlite3`, `core`, `logs`, `replication`, and `sync_scopes` (see [The diagnostics snapshot queries return rows on both releases](observations/configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-return-rows-on-both-releases)).
+Each row has `namespace`, `key`, `value`, and `timestamp`. Namespaces include `core`, `store`, `logs`, `replication`, `sync_scopes`, and `backend_sqlite3`; in our testing with SDK 5.1.0 and 5.2.0, the collection had rows in `backend_sqlite3`, `core`, `logs`, `replication`, and `sync_scopes` (see [The diagnostics snapshot queries run on both releases, except system:sync_degradations on 5.1.0](observations/configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-run-on-both-releases-except-systemsync_degradations-on-510)).
 
 ```sql
 -- SDK version, database ID, peer key, storage usage
@@ -94,7 +94,7 @@ Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
 }
 ```
 
-In our testing, every query of this snapshot returned rows on SDK 5.1.0 and 5.2.0, except `system:sync_degradations`, which fails on 5.1.0 with `Unsupported feature` (see [The diagnostics snapshot queries return rows on both releases](observations/configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-return-rows-on-both-releases)).
+In our testing, every query of this snapshot returned rows on SDK 5.1.0 and 5.2.0, except `system:sync_degradations`, which fails on 5.1.0 with `Unsupported feature` (see [The diagnostics snapshot queries run on both releases, except system:sync_degradations on 5.1.0](observations/configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-run-on-both-releases-except-systemsync_degradations-on-510)).
 
 ## System Parameters Reference
 
