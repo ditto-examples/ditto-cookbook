@@ -1021,6 +1021,8 @@ Common derivation strategies are: the latest timestamp (simple linear workflows)
 
 When history is unbounded, accessed independently, or needed by other devices without the parent, write each event as its **own document** with a UUID `_id`. Events are never updated, so there is nothing to merge, and the parent document stays small.
 
+For events that arrive often, such as sensor readings, collect them for a short interval (for example, one second) and write them with one `INSERT` that has several documents (`INSERT INTO readings DOCUMENTS (:r1), (:r2), ...`). Each statement is one commit, and both the writing and the receiving device spend CPU on every commit: in our testing on a 14-core Mac with SDK 5.1.0 and 5.2.0, one document per statement topped out at about 600 documents a second and cost about 2 ms of CPU per document on each side, while 50 documents per statement reached 5,000 a second at about a twelfth of the CPU per document. The receiver saw every document, in the order written.
+
 ```dart
 Future<void> recordOrderEvent(
   Ditto ditto, {

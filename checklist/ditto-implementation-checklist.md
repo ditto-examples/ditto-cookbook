@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.19
+> **Version**: 2.20
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1002,7 +1002,7 @@ StoreObserver observeTasksOrdered(Ditto ditto) => ditto.store.registerObserver(
 
 **What this means:** Keep `registerObserver` listeners short and synchronous: copy the values, map them to models, and call `setState`. When an update triggers slow work such as an upload, an export, or heavy aggregation, use `registerObserverV2` with `await for`, or `registerObserverWithSignalNext` with `signalNext()` called in a `finally` block (both Experimental, SDK 5.1+). Never write to the observed collection from its own observer without a guard.
 
-**Why this matters:** `registerObserver` has no backpressure: results keep arriving while an asynchronous listener waits, so work overlaps and queues up. With the backpressure APIs, Ditto holds back updates while your code is busy and then delivers the latest state. An observer registered with `registerObserverWithSignalNext` stops delivering updates if `signalNext()` is never called. A listener that writes the same value back to the document it observes keeps triggering itself: in our testing with SDK 5.1.0 and 5.2.0, about every 35 ms without end.
+**Why this matters:** `registerObserver` has no backpressure: results keep arriving while an asynchronous listener waits, so work overlaps and queues up. With the backpressure APIs, Ditto holds back updates while your code is busy and then delivers the latest state. An observer registered with `registerObserverWithSignalNext` stops delivering updates if `signalNext()` is never called. In JavaScript, overlapping async callbacks can finish out of order and leave the screen showing an older result. A listener that writes the same value back to the document it observes keeps triggering itself: in our testing with SDK 5.1.0 and 5.2.0, about every 35 ms without end.
 
 **Best-practices guide:** Keep observer callbacks fast, Backpressure (SDK 5.1+)
 
@@ -1232,7 +1232,7 @@ Subscribing to active documents only is acceptable when every device syncs direc
 
 ### ☐ Target deletions and evictions with WHERE _id IN :ids
 
-**What this means:** Remove specific documents with `WHERE _id = :id` or `WHERE _id IN :ids`; both are planned as an ID scan and work on every SDK 5.x release. While any device still runs SDK 5.1.0, do not write `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate, that is, without a `WHERE` clause or with `WHERE true`.
+**What this means:** Remove specific documents with `WHERE _id = :id` or `WHERE _id IN :ids`; both are planned as an ID scan and work on every SDK 5.x release. While any device still runs SDK 5.1.0, do not write `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate, that is, without a `WHERE` clause or with `WHERE true`. Split long lists into chunks of about 1,000 IDs: in our testing with SDK 5.1.0 and 5.2.0, `WHERE _id IN :ids` with 10,000 IDs took about 0.7 seconds.
 
 **Why this matters:** In SDK 5.1.0, such a statement completes without an error but removes nothing; SDK 5.2.0 removes the listed documents. The `WHERE _id` form is just as efficient and behaves the same on every release.
 

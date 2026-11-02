@@ -529,6 +529,7 @@ Batching keeps individual write transactions short. It does not reduce the sync 
 | Can be undone | ❌ | ✅ | ✅ (data syncs back if a subscription matches it again) |
 | Frees local storage | ✅ (values immediately; tombstones after reaping) | ❌ (until cleanup) | ✅ (immediately) |
 | Extra query complexity | None | Every query filters the flag | Subscription and eviction scopes must be complementary |
+| Data sent to other devices (in our testing, 2,500 documents) | Small (about 43 bytes per document) | Small (about 28 bytes per document) | None, unless a subscription still matches: then every evicted document is downloaded again (1.35 MiB within 3 seconds) |
 
 Typical choices:
 

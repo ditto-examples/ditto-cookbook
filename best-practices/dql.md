@@ -15,7 +15,9 @@ DQL (Ditto Query Language) is the SQL-like language you use to read, write, and 
 | `CREATE INDEX` / `DROP INDEX`, `EXPLAIN`, `PROFILE`; `ADVISE` (SDK 5.1+) | Indexing and query diagnostics | [Indexing and Query Performance](indexing-and-performance.md) |
 | `ALTER SYSTEM` / `SHOW` | Runtime system parameters | [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters) |
 
-There is no `CREATE COLLECTION` or `DROP COLLECTION` statement: a collection exists as soon as a document is written to it. <!-- lint-ignore -->
+There is no `CREATE COLLECTION` or `DROP COLLECTION` statement: a collection exists as soon as a document is written to it, and it cannot be removed. <!-- lint-ignore -->
+
+Keep the number of collections small. In our testing with SDK 5.1.0 and 5.2.0, the first write to a new collection slowed down as collections accumulated (about 2 ms with 100 collections, about 20 ms with 1,000, and more while connected to other devices), each collection took about 15 to 17 KB of disk, and evicting the documents of a collection removed neither. Do not create a collection per user, tenant, or day; partition one collection with part of `_id` (`{"tenant": ..., "orderId": ...}`) or a field instead.
 
 ### Where Queries Run
 
@@ -578,7 +580,7 @@ SELECT * FROM orders USE IDS LIST :ids
 | `USE IDS ('a', 'b')` | ❌ Error: `('a', 'b') is not supported` | <!-- lint-ignore -->
 | `USE IDS :ids` with an array | ❌ Treats the whole array as a single ID and returns nothing |
 
-A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids` and 20 to 65 ms with `USE IDS LIST :ids`, for reads and writes alike. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents). For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
 
 ```dart
 // ✅ GOOD: Direct ID lookup with an array parameter
@@ -600,6 +602,8 @@ Future<List<Map<String, dynamic>>> ordersByIds(Ditto ditto, List<String> ids) as
 | Literal list | `status IN ('open', 'pending')` | ✅ |
 | Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` | ✅ Element lookups cannot use an index |
 | Array parameter, wrapped in parentheses | `status IN (:statuses)` | ❌ Matches nothing |
+
+Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded`.
 
 ```dart
 // ✅ GOOD: Membership against an array parameter

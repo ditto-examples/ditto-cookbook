@@ -4,7 +4,7 @@ A **store observer** is a live local query. Ditto re-runs it whenever a local wr
 
 When an observer fires depends on its query. In our testing with SDK 5.1.0 and 5.2.0, a `SELECT *` observer fired on every write to a document in its result, even when the write did not change any value; an observer that projected fields (`SELECT _id, status ...`) fired only when a projected value changed; and an aggregate observer (`COUNT`, `GROUP BY`) fired on every write to the collection, whether or not its result changed. Project the fields a screen needs to avoid needless callbacks.
 
-Changes that arrive through sync are delivered in batches, not one callback per remote write. In our testing with SDK 5.1.0, 20 documents written one by one on another device arrived in two callbacks, and 20 quick updates of one document arrived in two or three, ending at the latest value. A transaction from another device arrived as one callback that contained all of its documents, never a partial state. Do not use observer callbacks to count or log every remote change; intermediate states can be skipped.
+Since SDK 5.1, an observer is called at most about 30 times a second (in our testing with 5.1.0 and 5.2.0, about every 34 ms, however fast the data changed), so a quickly changing value skips intermediate states but the latest one arrives within tens of milliseconds. To process every value, write each one as its own document (see [Pattern 2: Append-only event documents](data-modeling.md#pattern-2-append-only-event-documents)). Changes that arrive through sync are delivered in batches, not one callback per remote write. In our testing with SDK 5.1.0, 20 documents written one by one on another device arrived in two callbacks, and 20 quick updates of one document arrived in two or three, ending at the latest value. A transaction from another device arrived as one callback that contained all of its documents, never a partial state. Do not use observer callbacks to count or log every remote change; intermediate states can be skipped.
 
 Flutter offers three ways to register an observer:
 
@@ -191,7 +191,7 @@ class _OpenOrdersStreamState extends State<OpenOrdersStream> {
 - Throttle UI updates for very busy collections if the user cannot perceive every intermediate state.
 
 **❌ DON'T:**
-- `await` network calls, file I/O, or database writes inside a `registerObserver` listener; the next results keep arriving while you wait.
+- `await` network calls, file I/O, or database writes inside a `registerObserver` listener; the next results keep arriving while you wait. In our testing with the JavaScript SDK, async callbacks overlapped, and a slow callback for an older result finished last, so the screen kept showing the older state. Use `registerObserverWithSignalNext` (or `registerObserverV2` in Flutter) for asynchronous work.
 - Write to the same collection from inside its observer without a guard; each write triggers the observer again. In our testing, a `SELECT *` observer that wrote the same value to its own document was called again about every 35 ms without end; comparing the value before writing, or `DO UPDATE_LOCAL_DIFF`, stopped it after one write.
 
 ```dart

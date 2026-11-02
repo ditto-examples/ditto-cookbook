@@ -37,6 +37,8 @@ All three accept only `SELECT` queries and take parameters through `arguments:`.
 Behavior:
 - When an observer fires depends on its query (in testing with SDK 5.1.0 and 5.2.0): `SELECT *` fires on every write to a document in its result, even one that changes no value; a projection fires only when a projected value changes; an aggregate (`COUNT`, `GROUP BY`) fires on every write to the collection. Project the fields a screen needs.
 - A `SELECT *` observer that writes the same value to its own document is called again about every 35 ms without end; compare before writing, or use `DO UPDATE_LOCAL_DIFF`.
+- Since SDK 5.1, an observer is called at most about 30 times a second (about every 34 ms in testing), so quickly changing values skip intermediate states; write each value as its own document if every one matters.
+- In JavaScript, `async` callbacks of `registerObserver` overlap, and a slow callback for an older result can finish last and leave the screen stale; use `registerObserverWithSignalNext`.
 - Large result sets cost memory on every callback: an observer of 200 documents under constant updates grew the JavaScript process by about 13 to 24 KiB per callback for 10 minutes, one of a single row leveled off, and cancelling stopped the growth (`§ Query Scope and Execution`).
 - `registerObserver` has no backpressure: it never waits for your code.
 - With `onChange`, events emitted before the first listener attaches are buffered; listen right after registering. `registerObserverV2` starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` right away.
@@ -319,6 +321,8 @@ On native platforms, `ditto.store.execute` runs on a long-lived worker isolate p
 ---
 
 ## Avoiding Unnecessary Writes
+
+Write frequent events in batches: one document per `INSERT` topped out at about 600 documents a second and cost about 2 ms of CPU per document on both the writer and the receiver, while 50 documents per `INSERT` reached 5,000 a second at about a twelfth of the CPU per document (SDK 5.1.0 and 5.2.0, 14-core Mac; `§ Pattern 2: Append-only event documents`).
 
 **Guide**: `§ ON ID CONFLICT`, `§ UPDATE`, `§ Prefer field-level updates over whole-document rewrites`, `§ Assigning an object merges it`, `§ Prefer field-level updates`
 

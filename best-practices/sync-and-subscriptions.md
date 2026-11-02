@@ -127,7 +127,7 @@ The re-evaluation reads the whole collection on each peer that holds the data, a
 **❌ DON'T:**
 - Register subscriptions in `build()` or on every screen visit.
 - Re-register a subscription with new arguments whenever the user changes a filter, search term, or sort order.
-- Drop the reference to a subscription without cancelling it. Always release these objects explicitly; do not rely on garbage collection to cancel them.
+- Drop the reference to a subscription without cancelling it. Always release these objects explicitly; do not rely on garbage collection to cancel them. In our testing with the JavaScript SDK, subscriptions and observers whose objects had been garbage-collected kept syncing and kept calling back; the entries of `ditto.sync.subscriptions` and `ditto.store.observers` could still cancel them.
 
 ```dart
 // ✅ GOOD: A session-level service owns long-lived subscriptions.
