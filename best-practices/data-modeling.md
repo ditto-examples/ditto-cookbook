@@ -31,7 +31,7 @@ SHOW DQL_STRICT_MODE
 | `SELECT` / `WHERE` on fields stored as MAP, COUNTER, or ATTACHMENT without a declaration | Values are visible | **Fields are invisible**: `SELECT *` omits them and `WHERE` conditions on them do not match |
 | Index use | Indexes are used | Indexes are not used (see the note below) |
 
-> **Note (SDK 5.1.0 and 5.2.0):** With `DQL_STRICT_MODE = true`, the query planner does not use indexes: `EXPLAIN` shows a full collection scan even for a query on an indexed field (ID lookups are not affected; see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types)). Keep the default (`false`) if you rely on indexes for query performance.
+> **Note (SDK 5.1.0 and 5.2.0):** With `DQL_STRICT_MODE = true`, the query planner does not use indexes: `EXPLAIN` shows a full collection scan even for a query on an indexed field (ID lookups are not affected; see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types) and [With strict mode on, the planner does not use secondary indexes](../knowledge/observations/dql-behavior.md#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)). Keep the default (`false`) if you rely on indexes for query performance.
 
 ### When to choose strict mode
 

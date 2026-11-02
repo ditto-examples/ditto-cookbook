@@ -284,7 +284,7 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 
 **❌ DON'T:**
 - Observe an entire large collection and filter or paginate in Dart
-- Run one query per ID when `WHERE _id IN :ids` returns the same data (each `execute` call costs about 1.7 ms in testing: 500 lookups took 841 ms, one `IN` query 14 ms); likewise, insert many documents with one array parameter, not one statement each (2,000 documents: about 4 s against 17 ms)
+- Run one query per ID when `WHERE _id IN :ids` returns the same data (each `execute` call costs about 1.7 ms in testing with SDK 5.1.0 and 5.2.0: 500 lookups took 0.8 to 0.9 s, one `IN` query 6 to 15 ms); likewise, insert many documents with one array parameter, not one statement each (2,000 documents: about 4 s against 17 ms)
 - Use `DISTINCT` with `_id` or `*`
 
 ```sql

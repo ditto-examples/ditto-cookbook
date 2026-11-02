@@ -1,7 +1,7 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.29
-> **Last Updated**: 2026-11-02
+> **Version**: 2.30
+> **Last Updated**: 2026-11-03
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
 > **Ditto documentation**: [https://docs.ditto.live](https://docs.ditto.live)
@@ -911,7 +911,7 @@ class OrderSync {
 
 **What this means:** To show an "uploaded" indicator, keep the `commitID` of important writes and compare it with `synced_up_to_local_commit_id` in `system:data_sync_info`. Track a `commitID` only when `mutatedDocumentIDs()` is not empty. Read `system:data_sync_info` with `execute` when you need a snapshot. If you observe it, use one small observer per screen, not one per list row, and rebuild only when the derived value changes. Use the presence API for connectivity indicators. While a large subscription first syncs, show that data is downloading, not a document count.
 
-**Why this matters:** Ditto is offline-first, so there is no single "synced" state to wait for. Each observer on `system:data_sync_info` re-reads the sync state of every connection, and how often it fires varies by SDK release, so using such observers in many widgets can waste CPU and battery. A statement that changed nothing still gets a `commitID` (SDK 5.1.0 and 5.2.0). In our testing with SDK 5.1.0 and 5.2.0, peers confirmed such a commit only with a later commit, up to about 30 seconds later, and `sync_session_status` stayed `"Connected"` for about 73 seconds after a peer disconnected. An initial sync of 20,000 documents appeared on the receiver all at once after about 2.4 seconds, so a document count stays at zero until the end.
+**Why this matters:** Ditto is offline-first, so there is no single "synced" state to wait for. Each observer on `system:data_sync_info` re-reads the sync state of every connection, and how often it fires varies by SDK release, so using such observers in many widgets can waste CPU and battery. A statement that changed nothing still gets a `commitID` (SDK 5.1.0 and 5.2.0). In our testing with SDK 5.1.0 and 5.2.0, peers confirmed such a commit only with their next sync exchange, up to about 27 seconds later, and `sync_session_status` stayed `"Connected"` for about 73 seconds after a peer disconnected. An initial sync of 20,000 documents appeared on the receiver all at once after about 2.4 seconds, so a document count stays at zero until the end.
 
 **Best-practices guide:** Monitoring Sync Status
 

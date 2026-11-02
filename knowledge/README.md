@@ -9,7 +9,7 @@ The knowledge pages are of two kinds:
 - **Concepts and reference**, the pages in this directory, explain how Ditto works and collect what you look up: the CRDT types and their merge rules, the DQL functions, the system collections and parameters, the platform differences, the changes between SDK releases, and the terms. They follow Ditto's documentation, and where our testing adds to it, they state the result in a sentence and link to the observation.
 - **Observations**, the pages in [`observations/`](observations/how-we-tested.md), describe what we saw when we ran Ditto, one entry per observation, on the page of the part of Ditto that it concerns. Each entry holds the evidence in full; the best practices and the concept pages summarize it and link to the entry.
 
-The setup, the numbers, and the number of runs of an observation appear only in its entry, so that a result is stated in one place and checked in one place.
+The setup, the full results, and the number of runs of an observation appear only in its entry, so that a result is stated in one place and checked in one place. A page that summarizes it quotes only the numbers it needs, as the entry gives them.
 
 ### Reading an observation
 

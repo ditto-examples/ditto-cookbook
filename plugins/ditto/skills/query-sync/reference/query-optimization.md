@@ -25,7 +25,7 @@ How to keep local queries and observers fast. Extracted from the guide sections 
 | `item.value` | `Map<String, dynamic>`, decoded on first access and cached on that item |
 | `item.jsonString`, `item.cborBytes` | Properties, not methods |
 | `mutatedDocumentIDs()` | Builds a new list on every call; call once. With `RETURNING`, treat `items` as the result and include `_id` in the projection when you need the IDs |
-| `commitID` | `int?`; `null` for reads, and `null` inside a transaction until it commits. A write that changed nothing (empty `mutatedDocumentIDs()`) still gets one, which peers confirm only with a later commit (up to about 30 s; SDK 5.1.0): track it only when something changed |
+| `commitID` | `int?`; `null` for reads, and `null` inside a transaction until it commits. A write that changed nothing (empty `mutatedDocumentIDs()`) still gets one, which peers confirm only with their next sync exchange (up to about 27 s; SDK 5.1.0 and 5.2.0): track it only when something changed |
 
 - Iterate `items` once and convert rows to maps or model objects right away; project only the fields you need.
 - Do not store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks: they reference native memory.

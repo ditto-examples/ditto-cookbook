@@ -7,6 +7,7 @@ How store observers behave on one device: when an observer is called, how change
 - A `SELECT *` observer is called on every write to a document in its result, even of the same value; an observer that projects fields, only when a projected value changes; an aggregate observer, on every write to the collection ([When an observer fires depends on its query](#when-an-observer-fires-depends-on-its-query), [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing)).
 - Since SDK 5.1, changes are coalesced into callbacks about 30 ms apart, so an observer skips intermediate values. Changes from another device arrive in a few callbacks, and a transaction in one ([Local writes are coalesced into callbacks about 30 ms apart](#local-writes-are-coalesced-into-callbacks-about-30-ms-apart), [A device receives nearly every value of a fast-changing field](#a-device-receives-nearly-every-value-of-a-fast-changing-field), [Remote changes arrive in a few callbacks, and a transaction in one](#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
 - An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0 and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
+- An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info fired about every 27 seconds with an idle peer](#an-observer-of-systemdata_sync_info-fired-about-every-27-seconds-with-an-idle-peer)).
 - `Differ` reports every item whose position shifted as a move, not only the item that was moved ([Differ reports every shifted item as a move](#differ-reports-every-shifted-item-as-a-move)).
 - On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stop every callback ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
 - On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([Since SDK 5.1, an observer does not re-run its query after writes to other collections](#since-sdk-51-an-observer-does-not-re-run-its-query-after-writes-to-other-collections)).
@@ -137,11 +138,30 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 | 5.1.0 | 10, every 500 ms | In most results, only the `_id` or `timestamp` of 16 rows; the storage keys changed once, at about 1.5 seconds |
 | 5.2.0 | 11 and 12, two about every second (for example at 1.007 and 1.040 seconds) | Most results were identical; the storage and transport keys changed in the first second |
 
-- The observers of `system:data_sync_info` and `system:indexes` were called once, for the first result, on every release.
+- The observers of `system:data_sync_info` and `system:indexes` were called once, for the first result, on every release. With a connected peer, the observer of `system:data_sync_info` was called a few more times ([An observer of system:data_sync_info fired about every 27 seconds with an idle peer](#an-observer-of-systemdata_sync_info-fired-about-every-27-seconds-with-an-idle-peer)).
 
-**Not tested:** other `system:` collections; observers while sync runs.
+**Not tested:** other `system:` collections; the observers of `system:system_info` and `system:indexes` while sync runs.
 
 **Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
+
+### An observer of system:data_sync_info fired about every 27 seconds with an idle peer
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each; every run on a release showed the same pattern |
+| Setup | Two connected devices that subscribed to the same, empty collection. 3 seconds after they connected, one of them registered an observer of `SELECT * FROM system:data_sync_info` and recorded the time of each callback for 40 seconds, while neither device wrote anything |
+| Documentation | Ditto's page on monitoring sync status says that observers of `system:data_sync_info` are called every 500 ms, whether or not the data changed. The virtual collections reference does not list `system:data_sync_info` among the collections whose observers run on a timer, and says that a timer-driven observer is not called when its result has not changed |
+
+| Release | Callbacks in 40 seconds | When |
+|---|---|---|
+| 5.1.0 | 3 in every run | At registration, 2.0 to 5.0 seconds later, and 27.6 to 27.7 seconds later |
+| 5.2.0 | 3 or 4 | At registration, in two runs 0.85 or 2.8 seconds later, and 27.3 seconds later followed by a second callback about 30 ms after it |
+
+- The observer was not called every 500 ms on either release. We think the callback at about 27 seconds is a periodic update between the two devices, the same one that confirms an empty commit ([An empty commit is confirmed only with the next sync exchange](subscriptions-and-replication.md#an-empty-commit-is-confirmed-only-with-the-next-sync-exchange)).
+
+**Not tested:** what the rows contained in each callback; more than one peer; devices that sync changes while the observer runs; longer than 40 seconds.
+
+**Used in:** [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
 
 ## Observer Differences between SDK Releases
 

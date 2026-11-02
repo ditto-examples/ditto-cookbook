@@ -34,7 +34,7 @@ Observations from testing flow in one direction: test → `knowledge/observation
 2. **Derive the rule in `best-practices/`.** State what to do, give the reason in a sentence or two with only the numbers that the rule needs, label release-specific behavior with **Note (SDK ...)**, and link to the knowledge entry for the evidence.
 3. **Propagate the rule** to the Skills and the checklist (see [Synchronizing a Change to the Guide](#synchronizing-a-change-to-the-guide)).
 
-The setup, the numbers, and the number of runs of an observation appear only in its entry. Every other page that reports it, in `best-practices/` and on the concept and reference pages of `knowledge/`, states it in a sentence or two and links to the entry; `scripts/check.py` reports a line with "in our testing" that has no such link, and an entry without "Setup" or "Used in".
+The setup, the full results, and the number of runs of an observation appear only in its entry. Every other page that reports it, in `best-practices/` and on the concept and reference pages of `knowledge/`, states it in a sentence or two, quotes only the numbers that its point needs, as the entry gives them, and links to the entry; `scripts/check.py` reports a line with "in our testing" that has no such link, and an entry without "Setup" or "Used in".
 
 When new material both explains a behavior and recommends a pattern, put the recommendation in `best-practices/` and link to the explanation in `knowledge/`. Keep each page readable on its own, and follow the conventions in [How to Use This Guide](best-practices/README.md#how-to-use-this-guide), such as the **Note (SDK ...)** labels.
 

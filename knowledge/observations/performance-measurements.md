@@ -4,10 +4,10 @@ How long Ditto's statements, queries, and observers took, how many writes a devi
 
 **In brief**
 
-- Each `execute` call has a fixed cost of about 1.7 ms, so the number of statements matters more than the number of documents: 2,000 inserts took about 4 seconds one by one and 17 ms as one statement ([The number of execute calls matters more than the number of documents](#the-number-of-execute-calls-matters-more-than-the-number-of-documents)).
+- Each `execute` call has a fixed cost of about 1.7 ms, so the number of statements matters more than the number of documents: 2,000 inserts took about 4 seconds one by one and 16 to 18 ms as one statement on SDK 5.1.0 and 5.2.0 ([The number of execute calls matters more than the number of documents](#the-number-of-execute-calls-matters-more-than-the-number-of-documents)).
 - Awaited one at a time, statements that write one document each top out at about 600 documents a second and cost about 2 ms of CPU per document on the writing and the receiving device; 50 to 100 documents per statement reached 5,000 to 10,000 a second ([One document per statement tops out at about 600 writes a second](#one-document-per-statement-tops-out-at-about-600-writes-a-second)).
 - Above about 1,000 IDs, `USE IDS LIST :ids` is 30 to 100 times faster than `WHERE _id IN :ids`, for reads and writes ([Long ID lists are faster with USE IDS LIST than with WHERE _id IN](#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
-- A full-collection `COUNT(*)` took 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 7 times faster, the conditions of the Index Usage Rules produced the listed plans, and a query answered from the index alone was about a third faster ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [The conditions of the Index Usage Rules table produced the plans it lists](#the-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone was about a third faster](#a-query-answered-from-the-index-alone-was-about-a-third-faster)); an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([An index on a field with two values made queries slower](#an-index-on-a-field-with-two-values-made-queries-slower)).
+- A full-collection `COUNT(*)` took 1.7 to 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 11 times faster, the conditions of the Index Usage Rules produced the listed plans, and a query answered from the index alone was about a third faster ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [The conditions of the Index Usage Rules table produced the plans it lists](#the-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone was about a third faster](#a-query-answered-from-the-index-alone-was-about-a-third-faster)); an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([An index on a field with two values made queries slower](#an-index-on-a-field-with-two-values-made-queries-slower)).
 - Query strings built for each value were not slower than constant strings with parameters ([Constant query strings were not faster](#constant-query-strings-were-not-faster)).
 - An observer of 5,000 documents was called about six times later after a write than an observer of 50, and evicting in chunks and opening a large store cost little ([An observer of 5,000 documents was called about six times later than one of 50](#an-observer-of-5000-documents-was-called-about-six-times-later-than-one-of-50), [Evicting in chunks costs little more than one statement](#evicting-in-chunks-costs-little-more-than-one-statement), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
 - Large query results raise the process's memory, which does not come back after the results are released; 5.2.0 used about 30% less than 5.1.0 ([Large query results keep process memory after they are released](#large-query-results-keep-process-memory-after-they-are-released)).
@@ -20,24 +20,22 @@ How long Ditto's statements, queries, and observers took, how many writes a devi
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; each time is the median of three repetitions within the run |
+| Observed on | SDK 5.1.0 and 5.2.0, five runs each, and 5.0.3, four runs; each time is the median of three repetitions within a run. Every run gave the same order of the methods |
 | Setup | (1) Inserting 2,000 new documents in different ways. (2) Reading 500 of 20,000 documents by ID, as 500 queries with `_id = :id` and as one query with `_id IN :ids` |
 
 Inserting 2,000 documents:
 
 | Method | 5.2.0 | 5.1.0 | 5.0.3 |
 |---|---|---|---|
-| 2,000 `INSERT` statements, each awaited | 4,005 ms | 4,659 ms | 5,418 ms |
-| One statement with an array parameter | 17 ms | 17 ms | 108 ms |
-| 10 statements of 200 documents each | 30 ms | — | — |
-| 2,000 `tx.execute` calls in one transaction | 248 ms | — | — |
-| 2,000 statements sent at once with `Promise.all` | 729 ms | — | — |
+| 2,000 `INSERT` statements, each awaited | 3,930 to 4,645 ms | 3,957 to 4,659 ms | 5,199 to 5,567 ms |
+| One statement with an array parameter | 17 to 18 ms | 16 to 18 ms | 108 to 112 ms |
+| 10 statements of 200 documents each | 30 to 33 ms | 30 to 32 ms | 112 to 114 ms |
+| 2,000 `tx.execute` calls in one transaction | 238 to 248 ms | 236 to 242 ms | 179 to 183 ms |
+| 2,000 statements sent at once with `Promise.all` | 676 to 779 ms | 530 to 539 ms | 1,173 to 2,081 ms |
 
-For the last three methods, only the times on 5.2.0 are available.
-
-- On 5.2.0, one statement with an array parameter was about 240 times faster than 2,000 awaited statements. Running the 2,000 statements in one transaction did not close the gap: it was still about 15 times slower than the single statement.
-- Reading 500 of 20,000 documents took 841 ms as 500 queries with `_id = :id` and 14 ms as one query with `_id IN :ids` on 5.2.0, about 60 times faster. On 5.0.3, the `IN` query took 52 ms, about 16 times faster than the loop.
-- Each `execute` call has a fixed cost of about 1.7 ms (5.0.3: about 6.5 ms), so the number of calls matters more than the number of documents.
+- One statement with an array parameter was 232 to 269 times faster than 2,000 awaited statements on 5.2.0, 240 to 279 times on 5.1.0, and 47 to 50 times on 5.0.3. Running the 2,000 statements in one transaction did not close the gap: on 5.1.0 and 5.2.0, it was still 13 to 15 times slower than the single statement (5.0.3: 1.6 to 1.7 times).
+- Reading 500 of 20,000 documents took 812 to 876 ms as 500 queries with `_id = :id` and 11 to 15 ms as one query with `_id IN :ids` on 5.2.0, 55 to 78 times faster (5.1.0: 782 to 854 ms and 6 to 15 ms). On 5.0.3, the `IN` query took 52 to 53 ms, 16 to 17 times faster than the loop.
+- Each `execute` call has a fixed cost of about 1.7 ms (5.0.3: about 6.5 ms; see [Constant query strings were not faster](#constant-query-strings-were-not-faster)), so the number of calls matters more than the number of documents.
 
 **Used in:** [INSERT and Conflict Handling](../../best-practices/dql.md#insert-and-conflict-handling), [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
@@ -112,22 +110,22 @@ Time for `COUNT(*)` (nearly the same on both releases; no value was recorded for
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Observed on | SDK 5.1.0 and 5.2.0, five runs each |
 | Setup | One device without sync, 20,000 documents. Counts and filtered queries with and without an index on `(status, createdAt)` |
 
 | Query | 5.2.0 | 5.1.0 |
 |---|---|---|
-| `COUNT(*)` of the whole collection | 1.8 ms | 1.8 ms |
-| `SELECT _id` of every document | 54 ms | 66 ms |
-| `COUNT(*)` with `status = 'paid'`, no index | 20 ms | 28 ms |
-| The same, with an index on `(status, createdAt)` | 6 ms | 6 ms |
-| A condition that matches 1% of the documents, no index | 19 ms | 27 ms |
-| The same, with an index | 2.6 ms | 2.7 ms |
-| `ORDER BY createdAt DESC LIMIT 50`, no index | 20 ms | 27 ms |
-| The same, with an index | 7 ms | 6 ms |
+| `COUNT(*)` of the whole collection | 1.7 to 1.8 ms | 1.7 to 1.8 ms |
+| `SELECT _id` of every document | 54 to 59 ms | 63 to 66 ms |
+| `COUNT(*)` with `status = 'paid'`, no index | 20 to 21 ms | 28 ms |
+| The same, with an index on `(status, createdAt)` | 6.2 to 6.4 ms | 5.9 to 6.0 ms |
+| A condition that matches 1% of the documents, no index | 19 to 20 ms | 26 to 29 ms |
+| The same, with an index | 2.5 to 2.7 ms | 2.7 ms |
+| `ORDER BY createdAt DESC LIMIT 50`, no index | 19 to 21 ms | 26 to 27 ms |
+| The same, with an index | 7.1 to 7.2 ms | 6.3 to 6.4 ms |
 
-- A full-collection `COUNT(*)` is cheap, as expected from a count scan that does not read documents: 1.8 ms against 54 to 66 ms for reading every `_id`.
-- The index made the filtered queries about 3 to 7 times faster.
+- A full-collection `COUNT(*)` is cheap, as expected from a count scan that does not read documents: 1.7 to 1.8 ms against 54 to 66 ms for reading every `_id`. The index did not change it.
+- The index made the filtered queries 2.7 to 10.8 times faster: the count with `status = 'paid'` 3.2 to 4.8 times, the condition that matches 1% 7.3 to 10.8 times, and `ORDER BY ... LIMIT 50` 2.7 to 4.3 times.
 
 **Used in:** [Counting documents](../../best-practices/indexing-and-performance.md#counting-documents), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
 
@@ -161,16 +159,18 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Observed on | SDK 5.1.0 and 5.2.0, four runs each (one earlier run with a separate script and three with the same setup); each time of the three later runs is the median of five queries |
 | Setup | One device without sync, 50,000 documents of about 1 KB, 5,000 of them matching `status = 'open'`, and an index on `status`. Three projections of the same query |
 
 | Projection | 5.2.0 | 5.1.0 |
 |---|---|---|
-| `SELECT _id, status` (`EXPLAIN`: `covering: true`, no fetch) | 16 ms | 16 ms |
-| `SELECT _id, status, total` (one field outside the index) | 24 ms | 23 ms |
-| `SELECT *` | 25 ms | 26 ms |
+| `SELECT _id, status` (`EXPLAIN`: `covering: true`, no fetch) | 15.8 to 16.6 ms | 15.5 to 16.6 ms |
+| `SELECT _id, status, total` (one field outside the index) | 22.9 to 25.1 ms | 23 to 24 ms |
+| `SELECT *` | 23.4 to 25 ms | 23.5 to 26 ms |
 
+- The query answered from the index took about two thirds of the time of the others in every run.
 - Once documents had to be fetched, projecting fewer fields hardly changed the time: of the two benefits of a narrow projection, the one that counts is skipping the fetch.
+- On 5.2.0, the `indexScan` of `SELECT *` was also marked `covering: true` and was followed by a `fetch`; on 5.1.0, it had no `covering` mark. `SELECT _id, status, total` had none on either release. Whether a query is answered from the index alone shows in the missing `fetch` step.
 
 **Used in:** [Covering scans](../../best-practices/indexing-and-performance.md#covering-scans).
 
@@ -178,15 +178,15 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each |
-| Setup | One device without sync, 5,000 documents. Two observers: one of all documents, and one of `WHERE customerId = :c ORDER BY createdAt DESC LIMIT 50`. We measured the time from writing one document until each callback |
+| Observed on | SDK 5.1.0 and 5.2.0, five runs each, and 5.0.3, four runs |
+| Setup | One device without sync, 5,000 documents. Two observers: one of all documents, and one of `WHERE customerId = :c ORDER BY createdAt DESC LIMIT 50`. We measured the time from writing one document until each callback; each time is the median of the seven callbacks in a run |
 
 | Observer | 5.2.0 | 5.1.0 | 5.0.3 |
 |---|---|---|---|
-| All 5,000 documents | 41 ms | 43 ms | 68 ms |
-| 50 documents | 7 ms | 7 ms | 48 ms |
+| All 5,000 documents | 31 to 43 ms | 33 to 47 ms | 39 to 69 ms |
+| 50 documents | 5.0 to 6.7 ms | 5.8 to 8.0 ms | 46 to 50 ms |
 
-- On 5.1.0 and 5.2.0, the larger observer was called about six times later; on 5.0.3, the difference was smaller.
+- In each run on 5.2.0, the larger observer was called 6.1 to 6.5 times later, and on 5.1.0 4.7 to 6.3 times later. On 5.0.3, the two observers were called at about the same time (0.8 to 1.5 times).
 
 **Used in:** [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
@@ -194,11 +194,11 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Observed on | SDK 5.1.0 and 5.2.0, seven runs each |
 | Setup | One device without sync, 10,000 documents to evict: with one `EVICT` statement, and in chunks of 1,000 |
 
-- One statement took 29 ms (5.1.0: 36 ms).
-- In chunks of 1,000, it took 11 statements, the longest 5 ms (5.1.0: 6 ms), 48 ms in total (5.1.0: 56 ms).
+- One statement took 29 to 30 ms (5.1.0: 36 ms).
+- In chunks of 1,000, it took 11 statements, the longest 5.3 to 5.5 ms (5.1.0: 5.8 to 6.9 ms), 47 to 50 ms in total (5.1.0: 54 to 61 ms).
 - The local cost is small either way; chunks keep each statement short.
 
 **Used in:** [Batching evictions](../../best-practices/deletion-and-storage.md#batching-evictions).
@@ -242,16 +242,16 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; each time is the median of three repetitions within the run |
+| Observed on | SDK 5.1.0 and 5.2.0, five runs each, and 5.0.3, four runs; each time is the median of three repetitions within a run |
 | Setup | 1,000 `SELECT ... WHERE _id = ...` queries, once with a constant string and a parameter, and once with a new string for each value, with the value written into it |
 
 | Release | Constant string with a parameter | New string for each value |
 |---|---|---|
-| 5.2.0 | 1,708 ms | 1,677 ms |
-| 5.1.0 | 1,686 ms | 1,625 ms |
-| 5.0.3 | 6,554 ms | 6,551 ms |
+| 5.2.0 | 1,592 to 1,710 ms | 1,657 to 1,696 ms |
+| 5.1.0 | 1,677 to 1,710 ms | 1,498 to 1,701 ms |
+| 5.0.3 | 6,528 to 6,562 ms | 6,503 to 6,551 ms |
 
-- The differences are within the measurement error: the constant string was not faster.
+- The constant string was not faster. In each run, the two times differed by at most 12%, in either direction; the constant string was the faster one in 2 of the 14 runs, both on 5.2.0.
 
 **Not tested:** whether and when Ditto caches prepared statements.
 

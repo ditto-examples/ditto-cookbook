@@ -10,6 +10,7 @@ How DQL statements behaved when we ran them: which tables and statements of the 
 - A comparison between values of different types is MISSING, strings sort by code point, and `DESC` puts missing and `null` values first. Names are case-sensitive, and most keywords work as bare names ([Comparisons across types are MISSING, and strings sort by code point](#comparisons-across-types-are-missing-and-strings-sort-by-code-point), [Descending order puts missing and null first](#descending-order-puts-missing-and-null-first), [Names are case-sensitive, and most DQL keywords work as bare names](#names-are-case-sensitive-and-most-dql-keywords-work-as-bare-names)).
 - Since SDK 5.1, rows with equal sort keys come back in ascending `_id` order, also with `DESC`; on 5.0.3, `LIMIT` then did not return the first rows. `OFFSET` pages repeat a row after an insert, and keyset pages do not. `EXPLAIN` runs no statement, while `PROFILE` runs it ([Rows with equal sort keys come back in _id order since SDK 5.1](#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51), [OFFSET pages repeat rows after inserts, and keyset pages do not](#offset-pages-repeat-rows-after-inserts-and-keyset-pages-do-not), [EXPLAIN runs no statement, and PROFILE runs it](#explain-runs-no-statement-and-profile-runs-it)).
 - The integer `1` and the float `1.0` are equal in `WHERE` but form two groups in `GROUP BY` ([Integers and floats are equal in WHERE but separate in GROUP BY](#integers-and-floats-are-equal-in-where-but-separate-in-group-by)).
+- With strict mode on, queries do not use secondary indexes, while ID lookups and `COUNT(*)` keep their plans and `ADVISE` suggests nothing ([With strict mode on, the planner does not use secondary indexes](#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)).
 - A field written with different type declarations holds two values, and which one a query returns depends on its declaration; the index results did not change ([Mixed type declarations change what a query reads, not the index results](#mixed-type-declarations-change-what-a-query-reads-not-the-index-results)).
 - Document IDs and field names are compared by type and exact code points, without Unicode normalization, and a string ID can have at most 254 bytes ([Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value), [Field names can contain dots and backticks, or be empty](#field-names-can-contain-dots-and-backticks-or-be-empty)).
 - On SDK 5.1.0, index plans returned wrong results without an error: a composite index with a descending key and an `ORDER BY` on projected fields returned rows in the wrong order, and a comparison with the constant on the left (`1 < a`) returned the wrong rows, as on 5.0.3. An index created on an empty collection broke in the migration by 5.1.0, and 5.2.0 does not repair it ([On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order](#on-sdk-510-composite-indexes-with-a-descending-key-return-rows-in-the-wrong-order), [On SDK 5.1.0, ORDER BY on a projected field was ignored in an index plan](#on-sdk-510-order-by-on-a-projected-field-was-ignored-in-an-index-plan), [Before SDK 5.2.0, a comparison with the constant on the left returned wrong rows through an index](#before-sdk-520-a-comparison-with-the-constant-on-the-left-returned-wrong-rows-through-an-index), [An index created on an empty collection breaks in the 5.1.0 migration](#an-index-created-on-an-empty-collection-breaks-in-the-510-migration)).
@@ -332,6 +333,28 @@ The results were the same on every release tested, and they matched these sectio
 **Used in:** [Adding, updating, and removing map entries](../../best-practices/data-modeling.md#adding-updating-and-removing-map-entries), [Field names](../../best-practices/data-modeling.md#field-names).
 
 ## Indexes and Query Plans
+
+### With strict mode on, the planner does not use secondary indexes
+
+| | |
+|---|---|
+| Observed on | An index created while strict mode was on: SDK 5.1.0 and 5.2.0, four runs each, and 5.0.3, one run. An index created before, ID lookups, `COUNT(*)`, `ADVISE`, and turning strict mode off again: SDK 5.1.0 and 5.2.0, three runs each. Every run gave the same result |
+| Setup | One device without sync, three documents in `orders` and an index on `status`. (1) In one store, `ALTER SYSTEM SET DQL_STRICT_MODE = true` before the documents and the index were written, and in another store the default; then `EXPLAIN SELECT * FROM orders WHERE status = 'open'` in each. (2) In a third store, the index was created first; then we turned strict mode on and off again with `ALTER SYSTEM` and, in each state, ran `EXPLAIN` for the query on `status`, for `WHERE _id = 'a'`, and for `SELECT COUNT(*) FROM orders`, and `ADVISE SELECT * FROM orders WHERE total > 15` |
+
+| Plan or result | Strict mode off | Strict mode on |
+|---|---|---|
+| Query on the indexed field, index created while strict mode was on (all three releases) | — | `scan` and `filter`; in the store with the default, `indexScan` |
+| Query on the indexed field, index created before strict mode was turned on | `indexScan` and `fetch`, before and after strict mode | `scan` and `filter` |
+| `WHERE _id = 'a'` | `idScan` | `idScan` |
+| `SELECT COUNT(*) FROM orders` | `countScan` | `countScan` |
+| `ADVISE SELECT * FROM orders WHERE total > 15` | Suggests ``CREATE INDEX IF NOT EXISTS adv_orders_total ON default:`orders` (`total` ASC)`` | `no advice available for statement` |
+
+- The query on `status` returned the same document in both modes; only the plan changed.
+- The index was used again as soon as strict mode was turned off; it did not have to be created again.
+
+**Not tested:** the time on a large collection; composite indexes; strict mode set at startup with `DittoConfig.systemParameters` or an environment variable instead of `ALTER SYSTEM`; on 5.0.3, anything but the first case.
+
+**Used in:** [What strict mode changes](../../best-practices/data-modeling.md#what-strict-mode-changes), [Strict mode and data types](../../best-practices/indexing-and-performance.md#strict-mode-and-data-types).
 
 ### Mixed type declarations change what a query reads, not the index results
 

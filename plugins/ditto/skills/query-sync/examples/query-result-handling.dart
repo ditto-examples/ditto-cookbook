@@ -9,8 +9,9 @@
 // - mutatedDocumentIDs() builds a new list on every call: call it once.
 // - commitID is null for reads; inside a transaction it is only available
 //   after the transaction commits. A write that changed nothing still gets a
-//   commitID, which peers confirm only with a later commit (up to about 30 s
-//   in SDK 5.1.0), so track it only when mutatedDocumentIDs() is not empty.
+//   commitID, which peers confirm only with their next sync exchange (up to
+//   about 27 s in SDK 5.1.0 and 5.2.0), so track it only when
+//   mutatedDocumentIDs() is not empty.
 // - Never keep QueryResult or QueryResultItem objects in state, caches, or
 //   across observer callbacks: they reference native memory that is released
 //   only when the Dart object is garbage-collected.

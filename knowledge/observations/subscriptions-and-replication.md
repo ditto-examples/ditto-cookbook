@@ -14,7 +14,8 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - Changes written in separate statements arrived in the order written, and large transactions and statements arrived at once, except when a faster relay with narrower subscriptions delivered part of them first ([Changes written in separate statements arrived in the order written](#changes-written-in-separate-statements-arrived-in-the-order-written), [Large transactions and statements arrived all at once](#large-transactions-and-statements-arrived-all-at-once), [A fast relay with narrower subscriptions can show part of a transaction](#a-fast-relay-with-narrower-subscriptions-can-show-part-of-a-transaction)).
 - Sync sends compressed, field-level changes of the current state. In a full mesh, a device receives each new document from several neighbors, and when many devices reconnect at once with offline changes, the time until all of them agree grows faster than their number ([Sync traffic is compressed and carries field-level changes](#sync-traffic-is-compressed-and-carries-field-level-changes), [In a mesh, a new document arrives once from each neighbor](#in-a-mesh-a-new-document-arrives-once-from-each-neighbor), [Convergence after simultaneous reconnects grew faster than the number of devices](#convergence-after-simultaneous-reconnects-grew-faster-than-the-number-of-devices)).
 - After many offline updates of one field, only the current value syncs: 1,000 updates cost about as much as one ([Only the current state syncs after offline edits](#only-the-current-state-syncs-after-offline-edits)).
-- `close()` and `sync.stop()` do not wait for changes that are still being sent, and `sync_session_status` keeps showing `Connected` for about 73 seconds after a peer leaves ([A write made right before close or stop may not leave the device](#a-write-made-right-before-close-or-stop-may-not-leave-the-device), [The sync session status lags about 73 seconds behind a disconnection](#the-sync-session-status-lags-about-73-seconds-behind-a-disconnection)).
+- `close()` and `sync.stop()` do not wait for changes that are still being sent ([A write made right before close or stop may not leave the device](#a-write-made-right-before-close-or-stop-may-not-leave-the-device)).
+- `sync_session_status` keeps showing `Connected` for about 73 seconds after a peer stops sync or closes Ditto, and a statement that changed nothing is confirmed only with the next sync exchange, up to about 27 seconds later ([The sync session status lags about 73 seconds behind a disconnection](#the-sync-session-status-lags-about-73-seconds-behind-a-disconnection), [An empty commit is confirmed only with the next sync exchange](#an-empty-commit-is-confirmed-only-with-the-next-sync-exchange)).
 - Starting and stopping sync behaved as documented, and a change written right after another device stopped sync did not reach it ([Starting and stopping sync behaved as documented](#starting-and-stopping-sync-behaved-as-documented), [A change written right after another device stops sync did not reach it](#a-change-written-right-after-another-device-stops-sync-did-not-reach-it)).
 - In JavaScript, `queryArguments` of a subscription registered without arguments is empty, and reading it does not end the process ([In JavaScript, queryArguments of a subscription without arguments is empty](#in-javascript-queryarguments-of-a-subscription-without-arguments-is-empty)).
 
@@ -618,20 +619,36 @@ Trials (of 9) in which the hub received the document:
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0: the session status, three runs each; the confirmation of empty commits, seven runs each; the idle observer, three runs each |
-| Setup | (1) One of two connected devices called `sync.stop()`, and we measured how long the other device's `system:data_sync_info` row for it kept `sync_session_status` at `Connected`. (2) A device ran a statement that changed nothing and a statement that changed a document, and we measured how long each `commitID` took to be reflected in `synced_up_to_local_commit_id` of its `system:data_sync_info` row for the other device. (3) A device observed `system:data_sync_info` for 40 seconds while its one peer was idle |
+| Observed on | SDK 5.1.0 and 5.2.0: `sync.stop()`, four runs each; `close()`, three runs each. Every run gave the same result |
+| Setup | Two connected devices that subscribed to the same collection. One of them called `sync.stop()`, or, in a separate test, closed Ditto with `close()`. We measured how long the other device's `system:data_sync_info` row for it kept `sync_session_status` at `Connected`, read every 500 ms, and when its presence graph dropped the device |
 
-**Session status.** `sync_session_status` stopped being `Connected` 73.1 to 73.2 seconds after the other device's `sync.stop()`, on 5.1.0 and on 5.2.0 (all three runs). The presence graph dropped the device after about 0.1 seconds. The constant value looks like a fixed timeout.
+- After `sync.stop()`, `sync_session_status` stopped being `Connected` 72.8 to 73.2 seconds later, on 5.1.0 and on 5.2.0. The presence graph dropped the device after 101 to 103 ms.
+- After `close()`, it stopped being `Connected` 72.8 to 73.3 seconds after `close()` was called. `close()` returned after 30 to 66 ms, and the presence graph had dropped the device by then. The row stayed, with `Not Connected`.
+- The constant value looks like a fixed timeout.
 
-**Empty commits.** Time until the `commitID` appeared in `synced_up_to_local_commit_id`:
+**Not tested:** a device that stops responding without closing its connection (its presence is described in [A silent network outage removes a peer after about 7 seconds](connections-and-presence.md#a-silent-network-outage-removes-a-peer-after-about-7-seconds)); more than two devices.
+
+**Used in:** [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
+
+### An empty commit is confirmed only with the next sync exchange
+
+| | |
+|---|---|
+| Observed on | The `commitID` of statements that changed nothing: SDK 5.1.0 and 5.2.0, four runs each, and 5.0.3, one run; every run gave the same result. The confirmation: SDK 5.1.0 and 5.2.0, seven runs each; the times varied between runs, as listed below |
+| Setup | (1) One device without sync ran three statements that changed nothing: an `UPDATE` whose `WHERE` matched nothing, and `INSERT ... ON ID CONFLICT DO NOTHING` and `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` with an existing document, unchanged. (2) Two connected devices that subscribed to one collection and had synced one document; 3 seconds after they agreed, one of them ran an `UPDATE` whose `WHERE` matched nothing. When that `commitID` had been confirmed, it ran an `UPDATE` that changed the document. For each `commitID`, we measured how long it took to be reflected in `synced_up_to_local_commit_id` of the device's `system:data_sync_info` row for the other device, read every 250 ms |
+
+- Each of the three statements that changed nothing returned a `commitID`, with an empty `mutatedDocumentIDs()`, on every release.
+
+Time until the `commitID` appeared in `synced_up_to_local_commit_id`:
 
 | Release | A statement that changed nothing | A statement that changed a document |
 |---|---|---|
 | 5.1.0 | 27.2 to 27.4 seconds in 5 runs, 2.8 seconds once, and 0.77 seconds once (in a full run of all checks) | 0.25 to 0.27 seconds in every run |
 | 5.2.0 | 27.2 seconds in 2 runs, 2.5 to 4.8 seconds in 5 runs | 0.25 to 0.27 seconds in every run |
 
-On both releases, an empty commit is not confirmed on its own but with the next sync exchange, at most about 27 seconds later. The time until confirmation therefore varies between about 0.8 and 27 seconds, depending on when that exchange happens; it can also be under 1 second. On 5.2.0, the confirmation often came sooner.
+- On both releases, an empty commit is not confirmed on its own but with the next sync exchange between the two devices, at most about 27 seconds later. The time until confirmation therefore varies between about 0.8 and 27 seconds, depending on when that exchange happens; it can also be under 1 second. On 5.2.0, the confirmation often came sooner.
+- The 27 seconds match the periodic update that an observer of `system:data_sync_info` showed with an idle peer ([An observer of system:data_sync_info fired about every 27 seconds with an idle peer](observer-behavior.md#an-observer-of-systemdata_sync_info-fired-about-every-27-seconds-with-an-idle-peer)); we think empty commits are confirmed with that update.
 
-**An idle observer on `system:data_sync_info`.** With one idle peer, the observer was called 3 times in 40 seconds on 5.1.0 (at 0 seconds, at 2 to 5 seconds, and at 27.6 seconds), and 3 or 4 times on 5.2.0 (at 0 seconds, in some runs at 0.8 to 2.8 seconds, and at 27.3 seconds and again 33 ms later). We think there is a periodic update about every 27 seconds and that empty commits are confirmed with it.
+**Not tested:** whether a later commit that changes a document confirms an earlier empty commit at once; more than two devices.
 
 **Used in:** [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).

@@ -418,7 +418,7 @@ Ditto is offline-first, so there is no single "synced" state. You can still show
 
 A local write has reached a peer when that peer's `synced_up_to_local_commit_id` is greater than or equal to the write's `commitID`.
 
-> **Note (SDK 5.1.0 and 5.2.0):** A statement that changes nothing still returns a `commitID`. Examples are `ON ID CONFLICT DO NOTHING` or `DO UPDATE_LOCAL_DIFF` on an existing document, and an `UPDATE` whose `WHERE` matches nothing. In our testing, peers did not confirm such an empty commit on its own: `synced_up_to_local_commit_id` passed it only with the next commit that synced, up to about 30 seconds later, although on 5.2.0 often within a few seconds (see [The sync session status lags about 73 seconds behind a disconnection](../knowledge/observations/subscriptions-and-replication.md#the-sync-session-status-lags-about-73-seconds-behind-a-disconnection)). Track a `commitID` only when `mutatedDocumentIDs()` is not empty.
+> **Note (SDK 5.1.0 and 5.2.0):** A statement that changes nothing still returns a `commitID`. Examples are `ON ID CONFLICT DO NOTHING` or `DO UPDATE_LOCAL_DIFF` on an existing document, and an `UPDATE` whose `WHERE` matches nothing. In our testing, peers did not confirm such an empty commit on its own: `synced_up_to_local_commit_id` passed it only with the next sync exchange between the devices, up to about 27 seconds later, although on 5.2.0 often within a few seconds (see [An empty commit is confirmed only with the next sync exchange](../knowledge/observations/subscriptions-and-replication.md#an-empty-commit-is-confirmed-only-with-the-next-sync-exchange)). Track a `commitID` only when `mutatedDocumentIDs()` is not empty.
 
 > **Note (SDK 5.1.0 and 5.2.0):** `sync_session_status` reacts slowly to disconnections. In our testing, the row stayed `"Connected"` for about 73 seconds after the other peer closed Ditto or called `ditto.sync.stop()`, while the presence graph dropped the peer within about 0.1 seconds (see [The sync session status lags about 73 seconds behind a disconnection](../knowledge/observations/subscriptions-and-replication.md#the-sync-session-status-lags-about-73-seconds-behind-a-disconnection)); a peer that stopped responding without closing its connection left the presence graph after about 7 to 9 seconds (see [A silent network outage removes a peer after about 7 seconds](../knowledge/observations/connections-and-presence.md#a-silent-network-outage-removes-a-peer-after-about-7-seconds)). Use `sync_session_status` for upload progress, and use [Presence](setup-and-lifecycle.md#presence) for "connected now" indicators.
 
@@ -434,7 +434,7 @@ SELECT * FROM system:data_sync_info WHERE is_ditto_server = true
 - Check `mutatedDocumentIDs()` before tracking a `commitID`; skip statements that changed nothing.
 
 **❌ DON'T:**
-- Register observers on `system:data_sync_info` in many widgets. Each one re-reads the sync state of every connection. How often they fire varies: with SDK 5.1.0 (Flutter and JavaScript) we observed an idle observer firing only when the rows changed, about once every 10 seconds, and for SDK 5.2 the Ditto documentation no longer lists `system:data_sync_info` among the collections whose observers run on a timer (older documentation described a 500 ms interval). Write code that works with either behavior.
+- Register observers on `system:data_sync_info` in many widgets. Each one re-reads the sync state of every connection. How often they fire varies: Ditto's page on monitoring sync status describes a callback every 500 ms, while its virtual collections reference does not list `system:data_sync_info` among the collections whose observers run on a timer. In our testing with SDK 5.1.0 and 5.2.0, an observer with one idle peer was called 3 or 4 times in 40 seconds, the last time about 27 seconds after registration (see [An observer of system:data_sync_info fired about every 27 seconds with an idle peer](../knowledge/observations/observer-behavior.md#an-observer-of-systemdata_sync_info-fired-about-every-27-seconds-with-an-idle-peer)). Write code that works with either behavior.
 - Do heavy work (JSON decoding of large structures, database writes, network calls) in such an observer.
 - Register subscriptions on `system:data_sync_info`; it is local-only, so such a subscription is accepted but has no effect.
 - Expect `system:data_sync_info` on platforms with in-memory storage such as web browsers.
@@ -512,9 +512,9 @@ Future<int?> saveSettings(Ditto ditto, Map<String, dynamic> settings) async {
     arguments: {'settings': settings},
   );
   // An unchanged document still gets a commitID, but peers confirm it only
-  // with a later commit (up to about 30 seconds later).
+  // with their next sync exchange (up to about 27 seconds later).
   return result.mutatedDocumentIDs().isEmpty ? null : result.commitID;
 }
 ```
 
-**Why:** `system:data_sync_info` is cheap to read, but the Ditto documentation describes observers on it as timer-driven. A single small observer per relevant screen is fine; dozens of observers that may rebuild widgets twice per second are not. For connectivity information (which peers are nearby, whether Ditto Server is connected), use the presence API instead (see [Presence](setup-and-lifecycle.md#presence)).
+**Why:** `system:data_sync_info` is cheap to read, but every callback re-reads the row of every connection, and Ditto's documentation allows these observers to fire every 500 ms. A single small observer per relevant screen is fine; dozens of observers that may rebuild widgets twice per second are not. For connectivity information (which peers are nearby, whether Ditto Server is connected), use the presence API instead (see [Presence](setup-and-lifecycle.md#presence)).
