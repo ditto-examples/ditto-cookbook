@@ -168,7 +168,7 @@ The recommended form is to avoid inline objects entirely and pass the document a
 
 #### Reserved words
 
-Some DQL keywords cannot be used as bare identifiers. A collection named `collection` is the most common trap: `SELECT * FROM collection` is a parser error (`expected identifier`). Aliases such as `all` fail the same way. Most other keywords, such as `order`, `select`, `value`, and `count`, worked as bare collection and field names in our testing (see [Comparisons across types are MISSING, and strings sort by code point](../knowledge/dql-behavior.md#comparisons-across-types-are-missing-and-strings-sort-by-code-point)). Literals are a different case: a bare `true`, `false`, or `null` is read as the value, never as a field of that name, and the statement runs without an error.
+Some DQL keywords cannot be used as bare identifiers. A collection named `collection` is the most common trap: `SELECT * FROM collection` is a parser error (`expected identifier`). Aliases such as `all` fail the same way. Most other keywords, such as `order`, `select`, `value`, and `count`, worked as bare collection and field names in our testing (see [Names are case-sensitive, and most DQL keywords work as bare names](../knowledge/dql-behavior.md#names-are-case-sensitive-and-most-dql-keywords-work-as-bare-names)). Literals are a different case: a bare `true`, `false`, or `null` is read as the value, never as a field of that name, and the statement runs without an error.
 
 **✅ DO:**
 - Choose collection and field names that are not DQL keywords (`orders`, `tasks`, `createdAt`).
@@ -611,7 +611,7 @@ Future<List<Map<String, dynamic>>> ordersByIds(Ditto ditto, List<String> ids) as
 | A single value instead of an array | `status IN :statuses` with `'open'` | ❌ Matches nothing, without an error |
 | Equality with an array parameter | `status = :statuses` | ❌ Compares with the whole array, so only array fields with the same elements match |
 
-An empty array returns no rows, also without an error. Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded` (see [Long OR chains crashed SDK 5.1.0, and nested parentheses fail at 100 levels](../knowledge/dql-behavior.md#long-or-chains-crashed-sdk-510-and-nested-parentheses-fail-at-100-levels)).
+An empty array returns no rows, also without an error. Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0 (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded` (see [Conditions fail at 100 levels of nested parentheses](../knowledge/dql-behavior.md#conditions-fail-at-100-levels-of-nested-parentheses)).
 
 ```dart
 // ✅ GOOD: Membership against an array parameter
@@ -636,7 +636,7 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 }
 ```
 
-> **Note (SDK 5.1.0 and 5.2.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a known issue since 5.1.0, and 5.2.0 does not fix it; in our testing, 5.0.3 returned the matching documents (see [ANY over a parameter array broke in 5.1.0, and the multi-property issue was 5.1.0 only](../knowledge/dql-behavior.md#any-over-a-parameter-array-broke-in-510-and-the-multi-property-issue-was-510-only)). A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](../knowledge/dql-functions.md#any-and-every). <!-- lint-ignore -->
+> **Note (SDK 5.1.0 and 5.2.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a known issue since 5.1.0, and 5.2.0 does not fix it; in our testing, 5.0.3 returned the matching documents (see [ANY over a parameter array returns no rows since SDK 5.1.0](../knowledge/dql-behavior.md#any-over-a-parameter-array-returns-no-rows-since-sdk-510)). A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](../knowledge/dql-functions.md#any-and-every). <!-- lint-ignore -->
 
 ### Joining Collections (SDK 5.1+)
 
@@ -891,7 +891,7 @@ Future<void> doUpdateMerges(Ditto ditto) async {
 }
 ```
 
-**Why:** With the default `DQL_STRICT_MODE = false`, objects are stored as CRDT maps that merge field by field (see [Strict Mode](data-modeling.md#strict-mode) and [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)). A field that is written again, even with the value it already has, is a new write that wins over an earlier concurrent edit of that field on another device (see [Writing a value that did not change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change)). Writing only what changed avoids that, and it keeps sync deltas small.
+**Why:** With the default `DQL_STRICT_MODE = false`, objects are stored as CRDT maps that merge field by field (see [Strict Mode](data-modeling.md#strict-mode) and [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)). A field that is written again, even with the value it already has, is a new write that wins over an earlier concurrent edit of that field on another device (see [Writing a Value That Did Not Change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change)). Writing only what changed avoids that, and it keeps sync deltas small.
 
 #### INITIAL DOCUMENTS
 
@@ -1004,7 +1004,7 @@ Not reported as an error: a nested `SET a.b = 1` adds `b` when `a` is an object,
 
 With the default strict mode (`DQL_STRICT_MODE = false`), an object field is a CRDT map. `SET obj = {...}` **merges** the new keys into the existing object instead of replacing it, and `SET obj = {}` leaves the object unchanged.
 
-Keys are removed only by `UNSET`, so replacing an object takes `UNSET` followed by `SET` in one transaction. The full table of local write semantics for maps, including upserts and scalar overwrites, is in [Local write semantics you must know](../knowledge/crdt-types.md#local-write-semantics-you-must-know).
+Keys are removed only by `UNSET`, so replacing an object takes `UNSET` followed by `SET` in one transaction. The full table of local write semantics for maps, including upserts and scalar overwrites, is in [Local Write Semantics You Must Know](../knowledge/crdt-types.md#local-write-semantics-you-must-know).
 
 **✅ DO:**
 - Update nested fields individually: `SET address.city = :city`.
@@ -1075,7 +1075,7 @@ Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
 
 The `coalesce` in the condition keeps documents whose `status` is missing or `null` eligible for the update; a plain `status != :status` would skip them (see [MISSING and NULL](#missing-and-null)).
 
-**Why:** Ditto syncs changes at field level, and every field that a statement writes counts as a new write, even when its value did not change. Rewriting a whole document therefore overwrites every concurrent edit that another device made earlier to any of its fields, and it makes the change larger (see [Writing a value that did not change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change)). Field-level updates touch only what the user actually changed.
+**Why:** Ditto syncs changes at field level, and every field that a statement writes counts as a new write, even when its value did not change. Rewriting a whole document therefore overwrites every concurrent edit that another device made earlier to any of its fields, and it makes the change larger (see [Writing a Value That Did Not Change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change)). Field-level updates touch only what the user actually changed.
 
 ### RETURNING (SDK 5.1+)
 

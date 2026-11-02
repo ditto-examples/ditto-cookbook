@@ -13,7 +13,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 - Updating a document 10,000 times does not make it heavier, but every map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove them ([Repeated updates do not grow a document, and the write-ahead log grows to about 20 MB](#repeated-updates-do-not-grow-a-document-and-the-write-ahead-log-grows-to-about-20-mb), [Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
 - Removing data does not shrink the files at once, and most removed values can still be read from them after Ditto closes. SDK 5.2.0 reclaims free space only above 100 MB, and since 5.1, after a few thousand writes, the document store and the attachment store each have a write-ahead log of about 20 MB ([Evicting data does not free disk space at once](#evicting-data-does-not-free-disk-space-at-once), [Deleted and evicted values remain in the database files](#deleted-and-evicted-values-remain-in-the-database-files)).
 
-## Deletion across devices
+## Deletion across Devices
 
 ### Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0
 
@@ -32,7 +32,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 **Used in:** [Husk documents](../best-practices/deletion-and-storage.md#husk-documents), [Soft delete, subscriptions, and cleanup](../best-practices/deletion-and-storage.md#soft-delete-subscriptions-and-cleanup), [EVICT](../best-practices/deletion-and-storage.md#evict), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents).
 
-## Tombstones and reaping
+## Tombstones and Reaping
 
 ### A device with an old copy resurrects a document after its tombstone is reaped
 
@@ -90,7 +90,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 **Used in:** [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping).
 
-## Deletion traffic and eviction
+## Deletion Traffic and Eviction
 
 ### Deletion flags and DELETE transfer little, and eviction under a subscription refetches
 
@@ -111,7 +111,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 **Not tested:** the frequency and the time window that trigger the eviction warning.
 
-**Used in:** [EVICT](../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
+**Used in:** [EVICT](../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Cancelling subscriptions and local data](../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
 
 ### A relay that evicts flagged documents receives old versions back
 
@@ -142,7 +142,7 @@ On both releases:
 
 **Used in:** [EVICT](../best-practices/deletion-and-storage.md#evict).
 
-## Removed data in queries and documents
+## Removed Data in Queries and Documents
 
 ### Tombstones and evicted documents do not slow queries, but flagged documents do
 
@@ -198,7 +198,7 @@ What a new peer received in its first sync:
 
 **Used in:** [Adding, updating, and removing map entries](../best-practices/data-modeling.md#adding-updating-and-removing-map-entries).
 
-## Disk space and the write-ahead log
+## Disk Space and the Write-Ahead Log
 
 ### Evicting data does not free disk space at once
 
@@ -239,7 +239,7 @@ What a new peer received in its first sync:
 
 **Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), [On-disk logs and exporting them](../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them).
 
-## Deleted data on disk
+## Deleted Data on Disk
 
 ### Deleted and evicted values remain in the database files
 

@@ -357,5 +357,75 @@ class ObservationEntriesTest(unittest.TestCase):
         self.assertIn("knowledge/connections.md:11", errors[2])
 
 
+class UsedInTest(unittest.TestCase):
+    KNOWLEDGE = """
+        # Connections
+
+        - In brief: [six clients](#a-hub-accepts-six-clients).
+
+        ### A hub accepts six clients
+
+        | | |
+        |---|---|
+        | Observed on | SDK 5.2.0, three runs |
+        | Setup | One hub and eight clients |
+
+        **Used in:** [Hubs](../best-practices/page.md#hubs).
+
+        ### Another entry
+
+        | | |
+        |---|---|
+        | Observed on | SDK 5.2.0, one run |
+        | Setup | One hub |
+
+        - See [A hub accepts six clients](#a-hub-accepts-six-clients).
+
+        **Used in:** none yet.
+        """
+
+    def check(self, text: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = write(root, "knowledge/connections.md", self.KNOWLEDGE)
+            page = write(root, "best-practices/page.md", text)
+            return check.check_used_in([page, knowledge], [knowledge], root)
+
+    def test_accepts_sections_that_the_entry_lists(self):
+        self.assertEqual(self.check("""
+            # Page
+
+            ## Hubs
+
+            Six clients (see [the limit](../knowledge/connections.md#a-hub-accepts-six-clients)).
+            """), [])
+
+    def test_reports_sections_that_the_entry_does_not_list(self):
+        errors = self.check("""
+            # Page
+
+            ## Clients
+
+            Six clients (see [the limit](../knowledge/connections.md#a-hub-accepts-six-clients)).
+            """)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("best-practices/page.md:5", errors[0])
+        self.assertIn("clients", errors[0])
+
+    def test_a_page_link_in_used_in_covers_every_section(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = write(root, "knowledge/connections.md",
+                              self.KNOWLEDGE.replace("(../best-practices/page.md#hubs)", "(../best-practices/page.md)"))
+            page = write(root, "best-practices/page.md", """
+                # Page
+
+                ## Clients
+
+                Six clients (see [the limit](../knowledge/connections.md#a-hub-accepts-six-clients)).
+                """)
+            self.assertEqual(check.check_used_in([page, knowledge], [knowledge], root), [])
+
+
 if __name__ == "__main__":
     unittest.main()

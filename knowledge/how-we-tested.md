@@ -2,7 +2,7 @@
 
 The knowledge pages describe how Ditto behaved when we ran it, next to what Ditto's documentation says. This page describes how we ran it, so that you can judge how far a result carries over to your app. Each observation names the SDK releases and the number of runs it is based on; this page explains the setup they share.
 
-## Test environment
+## Test Environment
 
 - **SDK**: the JavaScript SDK (`@dittolive/ditto`) 5.0.3, 5.1.0, and 5.2.0 on Node.js 24, on one Mac. Most observations compare 5.1.0 and 5.2.0; 5.0.3 was added where a difference between releases mattered. Some key cases on 5.1.0 were also run with the Flutter SDK on macOS.
 - **Peers**: Small Peers in small-peers-only mode with an offline license token, each in a new persistence directory. The peer-to-peer transports (Bluetooth LE, LAN discovery, AWDL) were disabled, and the peers connected over TCP on `127.0.0.1`: one peer (the hub) listened on a port, and the others listed it in `connect.tcpServers`. A peer that only connects still listens on all interfaces (see [A device that only connects also listens for TCP connections](connections-and-presence.md#a-device-that-only-connects-also-listens-for-tcp-connections)); since we found that, every peer also listens on `127.0.0.1` only, which did not change the results.
@@ -10,7 +10,7 @@ The knowledge pages describe how Ditto behaved when we ran it, next to what Ditt
 - **Relay**: to see what travels between two peers, a TCP relay sat between them. It counted the bytes in each direction, could limit each direction to a bandwidth (a slow link such as Bluetooth LE), and could pause the traffic without closing the connections (a network that stops passing data, as when Wi-Fi drops), then deliver what it had held. The relay itself buffers about 20 ms of traffic, at least 64 KiB.
 - **Clocks**: to give one peer a clock that runs ahead or behind, its process ran with a library that shifts the wall clock by a set offset. Ditto's `clock()`, its log timestamps, and `Date.now()` all followed the shifted clock, while timers and timeouts kept working, because the monotonic clock was not shifted. Peers in one process share one clock, so only peers in separate processes can have different clocks.
 
-## Reading the results
+## Reading the Results
 
 - **Runs**: "three runs each" means that the same procedure was repeated three times on each listed release. Timing results were repeated at least three times before we drew a conclusion; results from a single run say so. "Deterministic" means that every run gave the same result.
 - **Numbers**: times, sizes, and rates come from one machine over loopback TCP. Phones, real networks, and other transports will differ, often by a lot. Use the numbers for the order of magnitude and for the shape of the behavior (what waits for what, what grows with what), not as estimates for your app.
@@ -18,14 +18,14 @@ The knowledge pages describe how Ditto behaved when we ran it, next to what Ditt
 - **Documentation**: when Ditto's documentation, API reference, or release notes describe the behavior, the observation says so and whether we saw the same.
 - **Scope**: what an observation did not cover is listed under "Not tested". The limits of the environment above apply to every observation.
 
-## What we did not test
+## What We Did Not Test
 
 - Mobile devices, and the Flutter, Swift, and Kotlin SDKs, except for the key Flutter cases on macOS
 - Bluetooth LE, AWDL, Wi-Fi Aware, LAN discovery, and multicast; a slow or paused link was simulated with the relay
 - Ditto Server, its HTTP API, and authentication through a webhook
 - Real networks between machines, and more devices than each observation names
 
-## Checks of the guide itself
+## Checks of the Guide Itself
 
 These checks run on every change of the guide:
 

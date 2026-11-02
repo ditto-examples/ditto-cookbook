@@ -1,6 +1,6 @@
 # Merge Behavior
 
-How concurrent writes from several devices merge: registers, maps, and removals on two devices, writes from three to six devices at once and from devices on different SDK releases, conditional updates and read-modify-write arithmetic, reordering and renaming, and counters. [CRDT Types and Merge Behavior](crdt-types.md) is the reference summary of the CRDT types and of the merge results, including [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce); this page describes the observations behind it in full. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps), [Counters](../best-practices/data-modeling.md#counters), [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites), [Event History and Audit Logs](../best-practices/data-modeling.md#event-history-and-audit-logs), [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents), [Schema Evolution](../best-practices/data-modeling.md#schema-evolution), [Husk documents](../best-practices/deletion-and-storage.md#husk-documents), and [Transactions](../best-practices/transactions.md).
+How concurrent writes from several devices merge: registers, maps, and removals on two devices, writes from three to six devices at once and from devices on different SDK releases, conditional updates and read-modify-write arithmetic, reordering and renaming, and counters. [CRDT Types and Merge Behavior](crdt-types.md) is the reference summary of the CRDT types and of the merge results, including [What Concurrent Edits Produce](crdt-types.md#what-concurrent-edits-produce); this page describes the observations behind it in full. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps), [Counters](../best-practices/data-modeling.md#counters), [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites), [Event History and Audit Logs](../best-practices/data-modeling.md#event-history-and-audit-logs), [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents), [Schema Evolution](../best-practices/data-modeling.md#schema-evolution), [Husk documents](../best-practices/deletion-and-storage.md#husk-documents), and [Transactions](../best-practices/transactions.md).
 
 **In brief**
 
@@ -10,10 +10,11 @@ How concurrent writes from several devices merge: registers, maps, and removals 
 - A counter, a map keyed by ID, and an audit log keyed by timestamp kept every change from three offline devices, and a randomized test with four to six devices, also with SDK releases mixed, always converged without losing an increment or a latest write. Peers on 5.0.3, 5.1.0, and 5.2.0 merged concurrent edits as on a single release ([With three offline devices, counters and maps keep every change](#with-three-offline-devices-counters-and-maps-keep-every-change), [A randomized merge test always converged](#a-randomized-merge-test-always-converged), [Peers on different releases merged to the same documents](#peers-on-different-releases-merged-to-the-same-documents)).
 - Each device evaluates conditions and arithmetic on the documents it holds: a conditional update is not a lock, a bulk `UPDATE` misses documents that other devices added, and `reg = reg + 1` on six connected devices kept only 101 to 129 of 600 increments ([Conditional updates on two offline devices both succeed](#conditional-updates-on-two-offline-devices-both-succeed), [UPDATE changes only the documents that the writing device holds](#update-changes-only-the-documents-that-the-writing-device-holds), [Read-modify-write increments lose most concurrent updates](#read-modify-write-increments-lose-most-concurrent-updates)).
 - A reorder survives a concurrent reorder only when it writes just the moved entry, with a value between its new neighbors; renaming a field in place hides what older app versions write ([Reordering on two offline devices keeps both moves only with gap positions](#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions), [Renaming a field in place hides older versions' edits](#renaming-a-field-in-place-hides-older-versions-edits)).
+- A stored total keeps one device's partial result after the line items merge, and changing a register to a counter in a new app version leaves both values in the field ([A stored total keeps one device's partial result](#a-stored-total-keeps-one-devices-partial-result), [Changing a register to a counter leaves both values](#changing-a-register-to-a-counter-leaves-both-values)).
 - Counters accept only integers. An upsert that writes a number into a counter restarts it, and two devices that create the same counter document with a regular `INSERT` lose an increment, while `INITIAL DOCUMENTS` keeps both ([Counters accept only integers](#counters-accept-only-integers), [An upsert that declares a counter restarts it](#an-upsert-that-declares-a-counter-restarts-it), [INITIAL DOCUMENTS keeps concurrent counter increments](#initial-documents-keeps-concurrent-counter-increments)).
 - Counters inside map entries add up. An undeclared `SET` leaves a second value beside a counter, a deletion that meets a concurrent increment leaves a count of 0, and `INSERT ... SELECT` copies counters and attachments as plain values unless both sides declare them ([Counters inside map entries add up](#counters-inside-map-entries-add-up), [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values), [Deleting a counter during a concurrent increment leaves a husk](#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk), [INSERT ... SELECT copies counters and attachments as plain values](#insert--select-copies-counters-and-attachments-as-plain-values)).
 
-## Last-writer-wins, maps, and removals
+## Last-Writer-Wins, Maps, and Removals
 
 ### The merge table held on SDK 5.1.0 and 5.2.0
 
@@ -47,7 +48,7 @@ The main cases:
 | A soft delete | A restore | The restore wins |
 | `DELETE`, then `INSERT` of `{fresh: 1}` with the same `_id` | A concurrent edit on another device, `SET color = 'blue'` | `{"fresh": 1, "color": "blue"}` |
 
-**Used in:** [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce), [Local write semantics you must know](crdt-types.md#local-write-semantics-you-must-know), [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps), [RESTART](../best-practices/data-modeling.md#restart), [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents), [Never use sequential or timestamp-only IDs](../best-practices/data-modeling.md#never-use-sequential-or-timestamp-only-ids), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Husk documents](../best-practices/deletion-and-storage.md#husk-documents), [Soft Delete](../best-practices/deletion-and-storage.md#soft-delete).
+**Used in:** [What Concurrent Edits Produce](crdt-types.md#what-concurrent-edits-produce), [Local Write Semantics You Must Know](crdt-types.md#local-write-semantics-you-must-know), [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps), [RESTART](../best-practices/data-modeling.md#restart), [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents), [Never use sequential or timestamp-only IDs](../best-practices/data-modeling.md#never-use-sequential-or-timestamp-only-ids), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Husk documents](../best-practices/deletion-and-storage.md#husk-documents), [Soft Delete](../best-practices/deletion-and-storage.md#soft-delete).
 
 ### A key added concurrently survives a later removal as null
 
@@ -66,7 +67,7 @@ Results were the same on both releases.
 
 - A removal (`UNSET`, `DELETE`) cannot remove a key that another device wrote concurrently. The key remains: with its value when the edit was later than the removal (see [The merge table held on SDK 5.1.0 and 5.2.0](#the-merge-table-held-on-sdk-510-and-520)), and as `null` when the edit was earlier. Husk documents follow the same rule.
 
-**Used in:** [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce), [Local write semantics you must know](crdt-types.md#local-write-semantics-you-must-know), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Husk documents](../best-practices/deletion-and-storage.md#husk-documents).
+**Used in:** [What Concurrent Edits Produce](crdt-types.md#what-concurrent-edits-produce), [Local Write Semantics You Must Know](crdt-types.md#local-write-semantics-you-must-know), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Husk documents](../best-practices/deletion-and-storage.md#husk-documents), [Adding, updating, and removing map entries](../best-practices/data-modeling.md#adding-updating-and-removing-map-entries).
 
 ### The later write wins by when it was written, not when it arrived
 
@@ -81,7 +82,7 @@ Results were the same on both releases.
 
 **Not tested:** a device whose clock runs ahead (see [A device whose clock runs ahead wins concurrent edits](clocks-and-time.md#a-device-whose-clock-runs-ahead-wins-concurrent-edits)).
 
-**Used in:** [Merge semantics in detail](crdt-types.md#merge-semantics-in-detail), [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce).
+**Used in:** [Merge Semantics in Detail](crdt-types.md#merge-semantics-in-detail), [What Concurrent Edits Produce](crdt-types.md#what-concurrent-edits-produce).
 
 ### Rewriting an unchanged value overwrites concurrent edits
 
@@ -103,7 +104,7 @@ Results were the same on both releases.
 - A write records a new timestamp even when the value is the same as before, so by last-writer-wins it wins over an earlier concurrent edit of that field.
 - The amount of data synced differs little between these ways of writing (see [Sync traffic is compressed and carries field-level changes](subscriptions-and-replication.md#sync-traffic-is-compressed-and-carries-field-level-changes)). The main reason to avoid `DO UPDATE` and whole-document rewrites is this overwrite, not the transfer.
 
-**Used in:** [Writing a value that did not change](crdt-types.md#writing-a-value-that-did-not-change), [ON ID CONFLICT](../best-practices/dql.md#on-id-conflict), [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites), [Prefer field-level updates](../best-practices/data-modeling.md#prefer-field-level-updates).
+**Used in:** [Writing a Value That Did Not Change](crdt-types.md#writing-a-value-that-did-not-change), [ON ID CONFLICT](../best-practices/dql.md#on-id-conflict), [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites), [Prefer field-level updates](../best-practices/data-modeling.md#prefer-field-level-updates).
 
 ### Fields written in one transaction still merge field by field
 
@@ -123,9 +124,9 @@ Results were the same on both releases.
 - A transaction does not keep its values together with respect to other devices: another device's later edit of one field mixes with the transaction's other fields.
 - A string is one value, and there is no character-level merge: the later write replaces the whole text.
 
-**Used in:** [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce), [Transactions](../best-practices/transactions.md).
+**Used in:** [What Concurrent Edits Produce](crdt-types.md#what-concurrent-edits-produce), [Transactions](../best-practices/transactions.md).
 
-## Several devices writing the same document
+## Several Devices Writing the Same Document
 
 ### With three offline devices, counters and maps keep every change
 
@@ -137,7 +138,7 @@ Results were the same on both releases.
 - All three devices ended with the counter at 150, 30 map entries, 15 audit log entries, and the array `["initial", "from-2"]`, the version of the device that wrote last. Results were the same on both releases.
 - The same held at a larger scale. In one document with a map of 10,000 entries, three offline devices each updated a different 1,000 entries. Right after they reconnected, all 3,000 updates were there (the sum of the values matched on the three devices). Each update took 2 to 8 ms per statement and did not slow down with the size of the map.
 
-**Used in:** [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce), [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps), [Adding, updating, and removing map entries](../best-practices/data-modeling.md#adding-updating-and-removing-map-entries), [Counters](../best-practices/data-modeling.md#counters), [Pattern 1: Audit-log map inside the document](../best-practices/data-modeling.md#pattern-1-audit-log-map-inside-the-document).
+**Used in:** [What Concurrent Edits Produce](crdt-types.md#what-concurrent-edits-produce), [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps), [Adding, updating, and removing map entries](../best-practices/data-modeling.md#adding-updating-and-removing-map-entries), [Counters](../best-practices/data-modeling.md#counters), [Pattern 1: Audit-log map inside the document](../best-practices/data-modeling.md#pattern-1-audit-log-map-inside-the-document).
 
 ### A randomized merge test always converged
 
@@ -167,7 +168,7 @@ An extended version of both tests ran on SDK 5.0.3, 5.1.0, and 5.2.0, three runs
 
 **Not tested:** attachments, devices with different strict mode settings, and devices with different clocks.
 
-**Used in:** [What concurrent edits produce](crdt-types.md#what-concurrent-edits-produce).
+**Used in:** [What Concurrent Edits Produce](crdt-types.md#what-concurrent-edits-produce).
 
 ### Peers on different releases merged to the same documents
 
@@ -182,7 +183,7 @@ An extended version of both tests ran on SDK 5.0.3, 5.1.0, and 5.2.0, three runs
 
 **Used in:** [Mixed Releases](upgrading.md#mixed-releases).
 
-## Conditional updates and arithmetic
+## Conditional Updates and Arithmetic
 
 ### Conditional updates on two offline devices both succeed
 
@@ -202,7 +203,7 @@ Results were the same on both releases.
 
 - Each device evaluates the condition on its own copy, so a conditional update such as `WHERE status = 'open'` does not make a claim exclusive between offline devices.
 
-**Used in:** [Conditions and arithmetic across devices](crdt-types.md#conditions-and-arithmetic-across-devices), [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate).
+**Used in:** [Conditions and Arithmetic across Devices](crdt-types.md#conditions-and-arithmetic-across-devices), [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate).
 
 ### UPDATE changes only the documents that the writing device holds
 
@@ -214,7 +215,7 @@ Results were the same on both releases.
 - After sync, o1 and o2 were closed, and o1 also kept B's `note`. o3 stayed `open`.
 - Devices sync the result of a statement (the changed documents), not the statement itself. A bulk `UPDATE`, such as a closing job or a migration, affects only the documents that the device held when it ran.
 
-**Used in:** [Conditions and arithmetic across devices](crdt-types.md#conditions-and-arithmetic-across-devices).
+**Used in:** [Conditions and Arithmetic across Devices](crdt-types.md#conditions-and-arithmetic-across-devices).
 
 ### Read-modify-write increments lose most concurrent updates
 
@@ -233,9 +234,9 @@ Results were the same on both releases.
 - From the end of the writes until all devices held the same values: 10 to 276 ms.
 - [Conditional updates on two offline devices both succeed](#conditional-updates-on-two-offline-devices-both-succeed) showed the same loss between offline devices. Connected devices lose updates in the same way whenever they write at shorter intervals than the sync delay, which was tens of milliseconds in our setup.
 
-**Used in:** [Conditions and arithmetic across devices](crdt-types.md#conditions-and-arithmetic-across-devices), [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate).
+**Used in:** [Conditions and Arithmetic across Devices](crdt-types.md#conditions-and-arithmetic-across-devices), [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate).
 
-## Reordering and renaming fields
+## Reordering and Renaming Fields
 
 ### A stored total keeps one device's partial result
 
@@ -289,7 +290,7 @@ Results were the same on all three releases.
 
 **Not tested:** gaps other than 1 in Ditto (the gap of 1,000 was only calculated in JavaScript); positions stored as strings, a form that would not need renumbering.
 
-**Used in:** [Reordering on two devices](crdt-types.md#reordering-on-two-devices), [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps).
+**Used in:** [Reordering on Two Devices](crdt-types.md#reordering-on-two-devices), [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps).
 
 ### Renaming a field in place hides older versions' edits
 
@@ -308,7 +309,7 @@ Results were the same on all three releases.
 
 **Used in:** [Schema Evolution](../best-practices/data-modeling.md#schema-evolution), [Prefer additive changes](../best-practices/data-modeling.md#prefer-additive-changes).
 
-## Counter writes and merges
+## Counter Writes and Merges
 
 ### Counters accept only integers
 

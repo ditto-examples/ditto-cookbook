@@ -225,7 +225,7 @@ Ditto collections are schema-free, so the application is responsible for validat
 
 **❌ DON'T:**
 - Filter subscriptions by personal data or secrets, such as an email address. The subscription query and its arguments go to directly connected devices, and both devices write them to their on-disk logs (see [On-disk logs and exporting them](logging-and-observability.md#on-disk-logs-and-exporting-them)). Filter by IDs that mean nothing on their own.
-- Build DQL strings by interpolating user input. In our testing, the input `nobody' OR '1'='1` embedded as a string literal made a `SELECT` return every document and a `DELETE` delete every document; passed as an argument, it matched none (see [OFFSET pages repeat rows after inserts, and keyset pages do not](../knowledge/dql-behavior.md#offset-pages-repeat-rows-after-inserts-and-keyset-pages-do-not)).
+- Build DQL strings by interpolating user input. In our testing, the input `nobody' OR '1'='1` embedded as a string literal made a `SELECT` return every document and a `DELETE` delete every document; passed as an argument, it matched none (see [User input embedded in a statement changes what it matches](../knowledge/dql-behavior.md#user-input-embedded-in-a-statement-changes-what-it-matches)).
 
 ```dart
 // ✅ GOOD: Validate, then pass values as parameters.

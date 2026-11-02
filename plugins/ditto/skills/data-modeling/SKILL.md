@@ -75,7 +75,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 - Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out, or clear a map with `SET obj = {}` or by assigning a scalar.
 - Write back a stale in-memory copy with `DO UPDATE` (every supplied field) or `DO UPDATE_LOCAL_DIFF` (every field that differs locally, including old values): either overrides a concurrent change.
 
-`§ CRDT Types and Merge Behavior`, `§ Local write semantics you must know`, `§ Document Structure` · Example: [examples/field-level-updates.dart](examples/field-level-updates.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, replacing an object, `UNSET` metadata)
+`§ CRDT Types and Merge Behavior`, `§ Local Write Semantics You Must Know`, `§ Document Structure` · Example: [examples/field-level-updates.dart](examples/field-level-updates.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, replacing an object, `UNSET` metadata)
 
 ### 2. Use maps keyed by ID, not arrays, for data several devices edit (CRITICAL)
 

@@ -5,10 +5,12 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 **In brief**
 
 - The parameter defaults in [System Parameters Reference](system-reference.md#system-parameters-reference) match `SHOW ALL` on 5.2.0, and out-of-range values, unknown names, and values of the wrong type fail with an error ([The documented parameter defaults match SHOW ALL](#the-documented-parameter-defaults-match-show-all)).
+- On 5.2.0, parameters passed in `DittoConfig.systemParameters` are in effect when `Ditto.open()` returns, and once one instance has enabled `system:metrics`, every later instance in the process has it too ([System parameters passed in DittoConfig take effect when Ditto.open returns](#system-parameters-passed-in-dittoconfig-take-effect-when-dittoopen-returns)).
 - An environment variable `DITTO_<NAME>` sets a system parameter at startup on 5.0.3, 5.1.0, and 5.2.0; on 5.1, it is the only way to pass parameters that Ditto reads only at startup ([DITTO_ environment variables set system parameters at startup](#ditto_-environment-variables-set-system-parameters-at-startup)).
 - Ditto reads the value of such a variable as JSON. A value that is not valid JSON, or that has the wrong type, is ignored with one log line, and Ditto starts with the default without any error in the app ([Environment variable values are read as JSON and ignored when invalid](#environment-variable-values-are-read-as-json-and-ignored-when-invalid)).
 - The expiry of the offline license token is checked against the device clock when the token is set: a device whose clock runs past the expiry cannot start sync, while a running device kept syncing after its clock passed the expiry ([The offline license token expiry is checked against the device clock](#the-offline-license-token-expiry-is-checked-against-the-device-clock)).
-- The slow-request warning and the request timeout work on 5.1.0 and 5.2.0, but 5.2.0 does not record slow queries in `system:request_history` unless a `threshold` qualifier is set ([Slow-request warnings and timeouts work, and 5.2.0 needs an explicit history threshold](#slow-request-warnings-and-timeouts-work-and-520-needs-an-explicit-history-threshold)).
+- The slow-request warning and the request timeout work on 5.1.0 and 5.2.0, but 5.2.0 does not record slow queries in `system:request_history` unless a `threshold` qualifier is set ([Slow-request warnings and request timeouts work as documented](#slow-request-warnings-and-request-timeouts-work-as-documented), [On SDK 5.2.0, the request history records slow queries only with an explicit threshold](#on-sdk-520-the-request-history-records-slow-queries-only-with-an-explicit-threshold)).
+- The queries of the diagnostics snapshot return rows on 5.1.0 and 5.2.0, and on 5.2.0 a support bundle holds the logs, device metadata, and a configuration snapshot, with a rate limit on requests ([The diagnostics snapshot queries return rows on both releases](#the-diagnostics-snapshot-queries-return-rows-on-both-releases), [A support bundle holds the logs, device metadata, and a configuration snapshot](#a-support-bundle-holds-the-logs-device-metadata-and-a-configuration-snapshot)).
 - Exported logs contain debug lines at every console log level. The console log level hardly changed the write rate, but it changed the number of log lines from 6 to about 83,000 ([Exported logs include debug lines regardless of the console level](#exported-logs-include-debug-lines-regardless-of-the-console-level)).
 - Subscription queries and their argument values reach directly connected devices and appear in the on-disk logs of both devices; document values and `execute` statements did not appear ([Subscription queries and arguments appear in other devices' logs](#subscription-queries-and-arguments-appear-in-other-devices-logs)).
 
@@ -109,22 +111,32 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 
 ## Slow Requests and Diagnostic Queries
 
-### Slow-request warnings and timeouts work, and 5.2.0 needs an explicit history threshold
+### Slow-request warnings and request timeouts work as documented
 
 | | |
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each, in two separate tests that showed the same behavior |
-| Setup | A join without an index (`JOIN ... USE INDEX ''`) of 3,000 by 3,000 documents, which took about 8 seconds on 5.2.0 and about 11 seconds on 5.1.0. For the request history, a join of 1,500 by 1,500 documents, which took about 2 seconds. We set `DQL_SLOW_REQUEST_WARN_SECONDS`, `DQL_REQUEST_TIMEOUT_SECONDS`, and `DQL_REQUEST_HISTORY_QUALIFIERS`, and read the log and `system:request_history` |
-| Documentation | The [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) (Qualifiers) says that the `threshold` qualifier defaults to 1000 ms and is always active, that `failed` and `system_delete` are enabled by default, and that `mutation` is disabled by default |
+| Setup | A join without an index (`JOIN ... USE INDEX ''`) of 3,000 by 3,000 documents, which took about 8 seconds on 5.2.0 and about 11 seconds on 5.1.0. We set `DQL_SLOW_REQUEST_WARN_SECONDS` and `DQL_REQUEST_TIMEOUT_SECONDS`, and read the log |
 
 - **Slow-request warning**: with `DQL_SLOW_REQUEST_WARN_SECONDS = 1`, a warning `Slow DQL request dump entry="{...}"` was logged every second while the query ran: 8 times on 5.2.0 and 11 times on 5.1.0. The entry is JSON with `_id`, `directives`, the `plan` with `#stats`, and more.
 - **Timeout**: with `DQL_REQUEST_TIMEOUT_SECONDS = 1`, the query failed after 1.00 seconds with `Request exceeded maximum permitted execution time.`
-- **Request history**: `DQL_REQUEST_HISTORY_QUALIFIERS` is `{}` by default on both releases.
-  - 5.1.0 with the default setting recorded the queries that took longer than 1 second (2.9 seconds and 11 seconds), with `~qualifier: "threshold"`.
-  - **5.2.0 with the default setting did not record the queries that took 1.9 seconds and 8 seconds.** With `{'threshold': 500}` set explicitly, it recorded them. Failed requests (`failed`) and `DELETE FROM system:request_history` (`system_delete`) were recorded with the default setting as well.
-  - On both releases, `{'threshold': 0}` recorded every statement, and `{'mutation': true}` recorded `INSERT` statements, as documented. When the parameter is set, every qualifier that the new value does not name returns to its default.
 
-**Used in:** [Long-running requests (SDK 5.1+)](../best-practices/indexing-and-performance.md#long-running-requests-sdk-51), [Request diagnostics](system-reference.md#request-diagnostics).
+**Used in:** [Long-running requests (SDK 5.1+)](../best-practices/indexing-and-performance.md#long-running-requests-sdk-51).
+
+### On SDK 5.2.0, the request history records slow queries only with an explicit threshold
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each, in two separate tests that showed the same behavior |
+| Setup | Joins without an index that took about 2 seconds (1,500 by 1,500 documents) and about 8 to 11 seconds (3,000 by 3,000). We read `DQL_REQUEST_HISTORY_QUALIFIERS` and `system:request_history` with the default setting and with qualifiers set explicitly |
+| Documentation | The [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) (Qualifiers) says that the `threshold` qualifier defaults to 1000 ms and is always active, that `failed` and `system_delete` are enabled by default, and that `mutation` is disabled by default |
+
+- `DQL_REQUEST_HISTORY_QUALIFIERS` is `{}` by default on both releases.
+- **5.1.0** with the default setting recorded the queries that took longer than 1 second (2.9 seconds and 11 seconds), with `~qualifier: "threshold"`.
+- **5.2.0 with the default setting did not record the queries that took 1.9 seconds and 8 seconds.** With `{'threshold': 500}` set explicitly, it recorded them. Failed requests (`failed`) and `DELETE FROM system:request_history` (`system_delete`) were recorded with the default setting as well.
+- On both releases, `{'threshold': 0}` recorded every statement, and `{'mutation': true}` recorded `INSERT` statements, as documented. When the parameter is set, every qualifier that the new value does not name returns to its default.
+
+**Used in:** [Request diagnostics](system-reference.md#request-diagnostics).
 
 ### The diagnostics snapshot queries return rows on both releases
 
@@ -178,7 +190,7 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 
 - This suggests that a production app that keeps `Debug` logging pays mainly in storage for the log output and in the amount of log data it sends, rather than in speed.
 
-**Used in:** [On-disk logs and exporting them](../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them), [Platform Differences](platform-differences.md).
+**Used in:** [On-disk logs and exporting them](../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them), [Platform Differences](platform-differences.md), [Configuring logging in Flutter](../best-practices/logging-and-observability.md#configuring-logging-in-flutter).
 
 ### Subscription queries and arguments appear in other devices' logs
 

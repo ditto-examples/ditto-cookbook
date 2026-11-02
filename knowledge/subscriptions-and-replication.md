@@ -5,16 +5,20 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 **In brief**
 
 - The device that sends the data evaluates a subscription's `WHERE` clause like a local query. A `LIMIT` bounds only the first download, and a document that stops matching stays on the receiving device as a frozen copy ([The sending peer evaluates a subscription's WHERE clause like a local query](#the-sending-peer-evaluates-a-subscriptions-where-clause-like-a-local-query), [A LIMIT in a subscription limits only the first download](#a-limit-in-a-subscription-limits-only-the-first-download), [Documents that leave a subscription stay as frozen copies](#documents-that-leave-a-subscription-stay-as-frozen-copies)).
+- Sync scopes, relays with narrower subscriptions, rewrites of the current value, and peers with different strict-mode settings behaved on SDK 5.2.0 as the guide describes ([Sync scopes behaved as documented on SDK 5.2.0](#sync-scopes-behaved-as-documented-on-sdk-520), [Relay, rewrite, and subscription behavior held on SDK 5.2.0](#relay-rewrite-and-subscription-behavior-held-on-sdk-520)).
 - Subscriptions are not stored: a device that reopens its directory still sends its own changes, but on 5.1.0 and 5.2.0 it receives nothing until it registers its subscriptions again ([Subscriptions are not stored in the persistence directory](#subscriptions-are-not-stored-in-the-persistence-directory)).
 - Each new subscription makes the device that holds the data read the whole collection, also with an index or a filter on `_id`. A set registered together costs a fraction of the same set registered one by one, and the number of subscriptions does not change the transfer ([Each new subscription makes the data holder read the whole collection](#each-new-subscription-makes-the-data-holder-read-the-whole-collection), [The number of subscriptions did not change the transfer](#the-number-of-subscriptions-did-not-change-the-transfer)).
 - A relay forwards only the documents that it holds, also when it carries them between sites that never connect, and a new, empty hub recovers what its clients hold ([A relay forwards only the documents that it holds](#a-relay-forwards-only-the-documents-that-it-holds), [Devices that move between sites carry documents and deletions](#devices-that-move-between-sites-carry-documents-and-deletions), [A new, empty hub recovers the data from its clients](#a-new-empty-hub-recovers-the-data-from-its-clients)).
+- With two relays, sync continued when one of them stopped, if the remaining relay subscribed to the data, and each relay hop added about 4 ms on one machine ([With two relays, sync continued when one of them stopped](#with-two-relays-sync-continued-when-one-of-them-stopped), [Each relay hop added about 4 ms](#each-relay-hop-added-about-4-ms)).
 - An initial sync appears on the receiving device all at once, resumes where it stopped, and holds up that device's other sync until it completes ([An initial sync appears on the receiving device all at once](#an-initial-sync-appears-on-the-receiving-device-all-at-once), [An interrupted initial sync resumes where it stopped](#an-interrupted-initial-sync-resumes-where-it-stopped), [A large initial sync holds up the device's other sync](#a-large-initial-sync-holds-up-the-devices-other-sync)).
 - Changes written in separate statements arrived in the order written, and large transactions and statements arrived at once, except when a faster relay with narrower subscriptions delivered part of them first ([Changes written in separate statements arrived in the order written](#changes-written-in-separate-statements-arrived-in-the-order-written), [Large transactions and statements arrived all at once](#large-transactions-and-statements-arrived-all-at-once), [A fast relay with narrower subscriptions can show part of a transaction](#a-fast-relay-with-narrower-subscriptions-can-show-part-of-a-transaction)).
 - Sync sends compressed, field-level changes of the current state. In a full mesh, a device receives each new document from several neighbors, and when many devices reconnect at once with offline changes, the time until all of them agree grows faster than their number ([Sync traffic is compressed and carries field-level changes](#sync-traffic-is-compressed-and-carries-field-level-changes), [In a mesh, a new document arrives once from each neighbor](#in-a-mesh-a-new-document-arrives-once-from-each-neighbor), [Convergence after simultaneous reconnects grew faster than the number of devices](#convergence-after-simultaneous-reconnects-grew-faster-than-the-number-of-devices)).
+- After many offline updates of one field, only the current value syncs: 1,000 updates cost about as much as one ([Only the current state syncs after offline edits](#only-the-current-state-syncs-after-offline-edits)).
 - `close()` and `sync.stop()` do not wait for changes that are still being sent, and `sync_session_status` keeps showing `Connected` for about 73 seconds after a peer leaves ([A write made right before close or stop may not leave the device](#a-write-made-right-before-close-or-stop-may-not-leave-the-device), [The sync session status lags about 73 seconds behind a disconnection](#the-sync-session-status-lags-about-73-seconds-behind-a-disconnection)).
+- Starting and stopping sync behaved as documented, but a change written right after another device stopped sync could still reach it ([Starting and stopping sync behaved as documented](#starting-and-stopping-sync-behaved-as-documented), [A change written right after another device stops sync can still reach it](#a-change-written-right-after-another-device-stops-sync-can-still-reach-it)).
 - In JavaScript, `queryArguments` of a subscription registered without arguments is empty, and reading it does not end the process ([In JavaScript, queryArguments of a subscription without arguments is empty](#in-javascript-queryarguments-of-a-subscription-without-arguments-is-empty)).
 
-## What a subscription delivers
+## What a Subscription Delivers
 
 ### The sending peer evaluates a subscription's WHERE clause like a local query
 
@@ -109,7 +113,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 
 **Used in:** [Transactions and Sync](../best-practices/transactions.md#transactions-and-sync), [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites), [Peers with different settings](../best-practices/data-modeling.md#peers-with-different-settings), [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Cancelling subscriptions and local data](../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
 
-## The cost of registering subscriptions
+## The Cost of Registering Subscriptions
 
 ### The number of subscriptions did not change the transfer
 
@@ -176,7 +180,7 @@ The same with 200,000 documents (the index was compared only with 50,000):
 
 **Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Where indexes live](../best-practices/indexing-and-performance.md#where-indexes-live).
 
-## Relays, hubs, and carriers
+## Relays, Hubs, and Carriers
 
 ### A relay forwards only the documents that it holds
 
@@ -258,7 +262,7 @@ Median time until the observer had the new value (first run):
 
 **Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
 
-## How an initial sync arrives
+## How an Initial Sync Arrives
 
 ### An initial sync appears on the receiving device all at once
 
@@ -327,7 +331,7 @@ Values are for 5.1.0 and 5.2.0; a number in parentheses right after a value is t
 
 **Used in:** [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Scope subscriptions to what the device needs](../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs).
 
-## Order and atomicity of incoming changes
+## Order and Atomicity of Incoming Changes
 
 ### Changes written in separate statements arrived in the order written
 
@@ -401,7 +405,7 @@ Orders visible without all their items: how many, and for how long:
 
 **Used in:** [Transactions and Sync](../best-practices/transactions.md#transactions-and-sync).
 
-## Sync traffic and convergence
+## Sync Traffic and Convergence
 
 ### Sync traffic is compressed and carries field-level changes
 
@@ -427,7 +431,7 @@ Orders visible without all their items: how many, and for how long:
 - A `DO UPDATE` that changed nothing still produced sync traffic (0.5 KiB), which wakes an observer on the other device (see [Relay, rewrite, and subscription behavior held on SDK 5.2.0](#relay-rewrite-and-subscription-behavior-held-on-sdk-520)).
 - Registering the same subscription a second time transferred almost nothing, and registering it again after a cancel fetched only what had changed in between.
 
-**Used in:** [What syncs after offline edits](crdt-types.md#what-syncs-after-offline-edits), [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
+**Used in:** [What Syncs after Offline Edits](crdt-types.md#what-syncs-after-offline-edits), [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
 
 ### Only the current state syncs after offline edits
 
@@ -446,7 +450,7 @@ Orders visible without all their items: how many, and for how long:
 
 - What syncs is the current state of each document, not the history of the writes: 1,000 updates of one field cost about as much as one. The intermediate values never reach other devices.
 
-**Used in:** [What syncs after offline edits](crdt-types.md#what-syncs-after-offline-edits).
+**Used in:** [What Syncs after Offline Edits](crdt-types.md#what-syncs-after-offline-edits).
 
 ### In a mesh, a new document arrives once from each neighbor
 
@@ -527,7 +531,7 @@ Times below are from the moment the first device started sync. Because they come
 
 **Used in:** [Scope subscriptions to what the device needs](../best-practices/sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs), [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync).
 
-## Stopping sync and closing Ditto
+## Stopping Sync and Closing Ditto
 
 ### Starting and stopping sync behaved as documented
 
@@ -604,7 +608,7 @@ Trials (of 9) in which the hub received the document:
 
 **Used in:** [Sync stop, close, and inspection](../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection).
 
-## How quickly sync status changes
+## How Quickly Sync Status Changes
 
 ### The sync session status lags about 73 seconds behind a disconnection
 

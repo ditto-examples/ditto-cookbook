@@ -147,7 +147,7 @@ Future<void> setFixedItemQuantity(Ditto ditto, String orderId, int qty) async {
 
 /// ✅ GOOD: Move one entry by writing only its own position, halfway between
 /// its new neighbors. Renumbering every entry would undo a reorder that
-/// another device makes at the same time (guide: § Reordering on two devices).
+/// another device makes at the same time (guide: § Reordering on Two Devices).
 Future<void> moveOrderItem(
   Ditto ditto, {
   required String orderId,

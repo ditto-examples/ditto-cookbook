@@ -7,13 +7,14 @@ How long Ditto's statements, queries, and observers took, how many writes a devi
 - Each `execute` call has a fixed cost of about 1.7 ms, so the number of statements matters more than the number of documents: 2,000 inserts took about 4 seconds one by one and 17 ms as one statement ([The number of execute calls matters more than the number of documents](#the-number-of-execute-calls-matters-more-than-the-number-of-documents)).
 - Awaited one at a time, statements that write one document each top out at about 600 documents a second and cost about 2 ms of CPU per document on the writing and the receiving device; 50 to 100 documents per statement reached 5,000 to 10,000 a second ([One document per statement tops out at about 600 writes a second](#one-document-per-statement-tops-out-at-about-600-writes-a-second)).
 - Above about 1,000 IDs, `USE IDS LIST :ids` is 30 to 100 times faster than `WHERE _id IN :ids`, for reads and writes ([Long ID lists are faster with USE IDS LIST than with WHERE _id IN](#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
-- A full-collection `COUNT(*)` took 1.8 ms on 20,000 documents, and indexes made filtered queries about 3 to 7 times faster ([Counts, index plans, and observer result sizes in numbers](#counts-index-plans-and-observer-result-sizes-in-numbers)); an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([An index on a field with two values made queries slower](#an-index-on-a-field-with-two-values-made-queries-slower)).
+- A full-collection `COUNT(*)` took 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 7 times faster, the conditions of the Index Usage Rules produced the listed plans, and a query answered from the index alone was about a third faster ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [The conditions of the Index Usage Rules table produced the plans it lists](#the-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone was about a third faster](#a-query-answered-from-the-index-alone-was-about-a-third-faster)); an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([An index on a field with two values made queries slower](#an-index-on-a-field-with-two-values-made-queries-slower)).
 - Query strings built for each value were not slower than constant strings with parameters ([Constant query strings were not faster](#constant-query-strings-were-not-faster)).
+- An observer of 5,000 documents was called about six times later after a write than an observer of 50, and evicting in chunks and opening a large store cost little ([An observer of 5,000 documents was called about six times later than one of 50](#an-observer-of-5000-documents-was-called-about-six-times-later-than-one-of-50), [Evicting in chunks costs little more than one statement](#evicting-in-chunks-costs-little-more-than-one-statement), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
 - Large query results raise the process's memory, which does not come back after the results are released; 5.2.0 used about 30% less than 5.1.0 ([Large query results keep process memory after they are released](#large-query-results-keep-process-memory-after-they-are-released)).
 - An observer that returned 200 documents while other devices kept updating them grew the process's memory by about 13 to 24 KiB on every callback; an observer of one row leveled off ([An observer of 200 documents grows memory on every callback](#an-observer-of-200-documents-grows-memory-on-every-callback)).
 - The CPU that a hub spends on each change grows with the number of connected devices, and when every device writes, the hub's CPU grows faster than the number of devices ([Hub CPU per change grows with the number of connected devices](#hub-cpu-per-change-grows-with-the-number-of-connected-devices)).
 
-## Statements and write rates
+## Statements and Write Rates
 
 ### The number of execute calls matters more than the number of documents
 
@@ -81,7 +82,7 @@ Delay on the receiver (median / 95th percentile / maximum):
 
 **Used in:** [Pattern 2: Append-only event documents](../best-practices/data-modeling.md#pattern-2-append-only-event-documents).
 
-## Queries and indexes
+## Queries and Indexes
 
 ### Long ID lists are faster with USE IDS LIST than with WHERE _id IN
 
@@ -107,14 +108,12 @@ Time for `COUNT(*)` (nearly the same on both releases; no value was recorded for
 
 **Used in:** [USE IDS](../best-practices/dql.md#use-ids), [DELETE and Tombstones](../best-practices/deletion-and-storage.md#delete-and-tombstones), [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510).
 
-### Counts, index plans, and observer result sizes in numbers
+### A full COUNT(*) is fast, and indexes made selective queries several times faster
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, and SDK 5.0.3 for the parts that could run on it, one run each. The store-size, plan, and covering-scan checks ran on 5.1.0 and 5.2.0 |
-| Setup | 20,000 documents, unless stated otherwise: counts, filtered queries with and without indexes, observers of different result sizes, and eviction in one statement or in chunks. For the store size, stores of 1,000 and 200,000 documents (about 0.5 KB each) were opened three times each. For the plans and covering scans, 50,000 documents |
-
-Queries on 20,000 documents:
+| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Setup | One device without sync, 20,000 documents. Counts and filtered queries with and without an index on `(status, createdAt)` |
 
 | Query | 5.2.0 | 5.1.0 |
 |---|---|---|
@@ -128,11 +127,18 @@ Queries on 20,000 documents:
 | The same, with an index | 7 ms | 6 ms |
 
 - A full-collection `COUNT(*)` is cheap, as expected from a count scan that does not read documents: 1.8 ms against 54 to 66 ms for reading every `_id`.
-- **Observers** (5,000 documents): from writing one document until the callback, an observer of all documents took 41 ms (5.1.0: 43 ms), and an observer of `WHERE customerId = :c ORDER BY createdAt DESC LIMIT 50` took 7 ms (5.1.0: 7 ms), so the larger observer was called about six times later. On 5.0.3, they took 68 ms and 48 ms, a smaller difference.
-- **Eviction** of 10,000 documents: one statement took 29 ms (5.1.0: 36 ms). In chunks of 1,000, it took 11 statements, the longest 5 ms (5.1.0: 6 ms), 48 ms in total (5.1.0: 56 ms). The local cost is small either way.
-- **Store size and opening** (one run): `Ditto.open()` took 11 to 15 ms and `close()` 25 to 32 ms, with 1,000 and with 200,000 documents: they hardly depend on the number of documents. The first query after opening was as fast as the second (a `COUNT(*) ... WHERE` without an index on 200,000 documents: 184 to 193 ms on 5.2.0, 261 to 265 ms on 5.1.0).
+- The index made the filtered queries about 3 to 7 times faster.
 
-Plans of the conditions in [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules): the 11 conditions we tried produced the plans that the table lists, on 5.1.0 and 5.2.0 (one run, 50,000 documents, `COUNT(*)`, medians on 5.2.0). Among them:
+**Used in:** [Counting documents](../best-practices/indexing-and-performance.md#counting-documents), [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules).
+
+### The conditions of the Index Usage Rules table produced the plans it lists
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Setup | One device without sync, 50,000 documents. `COUNT(*)` with each of 11 conditions of the table in [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules); `EXPLAIN` for the plan, and the median time on 5.2.0 |
+
+The 11 conditions produced the plans that the table lists, on both releases. Among them:
 
 | Condition | Plan | Time |
 |---|---|---|
@@ -147,7 +153,16 @@ Plans of the conditions in [Index Usage Rules](../best-practices/indexing-and-pe
 
 - When a condition matches most documents, an index scan is no faster than a collection scan: `status != 'open'` took 41 ms through the index.
 
-Covering scans (one run, 50,000 documents of about 1 KB, 5,000 of them matching, an index on `status`):
+**Not tested:** the other conditions of the table, such as `IS MISSING`, `array_contains`, and composite indexes.
+
+**Used in:** [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules).
+
+### A query answered from the index alone was about a third faster
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Setup | One device without sync, 50,000 documents of about 1 KB, 5,000 of them matching `status = 'open'`, and an index on `status`. Three projections of the same query |
 
 | Projection | 5.2.0 | 5.1.0 |
 |---|---|---|
@@ -155,11 +170,50 @@ Covering scans (one run, 50,000 documents of about 1 KB, 5,000 of them matching,
 | `SELECT _id, status, total` (one field outside the index) | 24 ms | 23 ms |
 | `SELECT *` | 25 ms | 26 ms |
 
-- A query answered from the index alone was about a third faster. Once documents had to be fetched, projecting fewer fields hardly changed the time: of the two benefits of a narrow projection, the one that counts is skipping the fetch.
+- Once documents had to be fetched, projecting fewer fields hardly changed the time: of the two benefits of a narrow projection, the one that counts is skipping the fetch.
 
-**Not tested:** the other conditions of the Index Usage Rules table in the plan check, such as `IS MISSING`, `array_contains`, and composite indexes.
+**Used in:** [Covering scans](../best-practices/indexing-and-performance.md#covering-scans).
 
-**Used in:** [Counting documents](../best-practices/indexing-and-performance.md#counting-documents), [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules), [Covering scans](../best-practices/indexing-and-performance.md#covering-scans), [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution), [Batching evictions](../best-practices/deletion-and-storage.md#batching-evictions).
+### An observer of 5,000 documents was called about six times later than one of 50
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each |
+| Setup | One device without sync, 5,000 documents. Two observers: one of all documents, and one of `WHERE customerId = :c ORDER BY createdAt DESC LIMIT 50`. We measured the time from writing one document until each callback |
+
+| Observer | 5.2.0 | 5.1.0 | 5.0.3 |
+|---|---|---|---|
+| All 5,000 documents | 41 ms | 43 ms | 68 ms |
+| 50 documents | 7 ms | 7 ms | 48 ms |
+
+- On 5.1.0 and 5.2.0, the larger observer was called about six times later; on 5.0.3, the difference was smaller.
+
+**Used in:** [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution).
+
+### Evicting in chunks costs little more than one statement
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Setup | One device without sync, 10,000 documents to evict: with one `EVICT` statement, and in chunks of 1,000 |
+
+- One statement took 29 ms (5.1.0: 36 ms).
+- In chunks of 1,000, it took 11 statements, the longest 5 ms (5.1.0: 6 ms), 48 ms in total (5.1.0: 56 ms).
+- The local cost is small either way; chunks keep each statement short.
+
+**Used in:** [Batching evictions](../best-practices/deletion-and-storage.md#batching-evictions).
+
+### Opening Ditto took the same time with 1,000 and 200,000 documents
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each, with three opens of each store |
+| Setup | Stores of 1,000 and of 200,000 documents of about 0.5 KB each, each opened and closed three times; then the first and the second query after opening |
+
+- `Ditto.open()` took 11 to 15 ms and `close()` 25 to 32 ms, with 1,000 and with 200,000 documents: they hardly depend on the number of documents.
+- The first query after opening was as fast as the second: a `COUNT(*) ... WHERE` without an index on 200,000 documents took 184 to 193 ms on 5.2.0 and 261 to 265 ms on 5.1.0.
+
+**Used in:** none yet.
 
 ### An index on a field with two values made queries slower
 
@@ -182,7 +236,7 @@ Covering scans (one run, 50,000 documents of about 1 KB, 5,000 of them matching,
 - With `LIMIT 50`, the query took 2 to 4 ms even without an index: it reads from the start and stops after 50 documents. With the combined plan (with indexes on `store`, `status`, and `total`), the median was 6 to 7 ms, but individual queries with the same plan varied from 2 to 69 ms.
 - `Ditto.open()` took 10 to 21 ms for an empty store and for 100,000 documents (about 70 MB): it does not depend on the size of the store. Without indexes, the first query after opening was as fast as the second (1 to 4 ms).
 
-**Used in:** [Creating Indexes](../best-practices/indexing-and-performance.md#creating-indexes), [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules).
+**Used in:** [Creating Indexes](../best-practices/indexing-and-performance.md#creating-indexes), [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules), [Where indexes live](../best-practices/indexing-and-performance.md#where-indexes-live).
 
 ### Constant query strings were not faster
 
@@ -203,7 +257,7 @@ Covering scans (one run, 50,000 documents of about 1 KB, 5,000 of them matching,
 
 **Used in:** [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
-## Memory held by query results and observers
+## Memory Held by Query Results and Observers
 
 ### Large query results keep process memory after they are released
 
@@ -260,7 +314,7 @@ After 10 minutes (5.2.0; 5.1.0 / 5.0.3 in parentheses; RSS in MiB):
 
 **Used in:** [Query Scope and Execution](../best-practices/indexing-and-performance.md#query-scope-and-execution).
 
-## Load on a hub
+## Load on a Hub
 
 ### Hub CPU per change grows with the number of connected devices
 

@@ -15,7 +15,8 @@ Checks:
 - every line of the guide that reports an observation ("in our testing")
   outside the knowledge entry that describes it links to that entry
 - every knowledge entry of an observation (a section with an "Observed on"
-  row) has a "Setup" row and a "Used in" line
+  row) has a "Setup" row and a "Used in" line, and the "Used in" line lists
+  every section of another page that links to the entry
 - every relative link in the repository's Markdown files points to an
   existing file, and every #anchor to an existing heading (GitHub anchors)
 - audit/reference/scanner-rules.md matches `scan.py --list-rules`
@@ -297,6 +298,55 @@ def check_observation_entries(knowledge_pages: list[Path], root: Path) -> list[s
     return errors
 
 
+def check_used_in(pages: list[Path], knowledge_pages: list[Path], root: Path) -> list[str]:
+    """Every section that links to an observation entry is listed in the entry's "Used in".
+
+    Links from the entry's own page (its summary and other entries) and from
+    inside other entries do not count. A "Used in" link without an anchor
+    covers every section of that page.
+    """
+    used_in: dict[tuple[Path, str], tuple[str, set[tuple[Path, str]]]] = {}
+    for page in knowledge_pages:
+        for _, anchor, lines in observation_sections(page.read_text(encoding="utf-8")):
+            listed = set()
+            for _, line in lines:
+                if line.startswith(USED_IN):
+                    for _, target in parse_links(line):
+                        path, _, section = unquote(target).partition("#")
+                        listed.add(((page.parent / path).resolve() if path else page.resolve(), section))
+            used_in[(page.resolve(), anchor)] = (f"{page.relative_to(root)}#{anchor}", listed)
+    errors = []
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        inside = {number for _, _, lines in observation_sections(text) for number, _ in lines}
+        seen: set[str] = set()
+        section = ""
+        for number, line in prose_lines(text):
+            match = HEADING.match(line)
+            if match:
+                base = section = slugify(match.group(1))
+                count = 0
+                while section in seen:
+                    count += 1
+                    section = f"{base}-{count}"
+                seen.add(section)
+                continue
+            if number in inside:
+                continue
+            for _, target in parse_links(line):
+                path, _, anchor = unquote(target).partition("#")
+                if SCHEME.match(path):
+                    continue
+                entry = ((page.parent / path).resolve() if path else page.resolve(), anchor)
+                if entry not in used_in or entry[0] == page.resolve():
+                    continue
+                name, listed = used_in[entry]
+                if (page.resolve(), section) not in listed and (page.resolve(), "") not in listed:
+                    errors.append(f"{page.relative_to(root)}:{number}: links to the observation {name}, "
+                                  f"whose Used in does not list the section #{section}")
+    return errors
+
+
 # --- Skills -------------------------------------------------------------------
 
 
@@ -373,6 +423,7 @@ def main() -> int:
     knowledge_pages = [p for p in pages if p.parent.name == "knowledge"]
     errors += check_observation_links(pages, knowledge_pages, ROOT)
     errors += check_observation_entries(knowledge_pages, ROOT)
+    errors += check_used_in(pages, knowledge_pages, ROOT)
     for skill in sorted(p.parent for p in SKILLS.glob("*/SKILL.md")):
         skill_errors, skill_warnings = check_skill(skill, headings)
         errors += skill_errors

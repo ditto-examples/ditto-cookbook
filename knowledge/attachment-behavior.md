@@ -11,7 +11,7 @@ How attachments behaved: which devices can deliver a blob, what a fetch reports 
 - Unreferenced blobs are collected about 10 minutes later while Ditto stays open, but only after the app has let go of its attachment objects for them (the values that `newAttachment` and `fetchAttachment` return), and at once when the store is opened again ([Unreferenced blobs are collected after about 10 minutes](#unreferenced-blobs-are-collected-after-about-10-minutes)).
 - The `Deleted` fetch event that the 5.2.0 release notes describe never appeared: fetches of attachments whose documents had been deleted stayed pending, or completed from a device that had not collected the blob yet ([Attachments relay only through devices that fetched them](#attachments-relay-only-through-devices-that-fetched-them), [A fetch of a collected blob stays pending instead of ending with Deleted](#a-fetch-of-a-collected-blob-stays-pending-instead-of-ending-with-deleted)).
 
-## Relaying and fetching attachments
+## Relaying and Fetching Attachments
 
 ### Attachments relay only through devices that fetched them
 
@@ -61,7 +61,7 @@ Results on 5.2.0 (5.1.0 in parentheses):
 
 **Used in:** [Fetching Attachments](../best-practices/attachments.md#fetching-attachments), [Size Guidance](../best-practices/attachments.md#size-guidance).
 
-## Attachments on slow links
+## Attachments on Slow Links
 
 ### A large attachment holds up documents on a slow link
 
@@ -89,7 +89,7 @@ Time until a small document reached the other side (median / maximum; the same t
 
 **Used in:** [Size Guidance](../best-practices/attachments.md#size-guidance).
 
-## Garbage collection of blobs
+## Garbage Collection of Blobs
 
 ### Unreferenced blobs are collected after about 10 minutes
 

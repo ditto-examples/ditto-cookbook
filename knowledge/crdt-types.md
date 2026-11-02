@@ -11,7 +11,7 @@ Each field value in a document is stored as one of the following CRDT types:
 
 `PN_COUNTER` also exists as a legacy counter type. Use `COUNTER` for all new fields (see [Counters](../best-practices/data-modeling.md#counters)).
 
-## How values are typed with the default settings
+## How Values Are Typed with the Default Settings
 
 With the default `DQL_STRICT_MODE = false` (see [Strict Mode](../best-practices/data-modeling.md#strict-mode)), Ditto infers the type from the value and the operation:
 
@@ -24,7 +24,7 @@ With the default `DQL_STRICT_MODE = false` (see [Strict Mode](../best-practices/
 | An attachment token | `ATTACHMENT` | Inferred from the attachment value |
 | An object in a statement that declares `(f REGISTER)` | `REGISTER` | The object is replaced as a whole |
 
-## Merge semantics in detail
+## Merge Semantics in Detail
 
 Ditto's [CRDT documentation](https://docs.ditto.live/key-concepts/syncing-data#crdts) and [conflict resolution patterns](https://docs.ditto.live/best-practices/conflict-resolution-patterns) describe how concurrent writes from different devices merge:
 
@@ -36,7 +36,7 @@ Ditto's [CRDT documentation](https://docs.ditto.live/key-concepts/syncing-data#c
 
 Because a MAP merges at every level, a single document can hold many independently editable sub-entities: maps merge the same way at every level of nesting. Nesting depth is limited, though, and very deep documents fail in other ways (see [Nesting depth is limited differently for arguments, literals, and paths](documents-and-limits.md#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)).
 
-## What concurrent edits produce
+## What Concurrent Edits Produce
 
 The table shows how two devices' edits to the same document merged in our testing with SDK 5.1.0 and 5.2.0 (see [The merge table held on SDK 5.1.0 and 5.2.0](merge-behavior.md#the-merge-table-held-on-sdk-510-and-520) for the setup and further cases). Both devices were offline when they wrote, and they synced afterwards. The results were the same on both releases and on both devices, and did not depend on which device wrote first, unless a row says otherwise. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
 
@@ -67,19 +67,19 @@ Further results of the same kind:
 - **The recommended shapes hold with more devices**: counters, maps keyed by ID, and audit logs kept every change from three offline devices, while an array kept one device's version (see [With three offline devices, counters and maps keep every change](merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)).
 - **Concurrent writes converge**: in a randomized test with four or five devices, also on mixed SDK releases, every device always ended with the same documents (see [A randomized merge test always converged](merge-behavior.md#a-randomized-merge-test-always-converged)).
 
-## Writing a value that did not change
+## Writing a Value That Did Not Change
 
 A write records a value with a new timestamp even when the value is the same as before, so it wins over an earlier concurrent edit of that field on another device. Writing a whole document with `ON ID CONFLICT DO UPDATE`, or setting a field to the value it already has, therefore overwrites what another device changed in the meantime. `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` and an `UPDATE` of only the changed fields keep the other device's edit, unless the values come from a copy read before that edit arrived (see [Rewriting an unchanged value overwrites concurrent edits](merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
 
 Write only the fields that the user changed, and never write back values from a copy that may be stale (see [Prefer field-level updates over whole-document rewrites](../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites)). Counters are the exception to "the latest write wins": a value written into a counter restarts it (see [Writing documents that contain counters](../best-practices/data-modeling.md#writing-documents-that-contain-counters)).
 
-## What syncs after offline edits
+## What Syncs after Offline Edits
 
 Ditto syncs the current state of each document, not the history of writes: after many offline updates of one field, a device sent about as much as after one, so other devices never see the intermediate values (see [Only the current state syncs after offline edits](subscriptions-and-replication.md#only-the-current-state-syncs-after-offline-edits)). Write each event as its own entry when the history matters (see [Event History and Audit Logs](../best-practices/data-modeling.md#event-history-and-audit-logs)).
 
 Changes sync as compressed field-level differences whichever way they were written, so the reason to write only what changed is the merge result in the previous section, not the transfer (see [Sync traffic is compressed and carries field-level changes](subscriptions-and-replication.md#sync-traffic-is-compressed-and-carries-field-level-changes)).
 
-## Reordering on two devices
+## Reordering on Two Devices
 
 Entries of a map have no order, so an app that lets users reorder a list stores a `position` in each entry and sorts by it. Each `position` is a register, so which positions a reorder writes decides what survives a concurrent reorder on another device (see [Reordering on two offline devices keeps both moves only with gap positions](merge-behavior.md#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions)):
 
@@ -91,7 +91,7 @@ Entries of a map have no order, so an app that lets users reorder a list stores 
 
 See [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps) for the rules.
 
-## Conditions and arithmetic across devices
+## Conditions and Arithmetic across Devices
 
 Devices sync the effects of statements (changed documents), not the statements themselves, and each device evaluates conditions against the documents it has at that moment:
 
@@ -99,7 +99,7 @@ Devices sync the effects of statements (changed documents), not the statements t
 - **A bulk update covers only the documents the device has.** One device ran `UPDATE orders SET status = 'closed' WHERE status = 'open' AND day <= 2` while another, offline, inserted a matching order. After sync, that order was still open. Run closing jobs and migrations where every change has arrived (for example on Ditto Server, afterwards), or evaluate the condition when reading (see [UPDATE changes only the documents that the writing device holds](merge-behavior.md#update-changes-only-the-documents-that-the-writing-device-holds)).
 - **Arithmetic on a register loses concurrent changes, even online.** Six connected devices each ran `UPDATE c SET n = n + 1` 100 times: a register ended at 101 to 129 instead of 600, without an error, while a `COUNTER` reached 600 every time. Selling the last item from two offline devices left a register at 0, which hides the oversale, and a `COUNTER` at -1, which shows it (see [Read-modify-write increments lose most concurrent updates](merge-behavior.md#read-modify-write-increments-lose-most-concurrent-updates)).
 
-## Local write semantics you must know
+## Local Write Semantics You Must Know
 
 Several MAP behaviors differ from what developers expect from a JSON document store. With the default settings:
 
@@ -159,7 +159,7 @@ Future<void> replaceShippingAddressIncorrectly(
 
 > **Note:** `UNSET` creates removal metadata. Unsetting a very large number of dynamically generated keys over time can degrade performance; unsetting the parent field (or deleting the document) mitigates the accumulation.
 
-## Choosing a type or shape
+## Choosing a Type or Shape
 
 | What you want | Use | Example |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 4.2
+> **Version**: 4.3
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -45,7 +45,7 @@ If you take only ten things from this guide, take these. Each one links to the s
 
 1. **Subscriptions decide what syncs; queries read only the local store.** Register long-lived subscriptions, scoped by stable keys such as tenant, store, or user, in an app-level service. Filter screens with local queries and observers instead of re-registering subscriptions. See [Core Principles](../knowledge/understanding-ditto.md#core-principles) and [Subscription Lifecycle](sync-and-subscriptions.md#subscription-lifecycle).
 2. **Write only what changed.** Update individual fields with `UPDATE ... SET` instead of rewriting whole documents. Assigning an object, or upserting a document, merges keys into what is stored and never removes any; remove keys with `UNSET`. See [Prefer field-level updates over whole-document rewrites](dql.md#prefer-field-level-updates-over-whole-document-rewrites) and [Assigning an object merges it](dql.md#assigning-an-object-merges-it).
-3. **Model every shared field for the merge you want.** Use maps keyed by ID for lists that several devices edit (an array is replaced as a whole), `COUNTER` for tallies, and values computed at read time instead of stored totals. See [What concurrent edits produce](../knowledge/crdt-types.md#what-concurrent-edits-produce).
+3. **Model every shared field for the merge you want.** Use maps keyed by ID for lists that several devices edit (an array is replaced as a whole), `COUNTER` for tallies, and values computed at read time instead of stored totals. See [What Concurrent Edits Produce](../knowledge/crdt-types.md#what-concurrent-edits-produce).
 4. **Generate collision-free IDs.** Use UUIDs, or composite `_id` objects that contain a UUID, and never sequential numbers. Put the attributes that permissions depend on into `_id`, because `_id` cannot change. See [Document IDs](data-modeling.md#document-ids).
 5. **Choose a deletion strategy per collection.** Prefer a soft delete for shared records that several devices edit, and wherever devices can stay offline longer than the tombstone TTL (7 days by default); `DELETE` is safe only when neither applies. To free storage on one device, use `EVICT` on documents that no active subscription matches. See [Choosing DELETE, Soft Delete, or EVICT](deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 6. **Pass system parameters in `DittoConfig` every time you open Ditto.** System parameters are not persisted. `DittoConfig.systemParameters` (SDK 5.2+) applies them before Ditto starts and makes `Ditto.open()` fail on an unknown name or a wrong type; use `ALTER SYSTEM` only to change a value while the app runs. See [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters).

@@ -7,10 +7,12 @@ How store observers behave on one device: when an observer is called, how change
 - A `SELECT *` observer is called on every write to a document in its result, even of the same value; an observer that projects fields, only when a projected value changes; an aggregate observer, on every write to the collection ([When an observer fires depends on its query](#when-an-observer-fires-depends-on-its-query), [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing)).
 - Since SDK 5.1, changes are coalesced into callbacks about 30 ms apart, so an observer skips intermediate values. Changes from another device arrive in a few callbacks, and a transaction in one ([Local writes are coalesced into callbacks about 30 ms apart](#local-writes-are-coalesced-into-callbacks-about-30-ms-apart), [A device receives nearly every value of a fast-changing field](#a-device-receives-nearly-every-value-of-a-fast-changing-field), [Remote changes arrive in a few callbacks, and a transaction in one](#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
 - An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0 and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
+- `Differ` reports every item whose position shifted as a move, not only the item that was moved ([Differ reports every shifted item as a move](#differ-reports-every-shifted-item-as-a-move)).
 - On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stop every callback ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
 - In JavaScript, async observer callbacks are not awaited and can finish out of order, exceptions in callbacks are discarded, and garbage collection stops neither observers nor subscriptions ([In JavaScript, registerObserver does not await async callbacks](#in-javascript-registerobserver-does-not-await-async-callbacks), [In JavaScript, exceptions in observer callbacks are discarded](#in-javascript-exceptions-in-observer-callbacks-are-discarded), [In JavaScript, garbage-collected subscriptions and observers keep running](#in-javascript-garbage-collected-subscriptions-and-observers-keep-running)).
+- In JavaScript, query results return the same objects on every read, so changes to them stay in the object but never reach the store, and `store.observers` lists other objects than the ones that the registration returned ([In JavaScript, query results return the same objects](#in-javascript-query-results-return-the-same-objects), [In JavaScript, store.observers exists since 5.0 and lists other objects](#in-javascript-storeobservers-exists-since-50-and-lists-other-objects)).
 
-## When observers are called
+## When Observers Are Called
 
 ### When an observer fires depends on its query
 
@@ -140,7 +142,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Used in:** [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), [System Virtual Collections](system-reference.md#system-virtual-collections), [Changes in SDK 5.2.0](upgrading.md#changes-in-sdk-520).
 
-## Observer differences between SDK releases
+## Observer Differences between SDK Releases
 
 ### On SDK 5.2.0, observer rows include _id only when it is projected
 
@@ -191,7 +193,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Used in:** [Known Issues in SDK 5.1.0](upgrading.md#known-issues-in-sdk-510), [Partial UI Updates](../best-practices/observers.md#partial-ui-updates).
 
-## Observers and results in JavaScript
+## Observers and Results in JavaScript
 
 ### In JavaScript, registerObserver does not await async callbacks
 

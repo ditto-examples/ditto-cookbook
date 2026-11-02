@@ -5,16 +5,19 @@ How devices connect to each other and how presence reports them: the TCP connect
 **In brief**
 
 - A device accepts six TCP connections by default. Further devices get no data and no error, and raising the limit works only before sync starts ([A device accepts six TCP connections by default](#a-device-accepts-six-tcp-connections-by-default), [Raising the TCP limit takes effect only before sync starts](#raising-the-tcp-limit-takes-effect-only-before-sync-starts)).
+- The at-capacity actions 1 and 2 let extra clients in on 5.2.0, but connections then keep being replaced about every 5 seconds ([At-capacity actions admit extra clients but keep replacing connections](#at-capacity-actions-admit-extra-clients-but-keep-replacing-connections)).
 - On 5.2.0, a device counts the connections that it opened itself when it decides whether to accept another one, but the connections it opens are not limited. A full mesh keeps about six direct connections per device and relays the rest ([SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit), [Outgoing TCP connections are not limited](#outgoing-tcp-connections-are-not-limited), [A full TCP mesh keeps about six direct connections per device on 5.2.0](#a-full-tcp-mesh-keeps-about-six-direct-connections-per-device-on-520)).
 - WebSocket connections to a Small Peer hub do not count toward the TCP limit: 30 clients synced ([WebSocket connections to a Small Peer hub do not count toward the TCP limit](#websocket-connections-to-a-small-peer-hub-do-not-count-toward-the-tcp-limit)).
 - Changes of TCP targets and listeners take effect while sync runs, a lost connection is retried at `connect.retryInterval` (5 seconds by default in JavaScript), and a device that only connects also listens for TCP on all interfaces ([TCP targets and listeners change while sync runs](#tcp-targets-and-listeners-change-while-sync-runs), [A lost TCP connection is retried at the retry interval](#a-lost-tcp-connection-is-retried-at-the-retry-interval), [A device that only connects also listens for TCP connections](#a-device-that-only-connects-also-listens-for-tcp-connections)).
+- A second hub can listen on a port that another hub already uses, without an error, and new connections then go to the hub that started listening last ([A second hub listened on a port already in use without an error](#a-second-hub-listened-on-a-port-already-in-use-without-an-error)).
 - A network that goes silent removes the peer from presence after about 7.3 seconds, and a suspended process after about 9.1 seconds. Until a stalled connection is dropped, sync waits on it, even when another connection to the same peer works ([A silent network outage removes a peer after about 7 seconds](#a-silent-network-outage-removes-a-peer-after-about-7-seconds), [A suspended device leaves the presence graph after about 9 seconds](#a-suspended-device-leaves-the-presence-graph-after-about-9-seconds), [Each device sends over one of two connections and waits when it stalls](#each-device-sends-over-one-of-two-connections-and-waits-when-it-stalls)).
 - Presence callbacks arrive about once per second, the graph includes indirect peers and all of their connections, and a peer in the graph is not necessarily up to date ([Presence reports a joining peer after about 1.2 seconds](#presence-reports-a-joining-peer-after-about-12-seconds), [The presence graph includes indirect peers and all of their connections](#the-presence-graph-includes-indirect-peers-and-all-of-their-connections), [Slow links keep the connection and the presence entry](#slow-links-keep-the-connection-and-the-presence-entry)).
 - The presence graph shows each peer's `dittoSdkVersion`, also across SDK releases, which identifies the devices that still run an older release ([Presence shows each peer's SDK version](#presence-shows-each-peers-sdk-version)).
+- Presence and sync worked across a line of 20 devices, and while ten devices kept reconnecting, a stable device got presence callbacks about once per second and its sync was barely delayed ([Presence and sync work across a chain of 20 devices](#presence-and-sync-work-across-a-chain-of-20-devices), [Presence callbacks stay at about one per second while peers come and go](#presence-callbacks-stay-at-about-one-per-second-while-peers-come-and-go)).
 - Peer metadata is replaced, not merged, reaches other peers about once per second, and is sent to every device whenever a device joins or changes it ([Peer metadata is replaced, not merged, and the device name is read when sync starts](#peer-metadata-is-replaced-not-merged-and-the-device-name-is-read-when-sync-starts), [Peer metadata changes reach other peers about once per second](#peer-metadata-changes-reach-other-peers-about-once-per-second), [Presence traffic grows faster than the number of devices](#presence-traffic-grows-faster-than-the-number-of-devices)).
 - A denied peer retries at its retry interval. Peers connect only when their shared keys match, and traffic without a key is TLS-wrapped but not authenticated ([A denied peer retries at the retry interval](#a-denied-peer-retries-at-the-retry-interval), [Shared keys must match, and traffic is TLS-wrapped without a key](#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key)).
 
-## The TCP connection limit
+## The TCP Connection Limit
 
 ### A device accepts six TCP connections by default
 
@@ -108,7 +111,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 
 **Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
 
-## Meshes and WebSocket hubs
+## Meshes and WebSocket Hubs
 
 ### A full TCP mesh keeps about six direct connections per device on 5.2.0
 
@@ -153,7 +156,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration).
 
-## Changing and retrying connections
+## Changing and Retrying Connections
 
 ### TCP targets and listeners change while sync runs
 
@@ -201,7 +204,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Not tested:** mobile devices and Flutter; whether the connections that this listener accepts count toward the TCP limit (probably they do, as described in [Outgoing TCP connections are not limited](#outgoing-tcp-connections-are-not-limited)).
 
-**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Security Checklist](../best-practices/security.md#security-checklist), [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process), [Test environment](how-we-tested.md#test-environment).
+**Used in:** [Transport Configuration](../best-practices/setup-and-lifecycle.md#transport-configuration), [Security Checklist](../best-practices/security.md#security-checklist), [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process), [Test Environment](how-we-tested.md#test-environment).
 
 ### A second hub listened on a port already in use without an error
 
@@ -223,7 +226,7 @@ Direct connections per device (TCP connections in parentheses):
 
 **Used in:** [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process).
 
-## Detecting lost connections
+## Detecting Lost Connections
 
 ### A silent network outage removes a peer after about 7 seconds
 
@@ -312,7 +315,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 
 **Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Size Guidance](../best-practices/attachments.md#size-guidance).
 
-## The presence graph
+## The Presence Graph
 
 ### Presence reports a joining peer after about 1.2 seconds
 
@@ -324,7 +327,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - The callback ran once right after registration (0 ms), and then about every second during the first few seconds, even without changes. Callbacks arrive at intervals of about 1 second.
 - A joining peer was reported after 1.16 to 1.19 seconds in all three runs. A peer that left: after about 1.0 second in all three runs on 5.1.0; after 1 ms, 1 ms, and 1.0 second on 5.2.0.
 - Even when nothing changes, the observer is called about every 15 seconds. With 4 and 7 devices watched for 60 seconds, after the callback right after registration, it was called four times, from about 11 seconds on, 15.0 seconds apart (the same on 5.1.0 and 5.2.0; 7 devices on 5.2.0 only). Each graph was identical to the previous one: the peer keys, connections, metadata, and `deviceName`.
-- The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](observer-behavior.md#differ-reports-every-shifted-item-as-a-move) and [ANY over a parameter array broke in 5.1.0, and the multi-property issue was 5.1.0 only](dql-behavior.md#any-over-a-parameter-array-broke-in-510-and-the-multi-property-issue-was-510-only).
+- The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](observer-behavior.md#differ-reports-every-shifted-item-as-a-move) and [ANY over a parameter array returns no rows since SDK 5.1.0](dql-behavior.md#any-over-a-parameter-array-returns-no-rows-since-sdk-510).
 
 **Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Diffing Results](../best-practices/observers.md#diffing-results), [Filtering by Membership](../best-practices/dql.md#filtering-by-membership).
 
@@ -407,7 +410,7 @@ Time until the stable client's update reached the hub's observer, on 5.1.0 and 5
 
 **Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync).
 
-## Peer metadata
+## Peer Metadata
 
 ### Peer metadata is replaced, not merged, and the device name is read when sync starts
 
@@ -467,7 +470,7 @@ What the observing device received:
 
 **Used in:** [Presence](../best-practices/setup-and-lifecycle.md#presence).
 
-## Accepting connections and shared keys
+## Accepting Connections and Shared Keys
 
 ### A denied peer retries at the retry interval
 

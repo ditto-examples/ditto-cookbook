@@ -13,7 +13,7 @@ What happens at the edges of a document: a merge that pushes a document over the
 - An `INSERT` of a document with 50,000 top-level fields took more than 2 seconds; the same fields under one map took 48 to 70 ms ([Fifty thousand top-level fields make an INSERT slow](#fifty-thousand-top-level-fields-make-an-insert-slow)).
 - Since 5.1, the first write to a new collection slows down in proportion to the number of collections, and a collection cannot be removed ([Each new collection makes the first write to a collection slower](#each-new-collection-makes-the-first-write-to-a-collection-slower)).
 
-## The hard size limit across devices
+## The Hard Size Limit across Devices
 
 ### On SDK 5.2.0, an oversized merge leaves devices with different versions
 
@@ -79,7 +79,7 @@ On 5.1.0:
 
 **Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits).
 
-## Document weight and the number of writers
+## Document Weight and the Number of Writers
 
 ### A document grows with the number of devices that wrote it
 
@@ -118,7 +118,7 @@ Bytes for the first sync and for one change made on the hub:
 
 **Used in:** [Document Size Limits](../best-practices/data-modeling.md#document-size-limits), [When counters are appropriate](../best-practices/data-modeling.md#when-counters-are-appropriate).
 
-## Nesting depth
+## Nesting Depth
 
 ### Nesting depth is limited differently for arguments, literals, and paths
 
@@ -134,11 +134,11 @@ Bytes for the first sync and for one change made on the hub:
 | An `UPDATE ... SET n.n.(…).leaf = 1` path | Not limited in the same way: a path 5,000 levels deep was accepted, and a document 1,000 levels deep could be built (reading it took a few milliseconds) | An `UPDATE` that made the document 1,500 levels deep ended the process (`SIGILL`, no message) |
 
 - The argument limit applies to the depth of the whole argument, also to arguments that are not documents (`SELECT :x`).
-- The literal limit is of the same kind as the limit on nested parentheses (see [Long OR chains crashed SDK 5.1.0, and nested parentheses fail at 100 levels](dql-behavior.md#long-or-chains-crashed-sdk-510-and-nested-parentheses-fail-at-100-levels)).
+- The literal limit is of the same kind as the limit on nested parentheses (see [Conditions fail at 100 levels of nested parentheses](dql-behavior.md#conditions-fail-at-100-levels-of-nested-parentheses)).
 - A document deeper than 125 levels cannot be written back as it was read with `INSERT ... ON ID CONFLICT DO UPDATE`, because of the argument limit.
 - `SHOW ALL` lists no system parameter for the nesting depth.
 
-**Used in:** [Flat or nested](../best-practices/data-modeling.md#flat-or-nested).
+**Used in:** [Flat or nested](../best-practices/data-modeling.md#flat-or-nested), [Merge Semantics in Detail](crdt-types.md#merge-semantics-in-detail).
 
 ### Very deep documents end a peer's process during sync
 
@@ -161,7 +161,7 @@ Bytes for the first sync and for one change made on the hub:
 
 **Used in:** [Flat or nested](../best-practices/data-modeling.md#flat-or-nested), [Upgrading from SDK 5.1](upgrading.md).
 
-## Many fields and many collections
+## Many Fields and Many Collections
 
 ### Fifty thousand top-level fields make an INSERT slow
 

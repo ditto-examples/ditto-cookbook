@@ -9,7 +9,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 - Stored documents with future timestamps do not move a clock forward ([Receiving future timestamps does not advance Ditto's clock](#receiving-future-timestamps-does-not-advance-dittos-clock)).
 - `clock()` in a subscription is evaluated by the sending device with its own clock, only when a document is written or a new subscription arrives ([clock() in a subscription uses the sending device's clock](#clock-in-a-subscription-uses-the-sending-devices-clock)).
 
-## Last-writer-wins and device clocks
+## Last-Writer-Wins and Device Clocks
 
 ### A device whose clock runs ahead wins concurrent edits
 
@@ -43,7 +43,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 - R's later offline writes won against B's writes made 2 seconds later, for `d1` and for `d2`. A device that has received a timestamp from F writes after that timestamp in every document.
 - A timestamp 30 days ahead was accepted and spread in the same way. Nothing rejected or limited it, and no log line at warning level or above mentioned the clock difference (checked by hand once on 5.2.0).
 - As a result, while one device's clock runs N ahead, every device that syncs with it, directly or through a hub, writes with future timestamps until real time catches up or until that device's app restarts (see the next section). Concurrent edits by devices that have not synced with them lose meanwhile, and a device that comes back online joins them as soon as it receives a change.
-- A deletion written with a future timestamp leaves a tombstone that is reaped correspondingly later (see [Tombstones and reaping](storage-and-deletion.md#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped)).
+- A deletion written with a future timestamp leaves a tombstone that is reaped correspondingly later (see [Tombstones and Reaping](storage-and-deletion.md#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped)).
 
 **Used in:** [Clock drift](../best-practices/data-modeling.md#clock-drift).
 
@@ -73,7 +73,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 
 **Used in:** [Clock drift](../best-practices/data-modeling.md#clock-drift).
 
-## clock() in queries
+## clock() in Queries
 
 ### clock() in a subscription uses the sending device's clock
 

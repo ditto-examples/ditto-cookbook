@@ -5,13 +5,13 @@ What the persistence directory holds, and what happens when it is copied, restor
 **In brief**
 
 - A copy of a directory that runs at the same time as its original has the same peer key, and the two never converge: updates from one of them stop reaching the other devices, without an error ([A copied directory and its original never converge](#a-copied-directory-and-its-original-never-converge)).
-- A copy that replaces the original, and a device that goes back to an older copy of its own directory, sync normally ([A copy that replaces the original syncs normally](#a-copy-that-replaces-the-original-syncs-normally), [Restoring an older copy loses nothing, and Database IDs separate peers](#restoring-an-older-copy-loses-nothing-and-database-ids-separate-peers)).
-- Peers with different Database IDs never see each other, but a directory written with one Database ID opens with another, and its documents sync into the new database ([A directory written with another Database ID opens and syncs its documents](#a-directory-written-with-another-database-id-opens-and-syncs-its-documents)).
+- A copy that replaces the original, and a device that goes back to an older copy of its own directory, sync normally ([A copy that replaces the original syncs normally](#a-copy-that-replaces-the-original-syncs-normally), [Restoring an older copy of a directory loses nothing](#restoring-an-older-copy-of-a-directory-loses-nothing)).
+- Peers with different Database IDs never see each other, but a directory written with one Database ID opens with another, and its documents sync into the new database ([Devices with different Database IDs do not sync](#devices-with-different-database-ids-do-not-sync), [A directory written with another Database ID opens and syncs its documents](#a-directory-written-with-another-database-id-opens-and-syncs-its-documents)).
 - A device whose `ditto_store` subdirectory alone was deleted keeps its peer key, and on SDK 5.1.0 and 5.2.0 some documents that it creates before sync starts do not reach other devices, without an error; a device whose whole directory was deleted comes back with a new peer key and syncs everything ([Deleting only ditto_store keeps the peer key and loses some writes](#deleting-only-ditto_store-keeps-the-peer-key-and-loses-some-writes)).
 - Deleting the directory while Ditto is open raises no error, but the writes made afterwards are lost when Ditto closes ([Deleting the directory while Ditto is open loses later writes](#deleting-the-directory-while-ditto-is-open-loses-later-writes)).
 - A directory that another process holds, even a suspended one, fails to open after about 1 second; the lock of a process that crashed does not remain ([A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second), [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails)).
 
-## Copies of a directory
+## Copies of a Directory
 
 ### A copied directory and its original never converge
 
@@ -44,19 +44,32 @@ The tendency was the same on both releases:
 
 **Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
-### Restoring an older copy loses nothing, and Database IDs separate peers
+### Restoring an older copy of a directory loses nothing
 
 | | |
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, one run each; the results were the same on both releases |
-| Setup | (1) We copied the directory of a device X. X then wrote changes (`v = 2` and a new document), and after the hub had received them, X was put back to the older copy. (2) Two devices with different Database IDs and the same offline license token, with an explicit TCP connection address configured |
+| Setup | We copied the directory of a device X. X then wrote changes (`v = 2` and a new document), and after the hub had received them, X was put back to the older copy |
 
-- X, reopened on the older copy, received `v = 2` and the new document from the hub again within 6 seconds. The changes that it wrote after going back (another field, another document, and a new document) reached the hub and a device that joined later. Going back to an older copy of the same device lost nothing; the problem in [A copied directory and its original never converge](#a-copied-directory-and-its-original-never-converge) is that the original keeps running.
-- Both devices with different Database IDs opened with the same offline license token. Even with the explicit TCP connection, they did not list each other in presence, and they did not sync (10 seconds). This is why devices that run development and production builds with different Database IDs do not sync with each other.
+- X, reopened on the older copy, received `v = 2` and the new document from the hub again within 6 seconds.
+- The changes that it wrote after going back (another field, another document, and a new document) reached the hub and a device that joined later.
+- Going back to an older copy of the same device lost nothing; the problem in [A copied directory and its original never converge](#a-copied-directory-and-its-original-never-converge) is that the original keeps running.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory), [DittoConfig](../best-practices/setup-and-lifecycle.md#dittoconfig), [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process).
+**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
 
 ## Directories and Database IDs
+
+### Devices with different Database IDs do not sync
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each; the results were the same on both releases |
+| Setup | Two devices with different Database IDs and the same offline license token, with an explicit TCP connection address configured |
+
+- Both devices opened with the same offline license token. Even with the explicit TCP connection, they did not list each other in presence, and they did not sync within 10 seconds.
+- This is why devices that run development and production builds with different Database IDs do not sync with each other.
+
+**Used in:** [DittoConfig](../best-practices/setup-and-lifecycle.md#dittoconfig), [Several peers in one test process](../best-practices/testing.md#several-peers-in-one-test-process).
 
 ### A directory written with another Database ID opens and syncs its documents
 
@@ -71,7 +84,7 @@ The tendency was the same on both releases:
 
 **Used in:** [DittoConfig](../best-practices/setup-and-lifecycle.md#dittoconfig).
 
-## Deleting a directory or part of it
+## Deleting a Directory or Part of It
 
 ### Deleting only ditto_store keeps the peer key and loses some writes
 
@@ -105,7 +118,7 @@ The tendency was the same on both releases:
 
 **Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory), [Authentication](../best-practices/setup-and-lifecycle.md#authentication), [Data at Rest](../best-practices/security.md#data-at-rest), [Platform Differences](platform-differences.md).
 
-## Locks on the directory
+## Locks on the Directory
 
 ### A directory locked by another process fails to open after about 1 second
 
@@ -137,4 +150,4 @@ The tendency was the same on both releases:
 - The second `Ditto.open()` failed within 10 seconds with `File already locked, working dir = ..., retried 5 times. Multiple Ditto instances cannot run at the same time within the same working directory.`
 - After `close()` had completed, the directory opened.
 
-**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
+**Used in:** [One instance per persistence directory](../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory), [Platform Differences](platform-differences.md).
