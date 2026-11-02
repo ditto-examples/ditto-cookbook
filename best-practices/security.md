@@ -224,6 +224,7 @@ Ditto collections are schema-free, so the application is responsible for validat
 - Treat documents received from other peers as untrusted input when you render or process them.
 
 **❌ DON'T:**
+- Filter subscriptions by personal data or secrets, such as an email address. The subscription query and its arguments go to directly connected devices, and both devices write them to their on-disk logs (see [On-disk logs and exporting them](logging-and-observability.md#on-disk-logs-and-exporting-them)). Filter by IDs that mean nothing on their own.
 - Build DQL strings by interpolating user input. In our testing, the input `nobody' OR '1'='1` embedded as a string literal made a `SELECT` return every document and a `DELETE` delete every document; passed as an argument, it matched none.
 
 ```dart
@@ -265,6 +266,7 @@ The rest of this section applies wherever Ditto does not encrypt the store.
 **❌ DON'T:**
 - Assume that apps installed from a public app store run on devices with encryption enabled; your app cannot enforce it.
 - Store secrets such as tokens or keys in Ditto documents.
+- Rely on `DELETE` or `EVICT` to remove values from the device. **Note (SDK 5.1.0 and 5.2.0):** in our testing, most deleted and evicted values could still be read from the store's database files after Ditto was closed, until the space was reused or reclaimed. To remove data from a device for sure, for example when a user logs out of a shared device, close Ditto and delete the persistence directory (`deleteStore` in Swift and Kotlin), or encrypt the values in your app.
 
 In Flutter Web apps, data is kept in memory only and is not written to disk.
 

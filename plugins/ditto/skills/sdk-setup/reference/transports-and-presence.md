@@ -70,7 +70,9 @@ void connectToHub(Ditto ditto) {
 
 > **Note (SDK 5.1.0 and 5.2.0):** A device accepts a limited number of connections per transport. For TCP, the limit is 6 by default (system parameter `MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In our testing with a TCP hub and eight clients, the hub accepted six on both releases, and the remaining two received no data at all. No API reported this; only the log showed a `WARN` line, `failed to connect to peer error=... at capacity for this transport`. Rejected devices retry with an increasing backoff.
 >
-> According to the 5.2.0 release notes, the limit now counts accepted and outgoing LAN connections together (before, a peer could hold about twice the configured number), and when `MESH_CHOOSER_AT_CAPACITY_ACTION` is set to drop the oldest or the newest peer, Ditto waits until a new peer has finished connecting before it drops an existing one. The default is still 6 in 5.2.0, and in our testing the change did not alter how many clients a hub admitted.
+> On 5.2.0, a device also counts the connections that it opened itself when it decides whether to accept another one (the 5.2.0 release notes describe this as counting accepted and outgoing LAN connections together). In our testing, a hub that six clients had connected to and that also connected to two other devices kept all eight in sync on 5.1.0, but dropped two of the clients on 5.2.0, and a relay that connected to an upstream hub accepted only five clients on 5.2.0. Outgoing connections themselves are not limited: one device connected to 16 listening devices on both releases. A hub that only accepts connections still admitted six of eight clients on 5.2.0, and the default is still 6.
+>
+> `MESH_CHOOSER_AT_CAPACITY_ACTION` decides what a full hub does when another client arrives. With the default, the extra client never connected. According to the 5.2.0 release notes, the settings that drop the oldest or the newest peer wait until the new peer has finished connecting. In our testing with those settings, every client received data, but the hub kept replacing connections about every 5 seconds, on 5.1.0 and 5.2.0. Raise `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` instead.
 >
 > If more than six devices connect to one hub, raise the limit **on the hub** so that it is in effect **before** `ditto.sync.start()`: pass it in `DittoConfig.systemParameters` (SDK 5.2+), or on SDK 5.1 run `ALTER SYSTEM` after `Ditto.open` and before `ditto.sync.start()`. In our testing with SDK 5.1.0 and 5.2.0, a hub whose limit was raised before sync started admitted all eight clients; raising it after sync had started did not admit the rejected clients, even after 60 seconds.
 
@@ -96,6 +98,8 @@ void startHub(Ditto ditto) {
   ditto.sync.start();
 }
 ```
+
+**Hub load**: the CPU that a hub spends on each change grows with the number of devices connected to it, even when no other device subscribes to the changed document. In our testing on a 14-core Mac with the JavaScript SDK (5.1.0 and 5.2.0), one change cost the hub at most about 6 ms of CPU with one client and about 40 ms with 30 clients. When every client wrote, the hub's CPU grew faster than the number of clients: 30 clients that each wrote 5 times a second used about 2.6 cores. Each connected client also added about 4.5 MiB of memory to the hub on 5.2.0. Before you use a mobile device as a hub, estimate the number of clients and how often they write, and write frequently changing values (positions, sensor readings) less often or in batches.
 
 ## Invalid values and known peers
 

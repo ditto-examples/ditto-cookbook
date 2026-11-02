@@ -96,6 +96,8 @@ Independently of `isEnabled` and `minimumLogLevel`, Ditto always collects a limi
 
 On-disk logs rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`). Leave these at their defaults unless Ditto support advises otherwise.
 
+**What the logs contain**: in our testing with SDK 5.1.0 and 5.2.0, the on-disk logs of a device, and of each device directly connected to it, contained the text and the argument values of the device's subscriptions, at every console log level. Document IDs and values, `execute` statements and their arguments, observer arguments, and peer metadata did not appear. The logs leave the device when you export them or request them through the Portal, so do not filter subscriptions by personal data (see [Input Validation and Query Parameters](security.md#input-validation-and-query-parameters)). Error messages can contain document IDs (`Identifier conflict on document "<id>"`); keep that in mind when you forward exceptions to your own logging.
+
 The on-disk logs can be retrieved in two ways:
 
 - **From the Ditto Portal:** request logs from a device on the device dashboard (see [Remote Diagnostics](#remote-diagnostics)).

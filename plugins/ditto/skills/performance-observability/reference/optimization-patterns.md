@@ -371,6 +371,7 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 - `DittoLogger.isDevtoolsLoggingEnabled = true` also sends Ditto logs to Flutter DevTools.
 - On-disk logs (debug level and above) are kept in the persistence directory of the most recently created `Ditto` instance, about 15 MB of compressed logs or 15 days of logs by default (older entries are discarded once one of these limits is reached). They rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`); leave them at their defaults unless Ditto support advises otherwise.
 - Retrieve on-disk logs from the Ditto Portal device dashboard or with `DittoLogger.exportLogs(path)` (gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count). Use a fresh, timestamped `.jsonl.gz` path.
+- On-disk logs contain the text and argument values of this device's subscriptions and of those of directly connected devices, at every console level; document values, `execute` statements and arguments, and peer metadata did not appear (in testing with SDK 5.1.0 and 5.2.0). Do not filter subscriptions by personal data, because the logs leave the device when exported or requested.
 - Data bundles requested through the Ditto Portal include (SDK 5.1+) a `config_snapshot.json` file with the device's effective configuration.
 
 ---

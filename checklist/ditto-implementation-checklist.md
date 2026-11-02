@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.15
+> **Version**: 2.16
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -229,7 +229,7 @@ class SyncLifecycle with WidgetsBindingObserver {
 
 **What this means:** `TransportConfig` is immutable. Call `ditto.updateTransportConfig((config) { ... })` instead: it starts from the current configuration, so you change only what you need, for example with `setAllPeerToPeerEnabled()` or one transport under `peerToPeer`. Treat `global.syncGroup` as an optimization, not as a security boundary. If more than six devices connect to a hub over TCP, raise `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` on the hub so that it is in effect before `ditto.sync.start()`: pass it in `DittoConfig.systemParameters` (SDK 5.2+), or on SDK 5.1 run `ALTER SYSTEM SET` after every open. Check how many clients your hub admits, and confirm the setting with Ditto support before you rely on it in production.
 
-**Why this matters:** A hand-built configuration can silently stop devices from finding each other. A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Changes are applied asynchronously, and invalid values do not throw. In our testing with SDK 5.1.0 and 5.2.0, a device accepted 6 TCP connections by default. Additional clients of a hub received no data, no API reported an error, and only a `WARN` log line showed the problem. According to the 5.2.0 release notes, the default is still 6, and accepted and outgoing LAN connections now count together; we have not yet repeated this test with 5.2.0.
+**Why this matters:** A hand-built configuration can silently stop devices from finding each other. A new `TransportConfig()` has every transport disabled, including the peer-to-peer transports that a default instance enables. Changes are applied asynchronously, and invalid values do not throw. In our testing with SDK 5.1.0 and 5.2.0, a device accepted 6 TCP connections by default. Additional clients of a hub received no data, no API reported an error, and only a `WARN` log line showed the problem. On 5.2.0, the default is still 6, and the connections that a device opened itself also count when it decides whether to accept another one, so a hub that also connects to other devices admits fewer clients.
 
 **Best-practices guide:** Transport Configuration
 
@@ -1620,7 +1620,7 @@ Future<Ditto> openUnprotectedSmallPeer() {
 
 **What this means:** Before an `INSERT` or `UPDATE`, validate required fields, types, and value ranges, and pass every value as a parameter. When you render or process documents received from other peers, treat them as untrusted input.
 
-**Why this matters:** Ditto collections have no schema, so validating data before writing it is your application's job. Parameters keep values separate from the query text, so input cannot change the meaning of a statement.
+**Why this matters:** Ditto collections have no schema, so validating data before writing it is your application's job. Parameters keep values separate from the query text, so input cannot change the meaning of a statement. Subscription queries and their arguments are an exception to keeping values private: they go to directly connected devices and into both devices' on-disk logs (SDK 5.1.0 and 5.2.0), so filter subscriptions by opaque IDs, not by personal data such as email addresses.
 
 **Best-practices guide:** Input Validation and Query Parameters
 
@@ -1647,7 +1647,7 @@ Future<void> updateOrderStatus(Ditto ditto, String orderId, String status) async
 - Encrypt sensitive field values in the app before writing them, and keep the keys in secure storage
 - Never store secrets in documents, peer metadata, or `identityServiceMetadata`
 
-**Why this matters:** OS protection requires a passcode or screen lock. With the default settings, it protects data mainly while the device is powered off or has not been unlocked since it started. An app installed from a public app store cannot enforce device encryption. Peer metadata and identity metadata are shared with every peer in the mesh, not only with directly connected peers.
+**Why this matters:** OS protection requires a passcode or screen lock. With the default settings, it protects data mainly while the device is powered off or has not been unlocked since it started. An app installed from a public app store cannot enforce device encryption. Peer metadata and identity metadata are shared with every peer in the mesh, not only with directly connected peers. `DELETE` and `EVICT` do not remove values from the database files: in our testing with SDK 5.1.0 and 5.2.0, most deleted values could still be read from the files after Ditto was closed. To remove data from a shared device for sure, close Ditto and delete the persistence directory.
 
 **Best-practices guide:** Data at Rest, Identity metadata is visible to the mesh
 

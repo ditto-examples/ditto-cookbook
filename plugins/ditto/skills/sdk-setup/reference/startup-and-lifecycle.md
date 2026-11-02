@@ -132,6 +132,8 @@ Only one `Ditto` instance can use a persistence directory at a time, and only on
 
 > **Note (SDK 5.1.0 and 5.2.0):** The persistence directory holds the device's identity (its peer key) and its record of what it has synced with each peer, so a partial or copied directory breaks sync without an error. In our testing, a copied directory and the original, syncing through the same hub, never converged: new documents reached every device, but updates of existing documents from one of the two did not reach the others (in all nine runs), and each device showed its own updates, so neither could notice. A device that reopened its directory after only the `ditto_store` subdirectory had been deleted kept its peer key, and some of the documents that it created before sync started never reached the hub, while later writes did. A device whose whole directory had been deleted came back with a new peer key and synced everything.
 
+To delete the local store on Flutter and JavaScript, which have no API for it, wait for `await ditto.close()` to complete, delete the whole persistence directory, and open Ditto again if the app still needs it. Swift and Kotlin have `deleteStore` (SDK 5.2+). **Note (SDK 5.1.0 and 5.2.0):** in our testing on macOS, deleting the directory while Ditto was open raised no error: reads and writes kept working on the deleted files, a second instance could open the same path because the lock file was gone too, and every write of the first instance was lost when it closed. The lock file is no sign of whether a directory is in use; it still held the process ID after a crash. Recent writes of a small store were only in the write-ahead log file (`db.sql-wal`), so do not back up or copy single files of the directory either.
+
 ```dart
 // ✅ GOOD: One shared instance; concurrent callers await the same open.
 class DittoProvider {
@@ -352,7 +354,7 @@ Future<void> configureAuthenticationBadly(Ditto ditto) async {
 
 **Logging out**: `await ditto.auth.logout()` clears the credentials and **stops sync**. Call `ditto.sync.start()` again after the next successful login if the device should resume syncing. `ditto.auth.status` exposes `isAuthenticated` and `userID`.
 
-To remove local data as part of logging out, pass a `cleanup` callback (SDK 5.2+): `await ditto.auth.logout(cleanup: (ditto) async { ... })`. It runs after sync has stopped, and `logout()` completes only after it finishes. After logout the instance may no longer write, except for `EVICT`, so the callback can evict sensitive documents. Exceptions thrown by the callback are logged and do not reach the caller, so check the result yourself (for example with a `SELECT COUNT(*)`) when the cleanup must succeed. Concurrent `logout()` calls collapse into one, and only the first caller's `cleanup` runs.
+To remove local data as part of logging out, pass a `cleanup` callback (SDK 5.2+): `await ditto.auth.logout(cleanup: (ditto) async { ... })`. It runs after sync has stopped, and `logout()` completes only after it finishes. After logout the instance may no longer write, except for `EVICT`, so the callback can evict sensitive documents. Evicted values can still be read from the database files (`§ Data at Rest`); to remove them for sure, delete the persistence directory after `close()`. Exceptions thrown by the callback are logged and do not reach the caller, so check the result yourself (for example with a `SELECT COUNT(*)`) when the cleanup must succeed. Concurrent `logout()` calls collapse into one, and only the first caller's `cleanup` runs.
 
 `§ Authentication`
 
