@@ -23,7 +23,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | A hub that listened on TCP, and eight clients that listed it in `connect.tcpServers`. We checked which clients received the hub's data, and counted the hub's TCP connections in `system:transport_connections` and its peers in `presence.graph.remotePeers` |
 | Documentation | The 5.2.0 release notes describe a change in how connections are counted toward the limit: accepted and outgoing connections count together |
 
@@ -52,7 +52,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each; the two devices that connect to each other and the relay with six clients: one run each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; the two devices that connect to each other and the relay with six clients: one run each. Every run gave the same result |
 | Setup | Four layouts, each with the default limit of 6: (1) six clients connected to a hub, and the hub also connected to two devices that only listened; (2) six clients connected to a hub, and the hub also connected to three of them, so that three pairs were connected in both directions; (3) two devices that listed each other in `connect.tcpServers`, watched for 40 seconds; (4) a relay device that connected to an upstream hub and accepted six clients. We counted the accepted and outgoing TCP connections and checked which devices received data |
 | Documentation | The 5.2.0 release notes say that accepted and outgoing connections count together toward the limit. We saw this on 5.2.0 |
 

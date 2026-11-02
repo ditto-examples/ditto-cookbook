@@ -37,7 +37,7 @@ What happens at the edges of a document: a merge that pushes a document over the
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | Two devices A and B made the document diverge as in [On SDK 5.2.0, an oversized merge leaves devices with different versions](#on-sdk-520-an-oversized-merge-leaves-devices-with-different-versions). Then A wrote a small field `noteA` and B a small field `noteB` (`'b1'`) on that document, and another document was added. Finally, B evicted the document with `EVICT` and wrote `noteB` again (`'b2'`) |
 | Documentation | According to the SDK 5.2.0 release notes, the document then receives no more updates on that device until it is evicted and synced again |
 

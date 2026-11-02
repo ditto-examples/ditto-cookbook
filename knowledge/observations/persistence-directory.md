@@ -76,7 +76,7 @@ The tendency was the same on both releases:
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | We opened a directory with Database ID A, wrote one document, and closed it. Then we opened the same directory with Database ID B, the ID that our other tests use, and connected it to a hub with Database ID B |
 | Documentation | Ditto's documentation on [testing](https://docs.ditto.live/sdk/latest/deployment/testing) states that after the Database ID is changed, the data already in the app keeps syncing, as new data. We saw the same |
 

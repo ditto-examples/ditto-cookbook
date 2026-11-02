@@ -17,11 +17,11 @@ Each entry starts with a heading that states what we observed, followed by a tab
 
 | Row | Contents |
 |---|---|
-| **Observed on** | The SDK releases and the number of runs on each, and whether the runs agreed |
+| **Observed on** | The SDK releases and the number of runs on each, also for parts of the test that ran fewer times, and, when every run gave the same result, that it did |
 | **Setup** | The devices, the data, and the steps |
 | **Documentation** | What Ditto's documentation or release notes say about the behavior, when they describe it |
 
-The results follow, with every number and separately for each release where they differ. **Not tested** lists what the entry does not cover, and **Used in** names the sections that rely on it ("none yet" when no section does). [How We Tested](observations/how-we-tested.md) describes the environment that all entries share and how to read their numbers.
+The results follow, with every number and separately for each release where they differ. Where the runs differed, as times do, the results give the range over the runs or the number of runs with each outcome. **Not tested** lists what the entry does not cover, and **Used in** names the sections that rely on it ("none yet" when no section does). [How We Tested](observations/how-we-tested.md) describes the environment that all entries share and how to read their numbers.
 
 ### Where an observation belongs
 

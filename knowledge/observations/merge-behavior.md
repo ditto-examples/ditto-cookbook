@@ -6,7 +6,7 @@ How concurrent writes from several devices merge: registers, maps, and removals 
 
 - Of two concurrent writes to a register, the one written later wins, whichever reaches the other devices first. Writing a value that did not change is still a new write, and it overwrites an earlier concurrent edit from another device ([The later write wins by when it was written, not when it arrived](#the-later-write-wins-by-when-it-was-written-not-when-it-arrived), [Rewriting an unchanged value overwrites concurrent edits](#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
 - Removing or replacing an object, or deleting a document, does not remove a key that another device wrote concurrently: the key stays, with its value or as `null` ([The merge table held on SDK 5.1.0 and 5.2.0](#the-merge-table-held-on-sdk-510-and-520), [A key added concurrently survives a later removal as null](#a-key-added-concurrently-survives-a-later-removal-as-null)).
-- Merges work field by field: values written together in a transaction mix with another device's later edit, and a long string keeps only one device's edit ([Fields written in one transaction still merge field by field](#fields-written-in-one-transaction-still-merge-field-by-field)).
+- Merges work field by field: values written together in a transaction mix with another device's later edit, and a long string keeps only one device's edit ([Fields written in one transaction still merge field by field](#fields-written-in-one-transaction-still-merge-field-by-field), [A text field keeps only one of two concurrent edits](#a-text-field-keeps-only-one-of-two-concurrent-edits)).
 - A counter, a map keyed by ID, and an audit log keyed by timestamp kept every change from three offline devices, and a randomized test with four to six devices, also with SDK releases mixed, always converged without losing an increment or a latest write. Peers on 5.0.3, 5.1.0, and 5.2.0 merged concurrent edits as on a single release ([With three offline devices, counters and maps keep every change](#with-three-offline-devices-counters-and-maps-keep-every-change), [A randomized merge test always converged](#a-randomized-merge-test-always-converged), [Peers on different releases merged to the same documents](#peers-on-different-releases-merged-to-the-same-documents)).
 - Each device evaluates conditions and arithmetic on the documents it holds: a conditional update is not a lock, a bulk `UPDATE` misses documents that other devices added, and `reg = reg + 1` on six connected devices kept only 101 to 129 of 600 increments ([Conditional updates on two offline devices both succeed](#conditional-updates-on-two-offline-devices-both-succeed), [UPDATE changes only the documents that the writing device holds](#update-changes-only-the-documents-that-the-writing-device-holds), [Read-modify-write increments lose most concurrent updates](#read-modify-write-increments-lose-most-concurrent-updates)).
 - A reorder survives a concurrent reorder only when it writes just the moved entry, with a value between its new neighbors; renaming a field in place hides what older app versions write ([Reordering on two offline devices keeps both moves only with gap positions](#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions), [Renaming a field in place hides older versions' edits](#renaming-a-field-in-place-hides-older-versions-edits)).
@@ -54,7 +54,7 @@ The main cases:
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | Three more cases of the test in [The merge table held on SDK 5.1.0 and 5.2.0](#the-merge-table-held-on-sdk-510-and-520), for which we had no expected result. Device B wrote first, and device A wrote later |
 
 | Device B (first) | Device A (later) | Result after sync |
@@ -73,7 +73,7 @@ Results were the same on both releases.
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | A hub and two devices A and B. A and B disconnected; A wrote `status`, and 1 second later B wrote the same field. One of them reconnected first, and we waited until its change reached the hub; 2 seconds later, the other reconnected |
 
 - When B, which wrote later, reconnected first, and A, which wrote earlier, reconnected afterwards, every device ended with B's value.
@@ -110,21 +110,29 @@ Results were the same on both releases.
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | Devices A and B, disconnected. A wrote, and 1 second later B wrote. Then they reconnected |
+
+- A wrote `amount = 15000` and `currency = 'JPY'` together in a transaction; B later wrote only `amount = 120`. After sync, both devices had `120 JPY`, on both releases.
+- A transaction does not keep its values together with respect to other devices: another device's later edit of one field mixes with the transaction's other fields.
+
+**Used in:** [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [Transactions](../../best-practices/transactions.md).
+
+### A text field keeps only one of two concurrent edits
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
+| Setup | Devices A and B, disconnected. One string field held two paragraphs; A edited the first paragraph, and 1 second later B edited the second. Then they reconnected. The same edits were repeated with the paragraphs stored in a map (`paragraphs.p1`, `paragraphs.p2`) |
 
 | Case | Result after sync |
 |---|---|
-| A wrote `amount = 15000` and `currency = 'JPY'` together in a transaction; B later wrote only `amount = 120` | `120 JPY` |
-| One string field held two paragraphs; A edited the first paragraph, and B the second | Only B's text, written later, remained; A's edit was lost |
-| The paragraphs in a map (`paragraphs.p1`, `paragraphs.p2`), with the same edits | Both edits remained |
+| Both paragraphs in one string field | Only B's text, written later, remained; A's edit was lost |
+| The paragraphs as entries of a map | Both edits remained |
 
-Results were the same on both releases.
+- A string is one value, and there is no character-level merge: the later write replaces the whole text. Results were the same on both releases.
 
-- A transaction does not keep its values together with respect to other devices: another device's later edit of one field mixes with the transaction's other fields.
-- A string is one value, and there is no character-level merge: the later write replaces the whole text.
-
-**Used in:** [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [Transactions](../../best-practices/transactions.md).
+**Used in:** [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce).
 
 ## Several Devices Writing the Same Document
 
@@ -189,7 +197,7 @@ An extended version of both tests ran on SDK 5.0.3, 5.1.0, and 5.2.0, three runs
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | A hub and devices A and B. A and B disconnected; A ran a statement, and 1 second later B ran the same statement. Then they reconnected |
 
 | Case | Result after sync |
@@ -209,7 +217,7 @@ Results were the same on both releases.
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | While device A was offline, it ran `UPDATE orders SET status = 'closed' WHERE status = 'open' AND day <= 2`, which closed o1 and o2, the documents it held. Meanwhile, device B inserted o3 (`status: 'open'`, `day: 1`), which matches the condition, and wrote a `note` on o1. Then the devices synced |
 
 - After sync, o1 and o2 were closed, and o1 also kept B's `note`. o3 stayed `open`.
