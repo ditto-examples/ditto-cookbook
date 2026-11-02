@@ -35,6 +35,9 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 All three accept only `SELECT` queries and take parameters through `arguments:`. Observers never cause data to sync; pair them with a subscription.
 
 Behavior:
+- When an observer fires depends on its query (in testing with SDK 5.1.0 and 5.2.0): `SELECT *` fires on every write to a document in its result, even one that changes no value; a projection fires only when a projected value changes; an aggregate (`COUNT`, `GROUP BY`) fires on every write to the collection. Project the fields a screen needs.
+- A `SELECT *` observer that writes the same value to its own document is called again about every 35 ms without end; compare before writing, or use `DO UPDATE_LOCAL_DIFF`.
+- Large result sets cost memory on every callback: an observer of 200 documents under constant updates grew the JavaScript process by about 13 to 24 KiB per callback for 10 minutes, one of a single row leveled off, and cancelling stopped the growth (`§ Query Scope and Execution`).
 - `registerObserver` has no backpressure: it never waits for your code.
 - With `onChange`, events emitted before the first listener attaches are buffered; listen right after registering. `registerObserverV2` starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` right away.
 - `registerObserverV2`: while the stream is paused, Ditto stops delivering after the update that arrived at the pause; on resume, that update and the latest state are delivered. Leaving an `await for` loop cancels the subscription and the observer; `ditto.close()` does not end the loop, so cancel the observer before closing.

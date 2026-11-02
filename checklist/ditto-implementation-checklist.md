@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.17
+> **Version**: 2.18
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1002,7 +1002,7 @@ StoreObserver observeTasksOrdered(Ditto ditto) => ditto.store.registerObserver(
 
 **What this means:** Keep `registerObserver` listeners short and synchronous: copy the values, map them to models, and call `setState`. When an update triggers slow work such as an upload, an export, or heavy aggregation, use `registerObserverV2` with `await for`, or `registerObserverWithSignalNext` with `signalNext()` called in a `finally` block (both Experimental, SDK 5.1+). Never write to the observed collection from its own observer without a guard.
 
-**Why this matters:** `registerObserver` has no backpressure: results keep arriving while an asynchronous listener waits, so work overlaps and queues up. With the backpressure APIs, Ditto holds back updates while your code is busy and then delivers the latest state. An observer registered with `registerObserverWithSignalNext` stops delivering updates if `signalNext()` is never called.
+**Why this matters:** `registerObserver` has no backpressure: results keep arriving while an asynchronous listener waits, so work overlaps and queues up. With the backpressure APIs, Ditto holds back updates while your code is busy and then delivers the latest state. An observer registered with `registerObserverWithSignalNext` stops delivering updates if `signalNext()` is never called. A listener that writes the same value back to the document it observes keeps triggering itself: in our testing with SDK 5.1.0 and 5.2.0, about every 35 ms without end.
 
 **Best-practices guide:** Keep observer callbacks fast, Backpressure (SDK 5.1+)
 
@@ -1041,7 +1041,7 @@ class SensorAggregator {
 
 **What this means:** Instead of observing a whole collection in the root widget, observe only what each region needs: a `COUNT(*)` query for a badge, and `WHERE` and `LIMIT` for a list rendered with `ListView.builder` and a `ValueKey` per row. With a state-management library, let one provider or controller own each observer and cancel it in its dispose hook. Use `Differ` when you need to know which items changed.
 
-**Why this matters:** A whole-collection observer at the top of a screen rebuilds everything on every change, which causes dropped frames and lost scroll position or input focus. An observer delivers its full result for any change that affects its query.
+**Why this matters:** A whole-collection observer at the top of a screen rebuilds everything on every change, which causes dropped frames and lost scroll position or input focus. An observer delivers its full result for any change that affects its query. In our testing with SDK 5.1.0 and 5.2.0, a `SELECT *` observer fired even for writes that changed no value, while an observer that projected fields fired only when a projected value changed, and an observer of 200 documents under constant updates grew the process's memory on every callback.
 
 **Best-practices guide:** Partial UI Updates, Diffing Results
 
@@ -1509,7 +1509,7 @@ Future<void> savePhoto(Ditto ditto, String photoId, String filePath) async {
 
 **What this means:** Subscriptions sync only the attachment token. Call `ditto.store.fetchAttachment(token, onEvent)` only when the content is needed, for example when the user opens a photo. Show lists with small thumbnail attachments. If the screen closes before the fetch completes, call `stop()` on the returned `AttachmentFetcher`.
 
-**Why this matters:** Fetching every attachment as soon as its document syncs wastes bandwidth and storage, especially over Bluetooth LE, which is much slower than Wi-Fi.
+**Why this matters:** Fetching every attachment as soon as its document syncs wastes bandwidth and storage, especially over Bluetooth LE, which is much slower than Wi-Fi. A transfer also delays other changes on the same link: in our testing with SDK 5.1.0 and 5.2.0 at 20 KB/s, a 500 KB attachment held small documents for the whole 25-second transfer.
 
 **Best-practices guide:** Fetching Attachments, Thumbnail Pattern
 

@@ -155,6 +155,8 @@ The soft-limit warning reads `exceeds recommended limit`. **Note (SDK 5.1.0):** 
 
 The limits apply to the size of each stored document. Size affects storage and memory on every device, merge cost (which scales with document size, not change size), and initial replication: over Bluetooth LE (roughly 20 KB/s in practice) a 256 KiB document takes more than 10 seconds to replicate the first time.
 
+Two patterns keep growing although the stored values do not (**Note (SDK 5.1.0 and 5.2.0)**, in testing): each map key removed with `UNSET` adds about 54 bytes to a new device's first sync and stays after reaping, so put long-lived lists whose entries come and go (open tickets, task lists) in one document per entry; and a document grows with the number of devices that ever wrote it (300 writers: about 7 KB on first sync and 2 to 4 KB per later edit, against 0.6 and 0.3 KB for one writer), so avoid one shared document that every device writes (`§ Document Size Limits`, `§ Adding, updating, and removing map entries`).
+
 | Cause of growth | Fix |
 |---|---|
 | A nested map that keeps receiving entries | Move entries to their own collection with a parent reference (`orderId`) |

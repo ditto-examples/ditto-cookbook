@@ -1,6 +1,8 @@
 # Observing Changes
 
-A **store observer** is a live local query. Ditto re-runs it whenever a local write or an incoming sync changes its result, and delivers the new result to your code. Observers never cause data to sync; pair them with a subscription (see [Sync and Subscriptions](sync-and-subscriptions.md)).
+A **store observer** is a live local query. Ditto re-runs it whenever a local write or an incoming sync affects its query, and delivers the new result to your code. Observers never cause data to sync; pair them with a subscription (see [Sync and Subscriptions](sync-and-subscriptions.md)).
+
+When an observer fires depends on its query. In our testing with SDK 5.1.0 and 5.2.0, a `SELECT *` observer fired on every write to a document in its result, even when the write did not change any value; an observer that projected fields (`SELECT _id, status ...`) fired only when a projected value changed; and an aggregate observer (`COUNT`, `GROUP BY`) fired on every write to the collection, whether or not its result changed. Project the fields a screen needs to avoid needless callbacks.
 
 Changes that arrive through sync are delivered in batches, not one callback per remote write. In our testing with SDK 5.1.0, 20 documents written one by one on another device arrived in two callbacks, and 20 quick updates of one document arrived in two or three, ending at the latest value. A transaction from another device arrived as one callback that contained all of its documents, never a partial state. Do not use observer callbacks to count or log every remote change; intermediate states can be skipped.
 
@@ -190,7 +192,7 @@ class _OpenOrdersStreamState extends State<OpenOrdersStream> {
 
 **❌ DON'T:**
 - `await` network calls, file I/O, or database writes inside a `registerObserver` listener; the next results keep arriving while you wait.
-- Write to the same collection from inside its observer without a guard; each write triggers the observer again.
+- Write to the same collection from inside its observer without a guard; each write triggers the observer again. In our testing, a `SELECT *` observer that wrote the same value to its own document was called again about every 35 ms without end; comparing the value before writing, or `DO UPDATE_LOCAL_DIFF`, stopped it after one write.
 
 ```dart
 // ❌ BAD: Slow async work per update without backpressure; uploads overlap and queue up.

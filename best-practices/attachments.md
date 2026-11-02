@@ -373,5 +373,5 @@ An attachment can only be fetched while a peer that **holds the blob** is reacha
 - Consider the slowest transport your users rely on (Bluetooth LE is much slower than Wi-Fi) when deciding what to fetch automatically and what to fetch on demand.
 
 **❌ DON'T:**
-- Fetch large attachments automatically on devices that may only be connected over Bluetooth LE.
+- Fetch large attachments automatically on devices that may only be connected over Bluetooth LE. A transfer shares the link with document sync, and other changes wait behind the data already sent: in our testing with SDK 5.1.0 and 5.2.0 over TCP limited to 1 MB/s, a 5 MB attachment delayed small documents by 1 to 3 seconds, in both directions; at 20 KB/s, a 500 KB attachment held them for the whole 25-second transfer. Fetch large files when the user opens them on devices that also need orders or notifications quickly.
 - Keep many versions of large files alive by referencing old tokens from history documents unless you need them; every referenced blob stays on the device.

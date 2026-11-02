@@ -19,3 +19,5 @@ Ditto's [attachment documentation](https://docs.ditto.live/sdk/latest/crud/worki
 ## Attachment Size
 
 There is no fixed maximum attachment size in the SDK; device storage and bandwidth are the practical limits. Blob storage does not count toward the per-device key-value storage guidance (about 2 GB); uploads through the HTTP API have a separate 1 MB request body limit. Documents have a 256 KiB soft limit (warning) and a 5 MiB hard limit (writes that exceed it fail).
+
+Attachment transfers share the link with document sync, and other changes wait behind the data already sent. **Note (SDK 5.1.0 and 5.2.0)**: in testing over TCP limited to 1 MB/s, a 5 MB attachment delayed small documents by 1 to 3 s in both directions; at 20 KB/s, a 500 KB attachment held them for the whole 25 s transfer (`§ Size Guidance`). On devices that also need orders or notifications quickly, fetch large files when the user opens them.
