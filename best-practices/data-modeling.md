@@ -1272,7 +1272,7 @@ Every device stamps documents with its own clock, and device clocks disagree. St
 
 ### Store UTC with a zone designator
 
-Use one of two representations consistently within a field:
+Use one of two representations consistently within a field (in JavaScript, never pass a `Date` object: in our testing with SDK 5.1.0 and 5.2.0, it was stored as an empty object `{}` without an error):
 
 | Format | Dart | Notes |
 |---|---|---|

@@ -26,7 +26,7 @@
 // - diff() takes a List<QueryResultItem>; pass result.items.toList().
 // - The first call reports every item as an insertion.
 // - deletions index the OLD list; insertions and updates index the NEW list.
-// - Identity is _id; values are compared deeply.
+// - Identity is _id (project it in diffed queries); values are compared deeply.
 // - Differ keeps the previous result in memory and diffing is expensive:
 //   keep diffed queries bounded (for example with LIMIT).
 // - Differ does not return old items; keep previous values yourself.

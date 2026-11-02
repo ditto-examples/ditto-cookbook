@@ -382,6 +382,7 @@ Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment 
 
 The helpers below open several small peers in one `integration_test` process and connect them over TCP on `127.0.0.1` only:
 - Each peer has its own persistence directory, and all peers share one Database ID.
+- Each group of peers needs its own port and Database ID. Pass different values when a test opens two groups (two stores, for example) and in test processes that can run at the same time on one machine (parallel CI jobs). In our testing with SDK 5.1.0 and 5.2.0, a second hub listened on a port that another Ditto hub already used, without an error; a client that reconnected (as in `whileDisconnected`) then moved to the newer hub and mixed the documents of both groups. With different Database IDs, the groups did not mix, and the test failed visibly because the client could not connect.
 - Peer-to-peer transports are disabled, so a test never connects to devices nearby.
 - `whileDisconnected` stops sync on every peer, runs the writes, and reconnects the peers. Writes made inside it are concurrent, like edits on devices that are offline at the same time. Writes made while the peers are connected reach the other peers within milliseconds and do not test a merge.
 - `waitForConvergence` waits, with a timeout, until every peer returns the same rows.
@@ -407,6 +408,7 @@ const licenseToken = String.fromEnvironment('DITTO_LICENSE_TOKEN');
 Future<List<Ditto>> openSyncedPeers(
   int count, {
   int port = 4041,
+  String databaseID = '00000000-0000-4000-8000-000000000002',
   Future<void> Function(Ditto ditto)? configure,
 }) async {
   final peers = <Ditto>[];
@@ -414,8 +416,9 @@ Future<List<Ditto>> openSyncedPeers(
     final directory = await Directory.systemTemp.createTemp('ditto_peer${i}_');
     final ditto = await Ditto.open(
       DittoConfig(
-        // All peers must use the same database ID to sync.
-        databaseID: '00000000-0000-4000-8000-000000000002',
+        // All peers of a group use the same database ID; give every group
+        // that can run at the same time its own ID and port.
+        databaseID: databaseID,
         persistenceDirectory: directory.path,
       ),
     );

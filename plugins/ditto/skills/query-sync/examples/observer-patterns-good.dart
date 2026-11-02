@@ -227,8 +227,9 @@ class OrdersScreen extends StatelessWidget {
 
 /// ✅ GOOD: An observer owned by a non-widget controller (for example, used by
 /// a state-management provider). The owner calls dispose().
-/// The observed JOIN (SDK 5.1+) fires when either collection changes; each row
-/// carries a composite _id. Subscribe to both collections separately.
+/// The observed JOIN (SDK 5.1+) fires when either collection changes. Project
+/// the keys of each row (o._id AS orderId): on SDK 5.2.0, joined rows carry no
+/// _id of their own. Subscribe to both collections separately.
 class OpenOrdersWithCustomers {
   OpenOrdersWithCustomers(
     Ditto ditto,

@@ -197,6 +197,8 @@ Which documents each `WHERE` expression matches, when `isDeleted` is `true`, `fa
 
 Note that `IS NOT NULL` is true for a missing field, and that `!= true` drops both `null` and missing rows. <!-- lint-ignore -->
 
+In the JavaScript SDK, a field whose value is `undefined` is stored as `null`, not left out, so it no longer matches `IS MISSING` (in our testing with SDK 5.1.0 and 5.2.0, also inside arrays and objects). Omit the key to leave a field missing.
+
 **✅ DO:**
 - Filter optional booleans with `coalesce(field, default)`: `coalesce(isDeleted, false) = false`.
 - Test for field existence with `IS MISSING` / `IS NOT MISSING`.
@@ -732,7 +734,7 @@ Always qualify fields with their alias (`c.name`, `o.total`) and alias projected
 
 #### Joins in observers
 
-`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. Each row delivered to the observer carries a composite `_id` (for example `{"c": "c1", "o": "o1"}`) that you can use as a stable key when diffing. Subscribe to each collection the join reads.
+`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing, so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
 
 ```dart
 // ✅ GOOD: Subscribe per collection (app or feature scope), join locally

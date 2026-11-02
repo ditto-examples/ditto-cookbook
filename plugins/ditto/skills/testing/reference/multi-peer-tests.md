@@ -49,6 +49,7 @@ const licenseToken = String.fromEnvironment('DITTO_LICENSE_TOKEN');
 Future<List<Ditto>> openSyncedPeers(
   int count, {
   int port = 4041,
+  String databaseID = '00000000-0000-4000-8000-000000000002',
   Future<void> Function(Ditto ditto)? configure,
 }) async {
   final peers = <Ditto>[];
@@ -56,8 +57,9 @@ Future<List<Ditto>> openSyncedPeers(
     final directory = await Directory.systemTemp.createTemp('ditto_peer${i}_');
     final ditto = await Ditto.open(
       DittoConfig(
-        // All peers must use the same database ID to sync.
-        databaseID: '00000000-0000-4000-8000-000000000002',
+        // All peers of a group use the same database ID; give every group
+        // that can run at the same time its own ID and port.
+        databaseID: databaseID,
         persistenceDirectory: directory.path,
       ),
     );

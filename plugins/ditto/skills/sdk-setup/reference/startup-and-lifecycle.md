@@ -369,6 +369,8 @@ System parameters change SDK behavior. **They are kept in memory only and are no
 
 In our testing with the JavaScript SDK 5.2.0, a parameter passed in the configuration was in effect when `Ditto.open()` returned, and lowercase names (`dql_strict_mode`) worked as well as uppercase ones.
 
+**Environment variables**: a parameter can also be set before the process starts with the environment variable `DITTO_<NAME>`, which is the only way to pass startup-only parameters on SDK 5.1. Ditto reads the value as JSON: write booleans as lowercase `true` or `false`, numbers without quotes, and strings with their quotes (`DITTO_<NAME>='"value"'` in a shell). In our testing with SDK 5.1.0 and 5.2.0, a value that was not valid JSON (an unquoted string, `TRUE`, an empty value) or had the wrong type (`1` for a boolean, `"24"` for a number) was ignored with one log line, and Ditto started with the default without any error in the app. Check the value with `SHOW <name>` after the start.
+
 **✅ DO:**
 - Pass the settings your app always needs in `DittoConfig.systemParameters`, on every open. Keep the map in one place, next to the rest of your configuration.
 - Use `ALTER SYSTEM` only for values you change while the app runs.

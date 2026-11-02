@@ -169,7 +169,7 @@ expect(
 
 Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment fetching across peers need sync between real instances. Most of these tests do not need physical devices: several instances in one `integration_test` process can sync over TCP on `127.0.0.1`.
 
-- Each peer has its own persistence directory; all peers share one Database ID.
+- Each peer has its own persistence directory; all peers of a group share one Database ID. Give each group in a test, and each test process that can run at the same time, its own port and Database ID: a second hub listened on a port already in use without an error, and reconnecting clients moved to it and mixed the groups (SDK 5.1.0 and 5.2.0).
 - Disable peer-to-peer transports (`config.setAllPeerToPeerEnabled(false)`); peer 0 listens on `127.0.0.1`, the others connect to it.
 - Small-peers-only sync needs an **offline license token**: `ditto.sync.start()` throws until `ditto.setOfflineOnlyLicenseToken(token)` is called with a valid token. Without one, tests are limited to a single local store.
 - **✅ DO**: Make the concurrent writes inside `whileDisconnected` (stop sync on every peer, write, reconnect), then `waitForConvergence` with a timeout until every peer returns the same rows.

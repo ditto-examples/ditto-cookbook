@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.14
+> **Version**: 2.15
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -800,9 +800,9 @@ Future<void> setShippingAddress(
 
 ### ☐ Write subscriptions as SELECT * FROM collection with an optional WHERE clause
 
-**What this means:** Write every subscription as `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. A subscription selects whole documents from one collection. Registration rejects projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS`. It also rejects `LIMIT` and `ORDER BY` while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value, `true`. Keep that default, and sort and limit in local queries instead. `WHERE` follows the rules of a local query, so a subscription filtered with `!=` or `NOT IN` does not receive documents in which the field is missing or `null`; add `OR field IS MISSING` when older documents may lack it.
+**What this means:** Write every subscription as `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. A subscription selects whole documents from one collection. Registration rejects projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS`. It also rejects `LIMIT` and `ORDER BY` while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value, `true`. Keep that default, and sort and limit in local queries instead. Do not use `clock()` in a subscription; pass a time boundary as a parameter. `WHERE` follows the rules of a local query, so a subscription filtered with `!=` or `NOT IN` does not receive documents in which the field is missing or `null`; add `OR field IS MISSING` when older documents may lack it.
 
-**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` degrades sync performance: it is stateful, so the sync engine must re-evaluate it whenever a document crosses the limit boundary. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0 and 5.2.0); after that, every matching new or changed document is synced, inside the window or not. In our testing with SDK 5.1.0 and 5.2.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits, and even its deletion, no longer arrived.
+**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` degrades sync performance: it is stateful, so the sync engine must re-evaluate it whenever a document crosses the limit boundary. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0 and 5.2.0); after that, every matching new or changed document is synced, inside the window or not. In our testing with SDK 5.1.0 and 5.2.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits, and even its deletion, no longer arrived. Each sending device evaluates `clock()` with its own clock, only when a document is written or a new subscription arrives, so documents that enter the window as time passes are not sent.
 
 **Best-practices guide:** Subscription Rules
 
@@ -1053,7 +1053,7 @@ class SensorAggregator {
 
 **What this means:** Use `ditto.store.transaction(...)` for changes that span several documents, such as closing an order and creating its invoice, for read-check-write sequences, and for consistent reads across several queries (`isReadOnly: true`). Give every transaction a `hint`. To roll back, throw or return `TransactionCompletionAction.rollback`. Catching a statement error inside the callback does not roll the transaction back.
 
-**Why this matters:** If you catch an error and continue, the remaining changes are committed unless you roll back. The `hint` appears in log messages about long-running transactions, so you can tell which code started them. A single statement is already atomic, so wrapping it in a transaction adds nothing.
+**Why this matters:** If you catch an error and continue, the remaining changes are committed unless you roll back. The `hint` appears in log messages about long-running transactions, so you can tell which code started them. A single statement is already atomic, so wrapping it in a transaction adds nothing. Other devices receive a transaction at once only when every device on the path subscribes to all of its documents: in our testing with SDK 5.1.0 and 5.2.0, a receiver whose faster path was a relay that subscribed only to the orders showed orders without their items for up to about 0.7 seconds.
 
 **Best-practices guide:** Using store.transaction
 

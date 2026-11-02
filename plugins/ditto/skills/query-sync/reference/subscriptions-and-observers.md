@@ -35,6 +35,7 @@ Consequences:
 - Subscriptions sync whole documents. To reduce what a device receives, split rarely needed data into another collection or move binary data into attachments.
 - Subscriptions cannot join. If a child collection must be filtered by a key on its parent (for example `orderItems` by `storeId`), copy the key into the child documents.
 - `WHERE` follows the rules of a local query: `!=` and `NOT IN` drop documents where the field is missing or `null`, so another device never receives them (in testing with SDK 5.1.0 and 5.2.0). Add `OR field IS MISSING` when older documents may lack the field.
+- Do not use `clock()` in a subscription: each sending device evaluates it with its own clock, only when a document is written and when a new subscription arrives, so documents that enter the window as time passes are not sent (in testing with SDK 5.1.0 and 5.2.0, not after a reconnect or a restart either). Pass a boundary as a parameter (`§ Date and Time`).
 - `DQL_RESTRICT_SUBSCRIPTIONS` (default `true`) controls `LIMIT`/`ORDER BY`. Setting it to `false` allows only those two and creates stateful subscriptions that force re-evaluation whenever documents cross the limit boundary. Keep the default; if you must use one, do not filter or sort on mutable fields together with `LIMIT`. In SDK 5.1.0, `LIMIT` bounds only the initial download. Afterwards, every new or changed document that matches the `WHERE` is synced, including documents that never ranked inside the window, and documents already received stay. The setting is checked only on the subscribing device.
 
 ## Subscription Scope
@@ -175,7 +176,7 @@ Do not port Flutter observer code one-to-one.
 An observer delivers the full result every time. A plain `ListView.builder` with `ValueKey(_id)` does not need `Differ`; use it for `AnimatedList` or for processing only new items.
 
 - `diff()` takes a `List<QueryResultItem>` (`result.items.toList()`); the first call reports every item as inserted.
-- Identity is `_id`; values are compared deeply. A value that changed and changed back between two results is not an update.
+- Identity is `_id`, so project `_id` in a diffed query: on SDK 5.2.0 (JavaScript, in testing), rows of a query without `_id` had none, and `Differ` reported a reordering as updates. Values are compared deeply. A value that changed and changed back between two results is not an update.
 - `Differ` keeps the previous result and is expensive: bound the query (`LIMIT`) and debounce large or busy results.
 - `Differ` does not return old items; keep previous values or IDs yourself.
 - Only items produced by Ditto are accepted (test doubles throw `ArgumentError`).

@@ -349,7 +349,7 @@ Facts to keep in mind:
 
 - `diff()` takes a `List<QueryResultItem>`; pass `result.items.toList()` (`items` is an `Iterable`).
 - The first call reports every item as an insertion.
-- Identity is `_id`; values are compared deeply. A value that changed and changed back between two results is not reported as an update; the observer may still deliver the unchanged result, which then produces an empty diff.
+- Identity is `_id`, so include `_id` in the projection of a diffed query. **Note (SDK 5.2.0):** in our testing with the JavaScript SDK, observer rows of a query that did not project `_id` had no `_id` (on 5.1.0 they did), and `Differ` reported a reordering as updates instead of moves. Values are compared deeply. A value that changed and changed back between two results is not reported as an update; the observer may still deliver the unchanged result, which then produces an empty diff.
 - `moves` can list every item whose position shifted, not just the one that was moved. For example, in our testing with SDK 5.1.0 and 5.2.0, moving one item to the top of a three-item list reported three moves, plus an update for the moved item.
 - `Differ` keeps the previous result in memory and diffing is computationally expensive. Debounce updates for large or busy result sets, and keep diffed queries bounded (for example, with `LIMIT`).
 - `Differ` does not give you the old items. Keep the previous values (or at least their IDs) yourself.
