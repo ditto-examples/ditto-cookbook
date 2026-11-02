@@ -1,6 +1,6 @@
 # Transactions
 
-A transaction runs several DQL statements against the local store **atomically**: either all of their changes are committed, or none are. Transactions are a local concept; they do not lock anything on other peers, and concurrent edits from other devices are still merged with CRDT rules, field by field (in our testing, `amount = 15000` and `currency = 'JPY'` written in one transaction and a later `amount = 120` from another device gave `120 JPY`) (see [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)).
+A transaction runs several DQL statements against the local store **atomically**: either all of their changes are committed, or none are. Transactions are a local concept; they do not lock anything on other peers, and concurrent edits from other devices are still merged with CRDT rules, field by field (in our testing, `amount = 15000` and `currency = 'JPY'` written in one transaction and a later `amount = 120` from another device gave `120 JPY`; see [Fields written in one transaction still merge field by field](../knowledge/merge-behavior.md#fields-written-in-one-transaction-still-merge-field-by-field)) (see [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)).
 
 **When to use a transaction:**
 - Changes that span several documents and must never be visible half-done, such as closing an order and creating its invoice, or moving an item between two lists (dual writes)
@@ -220,6 +220,6 @@ Keep documents that are changed together in the same subscription scope (for exa
 | Platform | API | Explicit rollback | Notes |
 |---|---|---|---|
 | Flutter | `ditto.store.transaction(hint:, isReadOnly:, (tx) async {...})` | Return `TransactionCompletionAction.rollback` | Any other return value commits; `store.execute` inside throws |
-| JavaScript | `ditto.store.transaction(async (tx) => {...}, { isReadOnly, hint })` | Return `'rollback'` | `store.execute` writes and nested read-write transactions inside deadlocked without an error in our testing (5.0.3 to 5.2.0); `close()` waits for open transactions; a Node.js script without sync must keep the event loop alive (see [Platform Differences](../knowledge/platform-differences.md)) |
+| JavaScript | `ditto.store.transaction(async (tx) => {...}, { isReadOnly, hint })` | Return `'rollback'` | `store.execute` writes and nested read-write transactions inside deadlocked without an error in our testing (5.0.3 to 5.2.0) (see [In JavaScript, store.execute writes inside a transaction deadlock](../knowledge/transactions-and-observers.md#in-javascript-storeexecute-writes-inside-a-transaction-deadlock)); `close()` waits for open transactions; a Node.js script without sync must keep the event loop alive (see [Platform Differences](../knowledge/platform-differences.md)) |
 | Swift | `try await ditto.store.transaction(hint:isReadOnly:) { tx in ... }` | Return `.rollback` | Return `.commit` (or a value) to commit |
 | Kotlin | `ditto.store.transaction(hint, isReadOnly) { tx -> ... }` | Return `DittoTransaction.Result.Rollback` | The block must return `DittoTransaction.Result.Commit(value)` or `DittoTransaction.Result.Rollback` |

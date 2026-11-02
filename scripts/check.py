@@ -13,7 +13,7 @@ Checks:
 - every section that a checklist item names under "Best-practices guide" is
   a heading of the guide
 - every line of the best practices that reports an observation ("in our
-  testing") links to the knowledge page that describes it
+  testing") links to the knowledge entry that describes it
 - every relative link in the repository's Markdown files points to an
   existing file, and every #anchor to an existing heading (GitHub anchors)
 - audit/reference/scanner-rules.md matches `scan.py --list-rules`
@@ -63,6 +63,10 @@ CHECKLIST_FIELD = "**Best-practices guide:**"
 
 # An observation from testing, as the best practices report it.
 OBSERVATION = re.compile(r"\bin (?:our )?testing\b", re.IGNORECASE)
+OBSERVED_ON = "| Observed on |"
+# The phrase itself, quoted, as when a page explains what it means.
+QUOTED_PHRASE = re.compile(r'"in (?:our )?testing"', re.IGNORECASE)
+KNOWLEDGE_LINK = re.compile(r"\]\(\.\./knowledge/([^)#\s]+\.md)(?:#([^)\s]+))?\)")
 
 
 # --- Markdown -----------------------------------------------------------------
@@ -212,18 +216,46 @@ def check_checklist_sections(checklist: Path, headings: set[str], root: Path) ->
 
 
 
-def check_observation_links(pages: list[Path], root: Path) -> list[str]:
-    """Lines that report an observation ("in our testing") must link to the knowledge pages.
+def observation_anchors(text: str) -> set[str]:
+    """Anchors of the knowledge headings whose section has an "Observed on" table row."""
+    found: set[str] = set()
+    seen: set[str] = set()
+    current = ""
+    for _, line in prose_lines(text):
+        match = HEADING.match(line)
+        if match:
+            base = current = slugify(match.group(1))
+            count = 0
+            while current in seen:
+                count += 1
+                current = f"{base}-{count}"
+            seen.add(current)
+        elif current and line.startswith(OBSERVED_ON):
+            found.add(current)
+    return found
+
+
+def check_observation_links(pages: list[Path], knowledge_pages: list[Path], root: Path) -> list[str]:
+    """Lines that report an observation ("in our testing") must link to its knowledge entry.
 
     The best practices summarize observations; the knowledge pages describe
-    them in full. Paragraphs, list items, and table rows are single lines.
+    each one in an entry with an "Observed on" table. A link qualifies when it
+    names such an entry, or a knowledge page that has entries. Paragraphs,
+    list items, and table rows are single lines.
     """
+    observations = {page.name: observation_anchors(page.read_text(encoding="utf-8"))
+                    for page in knowledge_pages}
     errors = []
     for page in pages:
         for number, line in prose_lines(page.read_text(encoding="utf-8")):
-            if OBSERVATION.search(INLINE_CODE.sub("code", line)) and "../knowledge/" not in line:
+            prose = QUOTED_PHRASE.sub("", INLINE_CODE.sub("code", line))
+            if not OBSERVATION.search(prose):
+                continue
+            linked = any(observations.get(name) and (not anchor or anchor in observations[name])
+                         for name, anchor in KNOWLEDGE_LINK.findall(line))
+            if not linked:
                 errors.append(f"{page.relative_to(root)}:{number}: an observation without a link "
-                              "to the knowledge page that describes it")
+                              "to the knowledge entry that describes it")
     return errors
 
 
@@ -300,7 +332,8 @@ def main() -> int:
     pages = guide_pages(ROOT)
     headings = guide_headings(pages)
     errors += check_unique_headings(pages, ROOT)
-    errors += check_observation_links([p for p in pages if p.parent.name == "best-practices"], ROOT)
+    errors += check_observation_links([p for p in pages if p.parent.name == "best-practices"],
+                                      [p for p in pages if p.parent.name == "knowledge"], ROOT)
     for skill in sorted(p.parent for p in SKILLS.glob("*/SKILL.md")):
         skill_errors, skill_warnings = check_skill(skill, headings)
         errors += skill_errors

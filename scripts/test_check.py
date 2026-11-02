@@ -171,11 +171,30 @@ class ChecklistSectionsTest(unittest.TestCase):
 
 
 class ObservationLinksTest(unittest.TestCase):
+    KNOWLEDGE = """
+        # Connections
+
+        ## The TCP limit
+
+        ### A hub accepts six clients
+
+        | | |
+        |---|---|
+        | Observed on | SDK 5.2.0, three runs |
+
+        - Six of eight clients synced.
+
+        ## Background
+
+        How connections work.
+        """
+
     def check(self, text: str) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            knowledge = write(root, "knowledge/connections.md", self.KNOWLEDGE)
             page = write(root, "best-practices/page.md", text)
-            return check.check_observation_links([page], root)
+            return check.check_observation_links([page], [knowledge], root)
 
     def test_reports_observations_without_a_knowledge_link(self):
         errors = self.check("""
@@ -186,12 +205,22 @@ class ObservationLinksTest(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("best-practices/page.md:3", errors[0])
 
-    def test_accepts_observations_that_link_to_knowledge(self):
+    def test_accepts_observations_that_link_to_an_observation(self):
         self.assertEqual(self.check("""
             # Page
 
-            > **Note (SDK 5.2.0):** in our testing, the hub accepted six clients (see [The limit](../knowledge/connections.md#the-limit)).
+            > **Note (SDK 5.2.0):** in our testing, the hub accepted six clients (see [The limit](../knowledge/connections.md#a-hub-accepts-six-clients)).
+
+            - In our testing, it held (see [Connections](../knowledge/connections.md)).
             """), [])
+
+    def test_reports_links_to_headings_without_an_observation(self):
+        errors = self.check("""
+            # Page
+
+            - In our testing, it held (see [Background](../knowledge/connections.md#background)).
+            """)
+        self.assertEqual(len(errors), 1)
 
     def test_matches_in_testing_and_ignores_code_and_other_words(self):
         errors = self.check("""
@@ -207,6 +236,19 @@ class ObservationLinksTest(unittest.TestCase):
             """)
         self.assertEqual(len(errors), 1)
         self.assertIn("best-practices/page.md:3", errors[0])
+
+    def test_ignores_the_quoted_phrase(self):
+        self.assertEqual(self.check("""
+            # Page
+
+            Statements that say "in our testing" summarize the knowledge pages.
+            """), [])
+
+    def test_finds_the_observations_of_a_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = write(Path(tmp), "knowledge/connections.md", self.KNOWLEDGE)
+            self.assertEqual(check.observation_anchors(page.read_text(encoding="utf-8")),
+                             {"a-hub-accepts-six-clients"})
 
 
 if __name__ == "__main__":
