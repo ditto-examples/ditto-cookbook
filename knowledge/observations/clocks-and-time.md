@@ -4,14 +4,14 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 
 **In brief**
 
-- Ditto's last-writer-wins follows the device clocks: a device whose clock runs N seconds ahead wins against writes made up to N seconds later ([A device whose clock runs ahead wins concurrent edits](#a-device-whose-clock-runs-ahead-wins-concurrent-edits)).
-- A clock that runs ahead spreads: every device that syncs with that device, even through a hub, then writes with future timestamps, also for other documents, until the app restarts ([A clock running ahead spreads to devices that sync with it](#a-clock-running-ahead-spreads-to-devices-that-sync-with-it), [Ditto's clock stays ahead until the app restarts](#dittos-clock-stays-ahead-until-the-app-restarts)).
-- Stored documents with future timestamps do not move a clock forward ([Receiving future timestamps does not advance Ditto's clock](#receiving-future-timestamps-does-not-advance-dittos-clock)).
+- Ditto's last-writer-wins follows the device clocks: a device whose clock runs N seconds ahead wins against writes made up to N seconds later ([A device whose clock runs ahead wins concurrent edits made within the clock difference](#a-device-whose-clock-runs-ahead-wins-concurrent-edits-made-within-the-clock-difference)).
+- A clock that runs ahead spreads: every device that syncs with that device, even through a hub, then writes with future timestamps, also for other documents, until every app that ran with the future time restarts or real time catches up ([A clock running ahead spreads to devices that sync with it](#a-clock-running-ahead-spreads-to-devices-that-sync-with-it), [Ditto's clock stays ahead until the app restarts](#dittos-clock-stays-ahead-until-the-app-restarts)).
+- Stored documents with future timestamps do not move a clock forward ([A stored document with future timestamps does not advance Ditto's clock](#a-stored-document-with-future-timestamps-does-not-advance-dittos-clock)).
 - `clock()` in a subscription is evaluated by the sending device with its own clock, only when a document is written or a new subscription arrives ([clock() in a subscription uses the sending device's clock](#clock-in-a-subscription-uses-the-sending-devices-clock)).
 
 ## Last-Writer-Wins and Device Clocks
 
-### A device whose clock runs ahead wins concurrent edits
+### A device whose clock runs ahead wins concurrent edits made within the clock difference
 
 | | |
 |---|---|
@@ -60,7 +60,7 @@ How device clocks affect Ditto: which concurrent write wins when a clock is wron
 
 **Used in:** [Clock drift](../../best-practices/data-modeling.md#clock-drift).
 
-### Receiving future timestamps does not advance Ditto's clock
+### A stored document with future timestamps does not advance Ditto's clock
 
 | | |
 |---|---|

@@ -40,7 +40,7 @@ What happens when a document is deleted:
 - Make sure every device connects within the tombstone TTL (7 days by default; see [Tombstone TTL and reaping](#tombstone-ttl-and-reaping)), or use a soft delete instead.
 
 **❌ DON'T:**
-- Use `DELETE ... USE IDS ...` without a `WHERE` predicate while any device runs SDK 5.1.0, where it removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing](../knowledge/observations/dql-behavior.md#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-remove-nothing)). Use `WHERE _id IN :ids`, which works on every release; it gets slower with long lists, so split more than about 1,000 IDs into chunks of 1,000 (see [USE IDS](dql.md#use-ids)).
+- Use `DELETE ... USE IDS ...` without a `WHERE` predicate while any device runs SDK 5.1.0, where it removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE predicate remove nothing](../knowledge/observations/dql-behavior.md#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-predicate-remove-nothing)). Use `WHERE _id IN :ids`, which works on every release; it gets slower with long lists, so split more than about 1,000 IDs into chunks of 1,000 (see [USE IDS](dql.md#use-ids)).
 - Use `DELETE` for data that is updated concurrently on other devices (see [Husk documents](#husk-documents)).
 - Use `DELETE` to free space on one device; it removes the data for every peer. Use [EVICT](#evict) instead.
 

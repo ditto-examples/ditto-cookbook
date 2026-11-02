@@ -5,13 +5,13 @@ What happens at the edges of a document: a merge that pushes a document over the
 **In brief**
 
 - When two devices together push a document over the hard size limit, SDK 5.1.0 stores the combined document and can no longer update it, while SDK 5.2.0 drops the change, so each device keeps its own version ([On SDK 5.2.0, an oversized merge leaves devices with different versions](#on-sdk-520-an-oversized-merge-leaves-devices-with-different-versions)).
-- On 5.2.0, updates of such a document stop in both directions until one device evicts it, and that device loses its own changes to the document ([An oversized document stops syncing until one side evicts it](#an-oversized-document-stops-syncing-until-one-side-evicts-it)).
+- On 5.2.0, updates of such a document stop in both directions until one device evicts it, and that device loses its own changes to the document ([On SDK 5.2.0, an oversized document stops syncing until one side evicts it](#on-sdk-520-an-oversized-document-stops-syncing-until-one-side-evicts-it)).
 - With releases mixed, an oversized merge ends differently on each device, and SDK 5.0.3 does not check the hard limit when a document is written ([An oversized merge ends differently on each release](#an-oversized-merge-ends-differently-on-each-release), [SDK 5.0.3 does not check the hard size limit when a document is written](#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)).
 - A document grows with the number of devices that ever wrote it, also when they all wrote the same field and only one value remains: with 300 writers, the first sync was about 11 times and each later change 6 to 13 times as heavy ([A document grows with the number of devices that wrote it](#a-document-grows-with-the-number-of-devices-that-wrote-it)).
 - An argument can nest 125 levels and a literal 97 levels, while `UPDATE` paths can build much deeper documents ([Nesting depth is limited differently for arguments, literals, and paths](#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)).
-- Documents 800 or more levels deep ended a peer's process during sync on 5.1.0 and 5.2.0, and 5.0.3 cannot read a collection that holds a document 30 or more levels deep ([Very deep documents end a peer's process during sync](#very-deep-documents-end-a-peers-process-during-sync)).
+- Documents 800 or more levels deep ended a peer's process during sync on 5.1.0 and 5.2.0, and on 5.0.3, every query on a collection that holds a document 30 or more levels deep ends the process ([Very deep documents end a peer's process during sync](#very-deep-documents-end-a-peers-process-during-sync)).
 - An `INSERT` of a document with 50,000 top-level fields took 2.28 to 2.38 seconds; the same fields under one map took 48 to 70 ms ([Fifty thousand top-level fields make an INSERT slow](#fifty-thousand-top-level-fields-make-an-insert-slow)).
-- Since 5.1, the first write to a new collection slows down in proportion to the number of collections, and a collection cannot be removed ([Each new collection makes the first write to a collection slower](#each-new-collection-makes-the-first-write-to-a-collection-slower)).
+- Since 5.1, the first write to a new collection slows down in proportion to the number of collections, and a collection cannot be removed ([Since SDK 5.1, each new collection makes the first write to a collection slower](#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)).
 
 ## The Hard Size Limit across Devices
 
@@ -29,11 +29,11 @@ What happens at the edges of a document: a merge that pushes a document over the
 | 5.2.0 | A held only `partA`, and B only `partB`; the two versions stayed different | Succeeded on A |
 
 - On 5.2.0, `system:sync_degradations` on each device had one row: `{"collection": "blobs", "document_id": "big", "reason": "documentTooBig", "senderPeerKey": "<the other device's peer key>"}`. No API reported an error or a warning.
-- On 5.1.0, the result is a document that no device can update; on 5.2.0, it is a document whose version differs from device to device. What happens to later updates, and to an eviction, is described in [An oversized document stops syncing until one side evicts it](#an-oversized-document-stops-syncing-until-one-side-evicts-it).
+- On 5.1.0, the result is a document that no device can update; on 5.2.0, it is a document whose version differs from device to device. What happens to later updates, and to an eviction, is described in [On SDK 5.2.0, an oversized document stops syncing until one side evicts it](#on-sdk-520-an-oversized-document-stops-syncing-until-one-side-evicts-it).
 
 **Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Upgrading from SDK 5.1](../upgrading.md).
 
-### An oversized document stops syncing until one side evicts it
+### On SDK 5.2.0, an oversized document stops syncing until one side evicts it
 
 | | |
 |---|---|
@@ -184,7 +184,7 @@ Bytes for the first sync and for one change made on the hub:
 
 **Used in:** none yet.
 
-### Each new collection makes the first write to a collection slower
+### Since SDK 5.1, each new collection makes the first write to a collection slower
 
 | | |
 |---|---|

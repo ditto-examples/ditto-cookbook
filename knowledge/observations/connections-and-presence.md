@@ -327,7 +327,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - The callback ran once right after registration (0 ms), and then about every second during the first few seconds, even without changes. Callbacks arrive at intervals of about 1 second.
 - A joining peer was reported after 1.16 to 1.19 seconds in all three runs. A peer that left: after about 1.0 second in all three runs on 5.1.0; after 1 ms, 1 ms, and 1.0 second on 5.2.0.
 - Even when nothing changes, the observer is called about every 15 seconds. With 4 and 7 devices watched for 60 seconds, after the callback right after registration, it was called four times, from about 11 seconds on, 15.0 seconds apart (the same on 5.1.0 and 5.2.0; 7 devices on 5.2.0 only). Each graph was identical to the previous one: the peer keys, connections, metadata, and `deviceName`.
-- The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](observer-behavior.md#differ-reports-every-shifted-item-as-a-move) and [ANY over a parameter array returns no rows since SDK 5.1.0](dql-behavior.md#any-over-a-parameter-array-returns-no-rows-since-sdk-510).
+- The same runs also checked two behaviors outside presence; see [Differ reports every shifted item as a move](observer-behavior.md#differ-reports-every-shifted-item-as-a-move) and [ANY and EVERY over a parameter or literal array return no rows since SDK 5.1.0](dql-behavior.md#any-and-every-over-a-parameter-or-literal-array-return-no-rows-since-sdk-510).
 
 **Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence).
 
