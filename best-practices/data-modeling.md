@@ -1345,3 +1345,11 @@ Device clocks drift and can be set wrong. iOS clocks are usually within 100 ms o
 **❌ DON'T:**
 - Rely on your own timestamp fields to decide which of two conflicting writes should win. Ditto resolves concurrent register writes with its own Hybrid Logical Clock, independently of your fields; and if you compare your own timestamps at read time, a device with a fast clock always wins. Where order matters, model the data so that the merge cannot go wrong: a counter, a map keyed by ID, or an audit log with a derivation such as "most advanced state" (see [Event History and Audit Logs](#event-history-and-audit-logs)).
 - Use timestamps as document IDs (see [Document IDs](#document-ids)).
+
+> **Note (SDK 5.1.0 and 5.2.0):** Ditto's last-writer-wins follows device clocks too. Its Hybrid Logical Clock starts from the device's clock and moves ahead to the current clock of each running peer that the device syncs with. In our testing:
+>
+> - A device whose clock was 5 seconds fast won over a write of the same field made 2 seconds later on another device, but not over one made 8 seconds later. A device 1 hour fast won over writes made minutes later.
+> - A device whose clock was 1 hour behind lost only to writes made after the last change it had received, from any document.
+> - The offset spread. Every device that synced with a running device whose clock was ahead, directly or through a hub, then wrote later timestamps in every document, so concurrent edits from devices that had not synced lost. A clock 30 days ahead was accepted the same way, and no warning was logged. The effect lasted until real time caught up or the affected apps restarted: Ditto keeps its clock only while the app runs, and documents that already carried future timestamps did not move it forward again.
+>
+> Fields that devices may write at the same time therefore need a shape whose merge does not depend on which write is later, as the list above describes.

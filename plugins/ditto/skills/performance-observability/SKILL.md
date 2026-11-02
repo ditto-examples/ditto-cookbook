@@ -134,7 +134,7 @@ An observer delivers a new result for **any** change that affects its query. A `
 - Map results to immutable model classes with `==` if you rely on equality to skip rebuilds (two `item.value` maps are never `==`)
 - Use `Differ` only where you need to know what changed (for example `AnimatedList`)
 
-**❌ DON'T**: rebuild the entire screen from one root observer on every change; diff large or unbounded result sets (`Differ` keeps the previous result in memory; bound diffed queries with `LIMIT`).
+**❌ DON'T**: register an observer per list row (60+ stall on 5.1.0); rebuild the entire screen from one root observer on every change; diff large or unbounded result sets (`Differ` keeps the previous result in memory; bound diffed queries with `LIMIT`).
 
 `Differ` index semantics: [reference/optimization-patterns.md](reference/optimization-patterns.md#differ).
 

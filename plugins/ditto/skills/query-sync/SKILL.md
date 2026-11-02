@@ -92,7 +92,7 @@ Soft delete: relaying devices keep flagged documents in their subscriptions to p
 
 Changing subscriptions makes peers re-evaluate which documents to send; avoid changing them more often than about every 15 minutes (documents already held are not downloaded again).
 **✅ DO**:
-- Register at app start, after login, or on entering a workspace, in an app- or feature-level service; keep every `SyncSubscription` and `cancel()` it on logout or workspace change
+- Register at app start (every `Ditto.open()`; not persisted), after login, or on entering a workspace, in an app- or feature-level service; keep every `SyncSubscription` and `cancel()` it on logout or workspace change
 - Change the **observer**, not the subscription, when the user changes a filter, search term, tab, or sort order
 - Cancel subscriptions **before** evicting their data; cancelling alone does not delete local data
 

@@ -109,7 +109,7 @@ Future<void> ensureIndexes(Ditto ditto) async {
 
 ### Upgrading and downgrading
 
-SDK 5.1 uses a new on-disk index format and migrates existing indexes automatically the first time an app starts with it. SDK 5.2 keeps that format, so an app can move between 5.1 and 5.2 without migration. To downgrade to 5.0 or v4, go through SDK 5.0.2 or later (or 4.14.6 or later), which converts the format back and replaces each composite index with one single-field index per key. See the [indexing documentation](https://docs.ditto.live/dql/indexing#migration), the migration guides, and [Rolling Back](../knowledge/upgrading.md#rolling-back).
+SDK 5.1 uses a new on-disk index format and migrates existing indexes automatically the first time an app starts with it. SDK 5.2 keeps that format, so an app can move between 5.1 and 5.2 without migration. Upgrade devices on SDK 5.0.x directly to 5.2.0, not through 5.1.0: on a store that 5.1.0 has migrated, writes to a collection whose index was created while the collection was empty fail with `no such table: ___idx_coll_...`, and in our testing that store stayed broken after a later upgrade to 5.2.0. Dropping that index (`DROP INDEX ... ON ...`) and creating it again fixed it. To downgrade to 5.0 or v4, go through SDK 5.0.2 or later (or 4.14.6 or later), which converts the format back and replaces each composite index with one single-field index per key. See the [indexing documentation](https://docs.ditto.live/dql/indexing#migration), the migration guides, and [Rolling Back](../knowledge/upgrading.md#rolling-back).
 
 ## Index Usage Rules
 

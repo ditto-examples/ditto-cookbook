@@ -545,4 +545,4 @@ class OrdersScreen extends StatelessWidget {
 }
 ```
 
-**Why:** Several narrow observers (one per region) often cost less than rebuilding the entire screen for every change, and they make each widget self-contained. Each observer re-runs its query when its data changes, so keep the number of observers on busy collections reasonable. Use Flutter DevTools to confirm which widgets rebuild before optimizing further.
+**Why:** Several narrow observers (one per region) often cost less than rebuilding the entire screen for every change, and they make each widget self-contained. Each observer re-runs its query when its data changes, so keep the number of observers on busy collections reasonable. While any device runs SDK 5.1.0, also stay well below about 60 observers in total: more stalled every callback in our testing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)). Use Flutter DevTools to confirm which widgets rebuild before optimizing further.

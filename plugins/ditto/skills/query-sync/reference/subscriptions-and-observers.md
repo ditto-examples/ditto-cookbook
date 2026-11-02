@@ -34,6 +34,7 @@ A subscription query selects whole documents from one collection: `SELECT * FROM
 Consequences:
 - Subscriptions sync whole documents. To reduce what a device receives, split rarely needed data into another collection or move binary data into attachments.
 - Subscriptions cannot join. If a child collection must be filtered by a key on its parent (for example `orderItems` by `storeId`), copy the key into the child documents.
+- `WHERE` follows the rules of a local query: `!=` and `NOT IN` drop documents where the field is missing or `null`, so another device never receives them (in testing with SDK 5.1.0 and 5.2.0). Add `OR field IS MISSING` when older documents may lack the field.
 - `DQL_RESTRICT_SUBSCRIPTIONS` (default `true`) controls `LIMIT`/`ORDER BY`. Setting it to `false` allows only those two and creates stateful subscriptions that force re-evaluation whenever documents cross the limit boundary. Keep the default; if you must use one, do not filter or sort on mutable fields together with `LIMIT`. In SDK 5.1.0, `LIMIT` bounds only the initial download. Afterwards, every new or changed document that matches the `WHERE` is synced, including documents that never ranked inside the window, and documents already received stay. The setting is checked only on the subscribing device.
 
 ## Subscription Scope
@@ -61,6 +62,7 @@ Consequences:
 - Register when data becomes relevant (app start, login, entering a workspace) in an app- or feature-level service; keep every `SyncSubscription` reference.
 - Re-register only when the set of data the device needs changes (switching store or tenant). Search, tabs, filters, and sort orders change observers.
 - Subscriptions stay active until `cancel()` or `ditto.close()`. Always release them explicitly; do not rely on garbage collection to cancel them.
+- Subscriptions are not persisted: register them again after every `Ditto.open()`. Until then, the device sends its own changes but receives neither updates nor new documents from other peers, without an error (in testing with SDK 5.1.0 and 5.2.0; `§ Subscription Lifecycle`).
 - Cancelling does not delete local data; documents stop receiving updates, new documents, and deletions from other peers. A device receives the union of its subscriptions, so documents that another active subscription matches keep syncing. To free storage, cancel every subscription that matches the documents (including overlapping ones), then `EVICT`; a document that another active subscription still matches is synced back. Data that was already being transferred can still arrive after cancelling; if the device must not keep it, run the eviction again later (for example, on the next app start or in a periodic cleanup).
 - `ditto.sync.stop()` pauses all subscriptions; `start()` resumes them. `await ditto.close()` marks them cancelled; `cancel()` afterwards is a no-op.
 - `ditto.sync.subscriptions` is for debugging: read `queryString` and `isCancelled` only.

@@ -31,6 +31,7 @@ Consequences for your design:
 
 - **Subscriptions always sync whole documents.** There is no way to subscribe to some fields of a document. To reduce what a device receives, split rarely needed data into a separate collection or move large binary data into [Attachments](attachments.md).
 - **Subscriptions cannot join.** If a child collection must be filtered by a key that lives on the parent (for example, `orderItems` by `storeId`), copy that key into the child documents so that the child collection can be subscribed to on its own. `JOIN` remains available for local queries (see [Joining Collections (SDK 5.1+)](dql.md#joining-collections-sdk-51)).
+- **`WHERE` follows the same rules as a local query.** A subscription filtered with `!=` or `NOT IN` does not receive documents in which the field is missing or `null` (see [MISSING and NULL](dql.md#missing-and-null)); on the other device, that looks like data that does not sync. In our testing with SDK 5.1.0 and 5.2.0, every condition we tried, including nested paths, `array_contains`, `lower()`, `LIKE`, `_id IN :ids`, and `_id.storeId = :storeId`, delivered exactly the documents that the same local query returned on the sending device. Add `OR field IS MISSING` when older documents may lack the field. A syntax error, a missing argument, or an unknown function throws when you register the subscription.
 - **Use parameters**, never string interpolation, for values in the `WHERE` clause (see [Parameters and Literals](dql.md#parameters-and-literals)).
 
 <!-- expect-error -->
@@ -114,6 +115,7 @@ Registering, cancelling, or changing a subscription makes peers across the mesh 
 - Register subscriptions when the data first becomes relevant: at app start, after login, or when the user enters a workspace (store, region, team).
 - Own subscriptions in an app-level or feature-level service, not in individual widgets.
 - Keep a reference to every subscription you register, and call `cancel()` when its data is no longer relevant (logout, leaving a workspace) or when you register a replacement; subscriptions stay active until cancelled or until the `Ditto` instance is closed.
+- Register the subscriptions again after every `Ditto.open()`, as part of your startup code. Subscriptions are not stored in the persistence directory. **Note (SDK 5.1.0 and 5.2.0):** in our testing, a device that reopened its directory without registering again still sent its own changes, but it received neither updates to documents it held nor new documents, without an error, so its screens kept showing old data. After it registered again, both arrived within about 0.1 seconds.
 - Filter what the user sees with local queries and observers on top of a stable subscription.
 
 **❌ DON'T:**

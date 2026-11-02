@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.13
+> **Version**: 2.14
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -680,7 +680,7 @@ String localTimestamp() => DateTime.now().toIso8601String();
 
 **What this means:** Use stored timestamps only as approximate information for display, filtering, and retention. Where the order of writes matters, model the data so that the merge cannot go wrong: use a counter, a map keyed by ID, or an audit log from which you derive the current state. Expect small negative durations between timestamps written by different devices.
 
-**Why this matters:** If you compare your own timestamps at read time, the device with the fastest clock wins. Device clocks drift: Android devices can deviate by several seconds, and manually set clocks by much more. Ditto itself resolves concurrent register writes with its own Hybrid Logical Clock, independently of your fields.
+**Why this matters:** If you compare your own timestamps at read time, the device with the fastest clock wins. Device clocks drift: Android devices can deviate by several seconds, and manually set clocks by much more. Ditto itself resolves concurrent register writes with its own Hybrid Logical Clock, independently of your fields, but that clock follows device clocks too: in our testing with SDK 5.1.0 and 5.2.0, a device whose clock was 5 seconds fast won over a write made 2 seconds later, and every device that synced with a device whose clock was ahead also wrote later timestamps.
 
 **Best-practices guide:** Clock drift
 
@@ -800,9 +800,9 @@ Future<void> setShippingAddress(
 
 ### ☐ Write subscriptions as SELECT * FROM collection with an optional WHERE clause
 
-**What this means:** Write every subscription as `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. A subscription selects whole documents from one collection. Registration rejects projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS`. It also rejects `LIMIT` and `ORDER BY` while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value, `true`. Keep that default, and sort and limit in local queries instead.
+**What this means:** Write every subscription as `SELECT * FROM <collection> [WHERE ...]`, with values passed as parameters. A subscription selects whole documents from one collection. Registration rejects projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, and `USE IDS`. It also rejects `LIMIT` and `ORDER BY` while `DQL_RESTRICT_SUBSCRIPTIONS` keeps its default value, `true`. Keep that default, and sort and limit in local queries instead. `WHERE` follows the rules of a local query, so a subscription filtered with `!=` or `NOT IN` does not receive documents in which the field is missing or `null`; add `OR field IS MISSING` when older documents may lack it.
 
-**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` degrades sync performance: it is stateful, so the sync engine must re-evaluate it whenever a document crosses the limit boundary. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0 and 5.2.0); after that, every matching new or changed document is synced, inside the window or not. In our testing with SDK 5.1.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits, and even its deletion, no longer arrived.
+**Why this matters:** Subscriptions always sync whole documents. A subscription with `LIMIT` degrades sync performance: it is stateful, so the sync engine must re-evaluate it whenever a document crosses the limit boundary. A stable subscription plus a local `ORDER BY ... LIMIT` query gives the same UI without that cost. `LIMIT` also bounds only the initial download (SDK 5.1.0 and 5.2.0); after that, every matching new or changed document is synced, inside the window or not. In our testing with SDK 5.1.0 and 5.2.0, a document that stopped matching a filter stayed on the device as a frozen copy: later edits, and even its deletion, no longer arrived.
 
 **Best-practices guide:** Subscription Rules
 
@@ -829,9 +829,9 @@ Future<List<Map<String, dynamic>>> latestOrders(Ditto ditto, String storeId) asy
 
 ### ☐ Own subscriptions in a long-lived service, not in widgets
 
-**What this means:** Register a subscription when its data becomes relevant, such as at app start, at login, or when the user enters a store. Keep a reference to each subscription in an app-level or feature-level service, and call `cancel()` on logout, when the user leaves the workspace, or when you register a replacement. Never register subscriptions in `build()` or on every screen visit. Use `ditto.sync.subscriptions` only for debugging, and read only `queryString` and `isCancelled` from it. In SDK 5.1.0, reading `queryArguments` of a subscription registered without arguments can terminate the app.
+**What this means:** Register a subscription when its data becomes relevant, such as at app start, at login, or when the user enters a store, and register it again after every `Ditto.open()`: subscriptions are not persisted. Keep a reference to each subscription in an app-level or feature-level service, and call `cancel()` on logout, when the user leaves the workspace, or when you register a replacement. Never register subscriptions in `build()` or on every screen visit. Use `ditto.sync.subscriptions` only for debugging, and read only `queryString` and `isCancelled` from it. In SDK 5.1.0, reading `queryArguments` of a subscription registered without arguments can terminate the app.
 
-**Why this matters:** A subscription registered in `build()` adds a new mesh-wide subscription on every rebuild, because subscriptions stay active until they are cancelled or Ditto is closed. Do not rely on garbage collection to cancel them.
+**Why this matters:** A subscription registered in `build()` adds a new mesh-wide subscription on every rebuild, because subscriptions stay active until they are cancelled or Ditto is closed. Do not rely on garbage collection to cancel them. In our testing with SDK 5.1.0 and 5.2.0, a device that opened Ditto again without registering its subscriptions received nothing from other devices, without an error.
 
 **Best-practices guide:** Subscription Lifecycle
 
@@ -910,7 +910,7 @@ class OrderSync {
 
 **What this means:** To show an "uploaded" indicator, keep the `commitID` of important writes and compare it with `synced_up_to_local_commit_id` in `system:data_sync_info`. Track a `commitID` only when `mutatedDocumentIDs()` is not empty. Read `system:data_sync_info` with `execute` when you need a snapshot. If you observe it, use one small observer per screen, not one per list row, and rebuild only when the derived value changes. Use the presence API for connectivity indicators.
 
-**Why this matters:** Ditto is offline-first, so there is no single "synced" state to wait for. Each observer on `system:data_sync_info` re-reads the sync state of every connection, and how often it fires varies by SDK release, so using such observers in many widgets can waste CPU and battery. A statement that changed nothing still gets a `commitID` (SDK 5.1.0 and 5.2.0). In our testing with SDK 5.1.0, peers confirmed such a commit only with a later commit, up to about 30 seconds later, and `sync_session_status` stayed `"Connected"` for about 73 seconds after a peer disconnected.
+**Why this matters:** Ditto is offline-first, so there is no single "synced" state to wait for. Each observer on `system:data_sync_info` re-reads the sync state of every connection, and how often it fires varies by SDK release, so using such observers in many widgets can waste CPU and battery. A statement that changed nothing still gets a `commitID` (SDK 5.1.0 and 5.2.0). In our testing with SDK 5.1.0 and 5.2.0, peers confirmed such a commit only with a later commit, up to about 30 seconds later, and `sync_session_status` stayed `"Connected"` for about 73 seconds after a peer disconnected.
 
 **Best-practices guide:** Monitoring Sync Status
 

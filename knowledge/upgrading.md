@@ -34,9 +34,9 @@ SDK 5.2.0 fixes the following issues of 5.1.0. They apply to every device that s
 
 **Failures and hangs**
 
-- `INSERT` into an indexed collection that was empty before an SDK upgrade fails.
+- `INSERT` into an indexed collection that was empty before an upgrade from 5.0.x fails with `no such table: ___idx_coll_...`. In our testing, a store migrated by 5.1.0 kept failing after a later upgrade to 5.2.0, while a store upgraded from 5.0.3 directly to 5.2.0 worked; drop and re-create the index to repair it (see [Upgrading and downgrading](../best-practices/indexing-and-performance.md#upgrading-and-downgrading)).
 - `SELECT` statements with long `AND` or `OR` chains in `WHERE` can crash the app. Use `IN :values` for long lists of alternatives.
-- Observers can stall when many are active at the same time.
+- Observers can stall when many are active at the same time. In our testing with the JavaScript SDK on one Mac, with 60 or more store observers on 5.1.0 (35 or more on 5.0.3), a change no longer reached any callback, and the error appeared only in the log (`BeginTransactionTimeout`); cancelling most of them did not recover the others. On 5.2.0, 1,000 observers worked. The threshold may differ on other devices. While devices still run 5.1.0, do not register one observer per row of a list.
 - In rare cases, completing a write transaction could hang or cancel another write transaction in progress.
 - A fetch of an attachment that no document references anymore retries forever instead of ending; keep a stall timeout (see [Fetching Attachments](../best-practices/attachments.md#fetching-attachments)).
 - Peers that authenticate right after a certificate revocation is created are rejected, although a revocation should apply only to certificates issued before it (see [Certificate Revocation (SDK 5.1+)](../best-practices/security.md#certificate-revocation-sdk-51)).

@@ -87,7 +87,7 @@ Tombstones do not live forever. Each device removes expired tombstones in a peri
 |---|---|---|
 | `TOMBSTONE_TTL_ENABLED` | `true` | Expired tombstones are removed automatically |
 | `TOMBSTONE_TTL_HOURS` | `168` (7 days) | Age after which a tombstone is considered expired on this device |
-| `DAYS_BETWEEN_REAPING` | `1` | Days between reaping runs (the first run happens shortly after the instance starts) |
+| `DAYS_BETWEEN_REAPING` | `1` | Days between reaping runs, by the device clock. On a new store, the first run happens at a random time within the first 10 minutes after the instance starts (`REAPER_TIMING_RANDOM_VARIATION_SECONDS`, default 600); later runs happen at startup, or while the instance runs, once this many days have passed since the previous run |
 | `TOMBSTONE_REAP_BATCH_SIZE` (SDK 5.1+) | `10000` | Expired tombstones are removed in bounded batches to limit peak memory |
 
 ```sql
@@ -96,8 +96,9 @@ SHOW ALL LIKE '%tombstone%'
 
 Consequences for your design:
 
-- **A device that is offline for longer than the TTL can resurrect deleted data.** If it reconnects after every other peer has already reaped the tombstone, nobody can tell it the document was deleted, and it shares its old copy again. This is known as "zombie data".
-- **The TTL is measured from the deleting device's clock.** A device with an inaccurate clock can make tombstones expire earlier or later than expected.
+- **A device that is offline for longer than the TTL can resurrect deleted data.** If it reconnects after every other peer has already reaped the tombstone, nobody can tell it the document was deleted, and it shares its old copy again. This is known as "zombie data". In our testing with SDK 5.1.0 and 5.2.0, the deleted document came back on every device without an error or a warning; the only trace was the log line `Evicted ~1 tombstones from <collection> due to expired TTL` on the device that reaped.
+- **The TTL is measured from the tombstone's timestamp,** which follows the deleting device's clock unless that device has just received newer changes from a peer (see [Clock drift](data-modeling.md#clock-drift)). A deletion by a device whose clock is ahead expires later, and one by a device whose clock is behind expires earlier: in our testing, a deletion by a device 30 hours ahead was still unreaped 26 hours later with a 1-hour TTL.
+- **Apps that run for short periods reap rarely.** The random delay before the first run is drawn again at every start, so an app that usually runs for less than 10 minutes reaps only at some of its starts: in our testing, six runs of 8 seconds each never reaped.
 - **Very short TTLs can make deletions fail to propagate**, because the tombstone may expire before it reaches the other peers. (`TOMBSTONE_TTL_HOURS` accepts values from 1 hour; `ALTER SYSTEM` rejects 0.)
 - **Never configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) to exceed the Ditto Server TTL.** The Ditto Server always syncs documents, so a Small Peer tombstone that outlives the Ditto Server's own tombstone is sent back to the server repeatedly, which wastes resources. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
 
@@ -113,7 +114,7 @@ const config = DittoConfig(
 );
 ```
 
-Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. Ditto reads them only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in `DittoConfig.systemParameters`, which the release notes describe as the way to set startup-only parameters (we have not verified the effect on reaping). WASM-based platforms (JavaScript Web and Flutter Web) do not support them. Contact Ditto support before relying on these parameters.
+Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. Ditto reads them only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in `DittoConfig.systemParameters`. `REAPER_PREFERRED_HOUR` is an hour of the device's **local** time (0 to 23; 0 by default). In our testing with SDK 5.1.0 and 5.2.0, a device reaped at startup when the local hour matched; otherwise it checked again every hour after it had started and reaped only when the hour matched, not at the start of that hour. A device that never runs during that hour never reaps: a point-of-sale app that is closed at night and keeps the default hour 0 would never remove its tombstones. WASM-based platforms (JavaScript Web and Flutter Web) do not support these parameters. Contact Ditto support before relying on them.
 
 ### Husk documents
 
