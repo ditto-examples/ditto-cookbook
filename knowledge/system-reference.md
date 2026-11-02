@@ -63,7 +63,7 @@ SELECT text, state, times, `~qualifier` AS qualifier FROM system:request_history
 ```
 
 - `system:request_history` is held in memory and is not persisted across restarts. Its size is controlled by `DQL_REQUEST_HISTORY_SIZE` (default `128` entries in SDK 5.2; `4096` in 5.1). Bundles requested through the Ditto Portal include these entries.
-- Which requests are recorded is controlled by `DQL_REQUEST_HISTORY_QUALIFIERS`, for example failed requests and requests slower than a threshold. Setting this parameter replaces the whole qualifier object; see the [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) for the available qualifiers. **Note (SDK 5.2.0):** the documentation describes a `threshold` qualifier of 1,000 ms that is always active, but in our testing, 5.2.0 with the default setting did not record queries that took 1.9 and 8 seconds, while 5.1.0 recorded them (see [On SDK 5.2.0, the request history records slow queries only with an explicit threshold](observations/configuration-and-diagnostics.md#on-sdk-520-the-request-history-records-slow-queries-only-with-an-explicit-threshold)). Failed requests and `DELETE FROM system:request_history` were recorded by default on both releases. To record slow queries on 5.2.0, set the threshold explicitly, for example `{'threshold': 1000}`.
+- Which requests are recorded is controlled by `DQL_REQUEST_HISTORY_QUALIFIERS`, for example failed requests and requests slower than a threshold. Setting this parameter replaces the whole qualifier object; see the [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) for the available qualifiers. **Note (SDK 5.2.0):** the documentation describes a `threshold` qualifier of 1,000 ms that is always active, but in our testing, 5.2.0 with the default setting did not record queries that took 1.9 and 8 seconds, while 5.1.0 recorded the same joins, which took 2.9 and 11 seconds there (see [On SDK 5.2.0, the request history records slow queries only with an explicit threshold](observations/configuration-and-diagnostics.md#on-sdk-520-the-request-history-records-slow-queries-only-with-an-explicit-threshold)). On 5.2.0, failed requests and `DELETE FROM system:request_history` were recorded by default. To record slow queries on 5.2.0, set the threshold explicitly, for example `{'threshold': 1000}`.
 - On Small Peers, querying `system:active_requests` at exactly the right moment is often impractical; the slow-request warning (see [Long-running requests (SDK 5.1+)](../best-practices/indexing-and-performance.md#long-running-requests-sdk-51)) writes the same details to the log.
 
 ```dart
@@ -84,7 +84,8 @@ Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
       "WHERE key LIKE 'non_default_system_parameter%'",
     ),
     'syncConnections': await rows('SELECT * FROM system:data_sync_info'),
-    // Documents that stopped syncing on this device (SDK 5.2+).
+    // Documents that stopped syncing on this device (SDK 5.2+). On SDK 5.1,
+    // this query fails with "Unsupported feature", so leave it out there.
     'syncDegradations': await rows('SELECT * FROM system:sync_degradations'),
     'indexes': await rows('SELECT _id FROM system:indexes'),
     'activeRequests': await rows(
@@ -94,7 +95,7 @@ Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
 }
 ```
 
-In our testing, every query of this snapshot returned rows on SDK 5.1.0 and 5.2.0, except `system:sync_degradations`, which fails on 5.1.0 with `Unsupported feature` (see [The diagnostics snapshot queries run on both releases, except system:sync_degradations on 5.1.0](observations/configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-run-on-both-releases-except-systemsync_degradations-on-510)).
+In our testing, every query of this snapshot ran without an error on SDK 5.1.0 and 5.2.0, except `system:sync_degradations`, which fails on 5.1.0 with `Unsupported feature` (see [The diagnostics snapshot queries run on both releases, except system:sync_degradations on 5.1.0](observations/configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-run-on-both-releases-except-systemsync_degradations-on-510)).
 
 ## System Parameters Reference
 
@@ -114,13 +115,13 @@ ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
 - `SHOW ALL` returns a single row with every parameter; `SHOW ALL LIKE '<pattern>'` (or `ILIKE`; SDK 5.1+) narrows it (on 5.0.3 it is a syntax error; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)).
 - Parameter names are case-insensitive (`DQL_STRICT_MODE` and `dql_strict_mode` are the same parameter).
 - Unknown names fail with `unknown parameter '<name>'`, and values of the wrong type fail with a type error. In `DittoConfig.systemParameters`, the same mistakes make `Ditto.open()` fail.
-- **Settings are not persisted.** After closing and reopening Ditto, every parameter is back at its default. Pass your settings in `DittoConfig.systemParameters` on every open (on SDK 5.1, run `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()` and before queries or observers run); see [Applying System Parameters](../best-practices/setup-and-lifecycle.md#applying-system-parameters).
+- **Settings are not persisted.** After closing and reopening Ditto, every parameter is back at its default: the [ALTER SYSTEM documentation](https://docs.ditto.live/dql/alter-system) says that changes made with `ALTER SYSTEM` are runtime only and do not persist across restarts. Pass your settings in `DittoConfig.systemParameters` on every open (on SDK 5.1, run `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()` and before queries or observers run); see [Applying System Parameters](../best-practices/setup-and-lifecycle.md#applying-system-parameters).
 
 Parameters most relevant to app developers:
 
 | Parameter | Default | Purpose | See |
 |---|---|---|---|
-| `DQL_STRICT_MODE` | `false` | When `true`, objects are treated as registers unless declared; in 5.1.0 and 5.2.0 the planner then does not use secondary indexes (see [With strict mode on, the planner does not use secondary indexes](observations/dql-behavior.md#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)) | [Strict Mode](../best-practices/data-modeling.md#strict-mode) |
+| `DQL_STRICT_MODE` | `false` | When `true`, objects are treated as registers unless declared; in 5.1.0 and 5.2.0 the planner then does not use secondary indexes, as observed with strict mode set by `ALTER SYSTEM` (see [With strict mode on, the planner does not use secondary indexes](observations/dql-behavior.md#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)) | [Strict Mode](../best-practices/data-modeling.md#strict-mode) |
 | `DQL_RESTRICT_SUBSCRIPTIONS` | `true` | Rejects `LIMIT` and `ORDER BY` in subscription queries | [Subscription Rules](../best-practices/sync-and-subscriptions.md#subscription-rules) |
 | `USER_COLLECTION_SYNC_SCOPES` | `{}` | Per-collection sync scopes; set before `ditto.sync.start()` | [Sync Scopes](../best-practices/sync-and-subscriptions.md#sync-scopes) |
 | `TOMBSTONE_TTL_ENABLED` | `true` | Automatic removal of expired tombstones | [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping) |

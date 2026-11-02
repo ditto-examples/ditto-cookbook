@@ -213,7 +213,8 @@ Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
     'SELECT _id, text, state, times FROM system:active_requests',
   );
   // Documents that stopped syncing on this device (SDK 5.2+), for example
-  // because a change would have pushed them over the hard size limit.
+  // because a change would have pushed them over the hard size limit. On SDK
+  // 5.1 this query fails with "Unsupported feature", so leave it out there.
   final syncDegradations = await ditto.store.execute(
     'SELECT * FROM system:sync_degradations',
   );
