@@ -743,7 +743,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
         </div>
       </div>
       <div class="metadata">
-        <span data-i18n="versionLabel">Version</span> 2.31 |
+        <span data-i18n="versionLabel">Version</span> 2.32 |
         <span data-i18n="lastUpdatedLabel">Last Updated:</span> 2026-11-03 |
         <span data-i18n="appliesToLabel">Applies to:</span> Ditto SDK 5.2.0 (Flutter <code>ditto_live</code> 5.2.0)
       </div>
@@ -2959,7 +2959,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
             <div class="detail-section">
               <div class="detail-heading why-heading">Why this matters</div>
               <div class="detail-content why-content">
-<p>In SDK 5.1.0, such a statement completes without an error but removes nothing; SDK 5.2.0 removes the listed documents. The <code>WHERE _id</code> form is just as efficient and behaves the same on every release.</p>
+<p>In SDK 5.1.0, such a statement completes without an error but removes nothing; SDK 5.2.0 removes the listed documents. The <code>WHERE _id</code> form behaves the same on every release; with more than about 1,000 IDs it gets slower, so delete in chunks of 1,000.</p>
               </div>
             </div>
             <p class="guide-reference"><span class="guide-label">Best-practices guide:</span> DELETE and Tombstones, Known Issues in SDK 5.1.0</p>
@@ -4195,7 +4195,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p><code>isDeleted != true</code> and <code>NOT isDeleted</code> silently exclude documents where the flag is missing or <code>null</code>, because comparisons with MISSING or NULL are never true. A <code>coalesce()</code> condition on the field cannot use an index by itself.</p>",
       "<p>In our testing with SDK 5.1.0 and 5.2.0, a device whose subscription excluded flagged documents still received the flag and a later restore for documents it already held. It did not store flagged documents that it did not already hold, so it could not pass the flag on to a device that had missed it, and a <code>DELETE</code> of a flagged document did not reach it. Subscriptions also do not change local results: cancelling or narrowing one never deletes local data, and its filter does not hide local documents. Every local query and observer must therefore filter out flagged documents itself.</p>",
       "<p>When a deletion merges with a concurrent update, the result is a husk document: the document is not deleted, even when the <code>DELETE</code> is the later write. The updated fields keep their values (or become <code>null</code> if the deletion was later), and all other fields become missing (SDK 5.1.0 and 5.2.0). A device that stays offline longer than the TTL can resurrect deleted data (zombie data). A Small Peer tombstone TTL above the Ditto Server tombstone TTL makes tombstones sync back to the server again and again.</p>",
-      "<p>In SDK 5.1.0, such a statement completes without an error but removes nothing; SDK 5.2.0 removes the listed documents. The <code>WHERE _id</code> form is just as efficient and behaves the same on every release.</p>",
+      "<p>In SDK 5.1.0, such a statement completes without an error but removes nothing; SDK 5.2.0 removes the listed documents. The <code>WHERE _id</code> form behaves the same on every release; with more than about 1,000 IDs it gets slower, so delete in chunks of 1,000.</p>",
       "<p>If an active subscription still matches an evicted document, connected peers notice that it is missing and sync it straight back, so you pay the sync cost without freeing any space.</p>",
       "<p>The local <code>EVICT</code> itself is fast, but each eviction triggers a resync with every connected peer, which costs network traffic and processing on those peers. Batching keeps each write transaction short but does not reduce that cost.</p>",
       "<p>The values are collected periodically, so they can lag behind recent writes. A long-lived observer on <code>system:system_info</code> fires often, even when nothing has changed: every 500 ms in SDK 5.1.0, and in our testing with SDK 5.2.0 about twice a second. Usage does not drop right after you evict: the freed space is reused by later writes, and SDK 5.2 shrinks the files only once the free space exceeds 100 MB by default.</p>",
@@ -4512,7 +4512,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p><code>isDeleted != true</code> や <code>NOT isDeleted</code> では、フラグが存在しないか <code>null</code> のドキュメントが、エラーもなく除外されてしまいます。MISSINGやNULLとの比較は真にならないためです。フィールドに <code>coalesce()</code> を適用した条件は、それだけではインデックスを使えません。</p>",
       "<p>SDK 5.1.0と5.2.0でのテストでは、フラグ付きのドキュメントを除外するサブスクリプションを持つデバイスにも、すでに保持しているドキュメントについては、フラグとその後の復元が届きました。一方、保持していなかったフラグ付きのドキュメントは保存されないため、フラグを見逃したデバイスにフラグを中継できず、フラグ付きのドキュメントに対する <code>DELETE</code> もそのデバイスには届きませんでした。また、サブスクリプションはローカルの結果に影響しません。キャンセルしたり範囲を狭めたりしてもローカルのデータは削除されず、フィルターでローカルのドキュメントが隠れることもありません。そのため、すべてのローカルクエリとオブザーバーで、フラグ付きのドキュメントを自分で除外する必要があります。</p>",
       "<p>削除と並行した更新がマージされると、husk documentが生じます。<code>DELETE</code> の方が後に書き込まれた場合でも、ドキュメントは削除されません。更新されたフィールドは値を保ち（削除の方が後なら <code>null</code> になり）、それ以外のフィールドは欠落（MISSING）します（SDK 5.1.0と5.2.0）。TTLより長くオフラインだったデバイスは、削除済みのデータを復活させることがあります（zombie data）。また、Small PeerのtombstoneのTTLがDitto ServerのtombstoneのTTLを超えていると、tombstoneがサーバーへ何度も送り返されます。</p>",
-      "<p>SDK 5.1.0では、このようなステートメントはエラーなしに完了しますが、何も削除しません。SDK 5.2.0では、指定したドキュメントが削除されます。<code>WHERE _id</code> を使う形でも効率は変わらず、どのリリースでも同じように動作します。</p>",
+      "<p>SDK 5.1.0では、このようなステートメントはエラーなしに完了しますが、何も削除しません。SDK 5.2.0では、指定したドキュメントが削除されます。<code>WHERE _id</code> を使う形は、どのリリースでも同じように動作します。IDが約1,000件を超えると遅くなるため、1,000件ずつに分けて削除してください。</p>",
       "<p>evictしたドキュメントに有効なサブスクリプションがまだマッチしていると、接続中のピアが欠落に気付いてすぐに同期し直します。結果として、領域を解放できないまま同期のコストだけがかかります。</p>",
       "<p>ローカルの <code>EVICT</code> 自体は高速ですが、evictionのたびに接続中のすべてのピアとの再同期が発生し、それらのピアにネットワーク通信と処理の負荷がかかります。分割すると個々の書き込みトランザクションは短くなりますが、この負荷は減りません。</p>",
       "<p>これらの値は定期的に収集されるため、直近の書き込みが反映されていないことがあります。また、<code>system:system_info</code> を監視し続けるオブザーバーは、何も変わっていなくても頻繁に発火します。SDK 5.1.0では500 msごと、SDK 5.2.0でのテストではおよそ1秒に2回でした。evictしてもすぐには使用量は減りません。空いた領域は後の書き込みで使い回され、SDK 5.2でファイルが小さくなるのは、デフォルトでは空きが100 MBを超えたときだけです。</p>",

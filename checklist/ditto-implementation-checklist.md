@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.31
+> **Version**: 2.32
 > **Last Updated**: 2026-11-03
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -1235,7 +1235,7 @@ Subscribing to active documents only is acceptable when every device syncs direc
 
 **What this means:** Remove specific documents with `WHERE _id = :id` or `WHERE _id IN :ids`; both are planned as an ID scan and work on every SDK 5.x release. While any device still runs SDK 5.1.0, do not write `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate, that is, without a `WHERE` clause or with `WHERE true`. Split long lists into chunks of about 1,000 IDs: in our testing with SDK 5.1.0 and 5.2.0, `WHERE _id IN :ids` with 10,000 IDs took about 0.7 seconds.
 
-**Why this matters:** In SDK 5.1.0, such a statement completes without an error but removes nothing; SDK 5.2.0 removes the listed documents. The `WHERE _id` form is just as efficient and behaves the same on every release.
+**Why this matters:** In SDK 5.1.0, such a statement completes without an error but removes nothing; SDK 5.2.0 removes the listed documents. The `WHERE _id` form behaves the same on every release; with more than about 1,000 IDs it gets slower, so delete in chunks of 1,000.
 
 **Best-practices guide:** DELETE and Tombstones, Known Issues in SDK 5.1.0
 
