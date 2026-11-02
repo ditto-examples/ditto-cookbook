@@ -38,7 +38,7 @@ Because a MAP merges at every level, a single document can hold many independent
 
 ## What concurrent edits produce
 
-The table shows how two devices' edits to the same document merged in our testing with SDK 5.1.0 and 5.2.0 (the results were identical on both releases). Both devices were offline when they wrote, and they synced afterwards. Every result was the same on both devices and did not depend on which device wrote first unless the table says so. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
+The table shows how two devices' edits to the same document merged in our testing with SDK 5.1.0 and 5.2.0 (the results were identical on both releases unless a row says otherwise). Both devices were offline when they wrote, and they synced afterwards. Every result was the same on both devices and did not depend on which device wrote first unless the table says so. Use it to check a data model before you ship it: if a row's result is not what your users expect, change the model rather than the merge.
 
 | Device A | Device B | Result after sync |
 |---|---|---|
@@ -46,15 +46,26 @@ The table shows how two devices' edits to the same document merged in our testin
 | `SET obj.a = 2` | `SET obj.b = 3` | `{"a": 2, "b": 3}`: different keys of a map both survive |
 | `SET obj = {'a': 10}` | `SET obj.b = 20` | `{"a": 10, "b": 20}`: assigning an object merges; it does not replace (see [Assigning an object merges it](../best-practices/dql.md#assigning-an-object-merges-it)) |
 | `UNSET obj` | `SET obj.c = 5` | `{"c": 5}`: the removed keys stay removed, the new key survives |
+| `SET obj.c = 5` | `UNSET obj` (later) | `{"c": null}`: the key added concurrently stays, with `null` |
+| `SET address.zip = 'Z9'` | `UNSET address` and `SET address = {...}` in one transaction (later) | The new object plus `"zip": null`: a replacement keeps a key added concurrently, as `null` |
 | `` UNSET items.`item-1` `` | `` SET items.`item-1`.quantity = 5 `` | The entry survives: `{"quantity": 5}` if the removal was first, `{"quantity": null}` if it was later (see [Arrays and Maps](../best-practices/data-modeling.md#arrays-and-maps)) |
 | `SET tags = [1, 2, 3]` | `SET tags = [0, 1, 2]` (later) | `[0, 1, 2]`: the whole array is one value; A's change is lost |
 | `APPLY n INCREMENT BY 5` | `APPLY n INCREMENT BY 7` | Both are added |
 | `APPLY n RESTART WITH 100` | `APPLY n INCREMENT BY 5` (before or after) | `100`: the increment is discarded (see [RESTART](../best-practices/data-modeling.md#restart)) |
 | `DELETE` | `UPDATE ... SET color = 'blue'` (later) | The document survives with `color = 'blue'`; other fields are missing (see [Husk documents](../best-practices/deletion-and-storage.md#husk-documents)) |
 | `UPDATE ... SET color = 'blue'` | `DELETE` (later) | The document survives with `color = null`; other fields are missing |
+| `UPDATE ... SET color = 'blue'` | `DELETE`, then `INSERT` with the same `_id` (later) | The new document plus `color = null` |
 | `INSERT` of a new document | `INSERT` with the same `_id` (for example, a sequential ID) | One document with combined fields; a field both set keeps the later value (see [Document IDs](../best-practices/data-modeling.md#document-ids)) |
-| Adds a 3 MiB field | Adds another 3 MiB field | A 6 MiB document on both devices, above the hard limit; every later `UPDATE` of it fails (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)) |
+| Adds a 3 MiB field | Adds another 3 MiB field | On 5.1.0, a 6 MiB document on both devices, above the hard limit, which no `UPDATE` can change. On 5.2.0, each device keeps only its own field, and updates of the document stop (see [Document Size Limits](../best-practices/data-modeling.md#document-size-limits)) |
 | `INSERT ... INITIAL DOCUMENTS` | Same `_id`, different content | Fields are combined; a field both set is decided by its value, not by time (see [Default Data with INITIAL Documents](../best-practices/data-modeling.md#default-data-with-initial-documents)) |
+
+Further observations, also with SDK 5.1.0 and 5.2.0:
+
+- **The later write wins by when it was written, not when it arrived.** A device that came back after a long time offline did not overwrite newer writes with its older ones; its own offline changes lost to them instead.
+- **Values written together in a transaction still merge field by field with other devices' edits.** One device wrote `amount = 15000` and `currency = 'JPY'` in a transaction, and another later wrote `amount = 120`: the result was `120 JPY`. Keep values that must change together in one object declared as `REGISTER`.
+- **A long text field keeps only one edit.** Two devices edited different paragraphs of the same string, and only the later edit survived; with the paragraphs in a map (`paragraphs.p1`, `paragraphs.p2`), both survived. There is no character-level merge.
+- **The recommended shapes hold with more devices.** With three devices writing offline at the same time, a counter, a map keyed by ID, and an audit log keyed by event kept every device's changes, and an array kept one device's version.
+- **Concurrent writes converge.** In a randomized test, four or five devices applied type changes, map and array edits, counter operations, deletions, and upserts to the same documents while offline, online, partly connected, or reconnecting, also with SDK 5.0.3, 5.1.0, and 5.2.0 mixed. In all 396 rounds, every device ended with the same documents, and no counter increment or latest write was lost.
 
 ## Writing a value that did not change
 
@@ -110,6 +121,7 @@ Several MAP behaviors differ from what developers expect from a JSON document st
 **✅ DO:**
 - Update individual fields with `UPDATE ... SET obj.field = :value`.
 - Remove keys explicitly with `UNSET`.
+- Read replaced or removed objects defensively: a key that another device added concurrently can remain with the value `null` (see the table above).
 - When an object must be replaced as a whole, either declare it as a register (`COLLECTION orders (shippingAddress REGISTER)`) or run `UNSET` followed by `SET` in one transaction. Only the register guarantees that concurrent edits never mix two versions: with `UNSET` and `SET` the field is still a map, so a nested edit that another device made at the same time can merge into the new object. It can even bring back a key that the replacement removed: in our testing, replacing `{street, city, zip}` with `{street, city}` while another device set `zip` kept `zip`.
 
 **❌ DON'T:**

@@ -182,7 +182,7 @@ Arrays are registers: the whole array is replaced on every write, and when two d
 
 ### Adding, updating, and removing map entries
 
-When the key is known when you write the query, address the entry with a path. Quote keys that contain characters such as `-` with backticks:
+When the key is known when you write the query, address the entry with a path. Quote keys that contain characters such as `-` or `.` with backticks, and write a backtick inside a key twice (`` `tick``name` ``). A quoted `` `a.b` `` is one key that contains a dot, while `a.b` is the key `b` inside `a`; in our testing with SDK 5.1.0 and 5.2.0, both could exist in the same document:
 
 ```sql
 UPDATE orders

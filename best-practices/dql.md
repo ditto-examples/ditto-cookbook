@@ -500,7 +500,7 @@ Results have no guaranteed order unless you specify `ORDER BY`. The default dire
 
 **✅ DO:**
 - Add `ORDER BY` to every observer query whose order matters in the UI. Observers do not guarantee a stable order without it.
-- Add a unique tie-breaker such as `_id` when the sort key can repeat: `ORDER BY createdAt DESC, _id`.
+- Add a unique tie-breaker such as `_id` when the sort key can repeat: `ORDER BY createdAt DESC, _id`. In our testing, SDK 5.1.0 and 5.2.0 returned rows with equal sort keys in ascending `_id` order, also with `DESC`, but that is not documented; SDK 5.0 returned them in another order without an index, and `LIMIT n` then did not return the first n rows. Give the tie-breaker the same direction as the sort key (`ORDER BY createdAt DESC, _id DESC`) if ties should reverse too.
 - Store sortable values in one consistent type (for example, all timestamps as ISO-8601 UTC strings produced by one helper with a fixed precision; see [Timestamps](data-modeling.md#timestamps)).
 
 **❌ DON'T:**

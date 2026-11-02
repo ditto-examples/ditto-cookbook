@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.21
+> **Version**: 2.22
 > **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
@@ -512,7 +512,7 @@ Future<void> upsertOrderItem(
 
 **What this means:** With the default settings, an object is a CRDT map. `SET obj = {...}` and `ON ID CONFLICT DO UPDATE` merge the new keys into the existing object: keys you leave out remain, and `SET obj = {}` changes nothing. Update nested fields individually (`SET address.city = :city`) and remove keys with `UNSET address.zip`. To replace an object as a whole, run `UNSET` and then `SET` in one transaction, or declare the field as `REGISTER`. Only a `REGISTER` guarantees that concurrent edits never mix two versions.
 
-**Why this matters:** Code that expects an assignment to replace an object leaves stale keys behind. Maps are add-wins so that offline edits from many devices merge without data loss; the trade-off is that removals must be explicit.
+**Why this matters:** Code that expects an assignment to replace an object leaves stale keys behind. Maps are add-wins so that offline edits from many devices merge without data loss; the trade-off is that removals must be explicit. A key that another device adds while you remove or replace the object stays, with the value `null` (SDK 5.1.0 and 5.2.0), so code that reads such objects must handle `null` values.
 
 **Best-practices guide:** Assigning an object merges it, CRDT Types and Merge Behavior
 
@@ -981,7 +981,7 @@ class _OrdersListState extends State<OrdersList> {
 
 **What this means:** Whenever the order of results matters, add `ORDER BY` with a unique tie-breaker such as `_id`, for example `ORDER BY createdAt DESC, _id`. Give each list row a `ValueKey` based on `_id`.
 
-**Why this matters:** Without `ORDER BY`, observer results have no guaranteed order, so rows can change position on every update. Sorting by a timestamp is reliable only when every value is written with the same fixed-precision helper (`utcTimestamp()`).
+**Why this matters:** Without `ORDER BY`, observer results have no guaranteed order, so rows can change position on every update. Sorting by a timestamp is reliable only when every value is written with the same fixed-precision helper (`utcTimestamp()`). Rows with equal sort keys came back in ascending `_id` order on SDK 5.1.0 and 5.2.0 in our testing, but that is not documented, and SDK 5.0 used another order.
 
 **Best-practices guide:** Stable ordering
 

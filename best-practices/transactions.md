@@ -1,6 +1,6 @@
 # Transactions
 
-A transaction runs several DQL statements against the local store **atomically**: either all of their changes are committed, or none are. Transactions are a local concept; they do not lock anything on other peers, and concurrent edits from other devices are still merged with CRDT rules (see [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)).
+A transaction runs several DQL statements against the local store **atomically**: either all of their changes are committed, or none are. Transactions are a local concept; they do not lock anything on other peers, and concurrent edits from other devices are still merged with CRDT rules, field by field (in our testing, `amount = 15000` and `currency = 'JPY'` written in one transaction and a later `amount = 120` from another device gave `120 JPY`) (see [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)).
 
 **When to use a transaction:**
 - Changes that span several documents and must never be visible half-done, such as closing an order and creating its invoice, or moving an item between two lists (dual writes)

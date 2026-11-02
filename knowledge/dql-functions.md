@@ -130,7 +130,7 @@ FROM products
 WHERE price IS NOT MISSING AND NOT is_number(price)
 ```
 
-Numbers keep their integer or float type: `type(1)` is `'integer'`, `type(1.5)` is `'float'`, and arithmetic between integers stays integer (`5 / 2` is `2`). Cast when you need a different type: `cast(x AS float)`, `cast(x AS string)`, `cast(x AS integer)`. A cast that cannot convert returns MISSING.
+Numbers keep their integer or float type: `type(1)` is `'integer'`, `type(1.5)` is `'float'`, and arithmetic between integers stays integer (`5 / 2` is `2`). Integers and floats compare as equal in `WHERE`, but `GROUP BY` and `DISTINCT` treat them as different values: in our testing with SDK 5.1.0 and 5.2.0, a field holding `1` and `1.0` formed two groups, which look identical in JavaScript and in Dart's `jsonDecode` output. Store such values in one type (amounts in integer minor units), or group by `cast(n AS float)`. Cast when you need a different type: `cast(x AS float)`, `cast(x AS string)`, `cast(x AS integer)`. A cast that cannot convert returns MISSING.
 
 ## String Functions
 

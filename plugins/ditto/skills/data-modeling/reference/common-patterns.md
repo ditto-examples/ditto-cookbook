@@ -78,6 +78,8 @@ Future<void> replaceAddress(
 - Save a stale in-memory copy with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`. `DO UPDATE` gives every supplied field a new timestamp; `DO UPDATE_LOCAL_DIFF` writes back any old value that differs from the stored one. Both can override a concurrent change from another device.
 - Use `DO UPDATE` for periodic re-upserts of unchanged data (for example, refreshing reference data from a backend).
 - Upsert a document that contains a `COUNTER` field, with either policy. The value restarts the counter and discards increments that have not reached this device yet (see Pattern 5).
+- Assume a removed or replaced object is gone everywhere: a key that another device added concurrently stays with `null` (`SET obj.c = 5` then a later `UNSET obj` gave `{"c": null}`; a later replacement in a transaction kept `"zip": null`; a later `DELETE` and re-insert kept `color: null`). Values written together in a transaction still merge field by field with other devices' edits (`120 JPY`); keep them in one `REGISTER` object. Split long text that several people edit into a map of paragraphs (`§ What concurrent edits produce`).
+- Leave keys with `.` or backticks unquoted in paths: `` `a.b` `` is one key, `a.b` is `b` inside `a`, and a backtick inside a key is written twice.
 - Expect `DO UPDATE` to replace a document or an object: it merges.
 
 Guide: `§ INSERT and Conflict Handling`, `§ Local write semantics you must know`. Example: [field-level-updates.dart](../examples/field-level-updates.dart).
