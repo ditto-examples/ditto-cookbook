@@ -8,7 +8,6 @@ Best practices, a review checklist, example code, and Claude Code Agent Skills f
 |------|------------|
 | [`best-practices/ditto.md`](best-practices/ditto.md) | **Ditto SDK Best Practices**: the complete guide to data modeling, sync and subscriptions, deletion and storage, transactions and attachments, performance, setup, security, and testing. The rest of this repository is derived from it. |
 | [`best-practices/ditto-sdk-checklist/`](best-practices/ditto-sdk-checklist/) | **Ditto SDK Implementation Checklist**: an interactive English and Japanese review checklist in one self-contained HTML file. |
-| [`best-practices/flutter.md`](best-practices/flutter.md) | **Flutter Best Practices**: architecture, Riverpod state management, performance, and testing patterns. |
 | [`examples/simple-pos/`](examples/simple-pos/) | **Simple POS**: a Point-of-Sale and Kitchen Display example that applies the guide end to end, with its data model. |
 | [`plugins/ditto/`](plugins/ditto/) | **`ditto` Claude Code plugin**: Agent Skills that help coding agents write and review Ditto code, an anti-pattern scanner, and the bundled guide. |
 
@@ -26,9 +25,8 @@ See [plugins/ditto/README.md](plugins/ditto/README.md) for the list of Skills an
 
 ```
 ditto-cookbook/
-├── best-practices/           # Guides and the checklist (customer-facing)
+├── best-practices/           # The guide and the checklist (customer-facing)
 │   ├── ditto.md              # Source of truth for everything Ditto-specific
-│   ├── flutter.md
 │   └── ditto-sdk-checklist/  # Checklist sources, build script, generated HTML
 ├── examples/
 │   └── simple-pos/           # Flutter POS example and its schema
@@ -40,12 +38,12 @@ ditto-cookbook/
 │   └── check-ditto-skills.py # Checks the plugin Skills against the guide
 └── .claude/                  # Claude Code configuration for working in this repository
     ├── rules/                # Synchronization workflow for the guide and its derivatives
-    └── skills/               # Links to the plugin Skills, and a Skill-authoring Skill
+    └── skills/               # Links to the plugin Skills
 ```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Contributors using Claude Code also follow [CLAUDE.md](CLAUDE.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents also follow [AGENTS.md](AGENTS.md).
 
 ## Resources
 

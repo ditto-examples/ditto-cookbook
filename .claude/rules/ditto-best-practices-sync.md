@@ -138,4 +138,3 @@ After synchronization, verify:
 
 - [Source of Truth: Ditto Best Practices Guide](../../best-practices/ditto.md)
 - [Ditto Plugin and Skills Overview](../../plugins/ditto/README.md)
-- [Agent Skills in this repository](../skills/README.md)
