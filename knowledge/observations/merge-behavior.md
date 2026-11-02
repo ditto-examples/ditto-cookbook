@@ -21,7 +21,7 @@ How concurrent writes from several devices merge: registers, maps, and removals 
 | | |
 |---|---|
 | Observed on | SDK 5.1.0 and 5.2.0, three runs each; the results were deterministic |
-| Setup | Two devices, disconnected. For each of 26 cases, the devices made the case's two writes one after the other, the second one later by the clock, and then reconnected |
+| Setup | Two devices, disconnected. For each of 26 cases, the devices made the case's two writes one after the other, without a pause between them (the second write started as soon as the first had returned), and then reconnected |
 
 - On both releases, all 26 cases gave the expected result, and in every case the two devices ended with the same document.
 
@@ -48,7 +48,7 @@ The main cases:
 | A soft delete | A restore | The restore wins |
 | `DELETE`, then `INSERT` of `{fresh: 1}` with the same `_id` | A concurrent edit on another device, `SET color = 'blue'` | `{"fresh": 1, "color": "blue"}` |
 
-**Used in:** [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [Local Write Semantics You Must Know](../crdt-types.md#local-write-semantics-you-must-know), [Arrays and Maps](../../best-practices/data-modeling.md#arrays-and-maps), [RESTART](../../best-practices/data-modeling.md#restart), [Default Data with INITIAL Documents](../../best-practices/data-modeling.md#default-data-with-initial-documents), [Never use sequential or timestamp-only IDs](../../best-practices/data-modeling.md#never-use-sequential-or-timestamp-only-ids), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Husk documents](../../best-practices/deletion-and-storage.md#husk-documents), [Soft Delete](../../best-practices/deletion-and-storage.md#soft-delete).
+**Used in:** [Merge Semantics in Detail](../crdt-types.md#merge-semantics-in-detail), [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [Local Write Semantics You Must Know](../crdt-types.md#local-write-semantics-you-must-know), [Arrays and Maps](../../best-practices/data-modeling.md#arrays-and-maps), [RESTART](../../best-practices/data-modeling.md#restart), [Default Data with INITIAL Documents](../../best-practices/data-modeling.md#default-data-with-initial-documents), [Never use sequential or timestamp-only IDs](../../best-practices/data-modeling.md#never-use-sequential-or-timestamp-only-ids), [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Husk documents](../../best-practices/deletion-and-storage.md#husk-documents), [Soft Delete](../../best-practices/deletion-and-storage.md#soft-delete).
 
 ### A key added concurrently survives a later removal as null
 

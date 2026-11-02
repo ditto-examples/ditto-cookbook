@@ -120,7 +120,7 @@ Parameters most relevant to app developers:
 
 | Parameter | Default | Purpose | See |
 |---|---|---|---|
-| `DQL_STRICT_MODE` | `false` | When `true`, objects are treated as registers unless declared; in 5.1.0 and 5.2.0 the planner then does not use secondary indexes | [Strict Mode](../best-practices/data-modeling.md#strict-mode) |
+| `DQL_STRICT_MODE` | `false` | When `true`, objects are treated as registers unless declared; in 5.1.0 and 5.2.0 the planner then does not use secondary indexes (see [With strict mode on, the planner does not use secondary indexes](observations/dql-behavior.md#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)) | [Strict Mode](../best-practices/data-modeling.md#strict-mode) |
 | `DQL_RESTRICT_SUBSCRIPTIONS` | `true` | Rejects `LIMIT` and `ORDER BY` in subscription queries | [Subscription Rules](../best-practices/sync-and-subscriptions.md#subscription-rules) |
 | `USER_COLLECTION_SYNC_SCOPES` | `{}` | Per-collection sync scopes; set before `ditto.sync.start()` | [Sync Scopes](../best-practices/sync-and-subscriptions.md#sync-scopes) |
 | `TOMBSTONE_TTL_ENABLED` | `true` | Automatic removal of expired tombstones | [Tombstone TTL and reaping](../best-practices/deletion-and-storage.md#tombstone-ttl-and-reaping) |

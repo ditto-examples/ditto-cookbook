@@ -1,6 +1,6 @@
 # DQL Functions and Operators
 
-This page summarizes the functions in the [DQL operators and expressions](https://docs.ditto.live/dql/operator-expressions) reference and how they behave in practice. Two rules apply to all of them:
+This page summarizes the functions in the [DQL operators and expressions](https://docs.ditto.live/dql/operator-expressions) reference and how they behave in practice. In our testing with SDK 5.1.0 and 5.2.0, the functions behaved as this page describes, also where the reference says that a function raises an error and it returned MISSING instead (see [The function rules of DQL Functions and Operators held on SDK 5.1.0 and 5.2.0](observations/dql-behavior.md#the-function-rules-of-dql-functions-and-operators-held-on-sdk-510-and-520)); the examples are checked on every change of the guide (see [Checks of the Guide Itself](observations/how-we-tested.md#checks-of-the-guide-itself)). Two rules apply to all of them:
 
 - **Wrong argument types give MISSING, not an error.** `concat('a', 1)`, `'a' || 1`, `lower(1)`, a date string without a time zone, or swapped arguments to `date_add` all evaluate to MISSING silently. In a projection the alias disappears from the row; in `WHERE` the row is excluded. Test new expressions against real data.
 - **Functions applied to a field usually prevent index use.** Compare the stored field directly where possible. See [Index Usage Rules](../best-practices/indexing-and-performance.md#index-usage-rules).
@@ -74,7 +74,7 @@ SELECT date_add(createdAt, 7, 'day') AS dueAt FROM orders
 SELECT date_add(createdAt, 'day', 7) AS dueAt FROM orders
 ```
 
-Durations are handled by `duration_cast(str[, unit])` (`duration_cast('1h30m')` → `5400000` ms) and `duration_format(value[, unit])` (`duration_format(5400000)` → `'1h30m0s'`).
+Durations are handled by `duration_cast(str[, unit])` (`duration_cast('1h30m')` → `5400000` ms) and `duration_format(value[, unit])` (`duration_format(5400000)` → `'1h30m0s'`). The unit defaults to milliseconds and is written out, as in `duration_cast('1h30m', 'seconds')` → `5400`; an abbreviation such as `'s'` gives MISSING (`'ms'` is accepted).
 
 ## Conditional Functions
 
@@ -181,10 +181,10 @@ If user input can contain `%` or `_`, escape them before building the pattern, o
 |---|---|---|
 | `object_keys(o)` / `object_values(o)` | Top-level keys / values as an array | `object_keys({'a': 1, 'b': 2})` → `['a', 'b']` |
 | `object_length(o)` | Number of top-level keys (`0` for `{}`) | `object_length(items) = 0` finds empty maps |
-| `object_set(o, key, value[, replace])` | Copy with a key added; pass `true` to overwrite an existing key (without it, an existing key gives MISSING) | `object_set(o, 'b', 2)` |
-| `object_unset(o, key[, ignoreMissing])` | Copy without a key; pass `true` to ignore a key that does not exist (without it, the result is MISSING) | `object_unset(o, 'b')` |
+| `object_set(o, key, value[, replace])` | Copy with a key added; pass `true` to overwrite an existing key (without it, an existing key gives MISSING, not the error that the reference describes) | `object_set(o, 'b', 2)` |
+| `object_unset(o, key[, ignoreMissing])` | Copy without a key; pass `true` to ignore a key that does not exist (without it, the result is MISSING, not an error) | `object_unset(o, 'b')` |
 | `object_concat(o1, o2, ...)` | Shallow merge; the last object wins | `object_concat({'a': 1}, {'a': 3, 'b': 2})` → `{'a': 3, 'b': 2}` |
-| `object_rename(o, old, new)` | Copy with a key renamed | `object_rename(o, 'a', 'z')` |
+| `object_rename(o, old, new)` | Copy with a key renamed; MISSING if `old` does not exist, and an existing key `new` is overwritten | `object_rename(o, 'a', 'z')` |
 | `object_size(o)` (SDK 5.1+) | Approximate size in bytes, for comparisons (not found on 5.0.3; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)) | `object_size(orders) > 200000` |
 
 These functions shape query **results**; they do not modify stored documents. Use `UPDATE ... SET` / `UNSET` to change data.
@@ -276,7 +276,7 @@ WHERE _id = :id
 ```
 
 - Elements whose `valueExpr` evaluates to MISSING are skipped.
-- In `OBJECT`, `nameExpr` must be a string; when two elements produce the same name, the later one wins.
+- In `OBJECT`, `nameExpr` must be a string (elements with another name are left out); when two elements produce the same name, the later one wins.
 - A missing `source` yields MISSING; a `source` that is neither an array nor an object yields `null`.
 
 Use transformations to shape data for the UI in the query instead of post-processing in Dart, particularly in observers where the work repeats on every change.

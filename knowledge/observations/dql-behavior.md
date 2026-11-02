@@ -5,6 +5,7 @@ How DQL statements behaved when we ran them: which tables and statements of the 
 **In brief**
 
 - The DQL tables of the guide held on SDK 5.2.0 as on 5.1.0: MISSING and NULL, conflict policies, `UPDATE` errors, map writes, strict mode, subscription errors, joins, `RETURNING`, document IDs, and the `ADVISE` output ([The single-store DQL tables held on SDK 5.2.0](#the-single-store-dql-tables-held-on-sdk-520), [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](#join-returning-document-id-and-timestamp-statements-held-on-sdk-520), [ADVISE returned the documented output](#advise-returned-the-documented-output)).
+- The functions behaved as [DQL Functions and Operators](../dql-functions.md) describes, also where the reference says that a function raises an error and it returned MISSING instead; `tz_offset` with `'TZN'` returns the offset of 1970-01-01 ([The function rules of DQL Functions and Operators held on SDK 5.1.0 and 5.2.0](#the-function-rules-of-dql-functions-and-operators-held-on-sdk-510-and-520)).
 - User input embedded in a statement as a literal changed a `SELECT` and a `DELETE` to match every document, while the same input passed as an argument matched none ([User input embedded in a statement changes what it matches](#user-input-embedded-in-a-statement-changes-what-it-matches)).
 - Mistakes in a statement often give no error: `UPDATE`, `DELETE`, and `EVICT` without `WHERE` change every document, a single value passed to `IN :ids` matches nothing, and on SDK 5.1.0, `DELETE` and `EVICT` with `USE IDS` and no `WHERE` remove nothing ([Statements without WHERE change every document](#statements-without-where-change-every-document), [Wrong argument types fail silently](#wrong-argument-types-fail-silently), [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE remove nothing](#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-remove-nothing)).
 - A comparison between values of different types is MISSING, strings sort by code point, and `DESC` puts missing and `null` values first. Names are case-sensitive, and most keywords work as bare names ([Comparisons across types are MISSING, and strings sort by code point](#comparisons-across-types-are-missing-and-strings-sort-by-code-point), [Descending order puts missing and null first](#descending-order-puts-missing-and-null-first), [Names are case-sensitive, and most DQL keywords work as bare names](#names-are-case-sensitive-and-most-dql-keywords-work-as-bare-names)).
@@ -66,6 +67,37 @@ The results were the same on every release tested, and they matched these sectio
 - **Timestamps** ([Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator)): `'2026-10-08T10:30:45Z' < '2026-10-08T10:30:45.123Z'` is `false`. `ORDER BY` on strings with a mixed number of fractional digits is not chronological: three documents with `'2026-10-08T10:30:45Z'`, `'2026-10-08T10:30:45.000500Z'`, and `'2026-10-08T10:30:45.123Z'` (in chronological order) came back as `...45.000500Z`, `...45.123Z`, `...45Z`. `date_part` of a string without a time zone is MISSING.
 
 **Used in:** [Index requirement](../../best-practices/dql.md#index-requirement), [Join types](../../best-practices/dql.md#join-types), [Result shape](../../best-practices/dql.md#result-shape), [Restrictions](../../best-practices/dql.md#restrictions), [Joins in observers](../../best-practices/dql.md#joins-in-observers), [RETURNING (SDK 5.1+)](../../best-practices/dql.md#returning-sdk-51), [Allowed values](../../best-practices/data-modeling.md#allowed-values), [Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator).
+
+### The function rules of DQL Functions and Operators held on SDK 5.1.0 and 5.2.0
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
+| Setup | One device without sync. 184 expressions, each evaluated with `SELECT <expression> AS v FROM system:dual`: 171 compared with a rule that [DQL Functions and Operators](../dql-functions.md) states in its text, and 13 only recorded. Five more checks wrote documents to a collection. The page's `expression` → `result` examples are checked separately, as [Checks of the Guide Itself](how-we-tested.md#checks-of-the-guide-itself) describes |
+| Documentation | The [DQL operators and expressions](https://docs.ditto.live/dql/operator-expressions) reference says that `object_set` on an existing key without `replace-existing`, and `object_unset` and `object_rename` of a key that does not exist, raise an error; that `ifnull` returns `null` when no value qualifies; and that `decode` matches when type and value match |
+
+On 5.1.0 and 5.2.0, all 176 checks gave the result that the page states:
+
+- **MISSING instead of an error**: `concat('a', 1)`, `'a' || 1`, `lower(1)`, `date_add` on a string without a time zone, and `date_add` with its arguments swapped. In a projection, the alias was absent from the row; in `WHERE`, the row was excluded, also under `NOT`.
+- **Dates**: `date_add`, `date_sub`, `date_trunc`, and `date_range` returned strings for string input and integers for numeric input. `date_cast` of a string without a time zone gave MISSING, and an integer when a format was passed. Every part name on the page was accepted; `week`, `quarter`, `dow`, and `doy` gave MISSING in `date_part` and `date_trunc`, and `weekday` in `date_add`. Comparing an ISO string with `clock()` gave MISSING.
+- **`tz_offset` with `'TZN'`** returned the offset in force on 1970-01-01, neither the current nor the standard-time offset: `Europe/London` gave `60` (the United Kingdom kept UTC+1 all year in 1970), `Asia/Singapore` `450` (UTC+7:30 until 1982), and `Pacific/Apia` `-660` (UTC-11 until 2011).
+- **Conditional functions**: `coalesce` and `ifmissingornull` skipped both `null` and missing values, and `nvl` replaced both. `ifmissing(null, 0)` was `null`, and `ifnull` returned MISSING when it reached a missing value. `decode` did not match the string `'2'` with the number `2`, matched the float `2.0` with the integer `2`, returned `null` without a default, and returned MISSING for a missing input. `CASE` without `ELSE` gave `null`.
+- **Types**: `type()` returned each of its nine names and never `'number'`. `json_type()` returned `'number'` for integers and floats and `'null'` for a missing value. `is_number()` returned `null` for `null` and MISSING for a missing value. Integer division stayed an integer, a `cast` that could not convert gave MISSING, and `ceil` and `floor` of a float returned floats.
+- **Strings**: `LIKE` was case-sensitive and `ILIKE` was not. In `SIMILAR TO`, `.` matched only a dot, the pattern had to match the whole string, and `|`, `[...]`, `*`, `+`, `?`, and `{n}` worked. `ESCAPE '!'` and `ESCAPE '\\'` escaped `%`, and `starts_with` treated `%` literally. `pos` returned `-1` when the substring was not found.
+- **Objects**: `object_set` on an existing key without `true`, and `object_unset` and `object_rename` of a key that did not exist, gave MISSING without an error. `object_rename` onto an existing key overwrote it. `{} IS NULL` was `false`.
+- **Arrays and transformations**: `x NOT IN [...]` did not match a document without `x`, and `5 BETWEEN 10 AND 1` was `false`. Over an empty array, `EVERY` was `true` and `ANY AND EVERY` `false`. `ANY ... IN` looked only at the direct values of an object, and `WITHIN` also at nested ones. `ARRAY ... FOR` skipped MISSING values; in `OBJECT ... FOR`, the later of two equal names won; a missing source gave MISSING, and a number `null`.
+- **Other**: `duration_cast` worked with the units `'seconds'` and `'ms'`, and `duration_format` with `'ms'`, as the reference lists them. `deserialize_json` worked in `INSERT`, `request_info()` returned `app_id`, `request_id`, and `start_time`, and `system:dual` held one document.
+
+The values that were only recorded: an element of `OBJECT ... FOR` whose name is not a string was left out; `joinstr` also accepted separate values (`joinstr(', ', 'a', 'b')` is `'a, b'`); `ceil` of an integer returned an integer; `ARRAY ... FOR` over an object returned its values; `duration_cast` and `duration_format` gave MISSING with the unit `'s'`.
+
+On 5.0.3, the results were the same, with two differences:
+
+- A backslash in a string is not an escape character: `char_length('a\\b')` is `4` (`3` on 5.1.0 and 5.2.0), and `ESCAPE '\\'` is a syntax error. `ESCAPE '\'` works on 5.0.3, while 5.1.0 and 5.2.0 reject it as an unterminated string.
+- `ARRAY v FOR v IN {'a': 1} END` returned `null` instead of `[1]`.
+
+**Not tested:** what the page says about indexes; functions that the page does not describe, such as `object_content`; date and duration formats and time zones other than those above; arguments from Dart (the arguments came from JavaScript).
+
+**Used in:** [DQL Functions and Operators](../dql-functions.md), [Checks of the Guide Itself](how-we-tested.md#checks-of-the-guide-itself).
 
 ### ADVISE returned the documented output
 
@@ -354,7 +386,7 @@ The results were the same on every release tested, and they matched these sectio
 
 **Not tested:** the time on a large collection; composite indexes; strict mode set at startup with `DittoConfig.systemParameters` or an environment variable instead of `ALTER SYSTEM`; on 5.0.3, anything but the first case.
 
-**Used in:** [What strict mode changes](../../best-practices/data-modeling.md#what-strict-mode-changes), [Strict mode and data types](../../best-practices/indexing-and-performance.md#strict-mode-and-data-types).
+**Used in:** [What strict mode changes](../../best-practices/data-modeling.md#what-strict-mode-changes), [Strict mode and data types](../../best-practices/indexing-and-performance.md#strict-mode-and-data-types), [System Parameters Reference](../system-reference.md#system-parameters-reference).
 
 ### Mixed type declarations change what a query reads, not the index results
 

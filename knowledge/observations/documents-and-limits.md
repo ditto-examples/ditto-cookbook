@@ -31,7 +31,7 @@ What happens at the edges of a document: a merge that pushes a document over the
 - On 5.2.0, `system:sync_degradations` on each device had one row: `{"collection": "blobs", "document_id": "big", "reason": "documentTooBig", "senderPeerKey": "<the other device's peer key>"}`. No API reported an error or a warning.
 - On 5.1.0, the result is a document that no device can update; on 5.2.0, it is a document whose version differs from device to device. What happens to later updates, and to an eviction, is described in [An oversized document stops syncing until one side evicts it](#an-oversized-document-stops-syncing-until-one-side-evicts-it).
 
-**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Upgrading from SDK 5.1](../upgrading.md).
+**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Upgrading from SDK 5.1](../upgrading.md).
 
 ### An oversized document stops syncing until one side evicts it
 
