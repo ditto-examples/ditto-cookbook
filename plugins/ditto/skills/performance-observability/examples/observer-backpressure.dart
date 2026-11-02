@@ -6,7 +6,7 @@
 // Observer Backpressure in Flutter (SDK 5.1+, Experimental)
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Backpressure (SDK 5.1+)
 // - § registerObserverV2 (Experimental)
 // - § registerObserverWithSignalNext (Experimental)

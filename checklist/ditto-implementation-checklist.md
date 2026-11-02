@@ -1,12 +1,12 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.9
-> **Last Updated**: 2026-10-30
+> **Version**: 2.10
+> **Last Updated**: 2026-11-02
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
 > **Ditto documentation**: [https://docs.ditto.live](https://docs.ditto.live)
 >
-> Each item names the sections of the Ditto SDK Best Practices guide (`ditto.md`) that explain it in detail.
+> Each item names the sections of the Ditto SDK best practices guide (the `best-practices/` and `knowledge/` pages of the Ditto Cookbook) that explain it in detail.
 
 ## Section 1: Setup and Lifecycle
 

@@ -4,45 +4,93 @@ Thank you for helping improve the Ditto Cookbook. This guide explains how the re
 
 ## How the Repository Fits Together
 
-[`best-practices/ditto.md`](best-practices/ditto.md) is the source of truth. Everything Ditto-specific is derived from it:
+The Ditto SDK best practices guide is the source of truth. It has two parts: [`best-practices/`](best-practices/README.md) says what to do and what to avoid, one page per topic, and [`knowledge/`](knowledge/README.md) explains how Ditto works and holds the reference material that the best practices build on. Everything else that is Ditto-specific is derived from the guide:
 
 ```
-best-practices/ditto.md
-├──> plugins/ditto/skills/              Agent Skills (the guide itself ships through a symbolic link)
-├──> best-practices/ditto-sdk-checklist/ Review checklist (Markdown and JSON sources → HTML)
-└──> examples/simple-pos/                End-to-end Flutter example
+best-practices/ + knowledge/       The guide
+├──> plugins/ditto/skills/         Agent Skills (the guide itself ships through symbolic links)
+├──> checklist/                    Review checklist (Markdown and JSON sources → HTML)
+└──> examples/simple-pos/          End-to-end Flutter example
 ```
 
-A change to the guide is complete only when the derived content agrees with it. The [synchronization workflow](.claude/rules/ditto-best-practices-sync.md) lists which files each kind of change affects.
+A change to the guide is complete only when the derived content agrees with it. The repository covers Ditto only; general Flutter, Dart, or Claude Code material does not belong here.
 
 ## Prerequisites
 
-- **Python 3.9 or later** for the check scripts
+- **Python 3.9 or later** for the check script
 - **[uv](https://docs.astral.sh/uv/)** to build the checklist (it installs Pygments for syntax highlighting)
 - **[Claude Code](https://code.claude.com)** to validate the plugin and run its evals
 
-## Common Tasks
+## Changing the Guide
 
-### Changing the Ditto Guide
+### Where content belongs
 
-1. Edit [`best-practices/ditto.md`](best-practices/ditto.md) and update `Version` and `Last Updated` below its title (see [best-practices/README.md](best-practices/README.md)).
-2. Follow the [synchronization workflow](.claude/rules/ditto-best-practices-sync.md) to update the affected Skills, checklist items, and example code.
-3. Run the checks below.
+- **`best-practices/`**: guidance on what to do, with ✅ DO / ❌ DON'T lists, recommended patterns, and review lists. Each page covers one topic.
+- **`knowledge/`**: how Ditto behaves and reference material: concepts, merge rules, functions, system collections and parameters, platform differences, changes between SDK releases, and terms.
 
-### Changing the Plugin Skills
+When new material both explains a behavior and recommends a pattern, put the recommendation in `best-practices/` and link to the explanation in `knowledge/`. Keep each page readable on its own, and follow the conventions in [How to Use This Guide](best-practices/README.md#how-to-use-this-guide), such as the **Note (SDK ...)** labels.
 
-Edit the Skills in [`plugins/ditto/skills/`](plugins/ditto/skills/). The entries in `.claude/skills/` are symbolic links to them, so do not edit through those links. Then:
+### Headings and links
 
-```bash
-python3 scripts/check-ditto-skills.py   # format, § Heading citations, links, scanner rules
-claude plugin validate . --strict       # plugin and marketplace manifests
+The Skills and the checklist cite sections by their heading text (`§ Heading`), so every heading must be unique across all pages of both directories. Renaming a heading breaks the citations that use it; `scripts/check.py` reports them. Link to another section with a relative link and its GitHub anchor, for example `[What concurrent edits produce](../knowledge/crdt-types.md#what-concurrent-edits-produce)`.
+
+### Version
+
+[`best-practices/README.md`](best-practices/README.md) carries the version and date of the whole guide, including `knowledge/`, directly below its title:
+
+```markdown
+> **Version**: X.Y
+> **Last Updated**: YYYY-MM-DD
 ```
 
-Bump `version` in [`plugins/ditto/.claude-plugin/plugin.json`](plugins/ditto/.claude-plugin/plugin.json) for every change that users should receive: patch for fixes and wording, minor for new or revised patterns. For changes to rules or descriptions, run the evals described in [plugins/ditto/evals/README.md](plugins/ditto/evals/README.md).
+Increase the major version for restructuring or changed recommendations, and the minor version for additions and corrections. Update both lines with every change to any page.
 
-### Changing the Checklist
+## Synchronizing a Change to the Guide
 
-Edit the Markdown and JSON sources and rebuild the HTML, as described in [best-practices/ditto-sdk-checklist/README.md](best-practices/ditto-sdk-checklist/README.md). Commit the sources together with the generated `ditto-sdk-checklist.html`.
+After you change a guide page, update the derived content that it affects:
+
+| Changed in the guide | Update |
+|---|---|
+| `best-practices/dql.md`, `sync-and-subscriptions.md`, `observers.md` | `query-sync` Skill: `SKILL.md`, `examples/`, `reference/` |
+| `best-practices/data-modeling.md`, `knowledge/crdt-types.md` | `data-modeling` Skill |
+| `best-practices/deletion-and-storage.md` | `storage-lifecycle` Skill |
+| `best-practices/transactions.md`, `attachments.md` | `transactions-attachments` Skill |
+| `best-practices/observers.md`, `indexing-and-performance.md`, `logging-and-observability.md`, `knowledge/system-reference.md` | `performance-observability` Skill |
+| `best-practices/setup-and-lifecycle.md`, `security.md` | `sdk-setup` Skill (`SKILL.md`, `reference/`) |
+| `best-practices/testing.md` | `testing` Skill (`SKILL.md`, `reference/`) |
+| A new or changed anti-pattern that can be found in source text, or a renamed heading that a scanner rule cites | `audit` Skill: `scripts/scan.py`, then regenerate `reference/scanner-rules.md` with `python3 scripts/scan.py --list-rules > reference/scanner-rules.md` |
+| A new page, or a page whose scope changes | The page tables in the `guide` Skill's `SKILL.md`, and in `best-practices/README.md` or `knowledge/README.md` |
+| A rule, caveat, or code example that a checklist item covers, or a renamed heading that an item names under "Best-practices guide" | `checklist/`: see [Updating content](checklist/README.md#updating-content) |
+| An API, DQL statement, or pattern that the POS example uses | `examples/simple-pos/`: `simple_pos_example.dart`, `simple_pos_schema.yaml` |
+| A new target SDK release (`knowledge/upgrading.md`) | The "Before You Apply" step and version notes of every Skill, the `Applies to` lines of the guide and the checklist, the POS example, and the READMEs |
+
+For each affected Skill:
+
+1. Update the rules (✅ DO / ❌ DON'T) in `SKILL.md`, the code in `examples/`, and the details in `reference/`, and keep them consistent with each other.
+2. Keep the Skill format: only `name` and `description` in the frontmatter; a description of one paragraph and at most about 450 characters (1,024 at most); `SKILL.md` under 20,000 characters and 500 lines, with the most important rules first; details in `reference/` files. Cite guide sections as `§ Heading` with the exact heading text.
+3. Bump `version` in [`plugins/ditto/.claude-plugin/plugin.json`](plugins/ditto/.claude-plugin/plugin.json) so that installed copies of the plugin receive the update: patch for fixes and wording, minor for new or revised patterns.
+4. For changes to rules or descriptions, run the evals described in [plugins/ditto/evals/README.md](plugins/ditto/evals/README.md).
+
+You can skip the synchronization for changes that do not affect any derived content: wording without a change in meaning, or background explanations without actionable patterns.
+
+## Changing the Plugin Skills
+
+Edit the Skills in [`plugins/ditto/skills/`](plugins/ditto/skills/). The entries in `.claude/skills/` are symbolic links to them, so do not edit through those links. The `guide` Skill bundles the guide through `skills/guide/reference/best-practices` and `skills/guide/reference/knowledge`, symbolic links that Claude Code replaces with the linked content when it installs the plugin. Follow the format and version rules above, and see [plugins/ditto/README.md](plugins/ditto/README.md) for how the Skills are built.
+
+## Changing the Checklist
+
+Edit the Markdown and JSON sources and rebuild the HTML, as described in [checklist/README.md](checklist/README.md). Commit the sources together with the generated `ditto-sdk-checklist.html`.
+
+## Checks
+
+Run these from the repository root before you finish a change to the guide, the Skills, or the checklist:
+
+```bash
+python3 scripts/check.py                  # guide headings, Skill format and citations, checklist sections, links and anchors, scanner rules
+claude plugin validate . --strict         # plugin and marketplace manifests
+```
+
+After changing `scripts/check.py`, also run its tests with `python3 -m unittest discover -s scripts`.
 
 ## Standards
 

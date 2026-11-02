@@ -11,7 +11,7 @@ Keeps Ditto apps responsive and diagnosable: observers and backpressure, narrow 
 
 - Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
-- `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
+- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`, then read that section.
 
 **(Experimental)** marks `@experimental` APIs that may change (`registerObserverV2`, `registerObserverWithSignalNext`, `StoreObserverV2`).
 

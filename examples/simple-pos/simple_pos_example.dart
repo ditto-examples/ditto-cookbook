@@ -18,7 +18,7 @@
 // 4. runDemoWorkflow - An end-to-end walkthrough of the repository
 //
 // Schema: examples/simple-pos/simple_pos_schema.yaml
-// Guide:  best-practices/ditto.md
+// Guide:  best-practices/ and knowledge/
 // ============================================================================
 
 import 'dart:async';

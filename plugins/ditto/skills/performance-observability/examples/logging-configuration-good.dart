@@ -6,7 +6,7 @@
 // Logging and Diagnostics Configuration (Correct Patterns)
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Logging
 // - § Ditto.open, Ditto.openSync, and Ditto.init
 // - § Forwarding logs to your own pipeline

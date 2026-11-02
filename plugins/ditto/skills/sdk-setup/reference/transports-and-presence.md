@@ -1,6 +1,6 @@
 # Ditto Transports and Presence Reference
 
-Transport configuration, TCP hubs, known peers, transport diagnostics, multicast, and presence for Ditto SDK 5.2.0 (Flutter). Copied from `§ Transport Configuration` and `§ Presence` in `../guide/reference/ditto.md`.
+Transport configuration, TCP hubs, known peers, transport diagnostics, multicast, and presence for Ditto SDK 5.2.0 (Flutter). Copied from `§ Transport Configuration` and `§ Presence` in `../../guide/reference/best-practices/setup-and-lifecycle.md`.
 
 ## Contents
 

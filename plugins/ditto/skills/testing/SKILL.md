@@ -11,7 +11,7 @@ How to test code that uses Ditto: a real local store per test for DQL, write sha
 
 - Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target 5.2.0, checked on one device with the JavaScript SDK (system parameters, DQL, observers, diagnostics); Flutter and multi-peer behavior were observed with 5.1.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each comes with its safe pattern. Where any device still runs 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. On a later version, confirm a note (release notes, docs.ditto.live) first. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
 - Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
-- `§ <Heading>` cites a section of the full guide: Grep the heading in `../guide/reference/ditto.md` and read it for the reasoning or a complete example.
+- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`, then read that section.
 
 ## Prevents
 

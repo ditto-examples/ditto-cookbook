@@ -7,7 +7,7 @@
 # sync with each other and with Ditto Server.
 #
 # Implementation: examples/simple-pos/simple_pos_example.dart
-# Guide:          best-practices/ditto.md
+# Guide:          best-practices/ and knowledge/
 #
 # DESIGN PRINCIPLES:
 # - Default settings: DQL_STRICT_MODE = false (no system parameters set).

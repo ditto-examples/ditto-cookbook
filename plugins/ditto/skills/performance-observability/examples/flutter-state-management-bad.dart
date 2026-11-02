@@ -6,7 +6,7 @@
 // State Management Anti-Patterns with Ditto Observers
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Store Observers in Flutter
 // - § Observer lifecycle and cleanup
 // - § Keep observer callbacks fast

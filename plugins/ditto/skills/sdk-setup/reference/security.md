@@ -1,6 +1,6 @@
 # Ditto Security Reference
 
-Security model, production authentication, small-peers-only key handling, permissions, revocation, connection control, input validation, data at rest, and webhook security for Ditto SDK 5.2.0. Copied from `§ Security` in `../guide/reference/ditto.md`.
+Security model, production authentication, small-peers-only key handling, permissions, revocation, connection control, input validation, data at rest, and webhook security for Ditto SDK 5.2.0. Copied from `§ Security` in `../../guide/reference/best-practices/security.md`.
 
 ## Contents
 

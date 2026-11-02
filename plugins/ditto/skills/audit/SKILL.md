@@ -10,7 +10,7 @@ A repeatable review of an app that uses the Ditto SDK. It combines a fast patter
 ## Before You Apply
 
 - Check the Ditto SDK version the project uses (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). The rules target 5.2.0, checked on one device with the JavaScript SDK (system parameters, DQL, observers, diagnostics); Flutter and multi-peer behavior were observed with 5.1.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks behavior observed on 5.1.0 and not yet repeated on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
-- `§ <Heading>` cites a section of the full guide: find it with Grep for the heading text in `../guide/reference/ditto.md`.
+- `§ <Heading>` cites a section of the full guide: Grep the heading text in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`.
 - Review only; do not change code unless the user asks for fixes.
 
 ## Workflow

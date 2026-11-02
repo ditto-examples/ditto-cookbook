@@ -6,7 +6,7 @@
 // Partial UI Updates and Diffing (Flutter)
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Partial UI Updates
 // - § Diffing Results
 // - § Animated lists

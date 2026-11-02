@@ -1,15 +1,18 @@
 # Ditto Cookbook
 
-Best practices, a review checklist, example code, and Claude Code Agent Skills for building offline-first applications with the [Ditto SDK](https://docs.ditto.live). Everything targets Ditto SDK 5.2. Flutter (Dart) is the primary platform, with notes for JavaScript, Swift, and Kotlin where they differ.
+Knowledge, best practices, a review checklist, example code, and Claude Code Agent Skills for building offline-first applications with the [Ditto SDK](https://docs.ditto.live). Everything targets Ditto SDK 5.2. Flutter (Dart) is the primary platform, with notes for JavaScript, Swift, and Kotlin where they differ.
 
 ## Contents
 
 | Path | What it is |
 |------|------------|
-| [`best-practices/ditto.md`](best-practices/ditto.md) | **Ditto SDK Best Practices**: the complete guide to data modeling, sync and subscriptions, deletion and storage, transactions and attachments, performance, setup, security, and testing. The rest of this repository is derived from it. |
-| [`best-practices/ditto-sdk-checklist/`](best-practices/ditto-sdk-checklist/) | **Ditto SDK Implementation Checklist**: an interactive English and Japanese review checklist in one self-contained HTML file. |
+| [`best-practices/`](best-practices/README.md) | **Ditto SDK Best Practices**: what to do and what to avoid, one page per topic: setup and lifecycle, DQL, data modeling, sync and subscriptions, observers, transactions, attachments, deletion and storage, indexing, logging, security, testing, and a review list of anti-patterns. Start here. |
+| [`knowledge/`](knowledge/README.md) | **Ditto SDK Knowledge**: how Ditto works, and the reference material that the best practices build on: CRDT merge rules, DQL functions, system collections and parameters, platform differences, changes between SDK releases, and a glossary. |
+| [`checklist/`](checklist/) | **Ditto SDK Implementation Checklist**: an interactive English and Japanese review checklist in one self-contained HTML file. |
 | [`examples/simple-pos/`](examples/simple-pos/) | **Simple POS**: a Point-of-Sale and Kitchen Display example that applies the guide end to end, with its data model. |
 | [`plugins/ditto/`](plugins/ditto/) | **`ditto` Claude Code plugin**: Agent Skills that help coding agents write and review Ditto code, an anti-pattern scanner, and the bundled guide. |
+
+The best practices and the knowledge pages together form the guide. The checklist, the example, and the Skills are derived from it.
 
 ## Claude Code Plugin
 
@@ -25,9 +28,9 @@ See [plugins/ditto/README.md](plugins/ditto/README.md) for the list of Skills an
 
 ```
 ditto-cookbook/
-├── best-practices/           # The guide and the checklist (customer-facing)
-│   ├── ditto.md              # Source of truth for everything Ditto-specific
-│   └── ditto-sdk-checklist/  # Checklist sources, build script, generated HTML
+├── best-practices/           # The guide: best practices, one page per topic
+├── knowledge/                # The guide: how Ditto works, reference material
+├── checklist/                # Checklist sources, build script, generated HTML
 ├── examples/
 │   └── simple-pos/           # Flutter POS example and its schema
 ├── plugins/
@@ -35,10 +38,9 @@ ditto-cookbook/
 ├── .claude-plugin/
 │   └── marketplace.json      # Plugin marketplace definition
 ├── scripts/
-│   └── check-ditto-skills.py # Checks the plugin Skills against the guide
-└── .claude/                  # Claude Code configuration for working in this repository
-    ├── rules/                # Synchronization workflow for the guide and its derivatives
-    └── skills/               # Links to the plugin Skills
+│   └── check.py              # Checks the guide, the Skills, the checklist, and links
+└── .claude/
+    └── skills/               # Links to the plugin Skills, for working in this repository
 ```
 
 ## Contributing

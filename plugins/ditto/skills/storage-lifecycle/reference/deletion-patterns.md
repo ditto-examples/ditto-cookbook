@@ -1,6 +1,6 @@
 # Storage Lifecycle: Additional Patterns
 
-Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The authoritative source is `§ Deletion and Storage Management` in the guide (`../../guide/reference/ditto.md`).
+Supplementary patterns for the [storage-lifecycle skill](../SKILL.md). The authoritative source is `§ Deletion and Storage Management` in the guide (`../../guide/reference/best-practices/deletion-and-storage.md`).
 
 ## Table of Contents
 

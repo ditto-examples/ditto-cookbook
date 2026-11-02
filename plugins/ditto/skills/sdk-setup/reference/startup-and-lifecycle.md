@@ -1,6 +1,6 @@
 # Ditto Startup and Lifecycle Reference
 
-Requirements, initialization, authentication, system parameters, sync start and stop, and shutdown for Ditto SDK 5.2.0 (Flutter). Copied from `§ SDK Setup and Lifecycle` in `../guide/reference/ditto.md`.
+Requirements, initialization, authentication, system parameters, sync start and stop, and shutdown for Ditto SDK 5.2.0 (Flutter). Copied from `§ SDK Setup and Lifecycle` in `../../guide/reference/best-practices/setup-and-lifecycle.md`.
 
 ## Contents
 

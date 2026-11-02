@@ -1,1 +1,0 @@
-../../../../../best-practices/ditto.md

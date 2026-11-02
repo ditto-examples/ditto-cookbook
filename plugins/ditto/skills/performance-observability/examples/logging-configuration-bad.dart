@@ -6,7 +6,7 @@
 // Logging and Diagnostics Configuration (Anti-Patterns)
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Logging
 // - § Forwarding logs to your own pipeline
 // - § On-disk logs and exporting them

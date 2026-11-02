@@ -6,7 +6,7 @@
 // State Management with Ditto Observers (Correct Patterns)
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Store Observers in Flutter
 // - § Observer lifecycle and cleanup
 // - § Partial UI Updates

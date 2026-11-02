@@ -1,6 +1,6 @@
 # Performance and Observability Reference (SDK 5.2.0)
 
-Detailed rules behind the [performance-observability skill](../SKILL.md). Everything here is extracted from the Ditto best practices guide; `§ <Heading>` cites a section of [../../guide/reference/ditto.md](../../guide/reference/ditto.md) (find it with Grep for the heading text) for full explanations and example output.
+Detailed rules behind the [performance-observability skill](../SKILL.md). Everything here is extracted from the Ditto best practices guide; `§ <Heading>` cites a section of the guide in [../../guide/reference/best-practices/](../../guide/reference/best-practices/README.md) or [../../guide/reference/knowledge/](../../guide/reference/knowledge/README.md) (find it with Grep for the heading text in both directories) for full explanations and example output.
 
 ## Table of Contents
 

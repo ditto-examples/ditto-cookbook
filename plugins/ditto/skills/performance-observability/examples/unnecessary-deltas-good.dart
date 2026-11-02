@@ -6,7 +6,7 @@
 // Avoiding Unnecessary Writes (Correct Patterns)
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § ON ID CONFLICT
 // - § Prefer field-level updates over whole-document rewrites
 // - § Assigning an object merges it

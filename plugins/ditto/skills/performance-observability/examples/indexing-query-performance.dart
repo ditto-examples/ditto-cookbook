@@ -6,7 +6,7 @@
 // Indexing and Query Performance
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Creating Indexes
 // - § Index Usage Rules
 // - § Composite indexes and key order (SDK 5.1+)

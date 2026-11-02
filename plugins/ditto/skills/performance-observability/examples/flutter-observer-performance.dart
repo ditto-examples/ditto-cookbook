@@ -6,7 +6,7 @@
 // Store Observer Performance in Flutter
 // ============================================================================
 //
-// Guide sections (../../guide/reference/ditto.md):
+// Guide sections (../../guide/reference/best-practices/ and knowledge/):
 // - § Store Observers in Flutter
 // - § Stable ordering
 // - § Observer lifecycle and cleanup
