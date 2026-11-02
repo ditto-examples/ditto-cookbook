@@ -204,7 +204,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 | The join observer | — | Composite `_id` (`{"c": "c1", "o": "o1"}`) | No `_id` |
 
 - As a result, on 5.2.0, `Differ` reported the reordering of two rows as `updates: [0, 1]` and `moves: []`, while 5.0.3 and 5.1.0 reported two moves. Without `_id`, `Differ` cannot tell the rows apart, so animations and other processing of the differences go wrong.
-- In a join, `SELECT _id ...` returns the composite ID (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+- In a join, `SELECT _id ...` returns the composite ID (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 **Not tested:** Flutter's `Differ` and observers.
 

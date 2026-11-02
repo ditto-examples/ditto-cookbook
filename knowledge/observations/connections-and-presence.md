@@ -6,7 +6,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 
 - A device accepts six TCP connections by default. Further devices get no data and no error, and raising the limit works only before sync starts ([A device accepts six TCP connections by default](#a-device-accepts-six-tcp-connections-by-default), [Raising the TCP limit takes effect only before sync starts](#raising-the-tcp-limit-takes-effect-only-before-sync-starts)).
 - The at-capacity actions 1 and 2 let extra clients in on 5.2.0, but connections then keep being replaced about every 5 seconds ([At-capacity actions admit extra clients but keep replacing connections](#at-capacity-actions-admit-extra-clients-but-keep-replacing-connections)).
-- On 5.2.0, a device counts the connections that it opened itself when it decides whether to accept another one, but the connections it opens are not limited. A full mesh keeps about six direct connections per device and relays the rest ([SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit), [Outgoing TCP connections are not limited](#outgoing-tcp-connections-are-not-limited), [A full TCP mesh keeps about six direct connections per device on 5.2.0](#a-full-tcp-mesh-keeps-about-six-direct-connections-per-device-on-520)).
+- On 5.2.0, a device counts the connections that it opened itself when it decides whether to accept another one, but the connections it opens are not limited. In a full mesh of seven or more devices, a device keeps 3 to 7 direct connections and receives changes from the other devices through its neighbors ([SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit), [Outgoing TCP connections are not limited](#outgoing-tcp-connections-are-not-limited), [On SDK 5.2.0, a full TCP mesh of seven or more devices is not fully connected](#on-sdk-520-a-full-tcp-mesh-of-seven-or-more-devices-is-not-fully-connected)).
 - WebSocket connections to a Small Peer hub do not count toward the TCP limit: 30 clients synced ([WebSocket connections to a Small Peer hub do not count toward the TCP limit](#websocket-connections-to-a-small-peer-hub-do-not-count-toward-the-tcp-limit)).
 - Changes of TCP targets and listeners take effect while sync runs, a lost connection is retried at `connect.retryInterval` (5 seconds by default in JavaScript), and a device that only connects also listens for TCP on all interfaces ([TCP targets and listeners change while sync runs](#tcp-targets-and-listeners-change-while-sync-runs), [A lost TCP connection is retried at the retry interval](#a-lost-tcp-connection-is-retried-at-the-retry-interval), [A device that only connects also listens for TCP connections](#a-device-that-only-connects-also-listens-for-tcp-connections)).
 - A second hub can listen on a port that another hub already uses, without an error, and new connections then go to the hub that started listening last ([A second hub listened on a port already in use without an error](#a-second-hub-listened-on-a-port-already-in-use-without-an-error)).
@@ -113,7 +113,7 @@ How devices connect to each other and how presence reports them: the TCP connect
 
 ## Meshes and WebSocket Hubs
 
-### A full TCP mesh keeps about six direct connections per device on 5.2.0
+### On SDK 5.2.0, a full TCP mesh of seven or more devices is not fully connected
 
 | | |
 |---|---|

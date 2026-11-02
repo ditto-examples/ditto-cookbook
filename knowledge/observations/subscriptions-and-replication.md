@@ -5,7 +5,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 **In brief**
 
 - The device that sends the data evaluates a subscription's `WHERE` clause like a local query. A `LIMIT` bounds only the first download, and a document that stops matching stays on the receiving device as a frozen copy ([The sending peer evaluates a subscription's WHERE clause like a local query](#the-sending-peer-evaluates-a-subscriptions-where-clause-like-a-local-query), [A LIMIT in a subscription limits only the first download](#a-limit-in-a-subscription-limits-only-the-first-download), [Documents that leave a subscription stay as frozen copies](#documents-that-leave-a-subscription-stay-as-frozen-copies)).
-- Sync scopes, relays with narrower subscriptions, rewrites of the current value, and peers with different strict-mode settings behaved on SDK 5.2.0 as the guide describes ([Sync scopes behaved as documented on SDK 5.2.0](#sync-scopes-behaved-as-documented-on-sdk-520), [Relay, rewrite, and subscription behavior held on SDK 5.2.0](#relay-rewrite-and-subscription-behavior-held-on-sdk-520)).
+- Sync scopes, relays with narrower subscriptions, rewrites of the current value, and peers with different strict-mode settings behaved on SDK 5.1.0 and 5.2.0 as the guide describes ([Sync scopes behaved as documented on SDK 5.1.0 and 5.2.0](#sync-scopes-behaved-as-documented-on-sdk-510-and-520), [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)).
 - Subscriptions are not stored: a device that reopens its directory still sends its own changes, but on 5.1.0 and 5.2.0 it receives nothing until it registers its subscriptions again ([Subscriptions are not stored in the persistence directory](#subscriptions-are-not-stored-in-the-persistence-directory)).
 - Each new subscription makes the device that holds the data read the whole collection, also with an index or a filter on `_id`. A set registered together costs a fraction of the same set registered one by one, and the number of subscriptions does not change the transfer ([Each new subscription makes the data holder read the whole collection](#each-new-subscription-makes-the-data-holder-read-the-whole-collection), [The number of subscriptions did not change the transfer](#the-number-of-subscriptions-did-not-change-the-transfer)).
 - A relay forwards only the documents that it holds, also when it carries them between sites that never connect, and a new, empty hub recovers what its clients hold ([A relay forwards only the documents that it holds](#a-relay-forwards-only-the-documents-that-it-holds), [Devices that move between sites carry documents and deletions](#devices-that-move-between-sites-carry-documents-and-deletions), [A new, empty hub recovers the data from its clients](#a-new-empty-hub-recovers-the-data-from-its-clients)).
@@ -77,7 +77,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 
 **Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
-### Sync scopes behaved as documented on SDK 5.2.0
+### Sync scopes behaved as documented on SDK 5.1.0 and 5.2.0
 
 | | |
 |---|---|
@@ -99,7 +99,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 
 **Used in:** [Sync Scopes](../../best-practices/sync-and-subscriptions.md#sync-scopes).
 
-### Relay, rewrite, and subscription behavior held on SDK 5.2.0
+### Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0
 
 | | |
 |---|---|
@@ -431,7 +431,7 @@ Orders visible without all their items: how many, and for how long:
 
 - **Sync traffic is compressed.** Repeated characters made the first sync of 200 documents 6.3 KiB instead of 205.7 KiB, so content that compresses well transfers faster than its size suggests. In an earlier measurement with repeated content, a first sync of 200 KB came to 6.2 KiB: measuring transfer needs content that does not compress.
 - A changed field travels as a field-level change however it was written; a `DO UPDATE` of the whole document cost little more than `UPDATE ... SET` (1.6 against 1.3 KiB).
-- A `DO UPDATE` that changed nothing still produced sync traffic (0.5 KiB), which wakes an observer on the other device (see [Relay, rewrite, and subscription behavior held on SDK 5.2.0](#relay-rewrite-and-subscription-behavior-held-on-sdk-520)).
+- A `DO UPDATE` that changed nothing still produced sync traffic (0.5 KiB), which wakes an observer on the other device (see [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)).
 - Registering the same subscription a second time transferred almost nothing, and registering it again after a cancel fetched only what had changed in between.
 
 **Used in:** [What Syncs after Offline Edits](../crdt-types.md#what-syncs-after-offline-edits), [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits).
@@ -478,7 +478,7 @@ Transfer of the whole mesh, as a multiple of the bytes that the other five peers
 - **Idle traffic is small in every layout**: 0.3 to 1 KiB in 5 seconds (1 KiB with the 15 connections of the full mesh).
 - **Time until all peers agreed**: the 120 documents that six peers wrote at the same time took 0.45 to 0.52 seconds in the hub layout and in the line (about the time it took to write them), 1.16 to 1.33 seconds in the full mesh, and 0.48 to 1.15 seconds in the ring (5.0.3: about 0.5 seconds in all three runs; 5.1.0: about 1.1 seconds in all three; 5.2.0: 0.48 to 1.15 seconds). All peers ran in one process and competed for the CPU, so the differences cannot be put down to the layout alone.
 
-**Not tested:** more than six peers, and links other than TCP on one Mac, which have almost no latency. Over transports on which devices choose their connections themselves, such as Bluetooth LE, LAN, and AWDL, the number and shape of the connections differ (on 5.2.0, devices that could all connect to each other kept about six connections each; see [A full TCP mesh keeps about six direct connections per device on 5.2.0](connections-and-presence.md#a-full-tcp-mesh-keeps-about-six-direct-connections-per-device-on-520)). Whether links with a high latency increase or reduce the duplicates. Sync through Ditto Server.
+**Not tested:** more than six peers, and links other than TCP on one Mac, which have almost no latency. Over transports on which devices choose their connections themselves, such as Bluetooth LE, LAN, and AWDL, the number and shape of the connections differ (on 5.2.0, in a TCP mesh of seven or more devices, each device kept 3 to 7 direct connections; see [On SDK 5.2.0, a full TCP mesh of seven or more devices is not fully connected](connections-and-presence.md#on-sdk-520-a-full-tcp-mesh-of-seven-or-more-devices-is-not-fully-connected)). Whether links with a high latency increase or reduce the duplicates. Sync through Ditto Server.
 
 **Used in:** [Multi-hop relay](../../best-practices/sync-and-subscriptions.md#multi-hop-relay), [Key Characteristics](../understanding-ditto.md#key-characteristics).
 

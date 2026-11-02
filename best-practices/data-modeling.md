@@ -31,7 +31,7 @@ SHOW DQL_STRICT_MODE
 | `SELECT` / `WHERE` on fields stored as MAP, COUNTER, or ATTACHMENT without a declaration | Values are visible | **Fields are invisible**: `SELECT *` omits them and `WHERE` conditions on them do not match |
 | Index use | Indexes are used | Indexes are not used (see the note below) |
 
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 > **Note (SDK 5.1.0 and 5.2.0):** With `DQL_STRICT_MODE = true`, the query planner does not use indexes: `EXPLAIN` shows a full collection scan even for a query on an indexed field (ID lookups are not affected; see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types) and [With strict mode on, the planner does not use secondary indexes](../knowledge/observations/dql-behavior.md#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)). Keep the default (`false`) if you rely on indexes for query performance.
 
@@ -92,7 +92,7 @@ A field can hold more than one CRDT value at the same time when statements disag
 | `INSERT INTO COLLECTION t (price REGISTER) ... {"price": {"amount": 1}}`, then `UPDATE COLLECTION t (price MAP) SET price.amount = 25`, on this or another device | Undeclared and `MAP` reads return `25`, while a `SELECT` that declares `price REGISTER` keeps returning `1`. An app version that declares the field differently from the others shows stale values and never sees their updates (in our testing; see [Mixed type declarations change what a query reads, not the index results](../knowledge/observations/dql-behavior.md#mixed-type-declarations-change-what-a-query-reads-not-the-index-results)) |
 | A counter at 3, an undeclared `UPDATE ... SET cnt = 0` to reset it, then `APPLY cnt INCREMENT BY 1` on any device | An undeclared `SELECT` returns `0` until the increment, then `4`: the `SET` wrote a REGISTER next to the COUNTER, and the increment made the COUNTER the latest value again (see [Resetting a counter with SET leaves two values](../knowledge/observations/merge-behavior.md#resetting-a-counter-with-set-leaves-two-values)). Reset a counter with `APPLY cnt RESTART` (see [RESTART](#restart)) |
 
-In our testing, the first three rows of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+In our testing, the first three rows of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 **✅ DO:**
 - Use the same declaration for a field in **every** `INSERT`, `UPDATE`, and `SELECT` that touches it.
@@ -117,7 +117,7 @@ const strictModeConfig = DittoConfig(
 
 ### Peers with different settings
 
-Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. In our testing with SDK 5.1.0 and 5.2.0, one strict and one non-strict peer showed these effects (see [Relay, rewrite, and subscription behavior held on SDK 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-520)):
+Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. In our testing with SDK 5.1.0 and 5.2.0, one strict and one non-strict peer showed these effects (see [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)):
 - A nested update such as `SET obj.a = 2` on the strict peer failed with `Unsupported DML operation on REGISTER field "obj"` when `obj` had been written as an object by a strict peer.
 - After concurrent edits, an undeclared `SELECT *` kept showing different values for the same document on the two peers.
 
@@ -301,7 +301,7 @@ SELECT * FROM products WHERE :tag IN tags
 SELECT * FROM products WHERE array_contains(tags, :tag)
 ```
 
-An index on an array field matches only the complete array value, so element lookups such as these scan the collection. Scalar fields inside map entries, by contrast, can be indexed with their full path (see [Creating Indexes](indexing-and-performance.md#creating-indexes) and [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+An index on an array field matches only the complete array value, so element lookups such as these scan the collection. Scalar fields inside map entries, by contrast, can be indexed with their full path (see [Creating Indexes](indexing-and-performance.md#creating-indexes) and [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 ### Incremental adoption
 
@@ -653,7 +653,7 @@ Every document has an `_id` that is unique within its collection. If you omit `_
 | Floating-point number | ❌ `Floats are not supported in document IDs` |
 | `null` | ❌ `Null document ID not allowed` |
 
-Key order inside a composite `_id` does not matter: `{"storeId": "s1", "orderId": "o1"}` and `{"orderId": "o1", "storeId": "s1"}` identify the same document. In our testing, every row of this table and this key order held on SDK 5.0.3, 5.1.0, and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+Key order inside a composite `_id` does not matter: `{"storeId": "s1", "orderId": "o1"}` and `{"orderId": "o1", "storeId": "s1"}` identify the same document. In our testing, every row of this table and this key order held on SDK 5.0.3, 5.1.0, and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 Otherwise IDs compare by type and exact value. In our testing, `1` and `'1'`, `true` and `'true'`, `'A'` and `'a'`, and `'1'` and `' 1'` were different documents, and so were two strings that look the same but use different Unicode forms: Ditto does not normalize them (see [Document IDs compare by type and exact value](../knowledge/observations/dql-behavior.md#document-ids-compare-by-type-and-exact-value)). The empty string was accepted as an ID; `-0` was rejected as a float (`Invalid document id`).
 
@@ -1163,9 +1163,9 @@ Behavior on a device:
 | The document was evicted earlier on this device | The document is inserted again |
 | Combined with `ON ID CONFLICT ...` | Parser error; the conflict policy cannot be changed |
 
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
-Across devices, the same rules apply when the deletion came from another device. In our testing with SDK 5.1.0 and 5.2.0, the effects were these (see [Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0](../knowledge/observations/storage-and-deletion.md#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-520)):
+Across devices, the same rules apply when the deletion came from another device. In our testing with SDK 5.1.0 and 5.2.0, the effects were these (see [Soft delete, husk, eviction, and tombstone behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/storage-and-deletion.md#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-510-and-520)):
 - **A seed for an `_id` that another device deleted** stays deleted if its content is identical. If its content differs, it becomes a document with `null` fields **on every device**. This also happens when a newly installed device seeds before it first connects.
 - **Two devices that seed the same `_id` with different content** are merged field by field: `{v: 'A', onlyA: 1}` and `{v: 'B', onlyB: 1}` became `{v: 'B', onlyA: 1, onlyB: 1}`. A field that both seeds set is decided by its value, not by which device seeded later. A regular `INSERT` of the same `_id` wins over the seed (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)).
 
@@ -1300,7 +1300,7 @@ Use one of two representations consistently within a field (in JavaScript, never
 
 > **Note:** In Dart, `DateTime.now().toIso8601String()` returns local time **without** a zone designator (for example, `2026-10-08T19:30:00.123456`). DQL date functions return `MISSING` for such strings (`date_part`, `date_diff`, `date_add`, `date_cast`, and the others), and no error is raised. Always call `toUtc()` first. <!-- lint-ignore -->
 
-**Use one fixed-precision helper for timestamps that are sorted or compared.** On native platforms (iOS, Android, and desktop), Dart's `toIso8601String()` includes microseconds only when they are non-zero, so one device produces both `.123456Z` and `.123Z`; on the Web it includes only milliseconds (`.123Z`). ISO strings sort chronologically as text only when they share the same format: `'2026-10-08T10:30:45.123456Z'` sorts before `'2026-10-08T10:30:45.123Z'` although it is later, because `4` comes before `Z` in string order, and `'2026-10-08T10:30:45Z'` sorts after `'2026-10-08T10:30:45.123Z'` because `Z` comes after `.` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)). When a field is used in `ORDER BY`, range filters, or comparisons, produce every value with one helper that fixes the precision, such as `utcTimestamp()` below. Other examples in this guide inline `DateTime.now().toUtc().toIso8601String()` for brevity; use the helper in their place wherever the field is sorted or compared.
+**Use one fixed-precision helper for timestamps that are sorted or compared.** On native platforms (iOS, Android, and desktop), Dart's `toIso8601String()` includes microseconds only when they are non-zero, so one device produces both `.123456Z` and `.123Z`; on the Web it includes only milliseconds (`.123Z`). ISO strings sort chronologically as text only when they share the same format: `'2026-10-08T10:30:45.123456Z'` sorts before `'2026-10-08T10:30:45.123Z'` although it is later, because `4` comes before `Z` in string order, and `'2026-10-08T10:30:45Z'` sorts after `'2026-10-08T10:30:45.123Z'` because `Z` comes after `.` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)). When a field is used in `ORDER BY`, range filters, or comparisons, produce every value with one helper that fixes the precision, such as `utcTimestamp()` below. Other examples in this guide inline `DateTime.now().toUtc().toIso8601String()` for brevity; use the helper in their place wherever the field is sorted or compared.
 
 ```dart
 /// Returns the current time as an ISO-8601 UTC string with exactly

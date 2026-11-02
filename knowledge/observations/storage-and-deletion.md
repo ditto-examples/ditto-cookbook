@@ -4,7 +4,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 **In brief**
 
-- Husk documents, soft delete with a subscription that excludes flagged documents, eviction, tombstones, and `INITIAL DOCUMENTS` behaved the same on SDK 5.1.0 and 5.2.0 ([Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0](#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-520)).
+- Husk documents, soft delete with a subscription that excludes flagged documents, eviction, tombstones, and `INITIAL DOCUMENTS` behaved the same on SDK 5.1.0 and 5.2.0 ([Soft delete, husk, eviction, and tombstone behavior held on SDK 5.1.0 and 5.2.0](#soft-delete-husk-eviction-and-tombstone-behavior-held-on-sdk-510-and-520)).
 - Once a device has reaped an expired tombstone, a device that missed the deletion brings the old document back to every device, without an error or a warning. The TTL counts from the tombstone's HLC timestamp, so a deleting device whose clock runs ahead delays reaping ([A device with an old copy resurrects a document after its tombstone is reaped](#a-device-with-an-old-copy-resurrects-a-document-after-its-tombstone-is-reaped)).
 - On a new store, reaping first runs at a random time within 10 minutes of starting, drawn again at every start, so apps that run for short periods reap rarely. With a preferred hour, a device reaps only if it runs during that hour of its local time ([Reaping at a preferred hour runs only at hourly checks within that hour](#reaping-at-a-preferred-hour-runs-only-at-hourly-checks-within-that-hour)).
 - A deletion flag sends about 28 bytes per document and `DELETE` about 43 bytes. Evicting documents that a subscription still matches downloads all of them again within seconds ([Deletion flags and DELETE transfer little, and eviction under a subscription refetches](#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)).
@@ -16,7 +16,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 ## Deletion across Devices
 
-### Soft delete, husk, eviction, and tombstone behavior held on SDK 5.2.0
+### Soft delete, husk, eviction, and tombstone behavior held on SDK 5.1.0 and 5.2.0
 
 | | |
 |---|---|

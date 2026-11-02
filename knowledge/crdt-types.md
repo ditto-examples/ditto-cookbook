@@ -113,7 +113,7 @@ Several MAP behaviors differ from what developers expect from a JSON document st
 | `UNSET obj`, then `SET obj = {'w': 1}`, in one transaction | `{"w": 1}` | Clearing first, then writing, replaces the object |
 | `INSERT ... ON ID CONFLICT DO UPDATE` with `{"obj": {"c": 3}}` | `{"a": 1, "b": 2, "c": 3}` | Upserts merge too; omitted keys and fields remain |
 
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 **✅ DO:**
 - Update individual fields with `UPDATE ... SET obj.field = :value`.

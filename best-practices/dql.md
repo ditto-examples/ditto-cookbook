@@ -199,7 +199,7 @@ Which documents each `WHERE` expression matches, when `isDeleted` is `true`, `fa
 | `isDeleted IS NOT MISSING AND isDeleted IS NOT NULL` | ✓ | ✓ | | | <!-- lint-ignore -->
 | `ismissingornull(isDeleted)` | | | ✓ | ✓ |
 
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 Note that `IS NOT NULL` is true for a missing field, and that `!= true` drops both `null` and missing rows. <!-- lint-ignore -->
 
@@ -652,7 +652,7 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 | `LEFT [OUTER] JOIN` | Every left row, matched or not | Right-side fields are MISSING |
 | `RIGHT [OUTER] JOIN` | Every right row, matched or not | Left-side fields are MISSING; allowed only as the first join |
 
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 `FULL OUTER JOIN`, `CROSS JOIN`, comma joins (`FROM a, b`), and joins in `UPDATE` / `DELETE` are not supported.
 
@@ -692,7 +692,7 @@ JOIN customers c ON c.email = o.customerEmail
 Query failed: `Joining to "c" disallowed without appropriate index support. Please run ADVISE for recommendations.`
 ```
 
-In our testing on SDK 5.1.0 and 5.2.0, a join without an index failed with this error, while a join on `_id` and a join with `USE INDEX ''` worked without an index (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+In our testing on SDK 5.1.0 and 5.2.0, a join without an index failed with this error, while a join on `_id` and a join with `USE INDEX ''` worked without an index (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 The fix is to index the join key of the inner collection (here `CREATE INDEX IF NOT EXISTS idx_customers_email ON customers (email)`). For example, joining orders by `customerId` needs this index:
 
@@ -740,7 +740,7 @@ Run `ADVISE` on a join query to get the `CREATE INDEX` statements it needs; see 
 | `SELECT _id` | A composite ID per joined row: `{"c": "c1", "o": "o1"}` |
 | `SELECT name` (field exists on both sides) | Error: `Ambiguous reference to field: name` |
 
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 Always qualify fields with their alias (`c.name`, `o.total`) and alias projected fields that would otherwise collide (`o._id AS orderId`).
 
@@ -749,12 +749,12 @@ Always qualify fields with their alias (`c.name`, `o.total`) and alias projected
 - **Local data only**: A join reads only documents already in the local store. It never fetches missing documents from peers, so every joined collection needs its own subscription.
 - **Not in subscriptions**: `registerSubscription` rejects joins (`Unsupported feature: Joining`). Subscribe to each collection separately with `SELECT * FROM c WHERE ...`.
 - **Not on Ditto Server**: Joins are a Small Peer feature; Ditto Server queries (including the HTTP API) do not support them.
-- **`RIGHT JOIN` only as the first join**: A later `RIGHT JOIN` fails with `RIGHT OUTER join that isn't the first join is not supported` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)). Because Ditto rewrites a `RIGHT JOIN` as a `LEFT JOIN` with the sides swapped, the collection written on the left then becomes the inner side and needs the index (or the `_id` join).
+- **`RIGHT JOIN` only as the first join**: A later `RIGHT JOIN` fails with `RIGHT OUTER join that isn't the first join is not supported` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)). Because Ditto rewrites a `RIGHT JOIN` as a `LEFT JOIN` with the sides swapped, the collection written on the left then becomes the inner side and needs the index (or the `_id` join).
 - **At most 10 joins per statement** by default (directive `#max_joins`; see [Directives](indexing-and-performance.md#directives)). More fail with `Too many joins: the number of joined terms exceeds the maximum permitted.`
 
 #### Joins in observers
 
-`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)). On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
+`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)). On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
 
 ```dart
 // ✅ GOOD: Subscribe per collection (app or feature scope), join locally
@@ -857,7 +857,7 @@ The number of statements matters more than the number of documents. In our testi
 | `DO UPDATE` | Fields from the new document are written into the existing one. Fields you do not supply are kept, and nested objects are merged. Every supplied field is written, even if the value is identical, so the document is reported as mutated and observers can fire again (a `SELECT *` observer on the collection does). A field written again with its current value still wins over an earlier concurrent edit of that field on another device. |
 | `DO UPDATE_LOCAL_DIFF` | Same merge, but only fields whose values differ from the local document are written. If nothing changed, nothing is written and `mutatedDocumentIDs()` is empty. A value from a stale copy differs from the local one and is written. |
 
-In our testing on one device with SDK 5.1.0 and 5.2.0, the four policies behaved as this table describes (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+In our testing on one device with SDK 5.1.0 and 5.2.0, the four policies behaved as this table describes (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 **✅ DO:**
 - Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports (for example when refreshing reference data from your backend).
@@ -909,7 +909,7 @@ Future<void> doUpdateMerges(Ditto ditto) async {
 
 - If no document with that `_id` exists locally, it is inserted; if one exists, nothing happens and no error is raised.
 - When several devices create the same document independently, the initial values do not replace what other devices have already changed. This makes `INITIAL DOCUMENTS` the way to create a document with a `COUNTER` on each device (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters) and [INITIAL DOCUMENTS keeps concurrent counter increments](../knowledge/observations/merge-behavior.md#initial-documents-keeps-concurrent-counter-increments)).
-- `ON ID CONFLICT` cannot be combined with `INITIAL DOCUMENTS` (parser error), and the source cannot be a `SELECT` (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+- `ON ID CONFLICT` cannot be combined with `INITIAL DOCUMENTS` (parser error), and the source cannot be a `SELECT` (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 How initial documents merge across peers, and what happens after a seeded document is deleted or evicted, is described in [Default Data with INITIAL Documents](data-modeling.md#default-data-with-initial-documents).
 
@@ -949,7 +949,7 @@ SELECT status AS _id, COUNT(*) AS orderCount FROM orders GROUP BY status
 ON ID CONFLICT DO UPDATE
 ```
 
-The `SELECT` follows `INSERT INTO c` directly. Wrapping it in parentheses or in `DOCUMENTS (...)` is a syntax error, and `INITIAL DOCUMENTS` cannot be combined with a `SELECT` source (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+The `SELECT` follows `INSERT INTO c` directly. Wrapping it in parentheses or in `DOCUMENTS (...)` is a syntax error, and `INITIAL DOCUMENTS` cannot be combined with a `SELECT` source (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 A query result contains plain values, so declare `COUNTER` and `ATTACHMENT` fields on **both** sides when the copied documents have them. Without the declarations, the copy stores a counter as a plain number, which a later `INCREMENT` on the copy hides behind a new counter that starts at 0, and an attachment as an ordinary map that cannot be fetched (in our testing; see [INSERT ... SELECT copies counters and attachments as plain values](../knowledge/observations/merge-behavior.md#insert--select-copies-counters-and-attachments-as-plain-values)). Do not add `ON ID CONFLICT DO UPDATE` here: an upsert restarts the copied counters (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
 
@@ -1008,7 +1008,7 @@ Errors to expect:
 - Setting the same path twice in one statement fails: `More than one modification specified for the path ...`.
 - Array elements cannot be assigned (`SET items[0] = ...` is a syntax error). Replace the whole array, or model the collection as a map keyed by ID (see [Arrays and Maps](data-modeling.md#arrays-and-maps)).
 
-In our testing, SDK 5.1.0 and 5.2.0 reported each of these errors (see [The single-store DQL tables held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-520)).
+In our testing, SDK 5.1.0 and 5.2.0 reported each of these errors (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
 Not reported as an error: a nested `SET a.b = 1` adds `b` when `a` is an object, but when `a` holds a string, a number, an array, or `null`, it replaces `a` with `{"b": 1}`, and the old value is lost (in our testing; see [Statements without WHERE change every document](../knowledge/observations/dql-behavior.md#statements-without-where-change-every-document)).
 
@@ -1056,7 +1056,7 @@ Future<void> replaceAddress(
 
 **❌ DON'T:**
 - Read a document, modify it in Dart, and write the whole map back with `INSERT ... ON ID CONFLICT DO UPDATE`.
-- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result; see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits) and [Relay, rewrite, and subscription behavior held on SDK 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-520)).
+- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result; see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits) and [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)).
 
 ```dart
 // ❌ BAD: Read-modify-write of the whole document
@@ -1099,7 +1099,7 @@ Add `RETURNING` to `INSERT`, `UPDATE`, `DELETE`, or `EVICT` to get the affected 
 | `UPDATE ... RETURNING` | The documents **after** the update |
 | `DELETE ... RETURNING` / `EVICT ... RETURNING` | The documents **before** they were removed |
 
-In our testing on SDK 5.1.0 and 5.2.0, `INSERT`, `UPDATE`, and `DELETE` returned the rows this table describes (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-520)).
+In our testing on SDK 5.1.0 and 5.2.0, `INSERT`, `UPDATE`, and `DELETE` returned the rows this table describes (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 `commitID` is populated as usual when `RETURNING` is used, and so is `mutatedDocumentIDs()`. With `RETURNING`, read the affected documents from `items`, and include `_id` in the `RETURNING` projection when you need the IDs instead of relying on `mutatedDocumentIDs()`.
 
