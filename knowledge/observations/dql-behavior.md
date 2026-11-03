@@ -541,7 +541,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each, also with the subscription; every run gave the same result |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each, the subscription included; every run gave the same result |
 | Setup | One device without sync. `ANY ... SATISFIES` and `EVERY ... SATISFIES` in `WHERE`, over a parameter array and over a literal array. Separately, two devices: a subscription with the same condition, and the same statement as a local query on the receiving device |
 
 | Condition in `WHERE` | 5.0.3 | 5.1.0 | 5.2.0 |
