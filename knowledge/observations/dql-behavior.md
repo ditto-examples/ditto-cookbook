@@ -25,7 +25,7 @@ How DQL statements behaved when we ran them: which tables and statements of the 
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic) |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
 | Setup | Eleven checks on one device without sync. Each ran the statements behind the tables and statements listed below and compared every result with them |
 
 On 5.1.0 and 5.2.0, every row of the following tables and statements held:
@@ -117,7 +117,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic); the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync. `UPDATE`, `DELETE`, and `EVICT` without `WHERE` on a collection; `SET a.b = 1` on documents in which `a` held a string, an array, `null`, a number, or an object |
 
 - `UPDATE items SET n = 1`, `DELETE FROM items`, and `EVICT FROM items` without `WHERE` were accepted and changed every document in the collection. Nothing asked for confirmation or logged a warning.
@@ -129,7 +129,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic); the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync. Statements with `:name` placeholders, run with arguments that are missing, unused, misnamed, or of the wrong shape |
 
 | Mistake | Result |
@@ -169,7 +169,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; deterministic, and the same on every release tested |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync. Expressions evaluated in queries, and `ORDER BY` on a field that held values of several types |
 
 | Expression | Result |
@@ -190,7 +190,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | Case: SDK 5.0.3, 5.1.0, and 5.2.0, one run each. Keywords: SDK 5.1.0 and 5.2.0, one run each. Deterministic, and the same on every release tested |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync. Collection and field names that differ only in case, and 32 DQL keywords used as bare collection names and field names |
 
 - Collection names and field names are case-sensitive: `Orders` and `orders` are different collections.
@@ -243,7 +243,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic); the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync. Pages of four documents read with `LIMIT :limit OFFSET :offset` and with keyset pagination, with one document inserted at the top after the first page had been read |
 
 - `LIMIT :limit OFFSET :offset` accepted parameters. After the insert, the second `OFFSET` page repeated the last row of the first page.
@@ -255,7 +255,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic) |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
 | Setup | One device without sync. `EXPLAIN` and `PROFILE` with each kind of statement |
 
 - **`EXPLAIN`**: on 5.1.0 and 5.2.0, `EXPLAIN` accepted `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `EVICT`, `CREATE INDEX`, `DROP INDEX`, and `ADVISE`, and executed none of them. `SHOW` and `ALTER SYSTEM` were rejected with `Explain DML is not supported`, a message that does not match the kind of statement. On 5.0.3, `EXPLAIN` of a mutation was rejected with the same message, and `ADVISE` was a syntax error.
@@ -267,7 +267,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic); the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync, a collection of three documents. The user input `nobody' OR '1'='1` embedded as a string literal in a `SELECT` and in a `DELETE`, and the same value passed as an argument |
 
 - With the input embedded as a string literal, the `SELECT` returned all three documents, and the `DELETE` built the same way deleted all three.
@@ -322,7 +322,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | ID values: SDK 5.0.3, 5.1.0, and 5.2.0, one run each, and one more run each on 5.1.0 and 5.2.0 with a separate script; deterministic, and the same on 5.1.0 and 5.2.0. ID length: SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic). IDs across devices: SDK 5.0.3, 5.1.0, and 5.2.0, three runs each |
+| Observed on | ID values and ID length: SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases. IDs across devices: SDK 5.0.3, 5.1.0, and 5.2.0, three runs each |
 | Setup | One device without sync: 15 kinds of `_id` inserted with `ON ID CONFLICT DO NOTHING`, then looked up with `WHERE _id = ...`, and string IDs of increasing length. Two offline devices that each created a document with a composite ID, then synced |
 
 | IDs | Result |
@@ -393,7 +393,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, two runs each (the case with two devices: one run each); deterministic |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each (the case with two devices: one run each); every run gave the same result |
 | Setup | One device without sync. Documents in which `price` was written as a `REGISTER`, as a `MAP`, first as a `REGISTER` and then as a `MAP`, and in the reverse order. With and without an index on `price.amount` (created before or after the writes), we compared `WHERE price.amount > 10 ORDER BY price.amount` without a declaration, with `COLLECTION t (price REGISTER)`, and with `COLLECTION t (price MAP)`. In a second case, two offline devices rewrote 20 documents, one with `MAP` and the other with `REGISTER` |
 | Documentation | Ditto's [Indexing](https://docs.ditto.live/dql/indexing) documentation says that only the most recently written data-type variant of a field is indexed, so results can be incorrect or mis-ordered when a field has several variants and an index on it serves part of a query |
 
@@ -486,7 +486,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0 for chains of up to 5,000 terms, and 5.1.0 and 5.2.0 for longer chains, one run each; the results appear to be deterministic |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0 for chains of up to 5,000 terms, and 5.1.0 and 5.2.0 for longer chains, one run each |
 | Setup | One device without sync. `SELECT` statements whose `WHERE` was a chain of 100 to 5,000 `OR` or `AND` terms, and longer chains, each size in a separate process |
 | Documentation | The 5.2.0 release notes say: "`SELECT` statements with long `AND` or `OR` chains in the `WHERE` clause no longer crash the app" (SDKS-4435) |
 
@@ -513,7 +513,7 @@ On 5.0.3, the results were the same, with two differences:
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic). The subscription: SDK 5.1.0 and 5.2.0, one run each |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each, also with the subscription; every run gave the same result |
 | Setup | One device without sync. `ANY ... SATISFIES` and `EVERY ... SATISFIES` in `WHERE`, over a parameter array and over a literal array. Separately, two devices: a subscription with the same condition, and the same statement as a local query on the receiving device |
 
 | Condition in `WHERE` | 5.0.3 | 5.1.0 | 5.2.0 |
@@ -521,7 +521,7 @@ On 5.0.3, the results were the same, with two differences:
 | `ANY s IN :statuses SATISFIES s = status END`, the same over a literal array, and `EVERY` | The matching documents (`["a", "b"]`; with `EVERY`, `["c"]`) | No rows | No rows |
 
 - `ANY` and `EVERY` over a parameter or literal array have returned no rows since 5.1.0, without an error, and 5.2.0 does not fix it.
-- A subscription is not affected: with `WHERE ANY s IN :statuses SATISFIES s = status END`, a subscription synced the two matching documents, while the same statement as a local query on the receiving device returned no rows. A screen that observes the subscription's own query therefore shows an empty list although the data has arrived.
+- A subscription is not affected: with `WHERE ANY s IN :statuses SATISFIES s = status END`, a subscription synced the two matching documents, while the same statement as a local query on the receiving device returned no rows (on 5.0.3, it returned the two documents). A screen that observes the subscription's own query therefore shows an empty list although the data has arrived.
 
 **Used in:** [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [ANY and EVERY](../dql-functions.md#any-and-every).
 
@@ -581,7 +581,7 @@ Some statements failed because they use features marked (SDK 5.1+) or (SDK 5.2+)
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each (deterministic); the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync. JavaScript values of each kind written as field values through arguments, then read back; large integers also written as DQL literals; the result of `SHOW ALL` |
 
 | JavaScript value | Stored and read back as |

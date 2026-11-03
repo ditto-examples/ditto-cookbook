@@ -193,7 +193,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; deterministic |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each (the join: 5.1.0 and 5.2.0); every run gave the same result |
 | Setup | An observer of `SELECT name FROM items ORDER BY rank`, and an observer of a join, `SELECT o._id AS orderId, o.total, c.name AS customerName FROM orders o JOIN customers c ...`. We compared their rows with the result of `execute()`, and passed the rows to `Differ` after two documents had changed places |
 | Documentation | The SDK 5.2.0 release notes say that observers with a projection no longer retain the previous result (#QE-1093), and also that "Observer behavior and query results are unchanged". They do not mention the change below |
 
@@ -244,7 +244,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; deterministic; the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | Five documents were inserted 60 ms apart. The observer's callback took 600 ms on its second call and 10 ms on the others, and when it finished, it wrote the number of documents in its result to the app's state |
 
 - With an async function passed to `registerObserver`, the callback was called 6 times, and two calls ran at the same time. The slow second call (1 document) finished last, so the final state was 1 document, while the store held 5. If no newer result arrives after that, the screen keeps showing the old state.
@@ -270,7 +270,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; deterministic; the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | We read `items`, `items[0]`, and `item.value` of one `QueryResult` several times, changed `item.value`, and read results after `ditto.close()` |
 
 - `result.items` returns the same array every time, `result.items[0]` the same object, and `item.value` the same object: a value is kept once it has been created.
@@ -283,7 +283,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; deterministic; the results were the same on all three releases |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | We registered two observers with `registerObserver` and one with `registerObserverWithSignalNext`, cancelled one, and closed Ditto, and read `ditto.store.observers` after each step |
 | Documentation | The JavaScript SDK's type definitions list `store.observers`, next to `store.attachmentFetchers`, on 5.0.3 as well |
 

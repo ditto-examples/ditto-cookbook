@@ -88,7 +88,7 @@ Results were the same on both releases.
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each; the result is deterministic |
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
 | Setup | The document `{f1: 'old', f2: 'x'}` on two devices. Device B, offline, set `f1 = 'B-edit'`. Afterwards, device A changed `f2` from its own copy, in which `f1` was still `'old'`. The devices reconnected, and we read `f1` |
 
 | How device A wrote | `f1` after sync |
@@ -327,7 +327,7 @@ Results were the same on all three releases.
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; the results are deterministic (the int64 limit: one run on 5.1.0 and 5.2.0) |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result (the int64 limit: one run on 5.1.0 and 5.2.0) |
 | Setup | Statements that write fractional and very large values into a COUNTER, and fractional values into the legacy `PN_COUNTER` |
 
 Results were the same on all three releases:
