@@ -55,7 +55,7 @@ Observations from our testing, in `reference/knowledge/observations/`, one entry
 | Page | Covers |
 |---|---|
 | `observations/how-we-tested.md` | The test environment and its limits, how to read the results, the checks of the guide |
-| `observations/subscriptions-and-replication.md` | What subscriptions deliver, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, the list of subscriptions, sync status |
+| `observations/subscriptions-and-replication.md` | What subscriptions deliver and what registering them costs, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, the list of subscriptions, sync status |
 | `observations/connections-and-presence.md` | The TCP connection limit, meshes, WebSocket hubs, retries, detecting lost connections, presence, peer metadata, accepting connections, shared keys |
 | `observations/merge-behavior.md` | Concurrent edits, also between SDK releases, conditional updates, read-modify-write, reordering, renaming, counters |
 | `observations/clocks-and-time.md` | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |

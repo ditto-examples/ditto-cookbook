@@ -8,11 +8,10 @@ How concurrent writes from several devices merge: registers, maps, and removals 
 - Removing or replacing an object, or deleting a document, does not remove a key that another device wrote concurrently: the key stays, with its value or as `null` ([The merge table held on SDK 5.1.0 and 5.2.0](#the-merge-table-held-on-sdk-510-and-520), [A key added concurrently survives a later removal as null](#a-key-added-concurrently-survives-a-later-removal-as-null)).
 - Merges work field by field: values written together in a transaction mix with another device's later edit, and a long string keeps only one device's edit ([Fields written in one transaction still merge field by field](#fields-written-in-one-transaction-still-merge-field-by-field), [A text field keeps only one of two concurrent edits](#a-text-field-keeps-only-one-of-two-concurrent-edits)).
 - A counter, a map keyed by ID, and an audit log keyed by timestamp kept every change from three offline devices, and a randomized test with four to six devices, also with SDK releases mixed, always converged, and in the documents that no deletion or upsert touched, no increment or latest write was lost. Peers on 5.0.3, 5.1.0, and 5.2.0 merged concurrent edits as on a single release ([With three offline devices, counters and maps keep every change](#with-three-offline-devices-counters-and-maps-keep-every-change), [A randomized merge test always converged](#a-randomized-merge-test-always-converged), [Peers on different releases merged to the same documents](#peers-on-different-releases-merged-to-the-same-documents)).
-- Each device evaluates conditions and arithmetic on the documents it holds: a conditional update is not a lock, a bulk `UPDATE` misses documents that other devices added, and `reg = reg + 1` on six connected devices kept only 101 to 129 of 600 increments ([Conditional updates on two offline devices both succeed](#conditional-updates-on-two-offline-devices-both-succeed), [UPDATE changes only the documents that the writing device holds](#update-changes-only-the-documents-that-the-writing-device-holds), [Read-modify-write increments lose most concurrent updates](#read-modify-write-increments-lose-most-concurrent-updates)).
+- Each device evaluates conditions and arithmetic on the documents it holds: a conditional update is not a lock, a bulk `UPDATE` misses documents that other devices added, `reg = reg + 1` on six connected devices kept only 101 to 129 of 600 increments, and a stored total keeps one device's partial result after the line items merge ([Conditional updates on two offline devices both succeed](#conditional-updates-on-two-offline-devices-both-succeed), [UPDATE changes only the documents that the writing device holds](#update-changes-only-the-documents-that-the-writing-device-holds), [Read-modify-write increments lose most concurrent updates](#read-modify-write-increments-lose-most-concurrent-updates), [A stored total keeps one device's partial result](#a-stored-total-keeps-one-devices-partial-result)).
 - A reorder survives a concurrent reorder only when it writes just the moved entry, with a value between its new neighbors; renaming a field in place hides what older app versions write ([Reordering on two offline devices keeps both moves only with gap positions](#reordering-on-two-offline-devices-keeps-both-moves-only-with-gap-positions), [Renaming a field in place hides older versions' edits](#renaming-a-field-in-place-hides-older-versions-edits)).
-- A stored total keeps one device's partial result after the line items merge, and changing a register to a counter in a new app version leaves both values in the field, of which a read without a declaration returns the one written later ([A stored total keeps one device's partial result](#a-stored-total-keeps-one-devices-partial-result), [Changing a register to a counter leaves both values](#changing-a-register-to-a-counter-leaves-both-values)).
 - A COUNTER accepts only integers. An upsert that declares the counter restarts it, and two devices that create the same counter document with a regular `INSERT` lose an increment, while `INITIAL DOCUMENTS` keeps both ([A COUNTER accepts only integers](#a-counter-accepts-only-integers), [An upsert that declares a counter restarts it](#an-upsert-that-declares-a-counter-restarts-it), [INITIAL DOCUMENTS keeps concurrent counter increments](#initial-documents-keeps-concurrent-counter-increments)).
-- Counters inside map entries add up. An undeclared `SET` leaves a second value beside a counter, a deletion that meets a concurrent increment leaves a count of 0, and `INSERT ... SELECT` copies counters and attachments as plain values unless both sides declare them ([Counters inside map entries add up](#counters-inside-map-entries-add-up), [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values), [Deleting a counter during a concurrent increment leaves a husk](#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk), [INSERT ... SELECT copies counters and attachments as plain values](#insert--select-copies-counters-and-attachments-as-plain-values)).
+- Counters inside map entries add up. An undeclared `SET` leaves a second value beside a counter, and so does changing a register to a counter in a new app version; a read without a declaration then returns the value of the type written later. A deletion that meets a concurrent increment leaves a count of 0, and `INSERT ... SELECT` copies counters and attachments as plain values unless both sides declare them ([Counters inside map entries add up](#counters-inside-map-entries-add-up), [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values), [Changing a register to a counter leaves both values](#changing-a-register-to-a-counter-leaves-both-values), [Deleting a counter during a concurrent increment leaves a husk](#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk), [INSERT ... SELECT copies counters and attachments as plain values](#insert--select-copies-counters-and-attachments-as-plain-values)).
 
 ## Last-Writer-Wins, Maps, and Removals
 
@@ -244,8 +243,6 @@ Results were the same on both releases.
 
 **Used in:** [Conditions and Arithmetic across Devices](../crdt-types.md#conditions-and-arithmetic-across-devices), [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate).
 
-## Reordering and Renaming Fields
-
 ### A stored total keeps one device's partial result
 
 | | |
@@ -258,23 +255,7 @@ Results were the same on both releases.
 
 **Used in:** [Do not store derived values that can diverge](../../best-practices/data-modeling.md#do-not-store-derived-values-that-can-diverge).
 
-### Changing a register to a counter leaves both values
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
-| Setup | A document with `stock: 10` as a plain number (a register), on two devices. While offline, one device wrote `SET stock = 9`, as an old app version would, and the other ran `APPLY stock INCREMENT BY -1`, as a new version that treats the field as a `COUNTER`, once with each write the later one. Then they synced, and both devices read `stock` without a declaration, declared as `REGISTER`, and declared as `COUNTER` |
-
-| Written later | Undeclared `SELECT` | Declared `REGISTER` | Declared `COUNTER` |
-|---|---|---|---|
-| The counter increment | `-1` | `9` | `-1` |
-| The register write | `9` | `9` | `-1` |
-
-- Both values remained under the same key, the same on both devices: the register kept `9`, and the counter, which started at 0, held `-1`.
-- A read without a declaration returned the value of the type written later. Which value an app shows therefore depends on which app version wrote last, and can change with the next write.
-- [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values) describes the opposite direction.
-
-**Used in:** [Changing CRDT types](../../best-practices/data-modeling.md#changing-crdt-types), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent).
+## Reordering and Renaming Fields
 
 ### Reordering on two offline devices keeps both moves only with gap positions
 
@@ -426,6 +407,24 @@ Results were the same on all three releases.
 - The failed checks with undeclared reads in the extended version of [A randomized merge test always converged](#a-randomized-merge-test-always-converged) probably had the same cause.
 
 **Used in:** [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent).
+
+### Changing a register to a counter leaves both values
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
+| Setup | A document with `stock: 10` as a plain number (a register), on two devices. While offline, one device wrote `SET stock = 9`, as an old app version would, and the other ran `APPLY stock INCREMENT BY -1`, as a new version that treats the field as a `COUNTER`, once with each write the later one. Then they synced, and both devices read `stock` without a declaration, declared as `REGISTER`, and declared as `COUNTER` |
+
+| Written later | Undeclared `SELECT` | Declared `REGISTER` | Declared `COUNTER` |
+|---|---|---|---|
+| The counter increment | `-1` | `9` | `-1` |
+| The register write | `9` | `9` | `-1` |
+
+- Both values remained under the same key, the same on both devices: the register kept `9`, and the counter, which started at 0, held `-1`.
+- A read without a declaration returned the value of the type written later. Which value an app shows therefore depends on which app version wrote last, and can change with the next write.
+- [Resetting a counter with SET leaves two values](#resetting-a-counter-with-set-leaves-two-values) describes the opposite direction.
+
+**Used in:** [Changing CRDT types](../../best-practices/data-modeling.md#changing-crdt-types), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent).
 
 ### INSERT ... SELECT copies counters and attachments as plain values
 

@@ -1,6 +1,6 @@
 # DQL Behavior
 
-How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.1.0 and 5.2.0, what statements without `WHERE`, mismatched arguments, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [UPDATE](../../best-practices/dql.md#update), [Document IDs](../../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
+How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.1.0 and 5.2.0, what statements without `WHERE`, mismatched arguments, user input embedded in a statement, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [UPDATE](../../best-practices/dql.md#update), [Document IDs](../../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 **In brief**
 
@@ -8,12 +8,13 @@ How DQL statements behaved when we ran them: which tables and statements of the 
 - The functions behaved as [DQL Functions and Operators](../dql-functions.md) describes, also where the reference says that a function raises an error and it returned MISSING instead; `tz_offset` with `'TZN'` returns the offset of 1970-01-01 ([The function rules of DQL Functions and Operators held on SDK 5.1.0 and 5.2.0](#the-function-rules-of-dql-functions-and-operators-held-on-sdk-510-and-520)).
 - User input embedded in a statement as a literal changed a `SELECT` and a `DELETE` to match every document, while the same input passed as an argument matched none ([User input embedded in a statement changes what it matches](#user-input-embedded-in-a-statement-changes-what-it-matches)).
 - Mistakes in a statement often give no error: `UPDATE`, `DELETE`, and `EVICT` without `WHERE` change every document, a single value passed to `IN :ids` matches nothing, and on SDK 5.1.0, `DELETE` and `EVICT` with `USE IDS` and no `WHERE` predicate remove nothing ([Statements without WHERE change every document](#statements-without-where-change-every-document), [Wrong argument types fail silently](#wrong-argument-types-fail-silently), [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE predicate remove nothing](#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-predicate-remove-nothing)).
-- A comparison between values of different types is MISSING, strings sort by code point, and `DESC` puts missing and `null` values first. Names are case-sensitive, and most keywords are accepted as bare names ([Comparisons across types are MISSING, and strings sort by code point](#comparisons-across-types-are-missing-and-strings-sort-by-code-point), [Descending order puts missing and null first](#descending-order-puts-missing-and-null-first), [Names are case-sensitive, and most DQL keywords are accepted as bare names](#names-are-case-sensitive-and-most-dql-keywords-are-accepted-as-bare-names)).
-- Since SDK 5.1, rows with equal sort keys come back in ascending `_id` order, also with `DESC`; on 5.0.3 without an index, `LIMIT` then did not return the first rows. `OFFSET` pages repeat a row after an insert, and keyset pages do not. `EXPLAIN` runs no statement, while `PROFILE` runs it ([Rows with equal sort keys come back in _id order since SDK 5.1](#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51), [OFFSET pages repeat rows after inserts, and keyset pages do not](#offset-pages-repeat-rows-after-inserts-and-keyset-pages-do-not), [EXPLAIN runs no statement, and PROFILE runs it](#explain-runs-no-statement-and-profile-runs-it)).
+- A comparison between values of different types is MISSING, strings sort by code point, and `DESC` puts missing and `null` values first ([Comparisons across types are MISSING, and strings sort by code point](#comparisons-across-types-are-missing-and-strings-sort-by-code-point), [Descending order puts missing and null first](#descending-order-puts-missing-and-null-first)).
+- Since SDK 5.1, rows with equal sort keys come back in ascending `_id` order, also with `DESC`; on 5.0.3 without an index, `LIMIT` then did not return the first rows. `OFFSET` pages repeat a row after an insert, and keyset pages do not ([Rows with equal sort keys come back in _id order since SDK 5.1](#rows-with-equal-sort-keys-come-back-in-_id-order-since-sdk-51), [OFFSET pages repeat rows after inserts, and keyset pages do not](#offset-pages-repeat-rows-after-inserts-and-keyset-pages-do-not)).
 - The integer `1` and the float `1.0` are equal in `WHERE` but form two groups in `GROUP BY` ([Integers and floats are equal in WHERE but separate in GROUP BY](#integers-and-floats-are-equal-in-where-but-separate-in-group-by)).
+- Document IDs and field names are compared by type and exact code points, without Unicode normalization, and a string ID can have at most 254 bytes. Names are case-sensitive, and most keywords are accepted as bare names ([Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value), [Field names can contain dots and backticks, or be empty](#field-names-can-contain-dots-and-backticks-or-be-empty), [Names are case-sensitive, and most DQL keywords are accepted as bare names](#names-are-case-sensitive-and-most-dql-keywords-are-accepted-as-bare-names)).
+- `EXPLAIN` runs no statement, while `PROFILE` runs it ([EXPLAIN runs no statement, and PROFILE runs it](#explain-runs-no-statement-and-profile-runs-it)).
 - With strict mode on, queries do not use secondary indexes, while ID lookups and `COUNT(*)` keep their plans and `ADVISE` suggests nothing ([With strict mode on, the planner does not use secondary indexes](#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)).
 - A field written with different type declarations holds two values, and which one a query returns depends on its declaration; the index results did not change ([Mixed type declarations change what a query reads, not the index results](#mixed-type-declarations-change-what-a-query-reads-not-the-index-results)).
-- Document IDs and field names are compared by type and exact code points, without Unicode normalization, and a string ID can have at most 254 bytes ([Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value), [Field names can contain dots and backticks, or be empty](#field-names-can-contain-dots-and-backticks-or-be-empty)).
 - On SDK 5.1.0, index plans returned wrong results without an error: a composite index with a descending key and an `ORDER BY` on projected fields returned rows in the wrong order, and a comparison with the constant on the left (`1 < a`) returned the wrong rows, as on 5.0.3. An index created on an empty collection broke in the migration by 5.1.0, and 5.2.0 does not repair it ([On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order](#on-sdk-510-composite-indexes-with-a-descending-key-return-rows-in-the-wrong-order), [On SDK 5.1.0, ORDER BY on a projected field was ignored in an index plan](#on-sdk-510-order-by-on-a-projected-field-was-ignored-in-an-index-plan), [Before SDK 5.2.0, a comparison with the constant on the left returned wrong rows through an index](#before-sdk-520-a-comparison-with-the-constant-on-the-left-returned-wrong-rows-through-an-index), [An index created on an empty collection breaks in the 5.1.0 migration](#an-index-created-on-an-empty-collection-breaks-in-the-510-migration)).
 - On SDK 5.1.0, long `OR` chains ended the process, and `ANY` with a condition on several properties matched every document; on 5.1.0 and 5.2.0, conditions fail at 100 levels of parentheses, and since 5.1.0, `ANY` and `EVERY` over a parameter or literal array return no rows ([Long OR chains crashed SDK 5.1.0](#long-or-chains-crashed-sdk-510), [On SDK 5.1.0, ANY with a condition on several properties matched every document](#on-sdk-510-any-with-a-condition-on-several-properties-matched-every-document), [Conditions fail at 100 levels of nested parentheses](#conditions-fail-at-100-levels-of-nested-parentheses), [ANY and EVERY over a parameter or literal array return no rows since SDK 5.1.0](#any-and-every-over-a-parameter-or-literal-array-return-no-rows-since-sdk-510)).
 - On SDK 5.0.3, some statements of the guide fail, and `SELECT _id` on an indexed collection returned too few rows ([Some features that are not marked SDK 5.1+ fail on 5.0.3](#some-features-that-are-not-marked-sdk-51-fail-on-503), [On SDK 5.0.3, SELECT _id on an indexed collection returned too few rows](#on-sdk-503-select-_id-on-an-indexed-collection-returned-too-few-rows)).
@@ -147,6 +148,18 @@ On 5.0.3, the results were the same, with two differences:
 
 **Used in:** [Always pass values as parameters](../../best-practices/dql.md#always-pass-values-as-parameters), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership).
 
+### User input embedded in a statement changes what it matches
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
+| Setup | One device without sync, a collection of three documents. The user input `nobody' OR '1'='1` embedded as a string literal in a `SELECT` and in a `DELETE`, and the same value passed as an argument |
+
+- With the input embedded as a string literal, the `SELECT` returned all three documents, and the `DELETE` built the same way deleted all three.
+- Passed as an argument, the same value matched no document.
+
+**Used in:** [Input Validation and Query Parameters](../../best-practices/security.md#input-validation-and-query-parameters).
+
 ### On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE predicate remove nothing
 
 | | |
@@ -185,21 +198,6 @@ On 5.0.3, the results were the same, with two differences:
 - `ORDER BY ... ASC` on a field with mixed types returned `false`, `true`, numbers (`2`, `10`), strings (`'10'`, `'B'`, `'b'`), arrays, objects, `null`, and missing values, in that order.
 
 **Used in:** [Literals](../../best-practices/dql.md#literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [String Functions](../dql-functions.md#string-functions), [Arithmetic, Conversion, and Other Functions](../dql-functions.md#arithmetic-conversion-and-other-functions).
-
-### Names are case-sensitive, and most DQL keywords are accepted as bare names
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
-| Setup | One device without sync. Collection and field names that differ only in case, and 32 DQL keywords used as bare collection names and field names |
-
-- Collection names and field names are case-sensitive: `Orders` and `orders` are different collections.
-- Of the 32 keywords used as bare names, only `collection` as a collection name was a syntax error. `order`, `select`, `from`, `where`, `value`, `key`, `count`, and `all` (as a collection name), among others, were accepted.
-- `null`, `true`, and `missing` are probably read as literals rather than as fields, which changes the meaning of a statement without an error.
-
-**Not tested:** whether the statements with keyword names returned the intended results; the test checked only whether they were syntax errors.
-
-**Used in:** [Reserved words](../../best-practices/dql.md#reserved-words), [Field names](../../best-practices/data-modeling.md#field-names).
 
 ### Descending order puts missing and null first
 
@@ -250,30 +248,6 @@ On 5.0.3, the results were the same, with two differences:
 - Keyset pagination with `_id` as the tie-breaker (`WHERE createdAt < :at OR (createdAt = :at AND _id < :id)`) returned no duplicates and skipped nothing.
 
 **Used in:** [LIMIT and OFFSET](../../best-practices/dql.md#limit-and-offset).
-
-### EXPLAIN runs no statement, and PROFILE runs it
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
-| Setup | One device without sync. `EXPLAIN` and `PROFILE` with each kind of statement |
-
-- **`EXPLAIN`**: on 5.1.0 and 5.2.0, `EXPLAIN` accepted `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `EVICT`, `CREATE INDEX`, `DROP INDEX`, and `ADVISE`, and executed none of them. `SHOW` and `ALTER SYSTEM` were rejected with `Explain DML is not supported`, a message that does not match the kind of statement. On 5.0.3, `EXPLAIN` of a mutation was rejected with the same message, and `ADVISE` was a syntax error.
-- **`PROFILE`**: `PROFILE SELECT` returned the two result rows followed by one row with `~request_profile`. `PROFILE UPDATE` executed the update and returned one row, the profile. `PROFILE SHOW` did not fail and returned only the result of `SHOW`, without a profile row.
-
-**Used in:** [EXPLAIN and PROFILE](../../best-practices/indexing-and-performance.md#explain-and-profile).
-
-### User input embedded in a statement changes what it matches
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
-| Setup | One device without sync, a collection of three documents. The user input `nobody' OR '1'='1` embedded as a string literal in a `SELECT` and in a `DELETE`, and the same value passed as an argument |
-
-- With the input embedded as a string literal, the `SELECT` returned all three documents, and the `DELETE` built the same way deleted all three.
-- Passed as an argument, the same value matched no document.
-
-**Used in:** [Input Validation and Query Parameters](../../best-practices/security.md#input-validation-and-query-parameters).
 
 ## Numbers and Strings in DQL
 
@@ -365,7 +339,34 @@ On 5.0.3, the results were the same, with two differences:
 
 **Used in:** [Adding, updating, and removing map entries](../../best-practices/data-modeling.md#adding-updating-and-removing-map-entries), [Field names](../../best-practices/data-modeling.md#field-names).
 
+### Names are case-sensitive, and most DQL keywords are accepted as bare names
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
+| Setup | One device without sync. Collection and field names that differ only in case, and 32 DQL keywords used as bare collection names and field names |
+
+- Collection names and field names are case-sensitive: `Orders` and `orders` are different collections.
+- Of the 32 keywords used as bare names, only `collection` as a collection name was a syntax error. `order`, `select`, `from`, `where`, `value`, `key`, `count`, and `all` (as a collection name), among others, were accepted.
+- `null`, `true`, and `missing` are probably read as literals rather than as fields, which changes the meaning of a statement without an error.
+
+**Not tested:** whether the statements with keyword names returned the intended results; the test checked only whether they were syntax errors.
+
+**Used in:** [Reserved words](../../best-practices/dql.md#reserved-words), [Field names](../../best-practices/data-modeling.md#field-names).
+
 ## Indexes and Query Plans
+
+### EXPLAIN runs no statement, and PROFILE runs it
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
+| Setup | One device without sync. `EXPLAIN` and `PROFILE` with each kind of statement |
+
+- **`EXPLAIN`**: on 5.1.0 and 5.2.0, `EXPLAIN` accepted `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `EVICT`, `CREATE INDEX`, `DROP INDEX`, and `ADVISE`, and executed none of them. `SHOW` and `ALTER SYSTEM` were rejected with `Explain DML is not supported`, a message that does not match the kind of statement. On 5.0.3, `EXPLAIN` of a mutation was rejected with the same message, and `ADVISE` was a syntax error.
+- **`PROFILE`**: `PROFILE SELECT` returned the two result rows followed by one row with `~request_profile`. `PROFILE UPDATE` executed the update and returned one row, the profile. `PROFILE SHOW` did not fail and returned only the result of `SHOW`, without a profile row.
+
+**Used in:** [EXPLAIN and PROFILE](../../best-practices/indexing-and-performance.md#explain-and-profile).
 
 ### With strict mode on, the planner does not use secondary indexes
 

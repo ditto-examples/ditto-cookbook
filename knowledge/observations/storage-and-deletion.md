@@ -10,7 +10,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 - A deletion flag sends about 28 bytes per document and `DELETE` about 43 bytes. Evicting documents that a subscription still matches downloads all of them again within seconds ([Deletion flags and DELETE transfer little, and eviction under a subscription refetches](#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)).
 - `EVICT` makes a device forget what it knew: a relay that evicts flagged documents receives the old, unflagged versions back from devices that missed the flag, and a document inserted with an evicted ID merges with the old version that other devices hold ([A relay that evicts flagged documents receives old versions back from devices that missed the flag](#a-relay-that-evicts-flagged-documents-receives-old-versions-back-from-devices-that-missed-the-flag), [Inserting with an evicted document's ID merges with the old version](#inserting-with-an-evicted-documents-id-merges-with-the-old-version)).
 - Tombstones and evicted documents do not slow queries; flagged documents made `COUNT(*)` and filters 15 to 20 times slower unless every document had the flag, it was indexed, and the query used `isDeleted = false`; reads by ID were not affected ([Tombstones and evicted documents do not slow queries, but flagged documents do](#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
-- Updating a document 10,000 times does not make it heavier, but every different map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove them ([Repeated updates do not grow a document](#repeated-updates-do-not-grow-a-document), [Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
+- Every different map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove these records; adding and removing the same key again and again adds almost nothing ([Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
 - Since 5.1, 10,000 writes grew the write-ahead logs of the document store and of the attachment store to about 20 MB each, and on 5.2.0, the on-disk logs kept the lines of about 200,000 writes. On 5.2.0, `system:system_info` keeps old rows of each storage value, so read the newest row by `timestamp` ([Since SDK 5.1, the write-ahead log grows to about 20 MB](#since-sdk-51-the-write-ahead-log-grows-to-about-20-mb), [On SDK 5.2.0, the on-disk logs kept about 200,000 writes](#on-sdk-520-the-on-disk-logs-kept-about-200000-writes), [On SDK 5.2.0, system:system_info keeps old rows of each storage value](#on-sdk-520-systemsystem_info-keeps-old-rows-of-each-storage-value)).
 - Removing data does not shrink the files at once, and most removed values can still be read from them after Ditto closes. By default, SDK 5.2.0 reclaims free space only above 100 MB ([Evicting data does not free disk space at once](#evicting-data-does-not-free-disk-space-at-once), [Most deleted and evicted values remain in the database files](#most-deleted-and-evicted-values-remain-in-the-database-files)).
 
@@ -219,18 +219,6 @@ What a new peer received in its first sync:
 
 **Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
-### Repeated updates do not grow a document
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; all nine runs showed the same tendency |
-| Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times. We compared these documents with a document of the same size written once: a new device subscribed to each document in turn through the relay that counts bytes |
-
-- **Document size**: a new device received 1.4 KiB for the document written once, 1.3 KiB for the document updated 10,000 times, and 1.3 KiB for the document whose COUNTER was incremented 10,000 times, on all three releases. The history of updates does not stay in the document and does not add to what is sent.
-- **Write time**: 10,000 `UPDATE` statements and 10,000 increments each took 14.3 to 15.2 seconds, 1.4 to 1.5 ms per write (5.0.3: 20.7 to 21.4 seconds, about 2.1 ms per write).
-
-**Used in:** none yet.
-
 ### Since SDK 5.1, the write-ahead log grows to about 20 MB
 
 | | |
@@ -253,7 +241,7 @@ What a new peer received in its first sync:
 | Observed on | SDK 5.2.0, three runs; reading repeatedly after the writes: one run. SDK 5.1.0 and 5.0.3 have no keys for the write-ahead log |
 | Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times, and we read the storage keys of `system:system_info` right after the writes and then repeatedly |
 
-- the same key appears in several rows with different `timestamp` values. Read right after the 10,000 writes, `fs_usage_store_db_sql_wal` had 16 to 17 rows: the newest held the actual file size (about 20.7 MB), the oldest the size before the writes (about 342 KB). `wal_current_size_bytes` and `wal_peak_size_bytes` had only one row each, 37,112 from before the writes, in all three runs. Reading repeatedly in one run, a row with 20,925,512 appeared about 60 seconds later, and the old rows remained. The WAL values are recorded about once a minute, and the `fs_usage` values more often. A query that takes one row without ordering by `timestamp` gets an old value, as our first measurement did. 5.1.0 and 5.0.3 have no WAL keys.
+- The same key appears in several rows with different `timestamp` values. Read right after the 10,000 writes, `fs_usage_store_db_sql_wal` had 16 to 17 rows: the newest held the actual file size (about 20.7 MB), the oldest the size before the writes (about 342 KB). `wal_current_size_bytes` and `wal_peak_size_bytes` had only one row each, 37,112 from before the writes, in all three runs. Reading repeatedly in one run, a row with 20,925,512 appeared about 60 seconds later, and the old rows remained. The WAL values are recorded about once a minute, and the `fs_usage` values more often. A query that takes one row without ordering by `timestamp` gets an old value, as our first measurement did. 5.1.0 and 5.0.3 have no WAL keys.
 
 **Used in:** [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage).
 

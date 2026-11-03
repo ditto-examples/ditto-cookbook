@@ -6,10 +6,11 @@ How long Ditto's statements, queries, and observers took, how many writes a devi
 
 - Each `execute` call has a fixed cost of about 1.7 ms, so the number of statements matters more than the number of documents: 2,000 inserts took 3,930 to 4,659 ms one by one and 16 to 18 ms as one statement on SDK 5.1.0 and 5.2.0 ([The number of execute calls matters more than the number of documents](#the-number-of-execute-calls-matters-more-than-the-number-of-documents)).
 - On SDK 5.1.0 and 5.2.0, awaited one at a time, statements that write one document each top out at about 600 documents a second and cost about 2 ms of CPU per document on the writing and the receiving device; 50 to 100 documents per statement reached 5,000 to 10,000 a second ([One document per statement tops out at about 600 writes a second](#one-document-per-statement-tops-out-at-about-600-writes-a-second)).
+- On 5.2.0, evicting 10,000 documents took 29 to 30 ms in one statement and 47 to 50 ms in chunks of 1,000, of which the longest took 5.3 to 5.5 ms ([Evicting in chunks costs little more than one statement](#evicting-in-chunks-costs-little-more-than-one-statement)).
 - `WHERE _id IN :ids` slows down as the list of IDs grows, and `USE IDS LIST :ids` much less: with 10,000 IDs, a count took 686 to 725 ms against 17 to 21 ms, and writes on 5.2.0 took 693 to 732 ms against 20 to 65 ms, while on 5.1.0, `EVICT` and `DELETE` with `USE IDS LIST` removed nothing ([Long ID lists are faster with USE IDS LIST than with WHERE _id IN](#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
 - A full-collection `COUNT(*)` took 1.7 to 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 11 times faster, 11 conditions of the Index Usage Rules table produced the listed plans, and a query answered from the index alone took about two thirds of the time ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [Eleven conditions of the Index Usage Rules table produced the plans it lists](#eleven-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone took about two thirds of the time](#a-query-answered-from-the-index-alone-took-about-two-thirds-of-the-time)); on 5.1.0 and 5.2.0, an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index](#on-sdk-510-and-520-an-index-on-a-field-with-two-values-made-a-query-slower-than-no-index)).
 - Query strings built for each value were not slower than constant strings with parameters ([Constant query strings were not faster](#constant-query-strings-were-not-faster)).
-- On 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later after a write than an observer of 50, and evicting in chunks and opening a large store cost little ([On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50](#on-sdk-510-and-520-an-observer-of-5000-documents-was-called-about-5-to-6-times-later-than-one-of-50), [Evicting in chunks costs little more than one statement](#evicting-in-chunks-costs-little-more-than-one-statement), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
+- On 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later after a write than an observer of 50, and opening a large store cost little ([On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50](#on-sdk-510-and-520-an-observer-of-5000-documents-was-called-about-5-to-6-times-later-than-one-of-50), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
 - Large query results raise the process's memory, which does not come back after the results are released; 5.2.0 used about 20 to 30% less than 5.1.0 while holding them, and about 35% less after reading them ([Large query results keep process memory after they are released](#large-query-results-keep-process-memory-after-they-are-released)).
 - An observer that returned 200 documents while other devices kept updating them grew the process's memory by about 13 to 24 KiB on every callback; an observer of one row leveled off after about 5 minutes on 5.1.0 and 5.2.0 ([An observer of 200 documents grows memory on every callback](#an-observer-of-200-documents-grows-memory-on-every-callback)).
 - The CPU that a hub spends on each change grows with the number of connected devices, and when every device writes, the hub's CPU grows faster than the number of devices ([Hub CPU per change grows with the number of connected devices](#hub-cpu-per-change-grows-with-the-number-of-connected-devices)).
@@ -79,6 +80,19 @@ Delay on the receiver (median / 95th percentile / maximum):
 **Not tested:** the rate of writes issued in parallel with `Promise.all` ([Parallel writes are safe, but parallel read-modify-write loses updates](transaction-behavior.md#parallel-writes-are-safe-but-parallel-read-modify-write-loses-updates) checked only that they do not break anything); the effect of the store size apart from the rate.
 
 **Used in:** [Pattern 2: Append-only event documents](../../best-practices/data-modeling.md#pattern-2-append-only-event-documents).
+
+### Evicting in chunks costs little more than one statement
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, seven runs each |
+| Setup | One device without sync, 10,000 documents to evict: with one `EVICT` statement, and in chunks of 1,000 |
+
+- One statement took 29 to 30 ms (5.1.0: 36 ms).
+- In chunks of 1,000, it took 11 statements, the longest 5.3 to 5.5 ms (5.1.0: 5.8 to 6.9 ms), 47 to 50 ms in total (5.1.0: 54 to 61 ms).
+- The local cost is small either way; chunks keep each statement short.
+
+**Used in:** [Batching evictions](../../best-practices/deletion-and-storage.md#batching-evictions).
 
 ## Queries and Indexes
 
@@ -174,47 +188,6 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 **Used in:** [Covering scans](../../best-practices/indexing-and-performance.md#covering-scans).
 
-### On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, five runs each, and 5.0.3, four runs |
-| Setup | One device without sync, 5,000 documents. Two observers: one of all documents, and one of `WHERE customerId = :c ORDER BY createdAt DESC LIMIT 50`. We measured the time from writing one document until each callback; each time is the median of the seven callbacks in a run |
-
-| Observer | 5.2.0 | 5.1.0 | 5.0.3 |
-|---|---|---|---|
-| All 5,000 documents | 31 to 43 ms | 33 to 47 ms | 39 to 69 ms |
-| 50 documents | 5.0 to 6.7 ms | 5.8 to 8.0 ms | 46 to 50 ms |
-
-- In each run on 5.2.0, the larger observer was called 6.1 to 6.5 times later, and on 5.1.0 4.7 to 6.3 times later. On 5.0.3, the two observers were called at about the same time (0.8 to 1.5 times).
-
-**Used in:** [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
-
-### Evicting in chunks costs little more than one statement
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, seven runs each |
-| Setup | One device without sync, 10,000 documents to evict: with one `EVICT` statement, and in chunks of 1,000 |
-
-- One statement took 29 to 30 ms (5.1.0: 36 ms).
-- In chunks of 1,000, it took 11 statements, the longest 5.3 to 5.5 ms (5.1.0: 5.8 to 6.9 ms), 47 to 50 ms in total (5.1.0: 54 to 61 ms).
-- The local cost is small either way; chunks keep each statement short.
-
-**Used in:** [Batching evictions](../../best-practices/deletion-and-storage.md#batching-evictions).
-
-### Opening Ditto took the same time with 1,000 and 200,000 documents
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each, with three opens of each store |
-| Setup | Stores of 1,000 and of 200,000 documents of about 0.5 KB each, each opened and closed three times; then the first and the second query after opening |
-
-- `Ditto.open()` took 11 to 15 ms and `close()` 25 to 32 ms, with 1,000 and with 200,000 documents: they hardly depend on the number of documents.
-- The first query after opening was as fast as the second: a `COUNT(*) ... WHERE` without an index on 200,000 documents took 184 to 193 ms on 5.2.0 and 261 to 265 ms on 5.1.0.
-
-**Used in:** none yet.
-
 ### On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index
 
 | | |
@@ -256,6 +229,34 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 **Not tested:** whether and when Ditto caches prepared statements.
 
 **Used in:** [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
+
+### On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, five runs each, and 5.0.3, four runs |
+| Setup | One device without sync, 5,000 documents. Two observers: one of all documents, and one of `WHERE customerId = :c ORDER BY createdAt DESC LIMIT 50`. We measured the time from writing one document until each callback; each time is the median of the seven callbacks in a run |
+
+| Observer | 5.2.0 | 5.1.0 | 5.0.3 |
+|---|---|---|---|
+| All 5,000 documents | 31 to 43 ms | 33 to 47 ms | 39 to 69 ms |
+| 50 documents | 5.0 to 6.7 ms | 5.8 to 8.0 ms | 46 to 50 ms |
+
+- In each run on 5.2.0, the larger observer was called 6.1 to 6.5 times later, and on 5.1.0 4.7 to 6.3 times later. On 5.0.3, the two observers were called at about the same time (0.8 to 1.5 times).
+
+**Used in:** [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution).
+
+### Opening Ditto took the same time with 1,000 and 200,000 documents
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each, with three opens of each store |
+| Setup | Stores of 1,000 and of 200,000 documents of about 0.5 KB each, each opened and closed three times; then the first and the second query after opening |
+
+- `Ditto.open()` took 11 to 15 ms and `close()` 25 to 32 ms, with 1,000 and with 200,000 documents: they hardly depend on the number of documents.
+- The first query after opening was as fast as the second: a `COUNT(*) ... WHERE` without an index on 200,000 documents took 184 to 193 ms on 5.2.0 and 261 to 265 ms on 5.1.0.
+
+**Used in:** none yet.
 
 ## Memory Held by Query Results and Observers
 

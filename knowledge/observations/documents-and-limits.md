@@ -1,13 +1,13 @@
 # Documents and Limits
 
-What happens at the edges of a document: a merge that pushes a document over the hard size limit, also between SDK releases, how heavy a document becomes when many devices have written it, how deep a document can nest, and what many top-level fields or many collections cost. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), and [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals).
+What happens at the edges of a document: a merge that pushes a document over the hard size limit, also between SDK releases, how heavy a document becomes when many devices have written it or one device has updated it many times, how deep a document can nest, and what many top-level fields or many collections cost. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), and [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals).
 
 **In brief**
 
 - When two devices together push a document over the hard size limit, SDK 5.1.0 stores the combined document and can no longer update it, while SDK 5.2.0 drops the change, so each device keeps its own version ([On SDK 5.2.0, an oversized merge leaves devices with different versions](#on-sdk-520-an-oversized-merge-leaves-devices-with-different-versions)).
 - On 5.2.0, updates of such a document stop in both directions until one device evicts it, and that device loses its own changes to the document ([On SDK 5.2.0, an oversized document stops syncing until one side evicts it](#on-sdk-520-an-oversized-document-stops-syncing-until-one-side-evicts-it)).
 - With releases mixed, an oversized merge ends differently on each device, and SDK 5.0.3 does not check the hard limit when a document is written ([An oversized merge ends differently on each release](#an-oversized-merge-ends-differently-on-each-release), [SDK 5.0.3 does not check the hard size limit when a document is written](#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)).
-- A document grows with the number of devices that ever wrote it, also when they all wrote the same field and only one value remains: with 300 writers, the first sync was about 11 times and each later change 6 to 13 times as heavy ([A document grows with the number of devices that wrote it](#a-document-grows-with-the-number-of-devices-that-wrote-it)).
+- A document grows with the number of devices that ever wrote it, also when they all wrote the same field and only one value remains: with 300 writers, the first sync was about 11 times and each later change 6 to 13 times as heavy. One device updating a document 10,000 times did not make it heavier ([A document grows with the number of devices that wrote it](#a-document-grows-with-the-number-of-devices-that-wrote-it), [Repeated updates do not grow a document](#repeated-updates-do-not-grow-a-document)).
 - An argument can nest 125 levels and a literal 97 levels, while `UPDATE` paths can build much deeper documents ([Nesting depth is limited differently for arguments, literals, and paths](#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)).
 - Documents 800 or more levels deep ended a peer's process during sync on 5.1.0 and 5.2.0, and on 5.0.3, every query on a collection that holds a document 30 or more levels deep ends the process ([Very deep documents end a peer's process during sync](#very-deep-documents-end-a-peers-process-during-sync)).
 - An `INSERT` of a document with 50,000 top-level fields took 2.28 to 2.38 seconds; the same fields under one map took 48 to 70 ms ([Fifty thousand top-level fields make an INSERT slow](#fifty-thousand-top-level-fields-make-an-insert-slow)).
@@ -117,6 +117,18 @@ Bytes for the first sync and for one change made on the hub:
 **Not tested:** what the added bytes contain (for example, a list of the devices that wrote the document); sizes on disk or in memory (the numbers are bytes on the wire after compression); more than 300 devices; whether the weight goes down after about 7 days, when Ditto removes the information about peers that have not connected (see [Eviction frequency](../../best-practices/deletion-and-storage.md#eviction-frequency)), since we measured only within minutes of the writes; the traffic of one document per device instead of one shared document.
 
 **Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate).
+
+### Repeated updates do not grow a document
+
+| | |
+|---|---|
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; all nine runs showed the same tendency |
+| Setup | One device updated a document holding 1 KB of random data 10,000 times with `UPDATE`, awaiting one statement at a time, and incremented a COUNTER 10,000 times. We compared these documents with a document of the same size written once: a new device subscribed to each document in turn through the relay that counts bytes |
+
+- **Document size**: a new device received 1.4 KiB for the document written once, 1.3 KiB for the document updated 10,000 times, and 1.3 KiB for the document whose COUNTER was incremented 10,000 times, on all three releases. The history of updates does not stay in the document and does not add to what is sent.
+- **Write time**: 10,000 `UPDATE` statements and 10,000 increments each took 14.3 to 15.2 seconds, 1.4 to 1.5 ms per write (5.0.3: 20.7 to 21.4 seconds, about 2.1 ms per write).
+
+**Used in:** none yet.
 
 ## Nesting Depth
 
