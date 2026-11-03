@@ -1,14 +1,17 @@
 # Performance Measurements
 
-How long Ditto's statements, queries, and observers took, how many writes a device could make in a second, how much memory query results and observers kept, and how much CPU a hub spent as more devices connected. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The times come from one Mac and serve to compare approaches; Ditto's own benchmark on an Android device is quoted in [Counting documents](../../best-practices/indexing-and-performance.md#counting-documents). The rules that follow from these observations are in [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [INSERT and Conflict Handling](../../best-practices/dql.md#insert-and-conflict-handling), [Large results](../../best-practices/dql.md#large-results), and [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
+How long Ditto's statements, queries, and observers took, how many writes a device could make in a second, what many top-level fields or many collections cost, how much memory query results and observers kept, and how much CPU a hub spent as more devices connected. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The times come from one Mac and serve to compare approaches; Ditto's own benchmark on an Android device is quoted in [Counting documents](../../best-practices/indexing-and-performance.md#counting-documents). The rules that follow from these observations are in [Query Scope and Execution](../../best-practices/indexing-and-performance.md#query-scope-and-execution), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Indexing soft-delete filters](../../best-practices/deletion-and-storage.md#indexing-soft-delete-filters), [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals), [INSERT and Conflict Handling](../../best-practices/dql.md#insert-and-conflict-handling), [Large results](../../best-practices/dql.md#large-results), and [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 **In brief**
 
 - Each `execute` call has a fixed cost of about 1.7 ms, so the number of statements matters more than the number of documents: 2,000 inserts took 3,930 to 4,659 ms one by one and 16 to 18 ms as one statement on SDK 5.1.0 and 5.2.0 ([The number of execute calls matters more than the number of documents](#the-number-of-execute-calls-matters-more-than-the-number-of-documents)).
 - On SDK 5.1.0 and 5.2.0, awaited one at a time, statements that write one document each top out at about 600 documents a second and cost about 2 ms of CPU per document on the writing and the receiving device; 50 to 100 documents per statement reached 5,000 to 10,000 a second ([One document per statement tops out at about 600 writes a second](#one-document-per-statement-tops-out-at-about-600-writes-a-second)).
 - On 5.2.0, evicting 10,000 documents took 29 to 30 ms in one statement and 47 to 50 ms in chunks of 1,000, of which the longest took 5.3 to 5.5 ms ([Evicting in chunks costs little more than one statement](#evicting-in-chunks-costs-little-more-than-one-statement)).
+- An `INSERT` of a document with 50,000 top-level fields took 2.28 to 2.38 seconds; the same fields under one map took 48 to 70 ms ([Fifty thousand top-level fields make an INSERT slow](#fifty-thousand-top-level-fields-make-an-insert-slow)).
+- Since SDK 5.1, the first write to a new collection slows down in proportion to the number of collections, and a collection cannot be removed ([Since SDK 5.1, each new collection makes the first write to a collection slower](#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)).
 - `WHERE _id IN :ids` slows down as the list of IDs grows, and `USE IDS LIST :ids` much less: with 10,000 IDs, a count took 686 to 725 ms against 17 to 21 ms, and writes on 5.2.0 took 693 to 732 ms against 20 to 65 ms, while on 5.1.0, `EVICT` and `DELETE` with `USE IDS LIST` removed nothing ([Long ID lists are faster with USE IDS LIST than with WHERE _id IN](#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
 - A full-collection `COUNT(*)` took 1.7 to 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 11 times faster, 11 conditions of the Index Usage Rules table produced the listed plans, and a query answered from the index alone took about two thirds of the time ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [Eleven conditions of the Index Usage Rules table produced the plans it lists](#eleven-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone took about two thirds of the time](#a-query-answered-from-the-index-alone-took-about-two-thirds-of-the-time)); on 5.1.0 and 5.2.0, an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index](#on-sdk-510-and-520-an-index-on-a-field-with-two-values-made-a-query-slower-than-no-index)).
+- Tombstones and evicted documents do not slow queries; flagged documents made `COUNT(*)` and filters 15 to 20 times slower unless every document had the flag, it was indexed, and the query used `isDeleted = false`; reads by ID were not affected ([Tombstones and evicted documents do not slow queries, but flagged documents do](#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
 - Query strings built for each value were not slower than constant strings with parameters ([Constant query strings were not faster](#constant-query-strings-were-not-faster)).
 - On 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later after a write than an observer of 50, and opening a large store cost little ([On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50](#on-sdk-510-and-520-an-observer-of-5000-documents-was-called-about-5-to-6-times-later-than-one-of-50), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
 - Large query results raise the process's memory, which does not come back after the results are released; 5.2.0 used about 20 to 30% less than 5.1.0 while holding them, and about 35% less after reading them ([Large query results keep process memory after they are released](#large-query-results-keep-process-memory-after-they-are-released)).
@@ -93,6 +96,67 @@ Delay on the receiver (median / 95th percentile / maximum):
 - The local cost is small either way; chunks keep each statement short.
 
 **Used in:** [Batching evictions](../../best-practices/deletion-and-storage.md#batching-evictions).
+
+## Many Fields and Many Collections
+
+### Fifty thousand top-level fields make an INSERT slow
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs), and three single runs on each release; the results were the same on both releases |
+| Setup | One document with N top-level fields, passed as an argument to `INSERT`. We compared it with the same fields under one map field and with an array of numbers, and measured a read and an `UPDATE` of one field of the largest document |
+
+| Document | `INSERT` time |
+|---|---|
+| 1,000 top-level fields | 6 ms |
+| 10,000 top-level fields | 111 to 123 ms |
+| 50,000 top-level fields | 2.28 to 2.38 s |
+| The same 50,000 fields under one map field | 48 to 70 ms |
+| An array of 100,000 numbers | 11 ms |
+
+- The time grows faster than the number of top-level fields.
+- `object_size` was about 689 KB for both shapes of the 50,000 fields, and the arguments were of the same size, so the difference lies in how the SDK handles top-level fields.
+- With 50,000 top-level fields, a read took about 14 ms, and an `UPDATE` of one field about 17 ms.
+
+**Used in:** none yet.
+
+### Since SDK 5.1, each new collection makes the first write to a collection slower
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, six runs each, and SDK 5.0.3, four runs; while connected to another device, three runs each. How the time changed after reopening: three runs on 5.2.0 and one on 5.1.0 in a separate script. The layout of the database file: one run on each of the three releases |
+| Setup | A store on a single device. We created collections one by one with a first `INSERT` of one document each, and measured each `INSERT`. For comparison, we wrote to existing collections and inserted 1,000 documents into one collection. We also reopened the store, evicted the documents of half of the collections, read `system:collections`, and measured the database file (`ditto_store/db.sql`). In a second test, the device was connected to another device, which subscribed either to nothing or to everything |
+
+On 5.1.0 and 5.2.0:
+
+| Measurement | Result |
+|---|---|
+| First `INSERT` into a new collection, up to the 100th collection | 1.7 to 1.9 ms |
+| First `INSERT` into a new collection, near the 1,000th collection | 17 to 21 ms; creating 1,000 collections took about 11 s (the same in every run) |
+| A write to an existing collection | 1.6 to 1.7 ms |
+| 1,000 documents into one collection | 1.9 to 2.1 ms each |
+| `ditto_store/db.sql` with 1,000 collections of one document each | 14.7 to 17.3 MB (about 15 to 17 KB per collection) |
+| `ditto_store/db.sql` with the same 1,000 documents in one collection | 0.3 to 0.4 MB |
+
+- On 5.1.0 and 5.2.0, the first `INSERT` into a new collection slowed down roughly in proportion to the number of collections that already existed, while writes to existing collections stayed fast.
+- On 5.0.3, the first `INSERT` into a new collection took 2.1 to 2.8 ms regardless of the number of collections, and the file with 1,000 collections was 0.6 MB.
+- After reopening, the first write to a new collection was usually just as slow (17 to 23 ms after 1,000 collections). In 2 of 12 runs of the main test and 2 of 4 runs of the separate script, however, it dropped to 3 to 6 ms right after reopening. Reading the old collections afterwards made it slow again in some runs, and it stayed fast in others; we do not know what decides this.
+- Evicting the documents of half of the collections did not make the next new collection faster (22 to 25 ms after reopening, in a run where it was slow). `DROP COLLECTION` is a syntax error (`expected INDEX`). `system:collections` returned 1,001 collections before the eviction and 1,101 after it (the 100 collections created in between added): collections without documents remained listed. The list includes `__feature_flags`. `system:collections` exists since 5.0.3.
+- While connected to another device, the first write to a new collection was slower. Near the 600th collection:
+
+| Connection | First write to a new collection |
+|---|---|
+| None (a single device) | About 12 ms |
+| Connected; the other device subscribes to nothing | 20.5 to 21.1 ms |
+| Connected; the other device subscribes to everything | 5.2.0: 38 to 43 ms (all three runs); 5.1.0: 37.9 ms in one run, 7 to 8 ms in two runs |
+
+- With the subscription to everything, the last document reached the other device after 76 to 128 ms (5.0.3: 14 to 15 ms).
+- What we saw in the database file: 5.1.0 and 5.2.0 create one SQLite table per collection (`coll_<the name in hexadecimal>`) with three indexes (the primary key, `s`, and `tombstone`). 5.0.3 keeps all collections in one table (`customer`). Four B-trees need at least four pages of 4 KB, which fits the growth of the file. These are internal details of the SDK.
+- We think the time grows because SQLite reads the whole schema again after every schema change.
+
+**Not tested:** why the time of each creation grows with the number of collections (the explanation above is not confirmed).
+
+**Used in:** [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals).
 
 ## Queries and Indexes
 
@@ -210,6 +274,26 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 - `Ditto.open()` took 10 to 21 ms for an empty store and for 100,000 documents (about 70 MB): it does not depend on the size of the store. Without indexes, the first query after opening was as fast as the second (1 to 4 ms).
 
 **Used in:** [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Where indexes live](../../best-practices/indexing-and-performance.md#where-indexes-live).
+
+### Tombstones and evicted documents do not slow queries, but flagged documents do
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run on both releases showed the same tendency |
+| Setup | Five collections, each with 1,000 live documents: one that only ever held those 1,000; one of 50,000 documents of which 49,000 were deleted with `DELETE`; one of 50,000 of which 49,000 were evicted with `EVICT`; one of 50,000 of which 49,000 were flagged with `isDeleted = true` and excluded with `coalesce(isDeleted, false) = false`; and one in which every document had `isDeleted`, with an index on `isDeleted`, and the 49,000 flagged ones were excluded with `isDeleted = false`. On each, we measured the median of seven runs of `COUNT(*)`, of a filter on a field without an index, and of a read by ID |
+
+| Collection (1,000 live documents each) | `COUNT(*)` | Filter on a field without an index | Read by ID |
+|---|---|---|---|
+| Only 1,000 documents; 49,000 deleted (49,000 tombstones); 49,000 evicted | About 1.4 ms | 2.3 to 3.0 ms | About 1.4 ms |
+| 49,000 flagged, excluded with `coalesce(isDeleted, false) = false` | 41 to 61 ms | 41 to 61 ms | About 1.4 ms |
+| 49,000 flagged, `isDeleted` on every document and indexed, excluded with `isDeleted = false` | About 2.3 ms | 3.7 to 4.0 ms | About 1.4 ms |
+
+- The collections with 49,000 tombstones and with 49,000 evicted documents were as fast as the one that only ever held 1,000 documents.
+- With the flag, `COUNT(*)` and the filter were about 15 to 20 times slower: every query also read the 49,000 flagged documents.
+- With `isDeleted` on every document, an index on it, and `isDeleted = false` as the condition, the queries were back near the speed of the 1,000-document collection.
+- Reads by ID took about 1.4 ms in every collection.
+
+**Used in:** [Indexing soft-delete filters](../../best-practices/deletion-and-storage.md#indexing-soft-delete-filters), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
 ### Constant query strings were not faster
 

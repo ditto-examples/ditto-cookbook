@@ -60,10 +60,10 @@ Observations from our testing, in `reference/knowledge/observations/`, one entry
 | `observations/merge-behavior.md` | Concurrent edits, also between SDK releases, conditional updates, read-modify-write, reordering, renaming, counters |
 | `observations/clocks-and-time.md` | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |
 | `observations/storage-and-deletion.md` | Soft delete, tombstones and reaping, eviction, disk space, the write-ahead log, deleted data on disk |
-| `observations/documents-and-limits.md` | The hard size limit across devices and releases, document weight, nesting depth, many fields and collections |
+| `observations/documents-and-limits.md` | The hard size limit across devices and releases, document weight, nesting depth |
 | `observations/persistence-directory.md` | Copies of a directory, Database IDs, deleting parts of a directory, locks |
 | `observations/dql-behavior.md` | Statements that held, writes and arguments, `USE IDS`, comparison and ordering, IDs and field names, indexes and query plans (SDK 5.1.0 issues, migration), long conditions and `ANY`, SDK 5.0.3 differences |
-| `observations/performance-measurements.md` | Statements and write rates, queries and indexes, memory, hub load |
+| `observations/performance-measurements.md` | Statements and write rates, many fields and collections, queries and indexes, memory, hub load |
 | `observations/transaction-behavior.md` | Concurrency and reads, long transactions, transactions in JavaScript, closing Ditto in JavaScript |
 | `observations/observer-behavior.md` | When observers fire, batching of changes, observers of `system:` collections, release differences, observers and results in JavaScript |
 | `observations/attachment-behavior.md` | Relaying and fetching attachments, slow links, garbage collection of blobs |

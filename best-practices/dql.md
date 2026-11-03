@@ -17,7 +17,7 @@ DQL (Ditto Query Language) is the SQL-like language you use to read, write, and 
 
 There is no `CREATE COLLECTION` or `DROP COLLECTION` statement: a collection exists as soon as a document is written to it, and it cannot be removed. <!-- lint-ignore -->
 
-Keep the number of collections small. In our testing with SDK 5.1.0 and 5.2.0, the first write to a new collection slowed down as collections accumulated (about 20 ms with 1,000 collections), each collection took about 15 to 17 KB of disk, and evicting the documents of a collection removed neither (see [Since SDK 5.1, each new collection makes the first write to a collection slower](../knowledge/observations/documents-and-limits.md#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)). Do not create a collection per user, tenant, or day; partition one collection with part of `_id` (`{"tenant": ..., "orderId": ...}`) or a field instead.
+Keep the number of collections small. In our testing with SDK 5.1.0 and 5.2.0, the first write to a new collection slowed down as collections accumulated (about 20 ms with 1,000 collections), each collection took about 15 to 17 KB of disk, and evicting the documents of a collection removed neither (see [Since SDK 5.1, each new collection makes the first write to a collection slower](../knowledge/observations/performance-measurements.md#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)). Do not create a collection per user, tenant, or day; partition one collection with part of `_id` (`{"tenant": ..., "orderId": ...}`) or a field instead.
 
 ### Where Queries Run
 

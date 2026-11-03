@@ -1,6 +1,6 @@
 # Storage and Deletion
 
-What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT` reach other devices, when tombstones are reaped and what a device with an old copy does after that, what removed data costs in queries, documents, and sync traffic, and how much of it stays on disk. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Soft Delete](../../best-practices/deletion-and-storage.md#soft-delete), [EVICT](../../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Data at Rest](../../best-practices/security.md#data-at-rest).
+What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT` reach other devices, when tombstones are reaped and what a device with an old copy does after that, what removed data costs in documents and sync traffic, and how much of it stays on disk. What deleted, evicted, and flagged documents cost in queries is measured in [Queries and Indexes](performance-measurements.md#queries-and-indexes) on Performance Measurements. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [DELETE and Tombstones](../../best-practices/deletion-and-storage.md#delete-and-tombstones), [Soft Delete](../../best-practices/deletion-and-storage.md#soft-delete), [EVICT](../../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Data at Rest](../../best-practices/security.md#data-at-rest).
 
 **In brief**
 
@@ -9,7 +9,6 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 - On a new store, reaping first runs at a random time within 10 minutes of starting, drawn again at every start, so apps that run for short periods reap rarely. With a preferred hour, a device reaps only if it runs during that hour of its local time ([Reaping at a preferred hour runs at startup or a whole number of hours later, within that hour](#reaping-at-a-preferred-hour-runs-at-startup-or-a-whole-number-of-hours-later-within-that-hour)).
 - A deletion flag sends about 28 bytes per document and `DELETE` about 43 bytes. Evicting documents that a subscription still matches downloads all of them again within seconds ([Deletion flags and DELETE transfer little, and eviction under a subscription refetches](#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)).
 - `EVICT` makes a device forget what it knew: a relay that evicts flagged documents receives the old, unflagged versions back from devices that missed the flag, and a document inserted with an evicted ID merges with the old version that other devices hold ([A relay that evicts flagged documents receives old versions back from devices that missed the flag](#a-relay-that-evicts-flagged-documents-receives-old-versions-back-from-devices-that-missed-the-flag), [Inserting with an evicted document's ID merges with the old version](#inserting-with-an-evicted-documents-id-merges-with-the-old-version)).
-- Tombstones and evicted documents do not slow queries; flagged documents made `COUNT(*)` and filters 15 to 20 times slower unless every document had the flag, it was indexed, and the query used `isDeleted = false`; reads by ID were not affected ([Tombstones and evicted documents do not slow queries, but flagged documents do](#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
 - Every different map key removed with `UNSET` adds about 54 bytes to a new device's first sync, and reaping does not remove these records; adding and removing the same key again and again adds almost nothing ([Removed map keys keep adding to a new device's first sync](#removed-map-keys-keep-adding-to-a-new-devices-first-sync)).
 - Since 5.1, 10,000 writes grew the write-ahead logs of the document store and of the attachment store to about 20 MB each, and on 5.2.0, the on-disk logs kept the lines of about 200,000 writes. On 5.2.0, `system:system_info` keeps old rows of each storage value, so read the newest row by `timestamp` ([Since SDK 5.1, the write-ahead log grows to about 20 MB](#since-sdk-51-the-write-ahead-log-grows-to-about-20-mb), [On SDK 5.2.0, the on-disk logs kept about 200,000 writes](#on-sdk-520-the-on-disk-logs-kept-about-200000-writes), [On SDK 5.2.0, system:system_info keeps old rows of each storage value](#on-sdk-520-systemsystem_info-keeps-old-rows-of-each-storage-value)).
 - Removing data does not shrink the files at once, and most removed values can still be read from them after Ditto closes. By default, SDK 5.2.0 reclaims free space only above 100 MB ([Evicting data does not free disk space at once](#evicting-data-does-not-free-disk-space-at-once), [Most deleted and evicted values remain in the database files](#most-deleted-and-evicted-values-remain-in-the-database-files)).
@@ -142,28 +141,6 @@ On both releases:
 **Not tested:** a `DELETE` before inserting again. How a deletion merges with a later insert of the same ID is a row of the table in [The merge table held on SDK 5.1.0 and 5.2.0](merge-behavior.md#the-merge-table-held-on-sdk-510-and-520).
 
 **Used in:** [EVICT](../../best-practices/deletion-and-storage.md#evict).
-
-## Removed Data in Queries and Documents
-
-### Tombstones and evicted documents do not slow queries, but flagged documents do
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run on both releases showed the same tendency |
-| Setup | Five collections, each with 1,000 live documents: one that only ever held those 1,000; one of 50,000 documents of which 49,000 were deleted with `DELETE`; one of 50,000 of which 49,000 were evicted with `EVICT`; one of 50,000 of which 49,000 were flagged with `isDeleted = true` and excluded with `coalesce(isDeleted, false) = false`; and one in which every document had `isDeleted`, with an index on `isDeleted`, and the 49,000 flagged ones were excluded with `isDeleted = false`. On each, we measured the median of seven runs of `COUNT(*)`, of a filter on a field without an index, and of a read by ID |
-
-| Collection (1,000 live documents each) | `COUNT(*)` | Filter on a field without an index | Read by ID |
-|---|---|---|---|
-| Only 1,000 documents; 49,000 deleted (49,000 tombstones); 49,000 evicted | About 1.4 ms | 2.3 to 3.0 ms | About 1.4 ms |
-| 49,000 flagged, excluded with `coalesce(isDeleted, false) = false` | 41 to 61 ms | 41 to 61 ms | About 1.4 ms |
-| 49,000 flagged, `isDeleted` on every document and indexed, excluded with `isDeleted = false` | About 2.3 ms | 3.7 to 4.0 ms | About 1.4 ms |
-
-- The collections with 49,000 tombstones and with 49,000 evicted documents were as fast as the one that only ever held 1,000 documents.
-- With the flag, `COUNT(*)` and the filter were about 15 to 20 times slower: every query also read the 49,000 flagged documents.
-- With `isDeleted` on every document, an index on it, and `isDeleted = false` as the condition, the queries were back near the speed of the 1,000-document collection.
-- Reads by ID took about 1.4 ms in every collection.
-
-**Used in:** [Indexing soft-delete filters](../../best-practices/deletion-and-storage.md#indexing-soft-delete-filters), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 
 ### Removed map keys keep adding to a new device's first sync
 

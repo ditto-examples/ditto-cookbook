@@ -1,6 +1,6 @@
 # Documents and Limits
 
-What happens at the edges of a document: a merge that pushes a document over the hard size limit, also between SDK releases, how heavy a document becomes when many devices have written it or one device has updated it many times, how deep a document can nest, and what many top-level fields or many collections cost. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), and [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals).
+What happens at the edges of a document: a merge that pushes a document over the hard size limit, also between SDK releases, how heavy a document becomes when many devices have written it or one device has updated it many times, and how deep a document can nest. What many top-level fields or many collections cost is measured in [Many Fields and Many Collections](performance-measurements.md#many-fields-and-many-collections) on Performance Measurements. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits) and [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested).
 
 **In brief**
 
@@ -10,8 +10,6 @@ What happens at the edges of a document: a merge that pushes a document over the
 - A document grows with the number of devices that ever wrote it, also when they all wrote the same field and only one value remains: with 300 writers, the first sync was about 11 times and each later change 6 to 13 times as heavy. One device updating a document 10,000 times did not make it heavier ([A document grows with the number of devices that wrote it](#a-document-grows-with-the-number-of-devices-that-wrote-it), [Repeated updates do not grow a document](#repeated-updates-do-not-grow-a-document)).
 - An argument can nest 125 levels and a literal 97 levels, while `UPDATE` paths can build much deeper documents ([Nesting depth is limited differently for arguments, literals, and paths](#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)).
 - Documents 800 or more levels deep ended a peer's process during sync on 5.1.0 and 5.2.0, and on 5.0.3, every query on a collection that holds a document 30 or more levels deep ends the process ([Very deep documents end a peer's process during sync](#very-deep-documents-end-a-peers-process-during-sync)).
-- An `INSERT` of a document with 50,000 top-level fields took 2.28 to 2.38 seconds; the same fields under one map took 48 to 70 ms ([Fifty thousand top-level fields make an INSERT slow](#fifty-thousand-top-level-fields-make-an-insert-slow)).
-- Since 5.1, the first write to a new collection slows down in proportion to the number of collections, and a collection cannot be removed ([Since SDK 5.1, each new collection makes the first write to a collection slower](#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)).
 
 ## The Hard Size Limit across Devices
 
@@ -172,64 +170,3 @@ Bytes for the first sync and for one change made on the hub:
 - **5.0.3**: a document 30 or more levels deep can be written, but every query on its collection ends the process with `Panic: able to deserialize document: ... recursion limit exceeded`, also a `SELECT` by the ID of another document and `COUNT(*)`. Documents up to 29 levels deep can be read. A 5.0.3 device that received a 40-level document written by a 5.1.0 or 5.2.0 device behaved the same: receiving the document did not end the process, but reading the collection did, also after reopening. `EVICT` by ID failed with `Failed to deserialize TLV into requested type`. `EVICT` without a condition on the collection succeeded, but the device received the document again when it synced, and ended again. Other collections could be read.
 
 **Used in:** [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), [Upgrading from SDK 5.1](../upgrading.md).
-
-## Many Fields and Many Collections
-
-### Fifty thousand top-level fields make an INSERT slow
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs), and three single runs on each release; the results were the same on both releases |
-| Setup | One document with N top-level fields, passed as an argument to `INSERT`. We compared it with the same fields under one map field and with an array of numbers, and measured a read and an `UPDATE` of one field of the largest document |
-
-| Document | `INSERT` time |
-|---|---|
-| 1,000 top-level fields | 6 ms |
-| 10,000 top-level fields | 111 to 123 ms |
-| 50,000 top-level fields | 2.28 to 2.38 s |
-| The same 50,000 fields under one map field | 48 to 70 ms |
-| An array of 100,000 numbers | 11 ms |
-
-- The time grows faster than the number of top-level fields.
-- `object_size` was about 689 KB for both shapes of the 50,000 fields, and the arguments were of the same size, so the difference lies in how the SDK handles top-level fields.
-- With 50,000 top-level fields, a read took about 14 ms, and an `UPDATE` of one field about 17 ms.
-
-**Used in:** none yet.
-
-### Since SDK 5.1, each new collection makes the first write to a collection slower
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, six runs each, and SDK 5.0.3, four runs; while connected to another device, three runs each. How the time changed after reopening: three runs on 5.2.0 and one on 5.1.0 in a separate script. The layout of the database file: one run on each of the three releases |
-| Setup | A store on a single device. We created collections one by one with a first `INSERT` of one document each, and measured each `INSERT`. For comparison, we wrote to existing collections and inserted 1,000 documents into one collection. We also reopened the store, evicted the documents of half of the collections, read `system:collections`, and measured the database file (`ditto_store/db.sql`). In a second test, the device was connected to another device, which subscribed either to nothing or to everything |
-
-On 5.1.0 and 5.2.0:
-
-| Measurement | Result |
-|---|---|
-| First `INSERT` into a new collection, up to the 100th collection | 1.7 to 1.9 ms |
-| First `INSERT` into a new collection, near the 1,000th collection | 17 to 21 ms; creating 1,000 collections took about 11 s (the same in every run) |
-| A write to an existing collection | 1.6 to 1.7 ms |
-| 1,000 documents into one collection | 1.9 to 2.1 ms each |
-| `ditto_store/db.sql` with 1,000 collections of one document each | 14.7 to 17.3 MB (about 15 to 17 KB per collection) |
-| `ditto_store/db.sql` with the same 1,000 documents in one collection | 0.3 to 0.4 MB |
-
-- On 5.1.0 and 5.2.0, the first `INSERT` into a new collection slowed down roughly in proportion to the number of collections that already existed, while writes to existing collections stayed fast.
-- On 5.0.3, the first `INSERT` into a new collection took 2.1 to 2.8 ms regardless of the number of collections, and the file with 1,000 collections was 0.6 MB.
-- After reopening, the first write to a new collection was usually just as slow (17 to 23 ms after 1,000 collections). In 2 of 12 runs of the main test and 2 of 4 runs of the separate script, however, it dropped to 3 to 6 ms right after reopening. Reading the old collections afterwards made it slow again in some runs, and it stayed fast in others; we do not know what decides this.
-- Evicting the documents of half of the collections did not make the next new collection faster (22 to 25 ms after reopening, in a run where it was slow). `DROP COLLECTION` is a syntax error (`expected INDEX`). `system:collections` returned 1,001 collections before the eviction and 1,101 after it (the 100 collections created in between added): collections without documents remained listed. The list includes `__feature_flags`. `system:collections` exists since 5.0.3.
-- While connected to another device, the first write to a new collection was slower. Near the 600th collection:
-
-| Connection | First write to a new collection |
-|---|---|
-| None (a single device) | About 12 ms |
-| Connected; the other device subscribes to nothing | 20.5 to 21.1 ms |
-| Connected; the other device subscribes to everything | 5.2.0: 38 to 43 ms (all three runs); 5.1.0: 37.9 ms in one run, 7 to 8 ms in two runs |
-
-- With the subscription to everything, the last document reached the other device after 76 to 128 ms (5.0.3: 14 to 15 ms).
-- What we saw in the database file: 5.1.0 and 5.2.0 create one SQLite table per collection (`coll_<the name in hexadecimal>`) with three indexes (the primary key, `s`, and `tombstone`). 5.0.3 keeps all collections in one table (`customer`). Four B-trees need at least four pages of 4 KB, which fits the growth of the file. These are internal details of the SDK.
-- We think the time grows because SQLite reads the whole schema again after every schema change.
-
-**Not tested:** why the time of each creation grows with the number of collections (the explanation above is not confirmed).
-
-**Used in:** [DQL Fundamentals](../../best-practices/dql.md#dql-fundamentals).
