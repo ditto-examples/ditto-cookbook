@@ -10,7 +10,7 @@ How long Ditto's statements, queries, and observers took, how many writes a devi
 - An `INSERT` of a document with 50,000 top-level fields took 2.28 to 2.38 seconds; the same fields under one map took 48 to 70 ms ([Fifty thousand top-level fields make an INSERT slow](#fifty-thousand-top-level-fields-make-an-insert-slow)).
 - Since SDK 5.1, the first write to a new collection slows down in proportion to the number of collections, and a collection cannot be removed ([Since SDK 5.1, each new collection makes the first write to a collection slower](#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)).
 - `WHERE _id IN :ids` slows down as the list of IDs grows, and `USE IDS LIST :ids` much less: with 10,000 IDs, a count took 686 to 725 ms against 17 to 21 ms, and writes on 5.2.0 took 693 to 732 ms against 20 to 65 ms, while on 5.1.0, `EVICT` and `DELETE` with `USE IDS LIST` removed nothing ([Long ID lists are faster with USE IDS LIST than with WHERE _id IN](#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in)).
-- A full-collection `COUNT(*)` took 1.7 to 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 11 times faster, 11 conditions of the Index Usage Rules table produced the listed plans, and a query answered from the index alone took about two thirds of the time ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [Eleven conditions of the Index Usage Rules table produced the plans it lists](#eleven-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists), [A query answered from the index alone took about two thirds of the time](#a-query-answered-from-the-index-alone-took-about-two-thirds-of-the-time)); on 5.1.0 and 5.2.0, an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index](#on-sdk-510-and-520-an-index-on-a-field-with-two-values-made-a-query-slower-than-no-index)).
+- A full-collection `COUNT(*)` took 1.7 to 1.8 ms on 20,000 documents, indexes made filtered queries about 3 to 11 times faster, and a query answered from the index alone took about two thirds of the time ([A full COUNT(*) is fast, and indexes made selective queries several times faster](#a-full-count-is-fast-and-indexes-made-selective-queries-several-times-faster), [A query answered from the index alone took about two thirds of the time](#a-query-answered-from-the-index-alone-took-about-two-thirds-of-the-time)); on 5.1.0 and 5.2.0, an index on a field with only two values made a query slower than no index, and a composite index was the fastest ([On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index](#on-sdk-510-and-520-an-index-on-a-field-with-two-values-made-a-query-slower-than-no-index)).
 - Tombstones and evicted documents do not slow queries; flagged documents made `COUNT(*)` and filters 15 to 20 times slower unless every document had the flag, it was indexed, and the query used `isDeleted = false`; reads by ID were not affected ([Tombstones and evicted documents do not slow queries, but flagged documents do](#tombstones-and-evicted-documents-do-not-slow-queries-but-flagged-documents-do)).
 - Query strings built for each value were not slower than constant strings with parameters ([Constant query strings were not faster](#constant-query-strings-were-not-faster)).
 - On 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later after a write than an observer of 50, and opening a large store cost little ([On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50](#on-sdk-510-and-520-an-observer-of-5000-documents-was-called-about-5-to-6-times-later-than-one-of-50), [Opening Ditto took the same time with 1,000 and 200,000 documents](#opening-ditto-took-the-same-time-with-1000-and-200000-documents)).
@@ -206,32 +206,6 @@ Time for `COUNT(*)` (nearly the same on both releases; no value was recorded for
 - The index made the filtered queries 2.7 to 10.8 times faster: the count with `status = 'paid'` 3.2 to 4.8 times, the condition that matches 1% 7.3 to 10.8 times, and `ORDER BY ... LIMIT 50` 2.7 to 4.3 times.
 
 **Used in:** [Counting documents](../../best-practices/indexing-and-performance.md#counting-documents), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
-
-### Eleven conditions of the Index Usage Rules table produced the plans it lists
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each |
-| Setup | One device without sync, 50,000 documents. `COUNT(*)` with each of 11 conditions of the table in [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules); `EXPLAIN` for the plan, and the median time on 5.2.0 |
-
-The 11 conditions produced the plans that the table lists, on both releases. Among them:
-
-| Condition | Plan | Time |
-|---|---|---|
-| `status = 'open'` (5,000 matches) | Index scan | 6 ms |
-| `status IN ['open', 'paid']` | Index scan | 11 ms |
-| The same condition written with `OR` | Index scan | 13 ms |
-| `OR` of two fields | Union scan | 13 ms |
-| `AND` of two fields | Intersect scan | 5 ms |
-| `LIKE 'name-001%'`, and a range | Index scan over a range | 1.5 ms |
-| `LIKE '%001%'`, and `lower(status) = 'open'` | Collection scan | 43 to 45 ms (5.1.0: 62 to 64 ms) |
-| `status != 'open'` (45,000 matches) | Index scan | 41 ms |
-
-- When a condition matches most documents, an index scan is no faster than a collection scan: `status != 'open'` took 41 ms through the index.
-
-**Not tested:** the other conditions of the table, such as `IS MISSING`, `array_contains`, and composite indexes.
-
-**Used in:** [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
 
 ### A query answered from the index alone took about two thirds of the time
 

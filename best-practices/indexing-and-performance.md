@@ -114,7 +114,7 @@ SDK 5.1 uses a new on-disk index format and migrates existing indexes automatica
 
 ## Index Usage Rules
 
-The query planner chooses indexes by rules, not by statistics about your data. `EXPLAIN` shows these plans (11 of the conditions below, tested with SDK 5.1.0 and 5.2.0 on 50,000 documents, produced the listed plans; for example, `status = 'open'` with 5,000 matches took 6 ms through the index, and `LIKE '%001%'` or `lower(status) = 'open'` took 43 to 64 ms as a collection scan; see [Eleven conditions of the Index Usage Rules table produced the plans it lists](../knowledge/observations/performance-measurements.md#eleven-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists)):
+The query planner chooses indexes by rules, not by statistics about your data. `EXPLAIN` shows these plans (11 of the conditions below, tested with SDK 5.1.0 and 5.2.0 on 50,000 documents, produced the listed plans; for example, `status = 'open'` with 5,000 matches took 6 ms through the index, and `LIKE '%001%'` or `lower(status) = 'open'` took 43 to 64 ms as a collection scan; see [Eleven conditions of the Index Usage Rules table produced the plans it lists](../knowledge/observations/dql-behavior.md#eleven-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists)):
 
 | Predicate | Plan | Notes |
 |---|---|---|

@@ -1,6 +1,6 @@
 # DQL Behavior
 
-How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.1.0 and 5.2.0, what statements without `WHERE`, mismatched arguments, user input embedded in a statement, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [UPDATE](../../best-practices/dql.md#update), [Document IDs](../../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
+How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.1.0 and 5.2.0, what statements without `WHERE`, mismatched arguments, user input embedded in a statement, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, which plans the planner chose, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [UPDATE](../../best-practices/dql.md#update), [Document IDs](../../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 **In brief**
 
@@ -13,6 +13,7 @@ How DQL statements behaved when we ran them: which tables and statements of the 
 - The integer `1` and the float `1.0` are equal in `WHERE` but form two groups in `GROUP BY` ([Integers and floats are equal in WHERE but separate in GROUP BY](#integers-and-floats-are-equal-in-where-but-separate-in-group-by)).
 - Document IDs and field names are compared by type and exact code points, without Unicode normalization, and a string ID can have at most 254 bytes. Names are case-sensitive, and most keywords are accepted as bare names ([Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value), [Field names can contain dots and backticks, or be empty](#field-names-can-contain-dots-and-backticks-or-be-empty), [Names are case-sensitive, and most DQL keywords are accepted as bare names](#names-are-case-sensitive-and-most-dql-keywords-are-accepted-as-bare-names)).
 - `EXPLAIN` runs no statement, while `PROFILE` runs it ([EXPLAIN runs no statement, and PROFILE runs it](#explain-runs-no-statement-and-profile-runs-it)).
+- On SDK 5.1.0 and 5.2.0, 11 conditions of the Index Usage Rules table produced the plans that the table lists, and a condition that matched most documents was no faster through an index than a collection scan ([Eleven conditions of the Index Usage Rules table produced the plans it lists](#eleven-conditions-of-the-index-usage-rules-table-produced-the-plans-it-lists)).
 - With strict mode on, queries do not use secondary indexes, while ID lookups and `COUNT(*)` keep their plans and `ADVISE` suggests nothing ([With strict mode on, the planner does not use secondary indexes](#with-strict-mode-on-the-planner-does-not-use-secondary-indexes)).
 - A field written with different type declarations holds two values, and which one a query returns depends on its declaration; the index results did not change ([Mixed type declarations change what a query reads, not the index results](#mixed-type-declarations-change-what-a-query-reads-not-the-index-results)).
 - On SDK 5.1.0, index plans returned wrong results without an error: a composite index with a descending key and an `ORDER BY` on projected fields returned rows in the wrong order, and a comparison with the constant on the left (`1 < a`) returned the wrong rows, as on 5.0.3. An index created on an empty collection broke in the migration by 5.1.0, and 5.2.0 does not repair it ([On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order](#on-sdk-510-composite-indexes-with-a-descending-key-return-rows-in-the-wrong-order), [On SDK 5.1.0, ORDER BY on a projected field was ignored in an index plan](#on-sdk-510-order-by-on-a-projected-field-was-ignored-in-an-index-plan), [Before SDK 5.2.0, a comparison with the constant on the left returned wrong rows through an index](#before-sdk-520-a-comparison-with-the-constant-on-the-left-returned-wrong-rows-through-an-index), [An index created on an empty collection breaks in the 5.1.0 migration](#an-index-created-on-an-empty-collection-breaks-in-the-510-migration)).
@@ -367,6 +368,32 @@ On 5.0.3, the results were the same, with two differences:
 - **`PROFILE`**: `PROFILE SELECT` returned the two result rows followed by one row with `~request_profile`. `PROFILE UPDATE` executed the update and returned one row, the profile. `PROFILE SHOW` did not fail and returned only the result of `SHOW`, without a profile row.
 
 **Used in:** [EXPLAIN and PROFILE](../../best-practices/indexing-and-performance.md#explain-and-profile).
+
+### Eleven conditions of the Index Usage Rules table produced the plans it lists
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, one run each |
+| Setup | One device without sync, 50,000 documents. `COUNT(*)` with each of 11 conditions of the table in [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules); `EXPLAIN` for the plan, and the median time on 5.2.0 |
+
+The 11 conditions produced the plans that the table lists, on both releases. Among them:
+
+| Condition | Plan | Time |
+|---|---|---|
+| `status = 'open'` (5,000 matches) | Index scan | 6 ms |
+| `status IN ['open', 'paid']` | Index scan | 11 ms |
+| The same condition written with `OR` | Index scan | 13 ms |
+| `OR` of two fields | Union scan | 13 ms |
+| `AND` of two fields | Intersect scan | 5 ms |
+| `LIKE 'name-001%'`, and a range | Index scan over a range | 1.5 ms |
+| `LIKE '%001%'`, and `lower(status) = 'open'` | Collection scan | 43 to 45 ms (5.1.0: 62 to 64 ms) |
+| `status != 'open'` (45,000 matches) | Index scan | 41 ms |
+
+- When a condition matches most documents, an index scan is no faster than a collection scan: `status != 'open'` took 41 ms through the index.
+
+**Not tested:** the other conditions of the table, such as `IS MISSING`, `array_contains`, and composite indexes.
+
+**Used in:** [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules).
 
 ### With strict mode on, the planner does not use secondary indexes
 
