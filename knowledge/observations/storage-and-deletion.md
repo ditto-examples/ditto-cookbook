@@ -111,7 +111,7 @@ What happens to data that is removed: how a deletion flag, `DELETE`, and `EVICT`
 
 **Not tested:** the frequency and the time window that trigger the eviction warning.
 
-**Used in:** [EVICT](../../best-practices/deletion-and-storage.md#evict), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Cancelling subscriptions and local data](../../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
+**Used in:** [EVICT](../../best-practices/deletion-and-storage.md#evict), [Eviction frequency](../../best-practices/deletion-and-storage.md#eviction-frequency), [Choosing DELETE, Soft Delete, or EVICT](../../best-practices/deletion-and-storage.md#choosing-delete-soft-delete-or-evict), [Cancelling subscriptions and local data](../../best-practices/sync-and-subscriptions.md#cancelling-subscriptions-and-local-data).
 
 ### A relay that evicts flagged documents receives old versions back from devices that missed the flag
 
