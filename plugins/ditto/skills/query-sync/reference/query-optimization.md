@@ -157,7 +157,7 @@ Create indexes once at startup with `CREATE INDEX IF NOT EXISTS`; indexes persis
 
 - An observer re-runs its query and delivers the full result set on every relevant change. Keep observed queries filtered and bounded (`WHERE` + `ORDER BY` + `LIMIT`).
 - Prefer several narrow observers (one per screen region) over one observer of a whole collection.
-- Use `COUNT(*)` observers for badges; avoid expensive aggregates in observers that fire often.
+- Use `COUNT(*)` observers for badges. An aggregate observer is called on every write to its collection, also when its result stays the same (SDK 5.1.0 and 5.2.0, in testing), so skip the rebuild for an unchanged value and avoid expensive aggregates on collections that are written often.
 - Throttle UI updates for very busy collections, or use `registerObserverV2` (Experimental) with a slow consumer when only the latest state matters.
 - On native platforms `execute` runs on a worker isolate, so a slow query does not block the UI isolate. Leave `Store.experimentalSkipExecuteIsolateOffload` (Experimental) at its default unless you have measured a throughput problem with many very small queries.
 

@@ -181,7 +181,7 @@ Do not port Flutter observer code one-to-one.
 An observer delivers the full result every time. A plain `ListView.builder` with `ValueKey(_id)` does not need `Differ`; use it for `AnimatedList` or for processing only new items.
 
 - `diff()` takes a `List<QueryResultItem>` (`result.items.toList()`); the first call reports every item as inserted.
-- Identity is `_id`, so project `_id` in a diffed query: on SDK 5.2.0 (JavaScript, in testing), rows of a query without `_id` had none, and `Differ` reported a reordering as updates. Values are compared deeply. A value that changed and changed back between two results is not an update.
+- Identity is `_id`, so project `_id` in a diffed query: on SDK 5.2.0 (JavaScript, in testing), rows of a query without `_id` had none, and `Differ` reported a reordering as updates. Values are compared deeply, and only two successive results are compared: a value that changed and changed back is not an update, and moving one item to the top of a list reports a move for every item whose position shifted (JavaScript `Differ`, in testing).
 - `Differ` keeps the previous result and is expensive: bound the query (`LIMIT`) and debounce large or busy results.
 - `Differ` does not return old items; keep previous values or IDs yourself.
 - Only items produced by Ditto are accepted (test doubles throw `ArgumentError`).
