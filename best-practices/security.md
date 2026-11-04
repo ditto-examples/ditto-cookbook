@@ -95,6 +95,7 @@ Your authentication webhook returns the user's permissions together with the aut
 The webhook response must contain these fields (see the [authentication provider documentation](https://docs.ditto.live/sdk/latest/auth-and-authorization/cloud-authentication) for the full schema):
 - `authenticated`
 - when `authenticated` is `true`: `userID`, `expirationSeconds`, and `permissions`
+- `version`: `"1"` when the request contains `"version": "1"`; the authentication provider documentation includes it in its examples and says that a response without it is treated as the legacy format
 - in each of `permissions.read` and `permissions.write`: both `everything` (boolean) and `queriesByCollection`
 
 Use the response format and the permission query syntax shown in Ditto's [data authorization documentation](https://docs.ditto.live/sdk/latest/auth-and-authorization/data-authorization) for the Ditto Server version you use.
@@ -102,6 +103,7 @@ Use the response format and the permission query syntax shown in Ditto's [data a
 ```json
 {
   "authenticated": true,
+  "version": "1",
   "userID": "user-123",
   "expirationSeconds": 28800,
   "permissions": {
@@ -122,7 +124,7 @@ Use the response format and the permission query syntax shown in Ditto's [data a
 }
 ```
 
-Express permission rules as simple comparisons on `_id` fields, as in the example above. Permission queries use Ditto's legacy query syntax, not DQL: compare with `==` (as in `_id.storeId == 'store-1'`), not with the DQL `=`. Note that `"true"` is a query string that matches every document (not a boolean). See the [data authorization documentation](https://docs.ditto.live/sdk/latest/auth-and-authorization/data-authorization) before using more complex rules.
+Express permission rules as simple comparisons on `_id` fields, as in the example above. Permission queries use Ditto's legacy query syntax, not DQL: compare with `==` (as in `_id.storeId == 'store-1'`), not with the DQL `=`. The response schema also has a `qlVersion` field in each permission (`1` for DQL, `0`, the default, for the legacy syntax), but the data authorization documentation says that permissions must use the legacy syntax, so leave it out, as the example does. Note that `"true"` is a query string that matches every document (not a boolean). See the [data authorization documentation](https://docs.ditto.live/sdk/latest/auth-and-authorization/data-authorization) before using more complex rules.
 
 ### Design `_id` for permission scoping
 
@@ -286,7 +288,7 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 **✅ DO:**
 - Use a server connection with a webhook-based authentication provider in production.
 - Fetch fresh tokens from your backend in the expiration handler, and check `AuthResponse.exception`.
-- In webhook responses, return `everything` and `queriesByCollection` for both `read` and `write`, in the format of the data authorization documentation, with the narrowest rules each role needs.
+- In webhook responses, return `version` as the request sends it, and `everything` and `queriesByCollection` for both `read` and `write`, in the format of the authentication provider and data authorization documentation, with the narrowest rules each role needs.
 - Model access-control attributes in `_id`.
 - Reject identities in the webhook before creating a revocation, and keep revocation checking enabled.
 - Always use a `privateKey` in small-peers-only deployments, and provision it securely.

@@ -56,7 +56,7 @@ SELECT 'it\'s' AS a, "double quoted" AS b, `my field` AS c, 0xFF AS d
 FROM orders
 ```
 
-- Ditto's DQL reference reserves keywords such as `COLLECTION`, `ORDER`, `SELECT`, `VALUE`, and `ALL` and says to quote identifiers equal to them. The SDKs enforce it only for some: `SELECT * FROM collection` is a parser error, while `order`, `value`, `count`, and `all` worked as bare collection and field names in our testing with SDK 5.1.0 and 5.2.0. Follow the documented rule. A bare `true`, `false`, or `null` is always the literal value, never a field. Choose non-reserved names, or quote with backticks.
+- Ditto's DQL reference reserves keywords such as `COLLECTION`, `ORDER`, `SELECT`, `VALUE`, and `ALL` and says to quote identifiers equal to them. The SDKs enforce it only for some: `SELECT * FROM collection` is a parser error, while `order`, `select`, `from`, `where`, `value`, and `all` worked as bare collection and field names in our testing with SDK 5.1.0 and 5.2.0. Follow the documented rule. A bare `true`, `false`, or `null` is always the literal value, never a field. Choose non-reserved names, or quote with backticks.
 - Comments: `-- line` and `/* block */`. Comments starting with `/*+` or `--+` are query directives.
 
 ## MISSING and NULL

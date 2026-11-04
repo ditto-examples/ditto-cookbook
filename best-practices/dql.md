@@ -168,14 +168,14 @@ The recommended form is to avoid inline objects entirely and pass the document a
 
 #### Reserved words
 
-Ditto's [DQL identifiers reference](https://docs.ditto.live/dql/ids-paths-strings-keywords) reserves keywords such as `COLLECTION`, `ORDER`, `SELECT`, `VALUE`, and `ALL`, and says that an identifier equal to one of them must be quoted. The SDKs enforce this only for some of them: in our testing, of 32 keywords used as bare collection and field names, only a collection named `collection` failed (`SELECT * FROM collection` is a parser error, `expected identifier`), while `order`, `select`, `value`, `count`, and `all`, among others, were accepted (see [Names are case-sensitive, and most DQL keywords are accepted as bare names](../knowledge/observations/dql-behavior.md#names-are-case-sensitive-and-most-dql-keywords-are-accepted-as-bare-names)). Follow the documented rule rather than what an SDK accepts today. Literals are a different case: a bare `true`, `false`, or `null` is read as the value, never as a field of that name, and the statement runs without an error.
+Ditto's [DQL identifiers reference](https://docs.ditto.live/dql/ids-paths-strings-keywords) reserves keywords such as `COLLECTION`, `ORDER`, `SELECT`, `VALUE`, and `ALL`, and says that an identifier equal to one of them must be quoted. The SDKs enforce this only for some of them: in our testing, of 32 keywords used as bare collection and field names, only a collection named `collection` failed (`SELECT * FROM collection` is a parser error, `expected identifier`), while `order`, `select`, `from`, `where`, `value`, and `all`, among others, were accepted (see [Names are case-sensitive, and most DQL keywords are accepted as bare names](../knowledge/observations/dql-behavior.md#names-are-case-sensitive-and-most-dql-keywords-are-accepted-as-bare-names)). Follow the documented rule rather than what an SDK accepts today. Literals are a different case: a bare `true`, `false`, or `null` is read as the value, never as a field of that name, and the statement runs without an error.
 
 **✅ DO:**
 - Choose collection and field names that are not DQL keywords (`orders`, `tasks`, `createdAt`).
 - Quote an existing reserved name with backticks if you cannot rename it: ``SELECT * FROM `collection` ``.
 - Quote fields named like a literal with backticks (`` `null` ``, `` `true` ``).
 
-The full keyword list is in the [DQL identifiers, paths, strings, and keywords](https://docs.ditto.live/dql/ids-paths-strings-keywords) reference.
+The full keyword list is in the [DQL identifiers, paths, strings, and keywords](https://docs.ditto.live/dql/ids-paths-strings-keywords) reference, which also lists the keywords that are no longer reserved since SDK 5.0, such as `COUNT`, `MAP`, and `REGISTER`.
 
 #### Comments
 

@@ -346,6 +346,7 @@ On 5.0.3, the results were the same, with two differences:
 |---|---|
 | Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
 | Setup | One device without sync. Collection and field names that differ only in case, and 32 DQL keywords used as bare collection names and field names |
+| Documentation | Ditto's DQL identifiers reference says that an identifier equal to a reserved keyword must be quoted. It lists `ORDER`, `SELECT`, `FROM`, `WHERE`, `VALUE`, `ALL`, and `COLLECTION` as reserved, `COUNT` among the keywords that are no longer reserved since 5.0, and `KEY` in neither list |
 
 - Collection names and field names are case-sensitive: `Orders` and `orders` are different collections.
 - Of the 32 keywords used as bare names, only `collection` as a collection name was a syntax error. `order`, `select`, `from`, `where`, `value`, `key`, `count`, and `all` (as a collection name), among others, were accepted.
