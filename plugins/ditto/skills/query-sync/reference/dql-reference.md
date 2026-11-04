@@ -56,7 +56,7 @@ SELECT 'it\'s' AS a, "double quoted" AS b, `my field` AS c, 0xFF AS d
 FROM orders
 ```
 
-- Some DQL keywords cannot be bare identifiers: `SELECT * FROM collection` is a parser error. Most others (`order`, `value`, `key`, `count`) worked as bare collection and field names in our testing with SDK 5.1.0 and 5.2.0. A bare `true`, `false`, or `null` is always the literal value, never a field. Choose non-reserved names, or quote with backticks.
+- Ditto's DQL reference reserves keywords such as `COLLECTION`, `ORDER`, `SELECT`, `VALUE`, and `ALL` and says to quote identifiers equal to them. The SDKs enforce it only for some: `SELECT * FROM collection` is a parser error, while `order`, `value`, `count`, and `all` worked as bare collection and field names in our testing with SDK 5.1.0 and 5.2.0. Follow the documented rule. A bare `true`, `false`, or `null` is always the literal value, never a field. Choose non-reserved names, or quote with backticks.
 - Comments: `-- line` and `/* block */`. Comments starting with `/*+` or `--+` are query directives.
 
 ## MISSING and NULL
@@ -100,7 +100,7 @@ Related behavior:
 | `USE IDS 'a', 'b'` | ✅ Literal IDs, no parentheses |
 | `USE IDS LIST :ids` | ✅ Array parameter |
 | IDs wrapped in parentheses | ❌ Error |
-| `USE IDS :ids` with an array | ❌ Treats the array as one ID; returns nothing |
+| `USE IDS :ids` with an array | ❌ Treats the array as one ID; returns nothing, or fails with `SerializedFormOverLimit` above 256 bytes |
 
 ```sql
 SELECT * FROM orders USE IDS 'order-1', 'order-2'
@@ -239,7 +239,7 @@ Embedding remains the default modeling choice; see `§ Relationships: Embedding,
 - Do not upsert a document that contains a `COUNTER` field: the value restarts the counter and discards increments not yet received, also with `DO UPDATE_LOCAL_DIFF` (`§ Writing documents that contain counters`).
 - `INSERT INTO c INITIAL DOCUMENTS (:doc)` inserts only if no document with that `_id` exists locally (no error otherwise). It cannot be combined with `ON ID CONFLICT`. It does not keep data off the network; subscriptions decide that. Use it to create a document with a counter on each device.
 - `INSERT ... SELECT` (SDK 5.1+): each result row becomes a document; projection aliases become field names; a projected `_id` is used as the document ID. Do not wrap the `SELECT` in parentheses or `DOCUMENTS (...)`. Declare `COUNTER` and `ATTACHMENT` fields on both sides (`INSERT INTO COLLECTION archive (n COUNTER, file ATTACHMENT) SELECT * FROM COLLECTION src (n COUNTER, file ATTACHMENT)`); otherwise counters are copied as plain numbers and attachments as maps that cannot be fetched (SDK 5.1.0 and 5.2.0).
-- Long ID lists: `WHERE _id IN :ids` re-checks each found document against the list, so 10,000 IDs took about 0.7 s against 17 to 65 ms with `USE IDS LIST :ids` (SDK 5.1.0 and 5.2.0, in testing). Above about 1,000 IDs, read with `USE IDS LIST :ids` or split into chunks of 1,000; for `DELETE` and `EVICT` while devices run 5.1.0, split `IN :ids` (`§ USE IDS`).
+- Long ID lists: `WHERE _id IN :ids` re-checks each found document against the list, so 10,000 IDs took about 0.7 s against 17 to 65 ms with `USE IDS LIST :ids` (SDK 5.1.0 and 5.2.0, in testing). Above about 1,000 IDs, read or `UPDATE` with `USE IDS LIST :ids`, or split into chunks of 1,000; for `DELETE` and `EVICT` while devices run 5.1.0, split `IN :ids` (`§ USE IDS`).
 - Integers and floats are equal in `WHERE` but separate values in `GROUP BY` and `DISTINCT` (`1` and `1.0` formed two groups in testing); keep one numeric type per field or group by `cast(n AS float)`.
 - Rows with equal sort keys came back in ascending `_id` order on 5.1+ (also with `DESC`), which is not documented; SDK 5.0 used another order without an index. Always add a tie-breaker, with the same direction as the sort key if ties should reverse.
 - Collections cannot be dropped, and on 5.1+ the first write to a new collection slowed down as collections accumulated (about 20 ms with 1,000) while each took 15 to 17 KB of disk; partition one collection by `_id` or a field instead of creating one per user, tenant, or day (`§ DQL Fundamentals`).
