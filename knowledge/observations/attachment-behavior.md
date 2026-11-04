@@ -110,7 +110,7 @@ Time until a small document reached the other side (median / maximum; the same t
 - Later checks found what decides this: a blob stays while the app holds its JavaScript attachment object and, after the app lets go of it, until JavaScript garbage collection has run (see [Unreferenced blobs are collected after about 10 minutes](#unreferenced-blobs-are-collected-after-about-10-minutes)). The difference between the 12-minute runs probably came from whether JavaScript garbage collection ran by itself in time; we did not record when it ran.
 - **Identical content**: attachments with the same bytes get the same ID, and only one copy is stored on disk. Attaching a file with the same content to another document does not add a blob.
 
-**Used in:** none yet.
+**Used in:** [Attachments Are Immutable](../../best-practices/attachments.md#attachments-are-immutable).
 
 ### Unreferenced blobs are collected after about 10 minutes
 
