@@ -124,7 +124,7 @@ Use the response format and the permission query syntax shown in Ditto's [data a
 }
 ```
 
-Express permission rules as simple comparisons on `_id` fields, as in the example above. Permission queries use Ditto's legacy query syntax, not DQL: compare with `==` (as in `_id.storeId == 'store-1'`), not with the DQL `=`. The response schema also has a `qlVersion` field in each permission (`1` for DQL, `0`, the default, for the legacy syntax), but the data authorization documentation says that permissions must use the legacy syntax, so leave it out, as the example does. Note that `"true"` is a query string that matches every document (not a boolean). See the [data authorization documentation](https://docs.ditto.live/sdk/latest/auth-and-authorization/data-authorization) before using more complex rules.
+Express permission rules as simple comparisons on `_id` fields, as in the example above. Permission queries use Ditto's legacy query syntax, not DQL: compare with `==` (as in `_id.storeId == 'store-1'`), not with the DQL `=`. The response schema also has a `qlVersion` field in `permissions`, next to `read` and `write` (`1` for DQL, `0`, the default, for the legacy syntax), but the data authorization documentation says that permissions must use the legacy syntax, so leave it out, as the example does. Note that `"true"` is a query string that matches every document (not a boolean). See the [data authorization documentation](https://docs.ditto.live/sdk/latest/auth-and-authorization/data-authorization) before using more complex rules.
 
 ### Design `_id` for permission scoping
 
