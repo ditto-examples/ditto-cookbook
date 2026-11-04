@@ -28,7 +28,7 @@ Future<void> configureDittoLogging() async {
 - Use `LogLevel.verbose` only for short, targeted investigations.
 
 **❌ DON'T:**
-- Leave `LogLevel.verbose` enabled in production. It multiplies the log output: in our testing, 2,000 writes produced about 83,000 log lines at verbose, against 154 at info, while the write rate itself did not change (see [Exported logs include debug lines regardless of the console level](../knowledge/observations/configuration-and-diagnostics.md#exported-logs-include-debug-lines-regardless-of-the-console-level)).
+- Leave `LogLevel.verbose` enabled in production. It multiplies the log output: in our testing on SDK 5.2.0, 2,000 writes produced about 83,000 log lines at verbose, against 154 at info, while the write rate itself did not change (see [Exported logs include debug lines regardless of the console level](../knowledge/observations/configuration-and-diagnostics.md#exported-logs-include-debug-lines-regardless-of-the-console-level)).
 - Set `DittoLogger` properties before `Ditto.init()` (or `Ditto.open`) has completed; they throw.
 
 ### Log levels
