@@ -7,13 +7,14 @@ Ditto documentation and resources, grouped by topic.
 - [What's new in Ditto SDK v5](https://docs.ditto.live/sdk/latest/v5-whats-new)
 - [Glossary](https://docs.ditto.live/home/glossary)
 - [FAQ](https://docs.ditto.live/home/faq)
+- [Ditto SDK 5.2 announcement (blog)](https://www.ditto.com/blog/ditto-sdk-v5-2)
 - [Ditto SDK 5.1 announcement (blog)](https://www.ditto.com/blog/ditto-sdk-v5-1)
-- [Ditto SDK release notes](https://docs.ditto.live/release-notes)
+- [Ditto SDK release notes](https://docs.ditto.live/release-notes) (every SDK, with a platform filter)
 
 **Flutter SDK**
 - [Flutter install guide](https://docs.ditto.live/sdk/latest/install-guides/flutter)
 - [Flutter quickstart](https://docs.ditto.live/sdk/latest/quickstarts/flutter)
-- [Flutter release notes](https://docs.ditto.live/sdk/latest/release-notes/flutter)
+- [Flutter release notes up to 5.1.0](https://docs.ditto.live/sdk/latest/release-notes/flutter)
 - [`ditto_live` on pub.dev](https://pub.dev/packages/ditto_live)
 - [`ditto_live` API reference](https://pub.dev/documentation/ditto_live/latest/)
 

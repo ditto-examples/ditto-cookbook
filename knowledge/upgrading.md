@@ -17,7 +17,7 @@ Review these changes when you upgrade:
 - **Data Streams**: if you set `NGN_SYNC_ENABLED`, also set `NGN_DATA_STREAMS_ENABLED`; otherwise `ditto.sync.start()` now fails with a configuration error.
 - **New features** that this guide describes: [support bundles](../best-practices/logging-and-observability.md#support-bundles-sdk-52), `system:sync_degradations` and new metrics ([System Virtual Collections](system-reference.md#system-virtual-collections)), WAL values in [Monitoring Storage](../best-practices/deletion-and-storage.md#monitoring-storage), `ditto.store.observers` ([Resource Cleanup and Shutdown](../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown)), `logout(cleanup:)` ([Authentication](../best-practices/setup-and-lifecycle.md#authentication)), and encryption at rest for Swift and Kotlin ([Data at Rest](../best-practices/security.md#data-at-rest)).
 
-See the [release notes](https://docs.ditto.live/sdk/latest/release-notes/flutter) for the complete list.
+See the [release notes](https://docs.ditto.live/release-notes) for the complete list; their platform filter shows the changes of each SDK.
 
 ## Known Issues in SDK 5.1.0
 

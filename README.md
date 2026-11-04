@@ -51,7 +51,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents also follow [AGENTS.md](AG
 ## Resources
 
 - [Ditto documentation](https://docs.ditto.live)
-- [Ditto support](https://support.ditto.live/)
+- [Ditto support](https://support.ditto.com/)
 - [Issues](https://github.com/ditto-examples/ditto-cookbook/issues)
 
 ## License
