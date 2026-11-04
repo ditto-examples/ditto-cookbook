@@ -36,6 +36,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Unquoted keys in inline DQL object literals (rejected in `INSERT`, silently `{}` in `SELECT`) → [Quote every key in inline object literals](dql.md#quote-every-key-in-inline-object-literals)
 - [ ] A `JOIN` whose inner collection has no index (or `_id` lookup) for the join key (the query fails) → [Index requirement](dql.md#index-requirement)
 - [ ] `ditto.store.execute` inside a transaction callback (throws in Flutter, can deadlock on other platforms), or a read-write transaction nested inside another (deadlock) → [Transaction Rules](transactions.md#transaction-rules)
+- [ ] A transaction callback that returns before every `tx.execute` has completed, for example with a missing `await` or `forEach(async ...)` (the statement is not applied, and the transaction commits without an error) → [Transaction Rules](transactions.md#transaction-rules)
 - [ ] A second `Ditto.open()` on a persistence directory that is already open (in Flutter 5.1.0, may never complete) → [One instance per persistence directory](setup-and-lifecycle.md#one-instance-per-persistence-directory)
 - [ ] `ditto.close()` on `AppLifecycleState.paused`, when the app moves to the background (every later call on that instance throws `DittoClosedException`) → [Starting and Stopping Sync](setup-and-lifecycle.md#starting-and-stopping-sync)
 - [ ] A `TransportConfig()` built from scratch and assigned (every transport, including peer-to-peer, is disabled; use `updateTransportConfig()`) → [Transport Configuration](setup-and-lifecycle.md#transport-configuration)
@@ -68,7 +69,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Writes to the observed collection from inside its own observer without a guard (each write triggers the observer again) → [Keep observer callbacks fast](observers.md#keep-observer-callbacks-fast)
 - [ ] One observer of a whole collection that rebuilds the entire screen → [Partial UI Updates](observers.md#partial-ui-updates)
 - [ ] Observers on `system:data_sync_info` in many widgets, or long-lived observers on `system:system_info` (it fires often, even when nothing changed) → [Monitoring Sync Status](sync-and-subscriptions.md#monitoring-sync-status), [System Virtual Collections](../knowledge/system-reference.md#system-virtual-collections)
-- [ ] Waiting on the `commitID` of a statement that changed nothing (`mutatedDocumentIDs()` is empty; confirmation takes up to about 30 s), or `sync_session_status` used as a live connection indicator (it lags about 73 s) → [Monitoring Sync Status](sync-and-subscriptions.md#monitoring-sync-status)
+- [ ] Waiting on the `commitID` of a statement that changed nothing (`mutatedDocumentIDs()` is empty; confirmation takes up to about 27 s), or `sync_session_status` used as a live connection indicator (it lags about 73 s) → [Monitoring Sync Status](sync-and-subscriptions.md#monitoring-sync-status)
 - [ ] `LogLevel.verbose` in production → [Log levels](logging-and-observability.md#log-levels)
 
 ## Medium (maintainability)

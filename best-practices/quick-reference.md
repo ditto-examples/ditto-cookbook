@@ -32,7 +32,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 - ✅ In Flutter, register observers without `onChange`, consume `changes`, and cancel both in `dispose()`.
 
 **Writes, deletion, and storage** ([Transactions](transactions.md), [Deletion and Storage Management](deletion-and-storage.md))
-- ✅ Keep transactions short, use only `tx.execute`, and give them a `hint`.
+- ✅ Keep transactions short, use only `tx.execute` and await each call before the callback returns, and give them a `hint`.
 - ✅ Track a `commitID` for upload progress only when `mutatedDocumentIDs()` is not empty; use presence for live connection status.
 - ✅ Prefer soft delete for shared records, keep soft-deleted documents in the subscriptions of devices that relay data, and target deletions with `WHERE _id IN :ids`.
 - ✅ Cancel or narrow subscriptions before `EVICT`, and evict at most about once per day.
