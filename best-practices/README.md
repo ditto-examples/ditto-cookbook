@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 5.0
+> **Version**: 5.1
 > **Last Updated**: 2026-11-07
 > **Applies to**: Ditto SDK 5.2.0 for Flutter (`ditto_live`), JavaScript (`@dittolive/ditto`), Kotlin (`com.ditto:ditto-kotlin`), and Swift (`DittoSwift`). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -78,7 +78,7 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 | [Logging and Observability](logging-and-observability.md) | The logger of each SDK, log levels, on-disk logs, support bundles, remote diagnostics |
 | [Security](security.md) | Security model, production authentication, small-peers-only deployments, permissions, certificate revocation, incoming connections, input validation, data at rest, webhooks, the security checklist |
 | [Testing Strategies](testing.md) | What a local-store test helper does, tests for merge-sensitive writes, deletion, observers, subscriptions, and DQL, tests on several devices |
-| [Anti-Pattern Checklist](anti-patterns.md) | A review list ranked by severity |
+| [Anti-Pattern Checklist](anti-patterns.md) | A review list ranked by severity: mistakes possible in every SDK, then those specific to Flutter, JavaScript, Kotlin, or Swift |
 | [Quick Reference](quick-reference.md) | A condensed DO list, where to look when something goes wrong, and common code shapes |
 
 The SDK pages have the same sections: installing the SDK, opening Ditto and `DittoConfig`, authentication, sync and the app lifecycle, closing, executing DQL and value types, subscriptions, store observers (lifecycle, backpressure, diffing, partial UI updates), transactions, attachments, IDs and timestamps, transports and presence, logging, testing, and the behavior specific to the SDK.

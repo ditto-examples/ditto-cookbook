@@ -1,6 +1,6 @@
 # Anti-Pattern Checklist
 
-Use this list in code reviews. Each item links to the section that explains the problem and the recommended pattern. To start from a symptom instead of the code, see [When Data Does Not Sync](sync-and-subscriptions.md#when-data-does-not-sync) and [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing).
+Use this list in code reviews. Each item links to the section that explains the problem and the recommended pattern. The first three sections apply to every SDK; [Specific to One SDK](#specific-to-one-sdk) lists the mistakes that only one SDK's API allows, so review both for the SDK of the app. To start from a symptom instead of the code, see [When Data Does Not Sync](sync-and-subscriptions.md#when-data-does-not-sync) and [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing).
 
 ## Critical (data loss, wrong results, crashes, security)
 
@@ -40,17 +40,16 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] A `JOIN` whose inner collection has no index (or `_id` lookup) for the join key (the query fails) → [Index requirement](dql.md#index-requirement)
 - [ ] `ditto.store.execute` inside a transaction callback (what happens differs by SDK, and none makes it work), or a read-write transaction nested inside another (deadlock) → [Transaction Rules](transactions.md#transaction-rules)
 - [ ] A transaction callback that returns before every `tx.execute` has completed, for example with a missing `await` or `forEach(async ...)` (the statement is not applied, and the transaction commits without an error) → [Transaction Rules](transactions.md#transaction-rules)
-- [ ] A second open of a persistence directory that is already open (in Flutter 5.1.0, it may never complete) → [One instance per persistence directory](setup-and-lifecycle.md#one-instance-per-persistence-directory)
-- [ ] `ditto.close()` on `AppLifecycleState.paused`, when the app moves to the background (every later call on that instance throws `DittoClosedException`) → [Starting and Stopping Sync](setup-and-lifecycle.md#starting-and-stopping-sync)
+- [ ] Many writes started in parallel, such as a coroutine or `Task` per document, while a read-write transaction can be open (each waiting write holds a thread; when the threads run out, the transaction cannot resume and the app stops) → [Transaction Rules](transactions.md#transaction-rules)
+- [ ] A second open of a persistence directory that is already open (it fails after about a second; in Flutter 5.1.0, it may never complete) → [One instance per persistence directory](setup-and-lifecycle.md#one-instance-per-persistence-directory)
+- [ ] Closing Ditto when the app moves to the background (closing is final: every later call on that instance fails) → [Starting and Stopping Sync](setup-and-lifecycle.md#starting-and-stopping-sync)
 - [ ] A `TransportConfig()` built from scratch and assigned (every transport, including peer-to-peer, is disabled; use `updateTransportConfig()`) → [Transport Configuration](setup-and-lifecycle.md#transport-configuration)
 - [ ] A hub that more than six devices connect to over TCP without raising `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` before `ditto.sync.start()` (the extra devices get no data and no error) → [Transport Configuration](setup-and-lifecycle.md#transport-configuration)
-- [ ] Reading `queryArguments` or `queryArgumentsJsonString` from elements of `ditto.sync.subscriptions` for subscriptions registered without arguments (ends a Flutter app on SDK 5.1.0 and 5.2.0) → [Sync stop, close, and inspection](sync-and-subscriptions.md#sync-stop-close-and-inspection), [Subscriptions in Flutter](platforms/flutter.md#subscriptions-in-flutter)
 - [ ] Access control that relies on mutable fields, `syncGroup`, sync scopes, or client-side checks → [Permissions](security.md#permissions), [Sync Scopes](sync-and-subscriptions.md#sync-scopes)
 
 ## High (sync cost, memory, performance)
 
-- [ ] Subscriptions or observers that are never cancelled, or are registered in `build()` → [Subscription Lifecycle](sync-and-subscriptions.md#subscription-lifecycle), [Observer Lifecycle](observers.md#observer-lifecycle)
-- [ ] Flutter observers registered with `onChange` while the `changes` stream is never listened to, or `registerObserverV2` observers whose `changes` stream is not listened to right after registration (memory grows with every update) → [Store Observers in Flutter](platforms/flutter.md#store-observers-in-flutter)
+- [ ] Subscriptions or observers that are never cancelled, whose handles are dropped (garbage collection does not stop them), or that are registered in code that runs on every render or rebuild, such as a Flutter `build()` or a React component body → [Subscription Lifecycle](sync-and-subscriptions.md#subscription-lifecycle), [Observer Lifecycle](observers.md#observer-lifecycle)
 - [ ] Unfiltered subscriptions on large collections on every device → [Scope subscriptions to what the device needs](sync-and-subscriptions.md#scope-subscriptions-to-what-the-device-needs)
 - [ ] Re-registering subscriptions when the user changes a filter, search term, or sort order, or changing subscriptions more often than about every 15 minutes → [Filter locally instead of re-registering](sync-and-subscriptions.md#filter-locally-instead-of-re-registering), [Subscription Lifecycle](sync-and-subscriptions.md#subscription-lifecycle)
 - [ ] Projections, aggregates, `DISTINCT`, `GROUP BY`, `JOIN`, or `USE IDS` in subscriptions (rejected), or disabling `DQL_RESTRICT_SUBSCRIPTIONS` to use `LIMIT` and `ORDER BY` (stateful subscriptions; `LIMIT` bounds only the initial download) → [Subscription Rules](sync-and-subscriptions.md#subscription-rules)
@@ -63,15 +62,17 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Fetching every attachment as soon as its document syncs → [Fetching Attachments](attachments.md#fetching-attachments)
 - [ ] `ON ID CONFLICT DO UPDATE` for periodic re-upserts of unchanged data, or `UPDATE` statements that write values already stored → [ON ID CONFLICT](dql.md#on-id-conflict)
 - [ ] Long transactions, or network calls, dialogs, and timers inside a transaction → [Transaction Rules](transactions.md#transaction-rules), [Concurrency and Duration](transactions.md#concurrency-and-duration)
-- [ ] Closing Ditto without awaiting pending queries and transactions (Flutter does not wait for them, and closing while a transaction is open stops its isolate), or, where a write must reach another device, without waiting until it is confirmed; on Flutter 5.2.0, closing and reopening Ditto in one process → [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Changes in SDK 5.2.0](../knowledge/upgrading.md#changes-in-sdk-520)
+- [ ] Closing Ditto (in Swift, releasing its last strong reference) without awaiting pending queries and transactions, or, where a write must reach another device, without waiting until it is confirmed → [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown)
 - [ ] Missing indexes on the filter and sort fields of hot queries → [Index Usage Rules](indexing-and-performance.md#index-usage-rules)
 - [ ] `USE INDEX ''` on a large inner collection to silence the JOIN index error (every outer row scans the whole inner collection) → [Performance tips](dql.md#performance-tips)
 - [ ] Functions applied to indexed fields in `WHERE` (for example `lower(name) = :name`), or `OR` branches without indexes → [Index Usage Rules](indexing-and-performance.md#index-usage-rules)
 - [ ] Storing `QueryResult` or `QueryResultItem` objects in state or caches → [Materialize values, then let the result go](dql.md#materialize-values-then-let-the-result-go)
 - [ ] Slow or asynchronous work inside a `registerObserver` listener → [Keep observer callbacks fast](observers.md#keep-observer-callbacks-fast)
+- [ ] Observer callbacks that let an error escape, or that call `signalNext()` only when the work succeeds (depending on the SDK, the observer stops delivering updates without a trace, or the process ends) → [Observer Lifecycle](observers.md#observer-lifecycle), [Backpressure (SDK 5.1+)](observers.md#backpressure-sdk-51)
 - [ ] Writes to the observed collection from inside its own observer without a guard (each write triggers the observer again) → [Keep observer callbacks fast](observers.md#keep-observer-callbacks-fast)
 - [ ] One observer of a whole collection that rebuilds the entire screen → [Partial UI Updates](observers.md#partial-ui-updates)
 - [ ] Observers on `system:data_sync_info` in many UI components, or long-lived observers on `system:system_info` (it fires often, even when nothing changed) → [Monitoring Sync Status](sync-and-subscriptions.md#monitoring-sync-status), [System Virtual Collections](../knowledge/system-reference.md#system-virtual-collections)
+- [ ] Reads of `system:data_sync_info` without a deadline (on a connected device, a read can stop responding in JavaScript, in Swift, and in Kotlin 5.1.0, and later reads of it then hang as well) → [Monitoring Sync Status](sync-and-subscriptions.md#monitoring-sync-status)
 - [ ] Waiting on the `commitID` of a statement that changed nothing (`mutatedDocumentIDs()` is empty; confirmation takes up to about 27 s), or `sync_session_status` used as a live connection indicator (it lags about 73 s) → [Monitoring Sync Status](sync-and-subscriptions.md#monitoring-sync-status)
 - [ ] `LogLevel.verbose` in production → [Log levels](logging-and-observability.md#log-levels)
 
@@ -89,3 +90,52 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] `CREATE INDEX` on demand before a query, or `ADVISE AND PROVISION` in production code → [Creating Indexes](indexing-and-performance.md#creating-indexes), [ADVISE (SDK 5.1+)](indexing-and-performance.md#advise-sdk-51)
 - [ ] Transactions without a `hint` → [Transaction Rules](transactions.md#transaction-rules)
 - [ ] No tests for the app's DQL statements, soft-delete filters, and observer cleanup → [Testing Strategies](testing.md)
+
+## Specific to One SDK
+
+Each SDK also allows mistakes that the others do not. The items below are ranked by severity within each SDK; the *Behavior Specific to the SDK* section at the end of each SDK page lists the behavior behind them.
+
+### In Flutter apps
+
+- [ ] **Critical**: `ditto.close()` on `AppLifecycleState.paused` (every later call on that instance throws `DittoClosedException`) → [Sync and the App Lifecycle in Flutter](platforms/flutter.md#sync-and-the-app-lifecycle-in-flutter)
+- [ ] **Critical**: `ditto.close()` while a transaction, also a read-only one, is open (it stops the isolate, and the UI stops responding) → [Closing Ditto in Flutter](platforms/flutter.md#closing-ditto-in-flutter)
+- [ ] **Critical**: Reading `queryArguments`, `queryArgumentsJsonString`, or `queryArgumentsCborBytes` from elements of `ditto.sync.subscriptions` for subscriptions registered without arguments (ends the app on SDK 5.1.0 and 5.2.0) → [Sync stop, close, and inspection](sync-and-subscriptions.md#sync-stop-close-and-inspection), [Subscriptions in Flutter](platforms/flutter.md#subscriptions-in-flutter)
+- [ ] **High**: Observers registered with `onChange` while the `changes` stream is never listened to, or `registerObserverV2` observers whose `changes` stream is not listened to right after registration (memory grows with every update) → [Store Observers in Flutter](platforms/flutter.md#store-observers-in-flutter)
+- [ ] **High**: A `Timer`, `Future.delayed`, observer listener, or other work started inside a transaction callback that calls `ditto.store.execute` later (it throws `Transaction is no longer valid`, also after the commit) → [Transactions in Flutter](platforms/flutter.md#transactions-in-flutter)
+- [ ] **High**: `DateTime` values passed as arguments (stored with microseconds, or with a local offset, instead of the app's fixed-precision UTC format), `BigInt` values of 2^63 or more (they come back as a `double` or as bytes), or `double.nan` and `double.infinity` (the write fails) → [Arguments and value types in Flutter](platforms/flutter.md#arguments-and-value-types-in-flutter)
+- [ ] **High**: On SDK 5.2.0, closing and reopening Ditto in one process, or dropping the `SyncSubscription` and `Transaction` objects of a closed instance (the next `Ditto.open()` or `close()` can stop) → [Subscriptions in Flutter](platforms/flutter.md#subscriptions-in-flutter), [Changes in SDK 5.2.0](../knowledge/upgrading.md#changes-in-sdk-520)
+- [ ] **Medium**: `await for` over the `changes` of a `registerObserver` observer for slow work (it processes every queued result; use `registerObserverV2`) → [Backpressure in Flutter](platforms/flutter.md#backpressure-in-flutter)
+- [ ] **Medium**: `DittoLogger.customLogCallback` set only once (`close()` resets it to `null` for the whole process) → [Logging in Flutter](platforms/flutter.md#logging-in-flutter)
+- [ ] **Medium**: `Ditto.version` compared as a string (it includes a platform prefix and a build hash) → [Behavior Specific to the Flutter SDK](platforms/flutter.md#behavior-specific-to-the-flutter-sdk)
+
+### In JavaScript apps
+
+- [ ] **Critical**: `Date`, `Set`, function, or `Symbol` values in arguments (stored as `{}`, and the value is lost) → [Arguments and value types in JavaScript](platforms/javascript.md#arguments-and-value-types-in-javascript)
+- [ ] **Critical**: An `async` observer handler that can reject (the SDK does not handle the promise, and the unhandled rejection ends a Node.js process by default) → [Store Observers in JavaScript](platforms/javascript.md#store-observers-in-javascript)
+- [ ] **High**: An `async` handler passed to `registerObserver` for slow work (calls overlap, and an older result can finish last, so the screen shows an older state) → [Backpressure in JavaScript](platforms/javascript.md#backpressure-in-javascript)
+- [ ] **High**: A `registerObserverWithSignalNext` handler that does not call `signalNext` on every path, including errors (the observer stops delivering updates) → [Backpressure in JavaScript](platforms/javascript.md#backpressure-in-javascript)
+- [ ] **High**: A React `useEffect` that registers an observer, a subscription, or an attachment fetch and returns no cleanup, a registration in a component body outside its effects, or `Ditto.open()` in a component → [Observer lifecycle in JavaScript](platforms/javascript.md#observer-lifecycle-in-javascript), [Store Observers in JavaScript](platforms/javascript.md#store-observers-in-javascript), [One shared instance in JavaScript](platforms/javascript.md#one-shared-instance-in-javascript)
+- [ ] **Medium**: An expiration handler that never reads the `error` of the result of `ditto.auth.login()` (`login()` does not throw when the token is rejected or the server is unreachable) → [Authentication in JavaScript](platforms/javascript.md#authentication-in-javascript)
+- [ ] **Medium**: An `async` cleanup passed to `ditto.auth.logout(cleanup)` that must finish before the next step (`logout()` does not await it) → [Authentication in JavaScript](platforms/javascript.md#authentication-in-javascript)
+- [ ] **Medium**: `setAllPeerToPeerEnabled(true)` on Node.js on macOS (the transport configuration becomes invalid; use `setAvailablePeerToPeerEnabled(true)`) → [Transports and Presence in JavaScript](platforms/javascript.md#transports-and-presence-in-javascript)
+- [ ] **Medium**: `result.mutatedDocumentIDs()` (it does not exist in JavaScript; use `mutatedDocumentIDsV2()`) → [Query results in JavaScript](platforms/javascript.md#query-results-in-javascript)
+- [ ] **Medium**: `isStopped` of the observers that `presence.observe()`, `auth.observeStatus()`, or `observeTransportConditions()` return, used as their state (it is `true` while the observer is active) → [Closing Ditto in JavaScript](platforms/javascript.md#closing-ditto-in-javascript)
+
+### In Kotlin apps
+
+- [ ] **Critical**: A `DittoQueryResult` or its items returned from an `execute` handler, or read after the handler has returned (the result is closed, and reading it throws `IllegalStateException`) → [Query results in Kotlin](platforms/kotlin.md#query-results-in-kotlin)
+- [ ] **Critical**: Typed accessors such as `.string` or `.double` on fields that can be missing or `null` (they throw `DittoException.FatalException`), or `doubleOrNull` for decimal numbers (it returns `null` for a value such as `7.5`, which comes back as a `FloatValue`) → [Query results in Kotlin](platforms/kotlin.md#query-results-in-kotlin)
+- [ ] **Critical**: `login()` inside the expiration handler without `try` (`login()` throws `DittoException.AuthenticationException` when the token is rejected or the server is unreachable, and a handler that throws is only logged, so the failure goes unreported) → [Authentication in Kotlin](platforms/kotlin.md#authentication-in-kotlin)
+- [ ] **High**: Slow or blocking work in observer handlers while `DittoFactory.create` has the default scope (the handlers run on the main thread and freeze the UI) → [Opening Ditto in Kotlin](platforms/kotlin.md#opening-ditto-in-kotlin), [Store Observers in Kotlin](platforms/kotlin.md#store-observers-in-kotlin)
+- [ ] **High**: A `registerObserver` handler that can throw, for example through `!!`, `require`, or `error()` (the observer is closed, the exception is only logged, and the screen stops updating) → [Observer lifecycle in Kotlin](platforms/kotlin.md#observer-lifecycle-in-kotlin)
+- [ ] **High**: `store.execute` called on the main thread (it blocks the calling thread while the query runs and while it waits for a write transaction) → [Executing DQL in Kotlin](platforms/kotlin.md#executing-dql-in-kotlin)
+- [ ] **High**: `java.util.Date`, `Instant`, `UUID`, `BigDecimal`, or `BigInteger` values in arguments (`IllegalArgumentException`; pass strings), or `NaN` and infinity (the write fails) → [Arguments and value types in Kotlin](platforms/kotlin.md#arguments-and-value-types-in-kotlin)
+
+### In Swift apps
+
+- [ ] **Critical**: No strong reference to the `Ditto` instance for as long as the app uses it, for example only `ditto.store` or `ditto.sync` kept, which reference it weakly (the instance shuts down at once; later calls throw `useAfterCloseError` or end the process with a `Fatal error`) → [Opening Ditto in Swift](platforms/swift.md#opening-ditto-in-swift), [Closing Ditto in Swift](platforms/swift.md#closing-ditto-in-swift)
+- [ ] **Critical**: `as? Double` on numbers read from `item.value` (it is `nil` for a value that a 32-bit float holds exactly, such as `12.5`; use `as? NSNumber` or `JSONDecoder`) → [Query results in Swift](platforms/swift.md#query-results-in-swift)
+- [ ] **High**: `Date`, `Decimal`, or `URL` values in arguments (stored as objects of their fields instead of a time, a number, or a string), or `"\(Date())"` and `Date().description` as timestamps (a space instead of `T`, no fractional seconds, and `+0000` instead of `Z`) → [Arguments and value types in Swift](platforms/swift.md#arguments-and-value-types-in-swift), [IDs and Timestamps in Swift](platforms/swift.md#ids-and-timestamps-in-swift)
+- [ ] **High**: Slow work in a `handler:` that runs on `.main`, the default of `deliverOn` (it delays both the updates and the UI), or a `Task` started in the handler for every update (the tasks overlap, and an older result can finish last) → [Backpressure in Swift](platforms/swift.md#backpressure-in-swift)
+- [ ] **Medium**: `UUID().uuidString` as a document ID without `lowercased()` (Swift's UUIDs are uppercase, most other platforms' lowercase) → [IDs and Timestamps in Swift](platforms/swift.md#ids-and-timestamps-in-swift)
+- [ ] **Medium**: `Ditto.openSync` on the main thread (it blocks the thread until the store is open) → [Opening Ditto in Swift](platforms/swift.md#opening-ditto-in-swift)

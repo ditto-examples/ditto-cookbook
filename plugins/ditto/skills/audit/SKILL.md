@@ -10,7 +10,7 @@ A repeatable review of an app that uses the Ditto SDK in Flutter, JavaScript, Ko
 ## Before You Apply
 
 - Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). The rules target 5.2.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks behavior observed on 5.1.0 and not yet repeated on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
-- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`): its *Behavior Specific to the <SDK> SDK* section lists what only that SDK does, and the topic skills' `examples/<sdk>/` show the correct code.
+- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`): its *Behavior Specific to the <SDK> SDK* section lists what only that SDK does, `§ Specific to One SDK` in the guide's Anti-Pattern Checklist lists the mistakes to look for in that SDK, and the topic skills' `examples/<sdk>/` show the correct code.
 - `§ <Heading>` cites a section of the full guide: Grep the heading text in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`.
 - Review only; do not change code unless the user asks for fixes.
 
@@ -62,10 +62,10 @@ The scanner cannot see design and lifecycle problems. Check each area that the a
 | Security | No development token or keyless small-peers mode in production; no hardcoded keys; permissions in the webhook based on immutable `_id` fields; nothing sensitive in peer metadata; users signed out of shared devices as in `§ Switching users on a shared device` | `sdk-setup` |
 | Indexes and queries | Indexes created at startup for hot filters, sorts, and JOIN keys; no mixed `ASC`/`DESC` composite keys while devices run 5.1.0; no functions on indexed fields; `ORDER BY` with a tie-breaker where order matters | `performance-observability` |
 | Tests | Local-store tests for DQL statements, soft-delete filters, observer cleanup, and subscription registration | `testing` |
-| SDK-specific behavior | The items of *Behavior Specific to the <SDK> SDK* on the SDK page (for example, Flutter `onChange` with an unconsumed `changes` stream, `async` observer handlers in JavaScript) | `guide` |
+| SDK-specific behavior | The items for the app's SDK in `§ Specific to One SDK` (for example, Flutter `onChange` with an unconsumed `changes` stream, `async` observer handlers in JavaScript, Kotlin results read after their handler returns, a Swift `Ditto` instance without a strong reference), and *Behavior Specific to the <SDK> SDK* on the SDK page | `guide` |
 | SDK version | Where devices still run 5.1.0: `USE IDS` in `DELETE`/`EVICT`, mixed-direction composite indexes (including ones from `ADVISE`), `ANY ... SATISFIES` on several properties, sorted index queries with projections, constants on the left of comparisons; values that Kotlin, Java, Swift, or C# stored incorrectly before 5.2 (`§ Known Issues in SDK 5.1.0`) | `guide` |
 
-The complete severity-ranked list is the guide's `§ Anti-Pattern Checklist`; the security-specific list is `§ Security Checklist`.
+The complete severity-ranked list is the guide's `§ Anti-Pattern Checklist`, with the mistakes of each SDK in `§ Specific to One SDK`; the security-specific list is `§ Security Checklist`.
 
 ### Step 6: Report
 

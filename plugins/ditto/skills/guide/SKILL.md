@@ -36,7 +36,7 @@ Best practices, in `reference/best-practices/`:
 | `logging-and-observability.md` | Logging, support bundles, remote diagnostics |
 | `security.md` | Authentication in production, small-peers-only keys, permissions, revocation, incoming connections, data at rest (encryption on Swift and Kotlin), webhooks, security checklist |
 | `testing.md` | What a local-store test helper does; merge, deletion, observer, subscription, and DQL tests as statements and expected results; multi-peer tests |
-| `anti-patterns.md` | Severity-ranked review list (Critical, High, Medium) |
+| `anti-patterns.md` | Severity-ranked review list (Critical, High, Medium), with a list per SDK |
 | `quick-reference.md` | Condensed DO list, where to look when something goes wrong, common DQL shapes and the SDK sections with code |
 | `platforms/flutter.md`, `platforms/javascript.md`, `platforms/kotlin.md`, `platforms/swift.md` | One page per SDK, with the same sections: installing, opening and `DittoConfig`, one shared instance, app startup, authentication, switching users, sync and the app lifecycle, closing, executing DQL, argument and value types, query results, subscriptions, store observers (lifecycle, backpressure, diffing, partial UI updates), transactions, attachments, IDs and timestamps, transports and presence, logging, testing, and the behavior specific to the SDK |
 
