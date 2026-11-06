@@ -1,6 +1,6 @@
 # Logging and Observability
 
-Ditto provides three complementary sources of diagnostic information: SDK logs, local system virtual collections that describe the state of the device and the query engine, and remote diagnostics through the Ditto Portal. The collections and the system parameters are listed in [System Collections and Parameters](../knowledge/system-reference.md).
+**Set the log level explicitly (`warning` in production) after `Ditto.init()` and before `Ditto.open()`, forward warnings and errors with `customLogCallback` (set it again before every open), and give support a way to export the on-disk logs or a support bundle.** Ditto provides three complementary sources of diagnostic information: SDK logs, local system virtual collections that describe the state of the device and the query engine, and remote diagnostics through the Ditto Portal. The collections and the system parameters are listed in [System Collections and Parameters](../knowledge/system-reference.md).
 
 ## Logging
 
