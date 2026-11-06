@@ -1,6 +1,6 @@
 # Security
 
-Ditto syncs data directly between devices, so security decisions apply to every peer in the mesh, not only to a server. This page covers authentication, authorization, transport and storage protection, and input handling.
+Ditto syncs data directly between devices, so security decisions apply to every peer in the mesh, not only to a server. This page covers authentication, authorization, transport and storage protection, and input handling. For a release or security review, start with the [Security Checklist](#security-checklist) at the end of the page; each item links to the section that explains it.
 
 ## Security Model Overview
 
@@ -88,7 +88,7 @@ Future<Ditto> openUnprotectedSmallPeer() {
 
 ## Permissions
 
-Your authentication webhook returns the user's permissions together with the authentication result. Permissions are expressed per collection as lists of queries for `read` and `write`.
+**Return the narrowest `read` and `write` rules that each role needs, as simple comparisons on `_id` fields in the legacy query syntax (`==`), and give peers that must relay data to each other write permission for it.** Your authentication webhook returns the user's permissions together with the authentication result. Permissions are expressed per collection as lists of queries for `read` and `write`.
 
 ### Webhook response
 
@@ -187,7 +187,7 @@ See the [revocations documentation](https://docs.ditto.live/cloud/revocations) f
 
 ## Controlling Incoming Connections
 
-You can decide per connection whether to accept a peer, for example based on the signed `identityServiceMetadata`. The handler must return `allow` or `deny`. A handler that does not respond within about 10 seconds denies the connection, so keep it fast.
+**Use a connection request handler only as an additional filter on top of permissions: decide quickly, and catch errors so that you deny at once instead of after the timeout.** You can decide per connection whether to accept a peer, for example based on the signed `identityServiceMetadata`. The handler must return `allow` or `deny`. A handler that does not respond within about 10 seconds denies the connection, so keep it fast.
 
 In our testing with SDK 5.1.0 and 5.2.0, the handler behaved as follows (see [A denied peer retries at the retry interval](../knowledge/observations/connections-and-presence.md#a-denied-peer-retries-at-the-retry-interval)):
 - **Both directions:** the handler runs not only for incoming connections but also for connections that this device initiates, and `deny` blocks those too.
@@ -214,7 +214,7 @@ void restrictConnectionsToStore(Ditto ditto, String storeId) {
 }
 ```
 
-Permissions remain the primary access control; a connection handler is an additional filter. `global.syncGroup` in the transport configuration is an optimization, not a security boundary.
+`global.syncGroup` in the transport configuration is an optimization, not a security boundary.
 
 ## Input Validation and Query Parameters
 
@@ -254,7 +254,7 @@ Future<void> findOrdersByName(Ditto ditto, String name) async {
 
 ## Data at Rest
 
-Since SDK 5.2, the **Swift and Kotlin** SDKs can encrypt the local store, including attachments, with a 32-byte key that your app generates and passes in `DittoConfig.encryptionKey` on every open. Ditto does not store or manage the key: keep it outside the persistence directory, in the Keychain or the Android Keystore. Ditto does not convert an existing store in place, so switching between encrypted and unencrypted storage means deleting the local store (`Ditto.deleteStore` or `DittoFactory.deleteStore`) and syncing it again. The **Flutter**, JavaScript, and other SDKs do not encrypt the local database at rest, and have no API to enable it; see the [encryption at rest documentation](https://docs.ditto.live/sdk/latest/sync/encryption-at-rest).
+**On Swift and Kotlin (SDK 5.2+), encrypt the local store with `DittoConfig.encryptionKey`; on Flutter and the other SDKs, rely on OS protection and encrypt sensitive values in your app.** Since SDK 5.2, the **Swift and Kotlin** SDKs can encrypt the local store, including attachments, with a 32-byte key that your app generates and passes in `DittoConfig.encryptionKey` on every open. Ditto does not store or manage the key: keep it outside the persistence directory, in the Keychain or the Android Keystore. Ditto does not convert an existing store in place, so switching between encrypted and unencrypted storage means deleting the local store (`Ditto.deleteStore` or `DittoFactory.deleteStore`) and syncing it again. The **Flutter**, JavaScript, and other SDKs do not encrypt the local database at rest, and have no API to enable it; see the [encryption at rest documentation](https://docs.ditto.live/sdk/latest/sync/encryption-at-rest).
 
 Every SDK reports a typed error when a store cannot be opened for an encryption reason (in Flutter, a `DittoEncryptionException` whose `reason` is `keyRequired`, `keyUnexpected`, `keyInvalid`, `unsupportedScheme`, or `metadataCorrupt`). In Flutter, `DittoConfigExperimental.passphrase` remains only for compatibility: `Ditto.open()` rejects any value other than `null`.
 
@@ -268,7 +268,7 @@ The rest of this section applies wherever Ditto does not encrypt the store.
 **❌ DON'T:**
 - Assume that apps installed from a public app store run on devices with encryption enabled; your app cannot enforce it.
 - Store secrets such as tokens or keys in Ditto documents.
-- Rely on `DELETE` or `EVICT` to remove values from the device. **Note (SDK 5.1.0 and 5.2.0):** in our testing, most deleted and evicted values could still be read from the store's database files after Ditto was closed, and they probably remain until the space is reused or reclaimed (see [Most deleted and evicted values remain in the database files](../knowledge/observations/storage-and-deletion.md#most-deleted-and-evicted-values-remain-in-the-database-files)). To remove data from a device for sure, for example when a user logs out of a shared device, close Ditto and delete the persistence directory (`deleteStore` in Swift and Kotlin), or encrypt the values in your app.
+- Rely on `DELETE` or `EVICT` to remove values from the device. **Note (SDK 5.1.0 and 5.2.0):** in our testing, most deleted and evicted values could still be read from the store's database files after Ditto was closed, and they probably remain until the space is reused or reclaimed (see [Most deleted and evicted values remain in the database files](../knowledge/observations/storage-and-deletion.md#most-deleted-and-evicted-values-remain-in-the-database-files)). To remove data from a device for sure, for example when a user logs out of a shared device (see [Switching users on a shared device](setup-and-lifecycle.md#switching-users-on-a-shared-device)), close Ditto and delete the persistence directory (`deleteStore` in Swift and Kotlin), or encrypt the values in your app.
 
 In Flutter Web apps, data is kept in memory only and is not written to disk.
 
@@ -291,6 +291,7 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 - In webhook responses, return `version` as the request sends it, and `everything` and `queriesByCollection` for both `read` and `write`, in the format of the authentication provider and data authorization documentation, with the narrowest rules each role needs.
 - Model access-control attributes in `_id`.
 - Reject identities in the webhook before creating a revocation, and keep revocation checking enabled.
+- On devices that several people share, sign users out as described in [Switching users on a shared device](setup-and-lifecycle.md#switching-users-on-a-shared-device).
 - Always use a `privateKey` in small-peers-only deployments, and provision it securely.
 - Decide which devices accept connections from other devices. A device that only sets `connect.tcpServers` also listens on all interfaces; bind `listen.tcp` to `127.0.0.1` where it must not (see [Transport Configuration](setup-and-lifecycle.md#transport-configuration) and [A device that only connects over TCP also listens for TCP connections](../knowledge/observations/connections-and-presence.md#a-device-that-only-connects-over-tcp-also-listens-for-tcp-connections)).
 - Validate input and pass all values as DQL parameters.

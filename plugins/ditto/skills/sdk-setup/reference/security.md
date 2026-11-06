@@ -336,6 +336,7 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 - In webhook responses, return `version` as the request sends it, and `everything` and `queriesByCollection` for both `read` and `write`, in the format of the authentication provider and data authorization documentation, with the narrowest rules each role needs.
 - Model access-control attributes in `_id`.
 - Reject identities in the webhook before creating a revocation, and keep revocation checking enabled.
+- On devices that several people share, sign users out as in [startup-and-lifecycle.md](startup-and-lifecycle.md#authentication) (`§ Switching users on a shared device`).
 - Always use a `privateKey` in small-peers-only deployments, and provision it securely.
 - Validate input and pass all values as DQL parameters.
 - Protect sensitive data at rest: with `DittoConfig.encryptionKey` on Swift and Kotlin (SDK 5.2+), and elsewhere with OS protections and application-level encryption.
