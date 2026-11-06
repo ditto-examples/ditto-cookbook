@@ -1,6 +1,6 @@
 # Observer Behavior
 
-How store observers behave on one device: when an observer is called, how changes are batched into callbacks, how often observers of `system:` collections fire, how observers differ between SDK releases, and how observers and query results behave in JavaScript. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Observing Changes](../../best-practices/observers.md), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Platform Differences](../platform-differences.md).
+How store observers behave on one device: when an observer is called, how changes are batched into callbacks, how often observers of `system:` collections fire, and how observers differ between SDK releases. How each SDK's observer API calls your code is on the page of that SDK: [Flutter](flutter-sdk.md), [JavaScript](javascript-sdk.md), [Kotlin](kotlin-sdk.md), or [Swift](swift-sdk.md). How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Observing Changes](../../best-practices/observers.md), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Platform Differences](../platform-differences.md).
 
 **In brief**
 
@@ -10,9 +10,7 @@ How store observers behave on one device: when an observer is called, how change
 - An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)).
 - On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stopped every callback in our tests, a threshold that may differ by device ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
 - On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection](#on-sdk-510-and-520-an-observer-did-not-re-run-its-query-after-writes-to-another-collection)).
-- In JavaScript, async observer callbacks are not awaited and can finish out of order, exceptions in callbacks are discarded, and garbage collection stops neither observers nor subscriptions ([In JavaScript, registerObserver does not await async callbacks](#in-javascript-registerobserver-does-not-await-async-callbacks), [In JavaScript, exceptions in observer callbacks are discarded](#in-javascript-exceptions-in-observer-callbacks-are-discarded), [In JavaScript, garbage-collected subscriptions and observers keep running](#in-javascript-garbage-collected-subscriptions-and-observers-keep-running)).
-- In JavaScript, query results return the same objects on every read, so changes to them stay in the object but never reach the store, and `store.observers` lists other objects than the ones that the registration returned ([In JavaScript, query results return the same objects](#in-javascript-query-results-return-the-same-objects), [In JavaScript, store.observers exists since 5.0 and lists other objects](#in-javascript-storeobservers-exists-since-50-and-lists-other-objects)).
-- The JavaScript `Differ` reports every item whose position shifted as a move, not only the item that was moved ([The JavaScript Differ reports every shifted item as a move](#the-javascript-differ-reports-every-shifted-item-as-a-move)).
+- What each SDK's observer API does with slow or failing callbacks, result objects, dropped references, and its differ is on the SDK pages: [Flutter SDK Behavior](flutter-sdk.md), [JavaScript SDK Behavior](javascript-sdk.md), [Kotlin SDK Behavior](kotlin-sdk.md), and [Swift SDK Behavior](swift-sdk.md).
 
 ## When Observers Are Called
 
@@ -79,7 +77,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - Since 5.1, the changes within about 30 ms are combined into one callback.
 - With `registerObserverWithSignalNext`, no callback arrived during the 5 writes until `signalNext()` was called; then one callback delivered the latest result (5 documents). This was the same on all three releases.
 
-**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire), [registerObserverWithSignalNext (Experimental)](../../best-practices/observers.md#registerobserverwithsignalnext-experimental).
+**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire), [Backpressure in Flutter](../../best-practices/platforms/flutter.md#backpressure-in-flutter).
 
 ### A device receives nearly every value of a fast-changing field
 
@@ -236,88 +234,4 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** Flutter and mobile devices. The threshold may differ from device to device, for example with the number of threads.
 
-**Used in:** [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510), [Partial UI Updates](../../best-practices/observers.md#partial-ui-updates).
-
-## Observers and Results in JavaScript
-
-### In JavaScript, registerObserver does not await async callbacks
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
-| Setup | Five documents were inserted 60 ms apart. The observer's callback took 600 ms on its second call and 10 ms on the others, and when it finished, it wrote the number of documents in its result to the app's state |
-
-- With an async function passed to `registerObserver`, the callback was called 6 times, and two calls ran at the same time. The slow second call (1 document) finished last, so the final state was 1 document, while the store held 5. If no newer result arrives after that, the screen keeps showing the old state.
-- With `registerObserverWithSignalNext`, calling `signalNext()` after the work, the callback was called only 3 times (the intermediate results were skipped), one call at a time, and the final state was 5 documents.
-
-**Used in:** [Keep observer callbacks fast](../../best-practices/observers.md#keep-observer-callbacks-fast), [Backpressure on other platforms](../../best-practices/observers.md#backpressure-on-other-platforms), [Platform Differences](../platform-differences.md).
-
-### In JavaScript, exceptions in observer callbacks are discarded
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; the results were the same on all three releases |
-| Setup | An observer whose callback threw on every call, while the process listened for `uncaughtException` and `unhandledRejection`. We also passed an `UPDATE` statement to `registerObserver`, timed the first callback, and closed Ditto with an observer active |
-
-- A callback that threw on every call kept being called (4 times out of 4), and `isCancelled` stayed `false`. Nothing reached `uncaughtException` or `unhandledRejection`: the exceptions are silently discarded.
-- `registerObserver` with an `UPDATE` statement throws at once: `Unsupported feature: non-SELECT statement in store observer`.
-- The first callback arrives asynchronously, about 1 ms after the registration; it is not called inside the registration call.
-- After `ditto.close()`, the observer's `isCancelled` is `true`, and the callbacks stop.
-
-**Used in:** [Platform Differences](../platform-differences.md).
-
-### In JavaScript, query results return the same objects
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
-| Setup | We read `items`, `items[0]`, and `item.value` of one `QueryResult` several times, changed `item.value`, and read results after `ditto.close()` |
-
-- `result.items` returns the same array every time, `result.items[0]` the same object, and `item.value` the same object: a value is kept once it has been created.
-- After `item.value.n = 99`, later reads of `item.value.n` also return 99. The value in the store does not change (it stays 1).
-- After `ditto.close()`, the `value` and `jsonString()` of results that had not been read yet could still be read.
-
-**Used in:** [Materialize values, then let the result go](../../best-practices/dql.md#materialize-values-then-let-the-result-go), [Platform Differences](../platform-differences.md).
-
-### In JavaScript, store.observers exists since 5.0 and lists other objects
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
-| Setup | We registered two observers with `registerObserver` and one with `registerObserverWithSignalNext`, cancelled one, and closed Ditto, and read `ditto.store.observers` after each step |
-| Documentation | The JavaScript SDK's type definitions list `store.observers`, next to `store.attachmentFetchers`, on 5.0.3 as well |
-
-- `store.observers` also works on 5.0.3.
-- With two observers from `registerObserver`, it returned 2; with one from `registerObserverWithSignalNext` added, 3. However, `observers.includes(withSignal)` was `false`: the list holds other objects than the ones that the registration returned.
-- After `cancel()` on one observer, the list had one fewer. `close()` set `isCancelled` to `true` on the remaining observers, and reading `store.observers` after `close()` threw `Can't perform operation using a Ditto instance that has been closed.`
-
-**Used in:** [Platform Differences](../platform-differences.md).
-
-### The JavaScript Differ reports every shifted item as a move
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, one run each, with the JavaScript `Differ` |
-| Setup | An observer of three items whose results we passed to one `Differ`. We moved one item to the top of the list, changed a value and changed it back, and looked at the first `diff()` |
-
-- Moving the third item to the top reported three moves (`2→0`, `0→1`, `1→2`) and one update for the moved item: every item whose position shifted is a move, not just the one that was moved.
-- A value that changed and changed back between two results was not reported as an update.
-- The first `diff()` reported every item as an insertion.
-- On 5.2.0, rows of a query that did not project `_id` have no `_id`, so `Differ` cannot tell the items apart (see [On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)).
-
-**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results).
-
-### In JavaScript, garbage-collected subscriptions and observers keep running
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result |
-| Setup | A device registered a subscription and a store observer without keeping a reference to either. After their JavaScript objects had been garbage-collected (checked with a `WeakRef` to each), we checked whether new documents still arrived and whether the observer was still called, then cancelled both through `ditto.sync.subscriptions` and `ditto.store.observers` |
-
-- The JavaScript objects of the subscription and the observer were garbage-collected (each `WeakRef` was empty). Ditto kept both running: `ditto.sync.subscriptions` and `ditto.store.observers` each returned one entry, new documents arrived, and the observer was called.
-- `cancel()` on the objects from these lists stopped both: the lists were empty, no new documents arrived, and the observer was not called. The lists return other objects than the ones that the registration returned (see [In JavaScript, store.observers exists since 5.0 and lists other objects](#in-javascript-storeobservers-exists-since-50-and-lists-other-objects)), but they can be used to cancel.
-- Garbage collection stops neither subscriptions nor observers. Once the reference is gone, the only ways to stop them are these lists and `close()`.
-
-**Not tested:** Dart.
-
-**Used in:** [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
+**Used in:** [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510), [Observer Lifecycle](../../best-practices/observers.md#observer-lifecycle).

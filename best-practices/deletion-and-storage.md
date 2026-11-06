@@ -44,19 +44,11 @@ What happens when a document is deleted:
 - Use `DELETE` for data that is updated concurrently on other devices (see [Husk documents](#husk-documents)).
 - Use `DELETE` to free space on one device; it removes the data for every peer. Use [EVICT](#evict) instead.
 
-```dart
-// ✅ GOOD: Delete several documents by ID and capture what was removed (SDK 5.1+).
-Future<List<Map<String, dynamic>>> deleteOrders(
-  Ditto ditto,
-  List<String> orderIds,
-) async {
-  final result = await ditto.store.execute(
-    'DELETE FROM orders WHERE _id IN :ids RETURNING _id, status, total',
-    arguments: {'ids': orderIds},
-  );
-  // With RETURNING, each item holds the document as it was before deletion.
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Delete several documents by ID and capture what was removed (SDK 5.1+).
+-- With RETURNING, each row holds the document as it was before deletion.
+-- Arguments: {"ids": ["order-1", "order-2"]}
+DELETE FROM orders WHERE _id IN :ids RETURNING _id, status, total
 ```
 
 ```sql
@@ -77,7 +69,7 @@ DELETE FROM orders USE IDS LIST :ids
 DELETE FROM orders WHERE status = 'cancelled' AND createdAt < :cutoff RETURNING COUNT(*) AS removed
 ```
 
-`mutatedDocumentIDs()` is still populated when `RETURNING` is used, but include `_id` in the `RETURNING` projection when you need the IDs. See [RETURNING (SDK 5.1+)](dql.md#returning-sdk-51) for the full syntax.
+The mutated document IDs of the result are still populated when `RETURNING` is used, but include `_id` in the `RETURNING` projection when you need the IDs. See [RETURNING (SDK 5.1+)](dql.md#returning-sdk-51) for the full syntax.
 
 ### Tombstone TTL and reaping
 
@@ -102,19 +94,18 @@ Consequences for your design:
 - **Very short TTLs can make deletions fail to propagate**, because the tombstone may expire before it reaches the other peers. (`TOMBSTONE_TTL_HOURS` accepts values from 1 hour; `ALTER SYSTEM` rejects 0.)
 - **Never configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) to exceed the Ditto Server TTL.** The Ditto Server always syncs documents, so a Small Peer tombstone that outlives the Ditto Server's own tombstone is sent back to the server repeatedly, which wastes resources. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
 
-If devices can legitimately stay offline longer than 7 days, you can raise `TOMBSTONE_TTL_HOURS` (staying at or below the Ditto Server TTL), or prefer a soft delete for that data. System parameters are not persisted, so set the value on every open, in `DittoConfig.systemParameters` (SDK 5.2+) or with `ALTER SYSTEM` (see [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters)):
+If devices can legitimately stay offline longer than 7 days, you can raise `TOMBSTONE_TTL_HOURS` (staying at or below the Ditto Server TTL), or prefer a soft delete for that data. System parameters are not persisted, so set the value on every open, in the system parameters of `DittoConfig` (SDK 5.2+) or with `ALTER SYSTEM` (see [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters)):
 
-```dart
-// Example: keep tombstones for 14 days on this device (must not exceed the
-// Ditto Server TTL).
-const config = DittoConfig(
-  databaseID: 'YOUR_DATABASE_ID',
-  connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
-  systemParameters: {'TOMBSTONE_TTL_HOURS': 336},
-);
+```sql
+-- Example: keep tombstones for 14 days on this device (must not exceed the
+-- Ditto Server TTL). Pass the same value in the system parameters of
+-- DittoConfig on every open (SDK 5.2+), or run this after each open.
+ALTER SYSTEM SET TOMBSTONE_TTL_HOURS = 336
 ```
 
-Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. **Contact Ditto support before relying on them, and choose an hour during which the app runs**: a point-of-sale app that is closed at night and keeps the default hour 0 would never remove its tombstones. Ditto reads both parameters only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in `DittoConfig.systemParameters` (see [DITTO_ environment variables set system parameters at startup](../knowledge/observations/configuration-and-diagnostics.md#ditto_-environment-variables-set-system-parameters-at-startup)). `REAPER_PREFERRED_HOUR` is an hour of the device's **local** time (0 to 23; 0 by default), and a device reaps only when it runs during that hour: in our testing with SDK 5.1.0 and 5.2.0, it checked at startup and then every hour after it had started, not at the start of that hour (see [Reaping at a preferred hour runs at startup or a whole number of hours later, within that hour](../knowledge/observations/storage-and-deletion.md#reaping-at-a-preferred-hour-runs-at-startup-or-a-whole-number-of-hours-later-within-that-hour)). WASM-based platforms (JavaScript Web and Flutter Web) do not support these parameters.
+The code for passing system parameters when Ditto opens: [Flutter](platforms/flutter.md#dittoconfig-in-flutter) · [JavaScript](platforms/javascript.md#dittoconfig-in-javascript) · [Kotlin](platforms/kotlin.md#dittoconfig-in-kotlin) · [Swift](platforms/swift.md#dittoconfig-in-swift).
+
+Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. **Contact Ditto support before relying on them, and choose an hour during which the app runs**: a point-of-sale app that is closed at night and keeps the default hour 0 would never remove its tombstones. Ditto reads both parameters only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in the system parameters of `DittoConfig` (see [DITTO_ environment variables set system parameters at startup](../knowledge/observations/configuration-and-diagnostics.md#ditto_-environment-variables-set-system-parameters-at-startup)). `REAPER_PREFERRED_HOUR` is an hour of the device's **local** time (0 to 23; 0 by default), and a device reaps only when it runs during that hour: in our testing with SDK 5.1.0 and 5.2.0, it checked at startup and then every hour after it had started, not at the start of that hour (see [Reaping at a preferred hour runs at startup or a whole number of hours later, within that hour](../knowledge/observations/storage-and-deletion.md#reaping-at-a-preferred-hour-runs-at-startup-or-a-whole-number-of-hours-later-within-that-hour)). WASM-based platforms (JavaScript Web and Flutter Web) do not support these parameters.
 
 ### Husk documents
 
@@ -181,36 +172,21 @@ The trade-off is that soft-deleted documents still occupy storage and must be fi
 - Filter with `isDeleted != true` or `NOT isDeleted`; both silently exclude documents where `isDeleted` is missing or `null`.
 - Exclude soft-deleted documents from every subscription when devices sync through other Small Peers. A device that subscribes only to active documents cannot relay the flag for documents it did not already hold, and a cleanup `DELETE` does not reach it.
 
-```dart
-// ✅ GOOD: Soft delete, restore, and query helpers for an orders collection.
-Future<void> softDeleteOrder(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    'UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id',
-    arguments: {
-      'id': orderId,
-      // utcTimestamp() is defined in the Timestamps section; deletedAt is
-      // compared with cleanup cutoffs, so it needs the fixed-precision helper.
-      'deletedAt': utcTimestamp(),
-    },
-  );
-}
+```sql
+-- ✅ GOOD: Soft delete. deletedAt is compared with cleanup cutoffs, so it comes
+-- from the fixed-precision timestamp helper (see Timestamps in Data Modeling).
+-- Arguments: {"id": "order-1", "deletedAt": "2026-01-15T10:30:00.000Z"}
+UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id
 
-Future<void> restoreOrder(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    'UPDATE orders SET isDeleted = false UNSET deletedAt WHERE _id = :id',
-    arguments: {'id': orderId},
-  );
-}
+-- ✅ GOOD: Restore
+-- Arguments: {"id": "order-1"}
+UPDATE orders SET isDeleted = false UNSET deletedAt WHERE _id = :id
 
-Future<List<Map<String, dynamic>>> activeOrders(Ditto ditto, String status) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders '
-    'WHERE status = :status AND coalesce(isDeleted, false) = false '
-    'ORDER BY createdAt DESC',
-    arguments: {'status': status},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- ✅ GOOD: Active documents only
+-- Arguments: {"status": "open"}
+SELECT * FROM orders
+WHERE status = :status AND coalesce(isDeleted, false) = false
+ORDER BY createdAt DESC
 ```
 
 ```sql
@@ -282,25 +258,18 @@ Therefore, keep soft-deleted documents in the subscriptions of the devices that 
 
 **Variant A:** subscribe to the whole collection (here, one store's partition of it) and filter locally.
 
-```dart
-// ✅ GOOD (Variant A): The subscription (owned by a long-lived service such as
-// OrderSync) includes soft-deleted orders; local queries hide them.
-SyncSubscription subscribeToStoreOrders(Ditto ditto, String storeId) {
-  return ditto.sync.registerSubscription(
-    'SELECT * FROM orders WHERE storeId = :storeId',
-    arguments: {'storeId': storeId},
-  );
-}
+```sql
+-- ✅ GOOD (Variant A): The subscription (owned by a long-lived service) includes
+-- soft-deleted orders
+-- Arguments: {"storeId": "store-1"}
+SELECT * FROM orders WHERE storeId = :storeId
 
-StoreObserver observeActiveOrders(Ditto ditto, String storeId) {
-  // coalesce() treats a missing or null isDeleted field as false.
-  return ditto.store.registerObserver(
-    'SELECT * FROM orders '
-    'WHERE storeId = :storeId AND coalesce(isDeleted, false) = false '
-    'ORDER BY createdAt DESC',
-    arguments: {'storeId': storeId},
-  );
-}
+-- Local queries and observers hide them; coalesce() treats a missing or null
+-- isDeleted field as false
+-- Arguments: {"storeId": "store-1"}
+SELECT * FROM orders
+WHERE storeId = :storeId AND coalesce(isDeleted, false) = false
+ORDER BY createdAt DESC
 ```
 
 Cleanup then runs on the Ditto Server (for example through its HTTP API) once the retention period has passed and flagged documents are no longer edited (see [Husk documents](#husk-documents)):
@@ -311,57 +280,25 @@ DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000
 
 **Variant B:** subscribe to active documents plus documents deleted within the retention window, and evict exactly the complement.
 
-```dart
-// ✅ GOOD (Variant B): A long-lived service keeps active orders and orders
-// deleted within the retention window, and evicts older deleted orders.
-class OrderSoftDeleteRetention {
-  OrderSoftDeleteRetention(this.ditto, this.storeId);
+A long-lived service registers the subscription once at startup, before sync starts, with a cutoff that lies the retention period (longer than the longest time a device is expected to stay offline) in the past. On a schedule, at most about once a day, it computes a new cutoff with the same fixed-precision timestamp helper as `deletedAt` and then:
 
-  final Ditto ditto;
-  final String storeId;
+1. Cancels the subscription, so that peers stop sending the documents that are about to be evicted.
+2. Evicts only the documents outside the new subscription.
+3. Registers the subscription again with the new cutoff, even if the eviction failed.
 
-  /// Longer than the longest time a device is expected to stay offline.
-  static const retention = Duration(days: 30);
-  SyncSubscription? _subscription;
+```sql
+-- ✅ GOOD (Variant B), step 2: evict soft-deleted orders older than the cutoff
+-- Arguments: {"storeId": "store-1", "cutoff": "2025-12-16T10:30:00.000Z"}
+EVICT FROM orders
+WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff
 
-  // Same fixed-precision format as deletedAt (utcTimestamp() from "Timestamps").
-  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
-
-  /// Call once at startup (before ditto.sync.start()).
-  void start() {
-    _subscription = _subscribe(_cutoff());
-  }
-
-  /// Call on a schedule, at most about once a day.
-  Future<void> evictExpired() async {
-    final cutoff = _cutoff();
-
-    // 1. Stop asking peers for the documents that are about to be evicted.
-    _subscription?.cancel();
-
-    try {
-      // 2. Evict only documents outside the new subscription.
-      await ditto.store.execute(
-        'EVICT FROM orders '
-        'WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff',
-        arguments: {'storeId': storeId, 'cutoff': cutoff},
-      );
-    } finally {
-      // 3. Subscribe again with the moved boundary, even if the eviction failed.
-      _subscription = _subscribe(cutoff);
-    }
-  }
-
-  SyncSubscription _subscribe(String cutoff) =>
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orders WHERE storeId = :storeId '
-        'AND (coalesce(isDeleted, false) = false OR deletedAt >= :cutoff)',
-        arguments: {'storeId': storeId, 'cutoff': cutoff},
-      );
-
-  void dispose() => _subscription?.cancel();
-}
+-- Steps 1 and 3: the subscription, registered again with the same cutoff
+-- Arguments: {"storeId": "store-1", "cutoff": "2025-12-16T10:30:00.000Z"}
+SELECT * FROM orders WHERE storeId = :storeId
+AND (coalesce(isDeleted, false) = false OR deletedAt >= :cutoff)
 ```
+
+The code for such a retention service: [Flutter](platforms/flutter.md#subscriptions-in-flutter) · [JavaScript](platforms/javascript.md#subscriptions-in-javascript) · [Kotlin](platforms/kotlin.md#subscriptions-in-kotlin) · [Swift](platforms/swift.md#subscriptions-in-swift).
 
 **Why:** In Variant B, the eviction condition (`isDeleted = true AND deletedAt < :cutoff`) never matches a document that the new subscription covers, so evicted documents do not sync back. If an evicted document is restored later, it matches the subscription again and syncs back in its latest state. A flagged document without `deletedAt` matches neither condition, so it is never evicted and stays on the device as a frozen copy; set both fields in the same `UPDATE`. In Variant A, every soft-deleted document stays inside the subscription, so devices cannot evict them; the `DELETE` removes them everywhere instead. Because the cutoff is part of the Variant B subscription, move it only when you run cleanup, not on every screen change (see [Subscription Lifecycle](sync-and-subscriptions.md#subscription-lifecycle)).
 
@@ -393,75 +330,38 @@ What eviction does and does not do:
 - Evict frequently (for example on every screen change).
 - Use `EVICT ... USE IDS ...` without a `WHERE` clause while any device runs SDK 5.1.0, where it removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)); use `WHERE _id IN :ids`.
 
-```dart
-// ❌ BAD: The new subscription matches the evicted documents again,
-// so connected peers sync them straight back.
-Future<SyncSubscription> evictAndResubscribeEverything(
-  Ditto ditto,
-  SyncSubscription subscription,
-  String cutoff,
-) async {
-  subscription.cancel();
-  await ditto.store.execute(
-    'EVICT FROM orders WHERE createdAt < :cutoff',
-    arguments: {'cutoff': cutoff},
-  );
-  return ditto.sync.registerSubscription('SELECT * FROM orders');
-}
+```sql
+-- ❌ BAD: Cancel the subscription and evict...
+-- Arguments: {"cutoff": "2026-01-08T10:30:00.000Z"}
+EVICT FROM orders WHERE createdAt < :cutoff
+
+-- ...then register a subscription that matches the evicted documents again,
+-- so connected peers sync them straight back
+SELECT * FROM orders
 ```
 
 **Why:** Each eviction triggers a resync with every connected peer, which costs network traffic and processing. If the subscription still covers the evicted documents, that resync simply sends them back, and you pay the cost without freeing any space (see [Deletion flags and DELETE transfer little, and eviction under a subscription refetches](../knowledge/observations/storage-and-deletion.md#deletion-flags-and-delete-transfer-little-and-eviction-under-a-subscription-refetches)).
 
 ### Time-based eviction
 
-Keep only recent data on the device by scoping the subscription to a time window and evicting everything older than the same boundary:
+Keep only recent data on the device by scoping the subscription to a time window and evicting everything older than the same boundary. A long-lived service registers the subscription once at startup, before sync starts. On a schedule, for example once a day, it computes a new cutoff with the same fixed-precision timestamp helper as `createdAt` (see [Timestamps](data-modeling.md#timestamps)) and then:
 
-```dart
-// ✅ GOOD: Keep the last 7 days of orders on this device.
-class OrderRetention {
-  OrderRetention(this.ditto);
+1. Cancels the subscription, so that peers stop sending the documents that are about to be evicted.
+2. Evicts exactly the complement of the new subscription.
+3. Registers the subscription again with the moved boundary, even if the eviction failed.
 
-  final Ditto ditto;
-  static const retention = Duration(days: 7);
-  SyncSubscription? _subscription;
+```sql
+-- ✅ GOOD: Keep the last 7 days of orders on this device.
+-- Step 2: evict everything older than the cutoff
+-- Arguments: {"cutoff": "2026-01-08T10:30:00.000Z"}
+EVICT FROM orders WHERE createdAt < :cutoff
 
-  // Same fixed-precision format as createdAt (utcTimestamp() from "Timestamps").
-  String _cutoff() => utcTimestamp(DateTime.now().subtract(retention));
-
-  /// Call once at startup (before ditto.sync.start()).
-  void start() {
-    _subscription = _subscribeFrom(_cutoff());
-  }
-
-  /// Call on a schedule, for example once a day.
-  Future<int> evictExpired() async {
-    final cutoff = _cutoff();
-
-    // 1. Stop asking peers for the documents that are about to be evicted.
-    _subscription?.cancel();
-
-    try {
-      // 2. Evict exactly the complement of the new subscription.
-      final result = await ditto.store.execute(
-        'EVICT FROM orders WHERE createdAt < :cutoff',
-        arguments: {'cutoff': cutoff},
-      );
-      return result.mutatedDocumentIDs().length;
-    } finally {
-      // 3. Subscribe again with the moved boundary, even if the eviction failed.
-      _subscription = _subscribeFrom(cutoff);
-    }
-  }
-
-  SyncSubscription _subscribeFrom(String cutoff) =>
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orders WHERE createdAt >= :cutoff',
-        arguments: {'cutoff': cutoff},
-      );
-
-  void dispose() => _subscription?.cancel();
-}
+-- Steps 1 and 3: the subscription, registered again with the same cutoff
+-- Arguments: {"cutoff": "2026-01-08T10:30:00.000Z"}
+SELECT * FROM orders WHERE createdAt >= :cutoff
 ```
+
+The code for such a retention service: [Flutter](platforms/flutter.md#subscriptions-in-flutter) · [JavaScript](platforms/javascript.md#subscriptions-in-javascript) · [Kotlin](platforms/kotlin.md#subscriptions-in-kotlin) · [Swift](platforms/swift.md#subscriptions-in-swift).
 
 **Why:** The subscription and the eviction use the same cutoff with complementary operators (`>=` and `<`), so no evicted document matches an active subscription.
 
@@ -476,17 +376,12 @@ When a central component decides what is no longer needed, it can mark documents
 UPDATE orders SET evictionFlag = true WHERE createdAt < :cutoff
 ```
 
-```dart
-// ✅ GOOD: Devices subscribe to unflagged documents and evict flagged ones.
-SyncSubscription subscribeToUnflaggedOrders(Ditto ditto) {
-  return ditto.sync.registerSubscription(
-    'SELECT * FROM orders WHERE coalesce(evictionFlag, false) = false',
-  );
-}
+```sql
+-- ✅ GOOD: Devices subscribe to unflagged documents...
+SELECT * FROM orders WHERE coalesce(evictionFlag, false) = false
 
-Future<void> evictFlaggedOrders(Ditto ditto) async {
-  await ditto.store.execute('EVICT FROM orders WHERE evictionFlag = true');
-}
+-- ...and evict flagged ones
+EVICT FROM orders WHERE evictionFlag = true
 ```
 
 Because the subscription never matches flagged documents, the device does not need to cancel and re-register it before each eviction.
@@ -497,22 +392,12 @@ Evicting flagged documents on a device that relays data can bring old versions b
 
 `EVICT` supports `LIMIT`, so a large cleanup can be split into smaller transactions. Combine it with `RETURNING COUNT(*)` to know when to stop:
 
-```dart
-// ✅ GOOD: Evict in batches of 1,000 until nothing is left to evict.
-// First cancel or narrow every subscription that matches these documents (see the EVICT section).
-Future<int> evictInBatches(Ditto ditto, String cutoff) async {
-  var total = 0;
-  while (true) {
-    final result = await ditto.store.execute(
-      'EVICT FROM orders WHERE createdAt < :cutoff LIMIT 1000 '
-      'RETURNING COUNT(*) AS evicted',
-      arguments: {'cutoff': cutoff},
-    );
-    final evicted = result.items.first.value['evicted'] as int;
-    total += evicted;
-    if (evicted == 0) return total;
-  }
-}
+Repeat the statement until it reports that nothing was evicted. First cancel or narrow every subscription that matches these documents (see [EVICT](#evict)).
+
+```sql
+-- ✅ GOOD: Evict in batches of 1,000; run again until evicted is 0
+-- Arguments: {"cutoff": "2026-01-08T10:30:00.000Z"}
+EVICT FROM orders WHERE createdAt < :cutoff LIMIT 1000 RETURNING COUNT(*) AS evicted
 ```
 
 Batching keeps individual write transactions short (see [Evicting in chunks costs little more than one statement](../knowledge/observations/performance-measurements.md#evicting-in-chunks-costs-little-more-than-one-statement)). It does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule (see [Eviction frequency](#eviction-frequency)), not as many separate cleanups.
@@ -556,23 +441,17 @@ SELECT key, value FROM system:system_info WHERE key LIKE 'collection_num_docs%'
 
 Keys include `fs_usage_total`, `fs_usage_store`, `fs_usage_replication`, `fs_usage_attachment`, `fs_usage_auth`, `fs_device_available`, and `fs_device_total` (namespace `core`), and `collection_num_docs[<collection>]` (namespace `store`). Each key can appear more than once with different timestamps; read the newest row.
 
-```dart
-// ✅ GOOD: Read the latest storage snapshot on demand (for example from a
-// diagnostics screen or a daily maintenance task).
-Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    "SELECT key, value, timestamp FROM system:system_info "
-    "WHERE key LIKE 'fs_%' OR key LIKE 'collection_num_docs%' "
-    "ORDER BY timestamp ASC",
-  );
-  final snapshot = <String, Object?>{};
-  for (final item in result.items) {
-    // Later rows overwrite earlier ones, so the newest value wins.
-    snapshot[item.value['key'] as String] = item.value['value'];
-  }
-  return snapshot;
-}
+Read the keys in timestamp order and let later rows of a key replace earlier ones, so that the newest value wins:
+
+```sql
+-- ✅ GOOD: The latest storage snapshot, read on demand (for example from a
+-- diagnostics screen or a daily maintenance task)
+SELECT key, value, timestamp FROM system:system_info
+WHERE key LIKE 'fs_%' OR key LIKE 'collection_num_docs%'
+ORDER BY timestamp ASC
 ```
+
+The code for reading a storage snapshot: [Flutter](platforms/flutter.md#logging-in-flutter) · [JavaScript](platforms/javascript.md#logging-in-javascript) · [Kotlin](platforms/kotlin.md#logging-in-kotlin) · [Swift](platforms/swift.md#logging-in-swift).
 
 **SQLite write-ahead log (SDK 5.2+)**: Ditto's store is built on SQLite, which writes changes to a write-ahead log (WAL) before folding them into the database file. On devices that run for weeks, this log could grow without bound. Since 5.2, Small Peers keep the WAL in check and reclaim free disk space automatically (system parameters `BACKEND_SQLITE3_ENABLE_WAL_SIZE_MONITOR` and `BACKEND_SQLITE3_ENABLE_INCREMENTAL_VACUUM_RECLAIM`, both on by default). If the WAL keeps growing past `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (1 GiB by default), Ditto logs a warning; the usual cause is a read transaction that stays open for a long time. The current size is in `system:system_info`, where each key can appear several times with different timestamps (recorded about once a minute in our testing; see [On SDK 5.2.0, system:system_info keeps old rows of each storage value](../knowledge/observations/storage-and-deletion.md#on-sdk-520-systemsystem_info-keeps-old-rows-of-each-storage-value)), so take the latest row of each key:
 

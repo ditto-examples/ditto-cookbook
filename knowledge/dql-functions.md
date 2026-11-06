@@ -9,7 +9,7 @@ This page summarizes the functions in the [DQL operators and expressions](https:
 
 Date functions accept either **ISO-8601 strings with a time zone** (`2026-03-15T10:30:45.123Z` or `...+09:00`) or **epoch milliseconds** (integers). `date_add`, `date_sub`, `date_trunc`, and `date_range` return strings for string input and epoch milliseconds for numeric input.
 
-> **Note:** An ISO-8601 string **without** a zone designator, such as the output of Dart's `DateTime.now().toIso8601String()` for a local time, is not accepted by date functions unless you pass an explicit format to `date_cast`: the result is MISSING. Store timestamps in UTC, where `DateTime.now().toUtc().toIso8601String()` ends in `Z` (use the `utcTimestamp()` helper from [Timestamps](../best-practices/data-modeling.md#timestamps) for values that are sorted or compared), or as `millisecondsSinceEpoch`. <!-- lint-ignore -->
+> **Note:** An ISO-8601 string **without** a zone designator, such as a local time formatted without `Z` or an offset, is not accepted by date functions unless you pass an explicit format to `date_cast`: the result is MISSING. Store timestamps in UTC, as ISO-8601 strings that end in `Z` (use the fixed-precision helper from [Timestamps](../best-practices/data-modeling.md#timestamps) for values that are sorted or compared), or as epoch milliseconds. <!-- lint-ignore -->
 
 | Function | Description | Example → result |
 |---|---|---|
@@ -31,39 +31,29 @@ Date functions accept either **ISO-8601 strings with a time zone** (`2026-03-15T
 **✅ DO:**
 - Keep the argument order `date_add(date, part, count)`. Swapped arguments return MISSING without an error.
 - Compare stored timestamps against parameters of the same type: ISO strings against ISO strings in the same format and precision (produce both with one helper, see [Timestamps](../best-practices/data-modeling.md#timestamps)), epoch ms against numbers.
-- Compute time windows such as "last 7 days" in Dart and pass the boundary as a parameter. The comparison stays index-friendly and does not depend on `clock()`.
+- Compute time windows such as "last 7 days" in app code and pass the boundary as a parameter. The comparison stays index-friendly and does not depend on `clock()`.
 
 **❌ DON'T:**
 - Compare an ISO string field with `clock()` (a number); values of different types are never equal or ordered against each other.
-- Mix ISO strings with different fractional precision in one field. String comparison then does not match chronological order (`'...45Z' < '...45.123Z'` is false). Dart's `toIso8601String()` alone produces such mixed values on native platforms (see [Timestamps](../best-practices/data-modeling.md#timestamps) for why); produce compared values with the fixed-precision helper `utcTimestamp()` from that section. <!-- lint-ignore -->
+- Mix ISO strings with different fractional precision in one field. String comparison then does not match chronological order (`'...45Z' < '...45.123Z'` is false). Some standard formatters produce such mixed values on one device, such as Dart's `toIso8601String()` on native platforms (see [Timestamps](../best-practices/data-modeling.md#timestamps) for why); produce compared values with one fixed-precision helper, as that section describes. <!-- lint-ignore -->
 - Expect `clock()` to give a trusted time: it is the clock of the device running the query.
 - Use `clock()` in subscriptions. **Note (SDK 5.1.0 and 5.2.0):** each device that sends documents evaluates the condition with its own clock, and only when a document is written and when a new subscription arrives. In our testing, a device whose clock was ahead did not send documents inside the window, and a document that entered the window as time passed was not sent after 30 seconds, after a reconnect, or after the receiving app restarted and registered the same subscription; it arrived only when it was written again or when the receiver registered a subscription with a different text or arguments. Pass a boundary computed on the receiving device as a parameter, and move it rarely (see [clock() in a subscription uses the sending device's clock](observations/clocks-and-time.md#clock-in-a-subscription-uses-the-sending-devices-clock) and [Subscription Lifecycle](../best-practices/sync-and-subscriptions.md#subscription-lifecycle)).
 - Expect an observer with `clock()` in its query to update as time passes. In our testing with SDK 5.1.0 and 5.2.0, a document that left a one-minute window stayed in the observer's result until something else was written to the same collection (see [clock() in a subscription uses the sending device's clock](observations/clocks-and-time.md#clock-in-a-subscription-uses-the-sending-devices-clock)). For "last N minutes" views, filter by time in your code or query again on a timer.
 
-```dart
-// ✅ GOOD: Boundary computed in Dart and formatted with the same fixed-precision
-// helper that writes createdAt (utcTimestamp() from the Timestamps section)
-Future<List<Map<String, dynamic>>> recentOrders(Ditto ditto) async {
-  final since = DateTime.now().toUtc().subtract(const Duration(days: 7));
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE createdAt >= :since ORDER BY createdAt DESC',
-    arguments: {'since': utcTimestamp(since)},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: The boundary is computed in app code (now minus 7 days) and
+-- formatted with the same fixed-precision helper that writes createdAt
+-- (see Timestamps in Data Modeling)
+-- Arguments: {"since": "2026-01-08T10:30:00.000Z"}
+SELECT * FROM orders WHERE createdAt >= :since ORDER BY createdAt DESC
 
-// ✅ GOOD: Daily totals since a boundary. Format since with utcTimestamp(), as in
-// recentOrders. GROUP BY repeats the date_format() expression.
-Future<List<Map<String, dynamic>>> dailyRevenue(Ditto ditto, String since) async {
-  final result = await ditto.store.execute(
-    "SELECT date_format(createdAt, 'YYYY-MM-DD') AS day, SUM(total) AS revenue "
-    'FROM orders WHERE createdAt >= :since '
-    "GROUP BY date_format(createdAt, 'YYYY-MM-DD') "
-    'ORDER BY day',
-    arguments: {'since': since},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- ✅ GOOD: Daily totals since a boundary. GROUP BY repeats the
+-- date_format() expression.
+-- Arguments: {"since": "2026-01-08T10:30:00.000Z"}
+SELECT date_format(createdAt, 'YYYY-MM-DD') AS day, SUM(total) AS revenue
+FROM orders WHERE createdAt >= :since
+GROUP BY date_format(createdAt, 'YYYY-MM-DD')
+ORDER BY day
 ```
 
 ```sql
@@ -142,7 +132,7 @@ Numbers keep their integer or float type: `type(1)` is `'integer'`, `type(1.5)` 
 | `s LIKE pattern` / `s ILIKE pattern` | `%` matches any sequence, `_` one character; `LIKE` is case-sensitive, `ILIKE` ignores case | `sku LIKE 'AB-%'` |
 | `s SIMILAR TO pattern` | `LIKE` wildcards plus `\|` alternatives, `[chars]` lists, grouping, and the repetition operators `*`, `+`, `?`, `{n}` | `code SIMILAR TO '(A\|B)%'` |
 | `regexp_like(s, pattern[, flags])` | Regular expression match; `'i'` for case-insensitive | `regexp_like(code, '^[a-z]-[0-9]{3}$', 'i')` |
-| `char_length(s)` / `character_length(s)` | Number of Unicode code points, which is neither the UTF-16 length that Dart and JavaScript report nor the number of characters a user sees | `char_length('café')` → `4`, `char_length('👍')` → `1` |
+| `char_length(s)` / `character_length(s)` | Number of Unicode code points, which is neither the UTF-16 length that Dart, JavaScript, and Kotlin report nor the number of characters a user sees (Swift's `count`) | `char_length('café')` → `4`, `char_length('👍')` → `1` |
 | `byte_length(s)` | Number of UTF-8 bytes | `byte_length('café')` → `5` |
 | `lower(s)` / `upper(s)` | Case conversion; the length can change | `lower(email) = :email`, `upper('straße')` → `'STRASSE'` |
 | `substr(s, start[, len])` | Substring; `start` is zero-based and counts code points | `substr('abcdef', 1, 3)` → `'bcd'` |
@@ -161,16 +151,11 @@ Numbers keep their integer or float type: `type(1)` is `'integer'`, `type(1.5)` 
 - Store strings cut in the middle of a character. **Note (SDK 5.1.0 and 5.2.0):** in the JavaScript SDK, a string with an unpaired surrogate, such as one cut in the middle of an emoji with `slice`, is stored as a different character without an error. In our testing, `'hello👍'.slice(0, 6)` was stored as `'hello🐀'`, and in `'a\ud800b'` the unpaired surrogate swallowed the `b`. Document IDs and query arguments change the same way (see [char_length counts code points, and JavaScript damages lone surrogates](observations/dql-behavior.md#char_length-counts-code-points-and-javascript-damages-lone-surrogates)). Cut strings at code point or grapheme boundaries (`Array.from(s)`, `Intl.Segmenter`), or check `s.isWellFormed()` before you write.
 - Use `SIMILAR TO` like a full regular expression: `.` matches only a literal dot there (`'abc' SIMILAR TO 'a.c'` is `false`), and the pattern must match the whole string. Use `regexp_like` for full regular expressions.
 
-```dart
-// ✅ GOOD: Prefix search with a parameter
-// If prefix comes from user input, escape % and _ first (see below).
-Future<List<Map<String, dynamic>>> productsBySkuPrefix(Ditto ditto, String prefix) async {
-  final result = await ditto.store.execute(
-    'SELECT _id, sku, name FROM products WHERE sku LIKE :pattern ORDER BY sku LIMIT 20',
-    arguments: {'pattern': '$prefix%'},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Prefix search with a parameter: the app appends % to the prefix.
+-- If the prefix comes from user input, escape % and _ first (see below).
+-- Arguments: {"pattern": "PEN-%"}
+SELECT _id, sku, name FROM products WHERE sku LIKE :pattern ORDER BY sku LIMIT 20
 ```
 
 If user input can contain `%` or `_`, escape them before building the pattern, or use `starts_with(sku, :prefix)`, which treats the prefix literally but cannot use an index.
@@ -218,19 +203,10 @@ Passing the collection name or alias to `object_size` (as in `object_size(orders
 **❌ DON'T:**
 - Expect an index to speed up element lookups such as `:tag IN tags` or `array_contains(tags, :tag)`. An index on an array field only matches the whole array value.
 
-```dart
-// ✅ GOOD: Inclusive range with parameters
-Future<List<Map<String, dynamic>>> ordersInPriceRange(
-  Ditto ditto,
-  num min,
-  num max,
-) async {
-  final result = await ditto.store.execute(
-    'SELECT _id, total FROM orders WHERE total BETWEEN :min AND :max ORDER BY total',
-    arguments: {'min': min, 'max': max},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Inclusive range with parameters
+-- Arguments: {"min": 10, "max": 50}
+SELECT _id, total FROM orders WHERE total BETWEEN :min AND :max ORDER BY total
 ```
 
 ## ANY and EVERY
@@ -279,7 +255,7 @@ WHERE _id = :id
 - In `OBJECT`, `nameExpr` must be a string (elements with another name are left out); when two elements produce the same name, the later one wins.
 - A missing `source` yields MISSING; a `source` that is neither an array nor an object yields `null`.
 
-Use transformations to shape data for the UI in the query instead of post-processing in Dart, particularly in observers where the work repeats on every change.
+Use transformations to shape data for the UI in the query instead of post-processing in app code, particularly in observers where the work repeats on every change.
 
 ## Arithmetic, Conversion, and Other Functions
 
@@ -292,7 +268,7 @@ Use transformations to shape data for the UI in the query instead of post-proces
 | `deserialize_json(s)` | Parse JSON text (also usable in `INSERT` and `UPDATE`) | `deserialize_json(:json)` |
 | `request_info()` | Metadata about the running request (`app_id`, `request_id`, `start_time`) | `SELECT request_info() FROM system:dual` |
 
-`deserialize_json` lets you insert a JSON payload received from a backend without decoding it in Dart first. In app code, pass the text as a parameter, `DOCUMENTS (deserialize_json(:json))`; with a literal it looks like this:
+`deserialize_json` lets you insert a JSON payload received from a backend without decoding it in app code first. In app code, pass the text as a parameter, `DOCUMENTS (deserialize_json(:json))`; with a literal it looks like this:
 
 ```sql
 INSERT INTO products

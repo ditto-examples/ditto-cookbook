@@ -25,51 +25,28 @@ Write only what changed. A field-level `UPDATE` touches only the named fields, s
 
 No `INSERT` policy deletes fields: use `UNSET`.
 
-```dart
-// ✅ GOOD: Only status changes.
-Future<void> markReady(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    'UPDATE orders SET status = :status, updatedAt = :updatedAt WHERE _id = :id',
-    arguments: {
-      'id': orderId,
-      'status': 'ready',
-      'updatedAt': utcTimestamp(), // fixed-precision helper (§ Timestamps)
-    },
-  );
-}
+```sql
+-- ✅ GOOD: Only status changes.
+-- Arguments: {"id": "order-1", "status": "ready", "updatedAt": "2026-10-08T10:30:00.123Z"}
+UPDATE orders SET status = :status, updatedAt = :updatedAt WHERE _id = :id
 
-// ✅ GOOD: Re-importing reference data that your backend owns. Fields whose
-// values equal the local document are skipped, and an unchanged document is
-// not written at all.
-Future<bool> importProduct(Ditto ditto, Map<String, dynamic> product) async {
-  final result = await ditto.store.execute(
-    'INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {'product': product},
-  );
-  return result.mutatedDocumentIDs().isNotEmpty;
-}
+-- ✅ GOOD: Re-importing reference data that your backend owns. Fields whose
+-- values equal the local document are skipped, and an unchanged document is
+-- not written at all (the result lists no mutated document IDs).
+-- Arguments: {"product": {"_id": "p1", "name": "Pen", "priceCents": 250}}
+INSERT INTO products DOCUMENTS (:product) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```
 
 To replace an object instead of merging into it, clear it and write it in one transaction (or declare the field `REGISTER`; see SKILL.md Rule 3):
 
-```dart
-// ✅ GOOD: Replace a MAP value: clear it, then write it, atomically.
-Future<void> replaceAddress(
-  Ditto ditto,
-  String customerId,
-  Map<String, dynamic> newAddress,
-) async {
-  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
-    await tx.execute(
-      'UPDATE customers UNSET address WHERE _id = :id',
-      arguments: {'id': customerId},
-    );
-    await tx.execute(
-      'UPDATE customers SET address = :address WHERE _id = :id',
-      arguments: {'id': customerId, 'address': newAddress},
-    );
-  });
-}
+```sql
+-- ✅ GOOD: Replace a MAP value: clear it, then write it, as two statements in
+-- one transaction.
+-- Arguments: {"id": "c1"}
+UPDATE customers UNSET address WHERE _id = :id
+
+-- Arguments: {"id": "c1", "address": {"street": "Main St", "city": "Oslo"}}
+UPDATE customers SET address = :address WHERE _id = :id
 ```
 
 `UNSET` creates removal metadata. Unsetting a very large number of dynamically generated keys over time can degrade performance; unsetting the parent field (or deleting the document) mitigates the accumulation.
@@ -82,7 +59,7 @@ Future<void> replaceAddress(
 - Leave keys with `.` or backticks unquoted in paths: `` `a.b` `` is one key, `a.b` is `b` inside `a`, and a backtick inside a key is written twice.
 - Expect `DO UPDATE` to replace a document or an object: it merges.
 
-Guide: `§ INSERT and Conflict Handling`, `§ Local Write Semantics You Must Know`. Example: [field-level-updates.dart](../examples/field-level-updates.dart).
+Guide: `§ INSERT and Conflict Handling`, `§ Local Write Semantics You Must Know`. Example: [field-level-updates.sql](../examples/field-level-updates.sql).
 
 ---
 
@@ -115,7 +92,7 @@ ORDER BY occurredAt ASC, _id ASC
 
 A variant uses the status as the key and the timestamp as the value; it records whether and when a state happened, but keeps only the latest time for a state entered more than once.
 
-Guide: `§ Event History and Audit Logs`, `§ EVICT`. Examples: [event-history.dart](../examples/event-history.dart), [two-collection-pattern.dart](../examples/two-collection-pattern.dart).
+Guide: `§ Event History and Audit Logs`, `§ EVICT`. Examples: [event-history.sql](../examples/event-history.sql), [two-collection-pattern.sql](../examples/two-collection-pattern.sql).
 
 ---
 
@@ -153,7 +130,7 @@ Guide: `§ Document Structure`, `§ MISSING and NULL`.
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | Write succeeds; a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | A local `INSERT` / `UPDATE` fails (the SDK's error type); the stored document is unchanged |
 
 The soft-limit warning reads `exceeds recommended limit`. In testing, SDK 5.0.3 did not check the hard limit (it stored a 6 MiB document). **Note (SDK 5.1.0):** merges from other devices are not checked against the hard limit: concurrent offline additions can produce a larger document on every device, after which every `UPDATE` of it fails until `UNSET` removes data. **Note (SDK 5.2.0):** a receiving device instead drops such a change: in testing, the two devices kept different versions (each only its own large field), the document was listed in `system:sync_degradations` with `documentTooBig` on both, and updates of it stopped in both directions. Evicting it on one device brought back the other version within 15 seconds and **discarded that device's own changes**; evict on the device whose changes you can lose (`§ Document Size Limits`).
 
@@ -178,14 +155,14 @@ WHERE _id = :id
 
 **❌ DON'T:** embed base64-encoded files, append to a nested map forever, or raise the hard limit to make a large document fit. If you change either limit, change it on every peer in the same release. (In SDK 5.1.0 and 5.2.0, a hard limit set below the soft limit is not enforced.)
 
-Guide: `§ Document Size Limits`, `§ Attachments`. Example: [document-size.dart](../examples/document-size.dart).
+Guide: `§ Document Size Limits`, `§ Attachments`. Example: [document-size.sql](../examples/document-size.sql).
 
 ## Pattern 5: Documents That Contain Counters
 
 A value written into a counter other than with `INCREMENT BY` works like `RESTART WITH`: increments that have not reached this device yet are discarded (`§ Writing documents that contain counters`). **Note (SDK 5.1.0 and 5.2.0)**: in testing, a declared upsert of `cnt: 10` over a counter at 7 that another offline device increased by 5 gave 10 on both devices, also with `DO UPDATE_LOCAL_DIFF`; two offline devices that each created the same stock document (10) with a plain `INSERT` and each sold one item ended at 9, and with `INITIAL DOCUMENTS` at 8.
 
 **✅ DO:**
-- Create a counter document that every device creates on its own with `INSERT INTO COLLECTION ... (f COUNTER) INITIAL DOCUMENTS (:doc)` ([examples/counter-patterns.dart](../examples/counter-patterns.dart), `seedStock`).
+- Create a counter document that every device creates on its own with `INSERT INTO COLLECTION ... (f COUNTER) INITIAL DOCUMENTS (:doc)` ([examples/counter-patterns.sql](../examples/counter-patterns.sql), the `INITIAL DOCUMENTS` seed).
 - Leave counter fields out of re-imported or upserted documents; apply changes with `APPLY f INCREMENT BY`.
 - Count per item inside one document with map entries: `APPLY items.<key>.qty INCREMENT BY n`, without a declaration (a nested path cannot be declared; the declaration is a parser error). Concurrent increments from two offline devices were both kept.
 - Remove counted documents and entries with a flag: a `DELETE` or `UNSET` that merges with a concurrent increment leaves the count at 0 (`§ Husk documents`).

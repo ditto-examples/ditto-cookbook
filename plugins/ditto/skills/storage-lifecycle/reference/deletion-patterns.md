@@ -61,28 +61,11 @@ To avoid husk documents:
 2. Manage edge storage with `EVICT` and perform permanent deletion on the Ditto Server (for example through its HTTP API).
 3. Coordinate your workflow so that the same document is not deleted and updated at the same time.
 
-If husk documents are possible in your data, keep them out of lists with a filter on a field that every live document has. Test for both cases: `WHERE make IS NOT MISSING AND make IS NOT NULL`. `IS NOT NULL` alone is `true` for a missing field. Also make the UI tolerate `null` and missing fields instead of assuming every field is present (a missing key reads as `null` from the item's map): <!-- lint-ignore -->
+If husk documents are possible in your data, keep them out of lists with a filter on a field that every live document has. Test for both cases: `WHERE make IS NOT MISSING AND make IS NOT NULL`. `IS NOT NULL` alone is `true` for a missing field. Also make the UI tolerate `null` and missing fields instead of assuming every field is present: read every field of a row as optional and show a placeholder (`Unknown make`, `-`) when it is absent. <!-- lint-ignore -->
 
-```dart
-import 'package:flutter/material.dart';
-
-// ✅ GOOD: Render a car even when some fields are null (possible husk document).
-class CarTile extends StatelessWidget {
-  const CarTile({super.key, required this.car});
-
-  final Map<String, dynamic> car;
-
-  @override
-  Widget build(BuildContext context) {
-    final make = car['make'] as String?;
-    final year = car['year'] as int?;
-    final color = car['color'] as String?;
-    return ListTile(
-      title: Text(make ?? 'Unknown make'),
-      subtitle: Text('${year ?? '-'} · ${color ?? '-'}'),
-    );
-  }
-}
+```sql
+-- ✅ GOOD: Keep husks out of a list with a field that every live document has
+SELECT * FROM cars WHERE make IS NOT MISSING AND make IS NOT NULL ORDER BY _id -- lint-ignore
 ```
 
 Guide: `§ Husk documents`
@@ -97,7 +80,7 @@ Guide: `§ Husk documents`
 DELETE FROM orders WHERE status = 'archived' LIMIT 30000
 ```
 
-Cleanup statements typically sent to the Ditto Server in a server-driven retention setup (see [examples/ttl-eviction-ditto-server.dart](../examples/ttl-eviction-ditto-server.dart)):
+Cleanup statements typically sent to the Ditto Server in a server-driven retention setup (see [examples/ttl-eviction-ditto-server.sql](../examples/ttl-eviction-ditto-server.sql)):
 
 ```sql
 -- Mark documents that devices no longer need; devices evict flagged documents
@@ -169,7 +152,7 @@ Variant B device-side cleanup, the complement of the retention-window subscripti
 EVICT FROM orders WHERE storeId = :storeId AND isDeleted = true AND deletedAt < :cutoff
 ```
 
-In Variant B, cancel the old subscription before evicting, use the same cutoff value for the eviction and the new subscription, and choose a retention window longer than the longest expected offline period. A flagged document without `deletedAt` matches neither condition and is never evicted, so set both fields in one `UPDATE`. An evicted document that is restored later matches the subscription again and syncs back. See [examples/soft-delete-relay.dart](../examples/soft-delete-relay.dart).
+In Variant B, cancel the old subscription before evicting, use the same cutoff value for the eviction and the new subscription, and choose a retention window longer than the longest expected offline period. A flagged document without `deletedAt` matches neither condition and is never evicted, so set both fields in one `UPDATE`. An evicted document that is restored later matches the subscription again and syncs back. See [examples/soft-delete-relay.sql](../examples/soft-delete-relay.sql) and `retention-service` in `../examples/<sdk>/`.
 
 Subscribing to active documents only and evicting flagged ones (flag-based eviction with `isDeleted` as the flag, as in Ditto's deletion documentation) needs no cutoff. Use it only when every device syncs directly with a peer that subscribes to the whole collection, such as the Ditto Server (a relay that evicts flagged documents can receive old, unflagged versions back from devices that missed the flag), and have each device evict flagged documents, because a `DELETE` on the server does not reach them.
 
@@ -181,34 +164,17 @@ Guide: `§ Soft delete, subscriptions, and cleanup`
 
 Changing the set of data a device needs (a different store or tenant) is a legitimate reason to change subscriptions. Cancel first, evict the old partition, then subscribe to the new one:
 
-```dart
-import 'package:ditto_live/ditto_live.dart';
+```sql
+-- ✅ GOOD: After cancelling the old store's subscriptions, evict its data ...
+-- Arguments: {"storeId": "store-2"}
+EVICT FROM orders WHERE storeId != :storeId
 
-// ✅ GOOD: Cancel, evict the old store's data, subscribe to the new store.
-Future<List<SyncSubscription>> switchStore(
-  Ditto ditto,
-  List<SyncSubscription> currentSubscriptions,
-  String newStoreId,
-) async {
-  for (final subscription in currentSubscriptions) {
-    subscription.cancel();
-  }
-
-  await ditto.store.execute(
-    'EVICT FROM orders WHERE storeId != :storeId',
-    arguments: {'storeId': newStoreId},
-  );
-
-  return [
-    ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE storeId = :storeId',
-      arguments: {'storeId': newStoreId},
-    ),
-  ];
-}
+-- ... then subscribe to the new store
+-- Arguments: {"storeId": "store-2"}
+SELECT * FROM orders WHERE storeId = :storeId
 ```
 
-Data that was already being transferred when the subscriptions were cancelled can still arrive afterwards. If the device must not keep the old store's data, run the same eviction again later (for example, on the next app start or in a periodic cleanup); see [examples/evict-subscription-management-good.dart](../examples/evict-subscription-management-good.dart).
+Data that was already being transferred when the subscriptions were cancelled can still arrive afterwards. If the device must not keep the old store's data, run the same eviction again later (for example, on the next app start or in a periodic cleanup); see [examples/evict-subscription-management-good.sql](../examples/evict-subscription-management-good.sql) and `retention-service` in `../examples/<sdk>/`.
 
 Switch partitions only when the needed data really changes. Search boxes, tabs, filters, and sort orders should change local observers, not subscriptions (avoid changing subscriptions more often than about every 15 minutes).
 
@@ -238,23 +204,12 @@ SELECT key, value FROM system:system_info WHERE key LIKE 'fs_usage%'
 
 Keys include `fs_usage_total`, `fs_usage_store`, `fs_usage_replication`, `fs_usage_attachment`, `fs_usage_auth`, `fs_device_available`, `fs_device_total` (namespace `core`), and `collection_num_docs[<collection>]` (namespace `store`).
 
-```dart
-import 'package:ditto_live/ditto_live.dart';
-
-// ✅ GOOD: Read the latest storage snapshot on demand.
-Future<Map<String, Object?>> storageSnapshot(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    "SELECT key, value, timestamp FROM system:system_info "
-    "WHERE key LIKE 'fs_%' OR key LIKE 'collection_num_docs%' "
-    "ORDER BY timestamp ASC",
-  );
-  final snapshot = <String, Object?>{};
-  for (final item in result.items) {
-    // Later rows overwrite earlier ones, so the newest value wins.
-    snapshot[item.value['key'] as String] = item.value['value'];
-  }
-  return snapshot;
-}
+```sql
+-- ✅ GOOD: Read the latest storage snapshot on demand; for each key, the last
+-- row (newest timestamp) wins
+SELECT key, value, timestamp FROM system:system_info
+WHERE key LIKE 'fs_%' OR key LIKE 'collection_num_docs%'
+ORDER BY timestamp ASC
 ```
 
 **SQLite write-ahead log (SDK 5.2+)**: Small Peers keep the WAL in check and reclaim free disk space automatically (`BACKEND_SQLITE3_ENABLE_WAL_SIZE_MONITOR` and `BACKEND_SQLITE3_ENABLE_INCREMENTAL_VACUUM_RECLAIM`, both on by default). Ditto logs a warning when the WAL grows past `BACKEND_SQLITE3_WAL_SIZE_THRESHOLD_BYTES` (1 GiB by default); the usual cause is a read transaction that stays open for a long time. Read the current values on demand:

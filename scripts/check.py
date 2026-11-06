@@ -3,14 +3,15 @@
 
 Checks:
 - every heading of the guide (knowledge/*.md, knowledge/observations/*.md,
-  and best-practices/*.md) is unique across its pages, so that a
-  `§ Heading` citation names one section
+  best-practices/*.md, and best-practices/platforms/*.md) is unique across
+  its pages, so that a `§ Heading` citation names one section
 - every plugins/ditto/skills/*/SKILL.md: frontmatter with only `name`
   (matching the directory) and `description`, the description length (error
   above 1,024 characters, warning above 450), and the size (error above
   20,000 characters or 500 lines)
-- every `§ Heading` citation in the Skills' Markdown and code files names a
-  heading of the guide
+- every `§ Heading` citation in the Skills' Markdown, DQL, and code files
+  (Dart, JavaScript, TypeScript, Kotlin, Swift, Python) names a heading of
+  the guide
 - every section that a checklist item names under "Best-practices guide" is
   a heading of the guide
 - every line of the guide that reports an observation ("in our testing")
@@ -39,9 +40,14 @@ from typing import Iterator
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
-GUIDE_DIRS = ("knowledge", "knowledge/observations", "best-practices")
+GUIDE_DIRS = ("knowledge", "knowledge/observations", "best-practices", "best-practices/platforms")
 SKILLS = ROOT / "plugins" / "ditto" / "skills"
 CHECKLIST = ROOT / "checklist" / "ditto-implementation-checklist.md"
+
+# The Skill files whose `§ Heading` citations are checked: Markdown, the
+# examples of every SDK (Dart, JavaScript, TypeScript, Kotlin, Swift), DQL
+# examples, and scripts.
+SKILL_FILE_SUFFIXES = {".md", ".sql", ".dart", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".kt", ".swift", ".py"}
 
 MAX_DESCRIPTION = 1024
 TARGET_DESCRIPTION = 450
@@ -423,7 +429,7 @@ def skill_files(skill: Path) -> Iterator[Path]:
         subdirectories.sort()
         for name in sorted(files):
             path = Path(directory) / name
-            if not path.is_symlink() and path.suffix in {".md", ".dart", ".js", ".py"}:
+            if not path.is_symlink() and path.suffix in SKILL_FILE_SUFFIXES:
                 yield path
 
 

@@ -45,11 +45,13 @@ class GuidePagesTest(unittest.TestCase):
     def test_lists_the_pages_of_both_directories_and_of_knowledge_observations(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for name in ("best-practices/README.md", "best-practices/dql.md", "knowledge/README.md",
+            for name in ("best-practices/README.md", "best-practices/dql.md",
+                         "best-practices/platforms/swift.md", "knowledge/README.md",
                          "knowledge/crdt-types.md", "knowledge/observations/merge-behavior.md"):
                 write(root, name, "# Page\n")
             pages = [str(page.relative_to(root)) for page in check.guide_pages(root)]
             self.assertEqual(sorted(pages), ["best-practices/README.md", "best-practices/dql.md",
+                                             "best-practices/platforms/swift.md",
                                              "knowledge/README.md", "knowledge/crdt-types.md",
                                              "knowledge/observations/merge-behavior.md"])
             self.assertEqual([str(page.relative_to(root)) for page in check.knowledge_pages(root)],
@@ -164,6 +166,28 @@ class CitationsTest(unittest.TestCase):
             ["§ Hard Delete is not a heading of the guide",
              "§ Disjoining Collections does not start a heading of the guide"],
         )
+
+
+class SkillFilesTest(unittest.TestCase):
+    def test_lists_markdown_and_code_files_of_every_sdk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "query-sync"
+            for name in ("SKILL.md", "reference/rules.md", "examples/queries.sql",
+                         "examples/flutter/observer.dart", "examples/javascript/observer.js",
+                         "examples/javascript/observer.ts", "examples/javascript/Orders.jsx",
+                         "examples/javascript/Orders.tsx", "examples/javascript/observer.mjs",
+                         "examples/kotlin/Observer.kt",
+                         "examples/swift/Observer.swift", "scripts/scan.py", "notes.txt"):
+                write(skill, name, "x\n")
+            files = [str(path.relative_to(skill)) for path in check.skill_files(skill)]
+            self.assertEqual(sorted(files), sorted([
+                "SKILL.md", "reference/rules.md", "examples/queries.sql",
+                "examples/flutter/observer.dart", "examples/javascript/observer.js",
+                "examples/javascript/observer.ts", "examples/javascript/Orders.jsx",
+                "examples/javascript/Orders.tsx", "examples/javascript/observer.mjs",
+                "examples/kotlin/Observer.kt",
+                "examples/swift/Observer.swift", "scripts/scan.py",
+            ]))
 
 
 class ChecklistSectionsTest(unittest.TestCase):

@@ -1,17 +1,17 @@
 ---
 name: query-sync
-description: Ditto SDK DQL reads and writes, subscriptions, and store observers: query parameters, MISSING vs NULL, membership filters, subscription rules and lifecycle, the Flutter observer pattern, upserts with ON ID CONFLICT, JOIN, RETURNING. Use when writing or reviewing ditto.store.execute, ditto.sync.registerSubscription, registerObserver, or any DQL statement, or when synced data does not appear or a query returns nothing.
+description: Ditto SDK DQL reads and writes, subscriptions, and store observers (Flutter, JavaScript, Kotlin, Swift): query parameters, MISSING vs NULL, membership filters, subscription rules and lifecycle, observer lifecycle, upserts with ON ID CONFLICT, JOIN, RETURNING. Use when writing or reviewing ditto.store.execute, ditto.sync.registerSubscription, registerObserver, or any DQL statement, or when synced data does not appear or a query returns nothing.
 ---
 
 # Ditto Query and Sync Patterns
 
-DQL statements, subscriptions, and store observers: what syncs, what a query sees, and cheap observers and upserts. Targets Ditto SDK 5.2.0; examples are Flutter (Dart).
+DQL statements, subscriptions, and store observers: what syncs, what a query sees, and cheap observers and upserts. Targets Ditto SDK 5.2.0 in every SDK; DQL examples are SDK-neutral, API examples are per SDK.
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
-- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`, then read that section.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *Store Observers in Swift*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
 
 ## Prevents
 
@@ -19,10 +19,10 @@ DQL statements, subscriptions, and store observers: what syncs, what a query see
 - Filters that silently drop documents (MISSING vs NULL, `IN (:values)`, `ANY ... SATISFIES` over a parameter)
 - "Synced data does not show": no subscription matches it
 - Subscriptions rejected at registration (projections, `JOIN`, `LIMIT`/`ORDER BY`) or re-registered on every filter change
-- Uncancelled subscriptions and observers; `onChange` observers retaining every result
+- Unreleased subscriptions and observers; observers registered in render code; Flutter `onChange` observers retaining every result
 - Upserts that rewrite unchanged data and wake observers (`DO UPDATE` instead of `DO UPDATE_LOCAL_DIFF`)
 - `JOIN` queries failing without an index on the inner collection
-- Retained `QueryResult` / `QueryResultItem` objects
+- Retained query result and row objects
 
 ## Workflow
 
@@ -38,20 +38,20 @@ A screen that shows synced data:
 Progress:
 - [ ] 1. Subscription: SELECT * FROM c WHERE <stable partition key> = :param, owned by an app/feature service
 - [ ] 2. Indexes: CREATE INDEX IF NOT EXISTS at startup for filter, sort, and JOIN keys
-- [ ] 3. Observer: registered in initState() without onChange, with ORDER BY (+ _id tie-breaker) and LIMIT if large
-- [ ] 4. Listener: consume observer.changes once; copy item.value into plain Dart data; call setState
-- [ ] 5. Cleanup: cancel the StreamSubscription and the observer in dispose(); cancel subscriptions on logout or workspace change
+- [ ] 3. Observer: registered once when the screen's owner starts (not in render code), with ORDER BY (+ _id tie-breaker) and LIMIT if large
+- [ ] 4. Callback: copy row values into plain data or models; update UI state; no slow work
+- [ ] 5. Cleanup: release the observer when its owner goes away; cancel subscriptions on logout or workspace change
 ```
 
 ## Rules
 
 ### 1. Pass values as parameters (CRITICAL)
 
-Reference values with `:name` and pass them in `arguments`. Names are case-sensitive; a placeholder without an argument fails. Interpolation allows DQL injection, breaks on quotes and backslashes, and defeats the shared statement cache.
-**✅ DO**: parameters for IDs, user input, dates, `LIMIT`/`OFFSET`, and whole documents (`INSERT INTO orders DOCUMENTS (:order)`); arrays for membership (`status IN :statuses`).
+Reference values with `:name` and pass them as arguments. Names are case-sensitive; a placeholder without an argument fails. Interpolation allows DQL injection, breaks on quotes and backslashes, and defeats the shared statement cache.
+**✅ DO**: parameters for IDs, user input, dates, `LIMIT`/`OFFSET`, and whole documents (`INSERT INTO orders DOCUMENTS (:order)`); arrays for membership (`status IN :statuses`); plain JSON values (UTC date strings; *Arguments and value types in <SDK>*).
 **❌ DON'T**: build statements with interpolation or concatenation; write `IN (:statuses)` (the array becomes one list element and nothing matches).
 
-`§ Parameters and Literals` · Examples: [dql-queries-good.dart](examples/dql-queries-good.dart), [dql-queries-bad.dart](examples/dql-queries-bad.dart)
+`§ Parameters and Literals` · Examples: [dql-queries-good.sql](examples/dql-queries-good.sql), [dql-queries-bad.sql](examples/dql-queries-bad.sql)
 
 ### 2. Treat MISSING and NULL explicitly in filters (CRITICAL)
 
@@ -71,7 +71,7 @@ A comparison with a missing or null field is neither true nor false, so the row 
 
 ### 3. Subscribe with SELECT * and stable partition keys (CRITICAL)
 
-A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. `registerSubscription` throws for the features below, even before sync starts.
+A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. `registerSubscription` fails for the features below, even before sync starts.
 
 | Rejected in subscriptions | Do instead |
 |---|---|
@@ -92,84 +92,35 @@ Soft delete: relaying devices keep flagged documents in their subscriptions to p
 
 Changing subscriptions makes peers re-evaluate which documents to send; avoid changing them more often than about every 15 minutes (documents already held are not downloaded again).
 **✅ DO**:
-- Register at app start (every `Ditto.open()`; not persisted), after login, or on entering a workspace, in an app- or feature-level service; keep every `SyncSubscription` and `cancel()` it on logout or workspace change
+- Register at app start (every time Ditto opens; not persisted), after login, or on entering a workspace, in an app- or feature-level service; keep every subscription and release it (`cancel()`, `close()` in Kotlin) on logout or workspace change
 - Change the **observer**, not the subscription, when the user changes a filter, search term, tab, or sort order
 - Cancel subscriptions **before** evicting their data; cancelling alone does not delete local data
 
-**❌ DON'T**: register in `build()` or on every screen visit; drop a reference without cancelling it (do not rely on garbage collection).
+**❌ DON'T**: register in render code (a widget's `build()`, a SwiftUI `body`, a composable, a React render) or on every screen visit; drop a reference without releasing it (do not rely on garbage collection).
 
-```dart
-class OrderSync {
-  OrderSync(this._ditto);
-  final Ditto _ditto;
-  final List<SyncSubscription> _subscriptions = [];
-  String? _storeId;
+`sync.stop()` pauses subscriptions (resumed by `start()`); closing Ditto cancels them. What `sync.subscriptions` returns for the arguments of a listed subscription differs by SDK.
 
-  void enterStore(String storeId) {
-    if (storeId == _storeId) return; // Already subscribed; do not re-register.
-    leaveStore();
-    _storeId = storeId;
-    _subscriptions.add(_ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE storeId = :storeId',
-      arguments: {'storeId': storeId},
-    ));
-  }
+> **Note (SDK 5.1.0):** In Flutter, do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate the app. Read only `queryString` and `isCancelled` there, and keep your own references.
 
-  void leaveStore() {
-    for (final subscription in _subscriptions) {
-      subscription.cancel(); // No-op if already cancelled or Ditto was closed
-    }
-    _subscriptions.clear();
-    _storeId = null;
-  }
-}
-```
+`§ Subscription Lifecycle`, `§ Sync stop, close, and inspection` · Examples: `subscription-lifecycle-good` and `subscription-lifecycle-bad` in `examples/<sdk>/`
 
-`ditto.sync.stop()` pauses subscriptions (resumed by `start()`); `await ditto.close()` marks them cancelled.
+### 5. Register each observer once per owner and release it (CRITICAL)
 
-> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate a Flutter app. Read only `queryString` and `isCancelled` there, and keep your own references.
+An observer runs its query and holds memory until released. Give it one owner (a screen, view model, or service), register it when the owner starts, and release it when the owner goes away; copy plain values out of each result.
 
-`§ Subscription Lifecycle` · Examples: [subscription-lifecycle-good.dart](examples/subscription-lifecycle-good.dart), [subscription-lifecycle-bad.dart](examples/subscription-lifecycle-bad.dart)
+| SDK | Recommended pattern | Pitfalls |
+|---|---|---|
+| Flutter | `registerObserver` **without** `onChange`; consume `changes` with one `StreamSubscription`; cancel both in `dispose()` | `changes` is single-subscription; cancelling the stream subscription does not cancel the observer; `close()` does not close `changes` |
+| JavaScript | `registerObserver(query, handler, args)` with a synchronous handler; `cancel()` in the component's cleanup | `async` handlers are not awaited |
+| Kotlin | `observe(...)` (a `Flow`) collected in the owner's scope, or `registerObserver(query, args) { }` | Release: cancel the collector (`observe`) or `close()` |
+| Swift | `registerObserver(query:arguments:handler:)`; keep the `DittoStoreObserver` and `cancel()` it | Delivered on the main queue by default |
 
-### 5. Use the Flutter observer pattern (CRITICAL)
+> **Note (SDK 5.1.0 and 5.2.0):** In Flutter, with `onChange`, every result is also queued in `changes`; if nothing listens, those results stay in memory for the observer's lifetime. `registerObserverV2` starts observing on registration, with or without `onChange`: listen to its `changes` right away. If you need `onChange`, also drain the stream (`observer.changes.listen((_) {})`).
 
-Register **without** `onChange`, consume `changes` with one `StreamSubscription`, and cancel both in `dispose()`.
+**✅ DO**: register in the owner's start hook, and again when the query's inputs change; give each screen region its own small observer; use `COUNT(*)` for badges; keep callbacks short.
+**❌ DON'T**: register in render code; create an observer per list item; observe a whole collection at the screen root; rely on garbage collection or `close()`.
 
-```dart
-class _OrdersListState extends State<OrdersList> {
-  late final StoreObserver _observer;
-  late final StreamSubscription<QueryResult> _changes;
-  List<Map<String, dynamic>> _orders = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _observer = widget.ditto.store.registerObserver(
-      'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
-      arguments: {'status': 'open'},
-    );
-    _changes = _observer.changes.listen((result) {
-      setState(() => _orders = result.items.map((item) => item.value).toList());
-    });
-  }
-
-  @override
-  void dispose() {
-    _changes.cancel();
-    _observer.cancel();
-    super.dispose();
-  }
-  // build(): ListView.builder with ValueKey(order['_id']) per row
-}
-```
-
-> **Note (SDK 5.1.0):** With `onChange`, every result is also queued in `changes`; if nothing listens, those results stay in memory for the observer's lifetime. `registerObserverV2` starts observing on registration, with or without `onChange`: listen to its `changes` right away. If you need `onChange`, also drain the stream (`observer.changes.listen((_) {})`). The `ditto_live` 5.2.0 source registers observers the same way.
-
-Lifecycle: `changes` is single-subscription (a second `listen()` throws, even after cancelling the first). Cancelling the `StreamSubscription` does not cancel a `StoreObserver`, and `await ditto.close()` does not close its `changes` stream: call `observer.cancel()` before closing. `registerObserver` has no backpressure, so keep its listener synchronous and short.
-**✅ DO**: register in `initState()` or a service; when inputs change (`didUpdateWidget`), cancel and re-register; give each screen region its own small observer; use `COUNT(*)` for badges.
-**❌ DON'T**: register in `build()`; create an observer per list item; observe a whole collection at the screen root.
-
-`§ Store Observers in Flutter`, `§ Observer lifecycle and cleanup` · Examples: [observer-patterns-good.dart](examples/observer-patterns-good.dart), [observer-patterns-bad.dart](examples/observer-patterns-bad.dart) · Details: [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md#observer-lifecycle)
+`§ Observer Lifecycle`, `§ Store Observers in Flutter`, `§ Observer lifecycle in Flutter` · Examples: `observer-patterns-good` and `observer-patterns-bad` in `examples/<sdk>/` · Details: [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md#observer-lifecycle)
 
 ### 6. Filter membership with IN :values (HIGH)
 
@@ -193,10 +144,10 @@ Lifecycle: `changes` is single-subscription (a second `listen()` throws, even af
 | `DO UPDATE` | Supplied fields merged in, even if identical (mutation recorded, observers can fire again) |
 | `DO UPDATE_LOCAL_DIFF` | Only differing fields written; nothing written if nothing changed |
 
-**✅ DO**: `INSERT INTO products DOCUMENTS (:item) ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports; change only changed fields with `UPDATE ... SET`; remove fields with `UNSET`; replace an object with `UNSET obj` then `SET obj = :value` in one transaction (two `tx.execute` calls).
+**✅ DO**: `INSERT INTO products DOCUMENTS (:item) ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports; change only changed fields with `UPDATE ... SET`; remove fields with `UNSET`; replace an object with `UNSET obj` then `SET obj = :value` in one transaction (two statements on the transaction object).
 **❌ DON'T**: read-modify-write whole documents with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (a stale in-memory value differs from the stored one and is written back); expect `DO UPDATE` or `SET obj = {...}` to remove keys (with the default `DQL_STRICT_MODE = false`, objects merge; merge semantics: `data-modeling`).
 
-`§ INSERT and Conflict Handling`, `§ UPDATE` · Example: [dql-writes.dart](examples/dql-writes.dart)
+`§ INSERT and Conflict Handling`, `§ UPDATE` · Example: [dql-writes.sql](examples/dql-writes.sql)
 
 ### 8. Index the inner collection of a JOIN (SDK 5.1+) (HIGH)
 
@@ -214,11 +165,11 @@ Without `ORDER BY` (observers included) order is not guaranteed. Add a unique ti
 
 ### 10. Copy values out of query results right away (HIGH)
 
-`items` is an `Iterable` that builds new wrappers on each pass; `mutatedDocumentIDs()` builds a new list per call.
-**✅ DO**: iterate `items` once and convert rows to maps or models; project only the fields you need; track a `commitID` only when `mutatedDocumentIDs()` is not empty.
-**❌ DON'T**: store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks (they reference native memory).
+A result's rows (`items`) and their values reference native memory. Whether reading a row again decodes it again or returns the same object differs by SDK; in Kotlin, a result is a resource that you `close()` (or read inside the mapping function of `execute`).
+**✅ DO**: read the rows once and convert them to plain values or models; project only the fields you need; read the mutated document IDs once; track a commit ID only when the result lists mutated document IDs.
+**❌ DON'T**: store result or row objects in state, caches, or across observer callbacks; change a row's value to edit the document (write with `UPDATE`).
 
-`§ Working with Query Results` · Example: [query-result-handling.dart](examples/query-result-handling.dart) · Member table: [reference/query-optimization.md](reference/query-optimization.md#query-results)
+`§ Working with Query Results` · Example: `query-result-handling` in `examples/<sdk>/` · Member table: [reference/query-optimization.md](reference/query-optimization.md#query-results)
 
 ### 11. Quote every key in inline object literals (HIGH)
 
@@ -244,7 +195,7 @@ Select by ID with `WHERE _id = :id` or `WHERE _id IN :ids`: planned as an ID loo
 
 ### 13. Use RETURNING instead of write-then-read (SDK 5.1+) (MEDIUM)
 
-`RETURNING` on `INSERT`, `UPDATE`, `DELETE`, or `EVICT` returns the affected documents in `items` (after the update; before removal), e.g. `UPDATE orders SET status = :status WHERE _id IN :ids RETURNING _id, status`. Include `_id` in the projection when you need the IDs.
+`RETURNING` on `INSERT`, `UPDATE`, `DELETE`, or `EVICT` returns the affected documents in `items` (after the update; before removal), e.g. `... WHERE _id IN :ids RETURNING _id, status`. Project `_id` when you need the IDs.
 
 `§ RETURNING (SDK 5.1+)` · Details: [reference/dql-reference.md](reference/dql-reference.md#returning-sdk-51)
 
@@ -254,17 +205,17 @@ Select by ID with `WHERE _id = :id` or `WHERE _id IN :ids`: planned as an ID loo
 
 `§ Aggregates`, `§ GROUP BY and HAVING` · Details: [reference/dql-reference.md](reference/dql-reference.md#projections-distinct-and-aggregates)
 
-### 15. Use Differ only for item-level changes (MEDIUM)
+### 15. Use a differ only for item-level changes (MEDIUM)
 
-`Differ` reports `insertions`, `deletions`, `updates`, and `moves` by `_id`; pass `result.items.toList()`. It is expensive, so bound diffed queries with `LIMIT`. A `ListView.builder` with `ValueKey(_id)` does not need it.
+The differ (`Differ` in Flutter and JavaScript, `DittoDiffer` in Kotlin and Swift) reports insertions, deletions, updates, and moves by `_id`; project `_id`. It is expensive, so bound diffed queries with `LIMIT`. A list keyed by `_id` does not need it; use it for explicit insert, remove, and move calls such as an animated list.
 
-`§ Diffing Results` · Example: [observer-differ.dart](examples/observer-differ.dart)
+`§ Diffing Results` · Example: `observer-differ` in `examples/<sdk>/`
 
 ### 16. Hand slow observer work to performance-observability (MEDIUM)
 
-For slow or `async` per-update work, use `registerObserverV2` or `registerObserverWithSignalNext` **(Experimental, SDK 5.1+)**; details in `performance-observability`. Other platforms differ: [reference](reference/subscriptions-and-observers.md#other-platforms).
+For slow or `async` per-update work, use the SDK's backpressure API **(SDK 5.1+)**: Flutter `registerObserverV2` or `registerObserverWithSignalNext` (both Experimental), JavaScript `registerObserverWithSignalNext`, Swift `handlerWithSignalNext:`, Kotlin a suspending handler or `collect`. Details: `performance-observability`.
 
-`§ Backpressure (SDK 5.1+)`, `§ Backpressure on other platforms`, `§ Partial UI Updates` · Example: [observer-backpressure.dart](examples/observer-backpressure.dart)
+`§ Backpressure (SDK 5.1+)`, `§ Choosing an observer API`, `§ Partial UI Updates` · Example: `observer-backpressure` in `examples/<sdk>/`
 
 ## Checklist
 
@@ -278,13 +229,13 @@ For slow or `async` per-update work, use `registerObserverV2` or `registerObserv
 - [ ] Upserts use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`; fields removed with `UNSET`
 - [ ] `DELETE` / `EVICT` by ID use `WHERE _id IN :ids`
 - [ ] Subscriptions: `SELECT *` on stable partition keys, owned by a service, cancelled on logout and before evicting, not re-registered for UI filters
-- [ ] Observers registered in `initState()` or a service, without `onChange`; stream subscription and observer cancelled in `dispose()`
-- [ ] Listener copies `item.value` into plain data; no `QueryResult` retained
+- [ ] Observers registered once per owner, outside render code, and released when the owner goes away (Flutter: no `onChange`; stream subscription and observer cancelled in `dispose()`)
+- [ ] Callbacks copy row values into plain data; no result or row object retained
 
 ## More
 
 - Reference: [reference/dql-reference.md](reference/dql-reference.md) - literals, MISSING/NULL, USE IDS, aggregates, ORDER BY type order, JOIN, write semantics, RETURNING
-- Reference: [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md) - subscription errors, scope, lifecycle, observer APIs and lifecycle, backpressure, other platforms, Differ
+- Reference: [reference/subscriptions-and-observers.md](reference/subscriptions-and-observers.md) - subscription errors, scope, lifecycle, observer APIs of each SDK and their lifecycle, backpressure, differ
 - Reference: [reference/query-optimization.md](reference/query-optimization.md) - query result members, pagination, counting, index-friendly predicates, JOIN performance
-- Examples: [examples/](examples/) - `-good` / `-bad` pairs of the same task
+- Examples: [examples/](examples/) - `.sql` for every SDK, `examples/<sdk>/` for API code; `-good` / `-bad` pairs
 - Related skills: `data-modeling` (CRDT merge semantics), `storage-lifecycle` (DELETE/EVICT strategy), `performance-observability` (backpressure, partial UI updates, indexes, logging), `transactions-attachments`

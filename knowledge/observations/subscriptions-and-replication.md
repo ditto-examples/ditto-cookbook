@@ -16,7 +16,7 @@ How Ditto decides what to send to a device, and how the data gets there: which d
 - After many offline updates of one field, only the current value syncs: 1,000 updates cost about as much as one ([Only the current state syncs after offline edits](#only-the-current-state-syncs-after-offline-edits)).
 - `close()` and `sync.stop()` do not wait for changes that are still being sent ([A write made right before close or stop may not leave the device](#a-write-made-right-before-close-or-stop-may-not-leave-the-device)).
 - Starting and stopping sync behaved as documented, and a change written right after another device stopped sync did not reach it ([Starting and stopping sync behaved as documented](#starting-and-stopping-sync-behaved-as-documented), [A change written right after another device stops sync did not reach it](#a-change-written-right-after-another-device-stops-sync-did-not-reach-it)).
-- In JavaScript, a subscription registered without arguments has no `queryArguments` (`null` or `undefined`), and reading it does not end the process ([In JavaScript, a subscription without arguments has no queryArguments](#in-javascript-a-subscription-without-arguments-has-no-queryarguments)).
+- What each SDK returns for the arguments of a listed subscription that was registered without arguments is on the SDK pages: [Flutter SDK Behavior](flutter-sdk.md), [JavaScript SDK Behavior](javascript-sdk.md), [Kotlin SDK Behavior](kotlin-sdk.md), and [Swift SDK Behavior](swift-sdk.md).
 - `sync_session_status` keeps showing `Connected` for about 73 seconds after a peer stops sync or closes Ditto, and a statement that changed nothing is confirmed only with the next sync exchange, up to about 27 seconds later ([The sync session status lags about 73 seconds behind a peer that stops sync or closes](#the-sync-session-status-lags-about-73-seconds-behind-a-peer-that-stops-sync-or-closes), [An empty commit is confirmed only with the next sync exchange](#an-empty-commit-is-confirmed-only-with-the-next-sync-exchange)).
 
 ## What a Subscription Delivers
@@ -575,7 +575,7 @@ Trials (of 9) in which the hub received the document:
 
 - The hub received the document 7 to 34 ms after the write started for 100 bytes, 21 to 24 ms for 1 MB (5.0.3: 25 to 63 ms), and 2.97 to 3.06 seconds for 300 KB over the slow link. When the write's `await` completed (on 5.2.0, after 2 to 6 ms for 100 bytes and 11 to 14 ms for 1 MB; on 5.0.3 and 5.1.0, after at most 17 to 38 ms), the document had not been sent yet.
 - `synced_up_to_local_commit_id` reached the write's `commitID` at about the same moment as the hub received the document (we checked both every 5 ms; the difference was −9 to +17 ms). Closing after waiting for it delivered every write, at every size and over the slow link (81 of 81). `close()` and `sync.stop()` do not wait for changes that are being sent.
-- When `close()` was called without awaiting the write, the JavaScript `close()` waited for the write to complete (see [In JavaScript, close() completes pending writes](transaction-behavior.md#in-javascript-close-completes-pending-writes)), but the write was not sent (0 of 54).
+- When `close()` was called without awaiting the write, the JavaScript `close()` waited for the write to complete (see [In JavaScript, close() completes pending writes](javascript-sdk.md#in-javascript-close-completes-pending-writes)), but the write was not sent (0 of 54).
 - A write that did not arrive was still in the device's store in every case. After the device opened the same directory again, the write reached the hub in 114 to 176 ms (over the direct connection; over the slow link it would take about 3 seconds again). If the device never syncs again, because it broke or its directory was deleted (see [Deleting the directory after close() leaves no data behind](persistence-directory.md#deleting-the-directory-after-close-leaves-no-data-behind)), the change never reaches other devices.
 - On 5.0.3, even 100 bytes did not arrive when the device ended right away. On 5.1 and later, 100 bytes arrived in most trials, but not reliably (8 of 9 with `close()`, for example), and in an app possibly in fewer, as described above.
 
@@ -601,20 +601,6 @@ Trials (of 9) in which the hub received the document:
 **Used in:** none yet.
 
 ## Inspecting Subscriptions
-
-### In JavaScript, a subscription without arguments has no queryArguments
-
-| | |
-|---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, two runs each, and 5.0.3, one run |
-| Setup | One device without sync. Two subscriptions, `SELECT * FROM orders` without arguments and `SELECT * FROM orders WHERE status = :status` with `{status: 'open'}`; then `queryString` and `queryArguments` of each element of `ditto.sync.subscriptions` |
-
-- On every release, the subscription without arguments had no `queryArguments` (`null` or `undefined`), and reading it did not end the process. The other subscription returned `{status: 'open'}`.
-- The order of `ditto.sync.subscriptions` differed between releases, the same in every run: on 5.0.3 and 5.1.0, the subscription registered second came first, and on 5.2.0, the one registered first. The order is not documented.
-
-**Not tested:** `queryArgumentsJsonString`; the Flutter SDK, for which [Sync stop, close, and inspection](../../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection) describes a crash on 5.1.0.
-
-**Used in:** [Sync stop, close, and inspection](../../best-practices/sync-and-subscriptions.md#sync-stop-close-and-inspection).
 
 ## How Quickly Sync Status Changes
 

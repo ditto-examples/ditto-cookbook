@@ -60,24 +60,14 @@ WHERE _id = :id
 
 With the declaration, an upsert or `SET` replaces the address as a whole: keys that are absent from the new value disappear. A nested update such as `SET shippingAddress.city = :city` fails with `Unsupported DML operation on REGISTER field "shippingAddress"`; to change one part of a register object, write the whole object again.
 
-```dart
-// ✅ GOOD: The address is a REGISTER, so a concurrent edit can never produce a
-// mix of two different addresses (for example, the street of one and the city
-// of the other). The declaration appears in every statement.
-Future<void> setShippingAddress(
-  Ditto ditto,
-  String customerId,
-  Map<String, dynamic> address,
-) async {
-  await ditto.store.execute(
-    '''
-    UPDATE COLLECTION customers (shippingAddress REGISTER)
-    SET shippingAddress = :address
-    WHERE _id = :id
-    ''',
-    arguments: {'id': customerId, 'address': address},
-  );
-}
+```sql
+-- ✅ GOOD: The address is a REGISTER, so a concurrent edit can never produce a
+-- mix of two different addresses (for example, the street of one and the city
+-- of the other). The declaration appears in every statement.
+-- Arguments: {"id": "c-1", "address": {"street": "Main St", "city": "Oslo", "zip": "0150"}}
+UPDATE COLLECTION customers (shippingAddress REGISTER)
+SET shippingAddress = :address
+WHERE _id = :id
 ```
 
 ### Keep type declarations consistent
@@ -104,16 +94,16 @@ In our testing, the first three rows of this table held on SDK 5.1.0 and 5.2.0 (
 
 ### Changing the setting
 
-System parameters are not persisted. If you choose `DQL_STRICT_MODE = true`, set it **every time** you open Ditto, in `DittoConfig.systemParameters` (SDK 5.2+), so that it is in effect before any query, observer, or sync runs. On SDK 5.1, run `ALTER SYSTEM` after `Ditto.open` and before `ditto.sync.start()`, running queries, or registering observers (subscriptions may be registered before it). See [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters) for the full startup sequence.
+System parameters are not persisted. If you choose `DQL_STRICT_MODE = true`, set it **every time** you open Ditto, in the system parameters of `DittoConfig` (SDK 5.2+), so that it is in effect before any query, observer, or sync runs. On SDK 5.1, run `ALTER SYSTEM` after opening Ditto and before you start sync, run queries, or register observers (subscriptions may be registered before it). See [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters) for the full startup sequence.
 
-```dart
-// Set on every launch: the value resets to the default when Ditto is reopened.
-const strictModeConfig = DittoConfig(
-  databaseID: 'YOUR_DATABASE_ID',
-  connect: DittoConfigConnectServer(url: 'YOUR_SERVER_URL'),
-  systemParameters: {'DQL_STRICT_MODE': true},
-);
+```sql
+-- SDK 5.1 only: run after every open, before sync starts and before queries
+-- and observers run. On SDK 5.2+, pass DQL_STRICT_MODE in the system
+-- parameters of DittoConfig instead.
+ALTER SYSTEM SET DQL_STRICT_MODE = true
 ```
+
+The code for passing system parameters when Ditto opens: [Flutter](platforms/flutter.md#dittoconfig-in-flutter) · [JavaScript](platforms/javascript.md#dittoconfig-in-javascript) · [Kotlin](platforms/kotlin.md#dittoconfig-in-kotlin) · [Swift](platforms/swift.md#dittoconfig-in-swift).
 
 ### Peers with different settings
 
@@ -210,56 +200,30 @@ DQL parameters bind **values**, not field paths, and DQL has no bracket syntax f
 1. **Add or update an entry** by upserting a partial document with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`. Because objects merge, only the entry you pass is written (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)), and unchanged values are not rewritten.
 2. **Remove an entry** with `UNSET`, after validating that the key matches a strict pattern (for example, a UUID), and only then placing it inside backticks.
 
-```dart
-/// Adds or updates one line item. The key is passed as data, never spliced
-/// into the query. Note: if the order does not exist yet, this creates it.
-Future<void> upsertOrderItem(
-  Ditto ditto, {
-  required String orderId,
-  required String itemId,
-  required Map<String, dynamic> item,
-}) async {
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {
-      'patch': {
-        '_id': orderId,
-        'items': {itemId: item},
-      },
-    },
-  );
-}
+```sql
+-- Adds or updates one line item. The key is passed as data inside a partial
+-- document, never spliced into the query. If the order does not exist yet,
+-- this creates it.
+-- Arguments: {"patch": {"_id": "order-1", "items": {"9b2f6c1e-4d0a-4f7e-8a51-3c2d1e0f9a87": {"productId": "p1", "quantity": 2}}}}
+INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```
 
-```dart
-// Map keys used in paths are validated: only UUID-shaped keys are accepted.
-final _uuidKey = RegExp(
-  r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-);
-
-/// Removes one line item. A path cannot be passed as a parameter, so the key
-/// is validated before it is placed inside a backtick-quoted path segment.
-Future<void> removeOrderItem(
-  Ditto ditto, {
-  required String orderId,
-  required String itemId,
-}) async {
-  if (!_uuidKey.hasMatch(itemId)) {
-    throw ArgumentError.value(itemId, 'itemId', 'must be a lowercase UUID');
-  }
-  await ditto.store.execute(
-    'UPDATE orders UNSET items.`$itemId` WHERE _id = :id',
-    arguments: {'id': orderId},
-  );
-}
+```sql
+-- Removes one line item. A path cannot be passed as a parameter, so the key is
+-- checked against a strict pattern (here, a lowercase UUID) in app code before
+-- it is placed inside the backtick-quoted path segment.
+-- Arguments: {"id": "order-1"}
+UPDATE orders UNSET items.`9b2f6c1e-4d0a-4f7e-8a51-3c2d1e0f9a87` WHERE _id = :id
 ```
+
+The code for validating a key before it goes into a path: [Flutter](platforms/flutter.md#executing-dql-in-flutter) · [JavaScript](platforms/javascript.md#executing-dql-in-javascript) · [Kotlin](platforms/kotlin.md#executing-dql-in-kotlin) · [Swift](platforms/swift.md#executing-dql-in-swift).
 
 > **Note (SDK 5.1.0 and 5.2.0):** Removing an entry does not win over a concurrent edit of that entry. In our testing, one device ran `` UNSET items.`item-1` `` while another device changed `` items.`item-1`.quantity `` (see [A key added concurrently survives a later removal as null](../knowledge/observations/merge-behavior.md#a-key-added-concurrently-survives-a-later-removal-as-null)):
 > - **Removal first, edit later:** the entry stays with only the edited fields, for example `{"quantity": 5}`.
 > - **Edit first, removal later:** the entry stays with the edited fields set to `null`, for example `{"quantity": null}`.
 > - **Whole entry rewritten after the removal** (`` SET items.`item-1` = :item `` or `DO UPDATE`): the full entry comes back.
 >
-> These are "husk" entries, like [husk documents](deletion-and-storage.md#husk-documents). When devices may edit an entry while another removes it, mark it removed instead (`` SET items.`item-1`.removed = true ``). Either way, make readers skip entries whose required fields are missing or `null` (see `orderSubtotalCents` in [Do not store derived values that can diverge](#do-not-store-derived-values-that-can-diverge)).
+> These are "husk" entries, like [husk documents](deletion-and-storage.md#husk-documents). When devices may edit an entry while another removes it, mark it removed instead (`` SET items.`item-1`.removed = true ``). Either way, make readers skip entries whose required fields are missing or `null` (see [Do not store derived values that can diverge](#do-not-store-derived-values-that-can-diverge)).
 
 > **Note (SDK 5.1.0 and 5.2.0):** A removed entry leaves a small record in the document. In our testing, each map key removed with `UNSET` added about 54 bytes to a new device's first sync of the document (for a UUID key), the records stayed after reaping, and writes slowed down as removed keys accumulated (see [Removed map keys keep adding to a new device's first sync](../knowledge/observations/storage-and-deletion.md#removed-map-keys-keep-adding-to-a-new-devices-first-sync)). A map with a bounded set of keys, such as the line items of an order, is not affected. For a long-lived list whose entries come and go, such as open tickets or a task list, store each entry in its own document instead; deleted documents' tombstones are reaped.
 
@@ -267,27 +231,21 @@ Future<void> removeOrderItem(
 
 ### Working with arrays
 
-DQL has no element-level assignment (`SET tags[0] = ...` is a parser error). Build the new array in Dart and write it back; the write replaces the whole register:
+DQL has no element-level assignment (`SET tags[0] = ...` is a parser error). Build the new array in app code and write it back; the write replaces the whole register:
 
-```dart
-// The array is a register: this write replaces it as a whole. Reading and
-// writing in one transaction keeps two local calls from interleaving and
-// dropping a tag; a concurrent edit on another device can still win the merge.
-Future<void> addTag(Ditto ditto, String productId, String tag) async {
-  await ditto.store.transaction(hint: 'addTag', (tx) async {
-    final result = await tx.execute(
-      'SELECT tags FROM products WHERE _id = :id',
-      arguments: {'id': productId},
-    );
-    if (result.items.isEmpty) return;
-    final current = (result.items.first.value['tags'] as List?) ?? const [];
-    await tx.execute(
-      'UPDATE products SET tags = :tags WHERE _id = :id',
-      arguments: {'id': productId, 'tags': [...current, tag]},
-    );
-  });
-}
+```sql
+-- The array is a register: the write replaces it as a whole. Read the current
+-- array, append the tag in app code, and write the new array back, both in one
+-- transaction, which keeps two local calls from interleaving and dropping a
+-- tag; a concurrent edit on another device can still win the merge.
+-- Arguments: {"id": "p1"}
+SELECT tags FROM products WHERE _id = :id
+
+-- Arguments: {"id": "p1", "tags": ["new", "sale"]}
+UPDATE products SET tags = :tags WHERE _id = :id
 ```
+
+The code for reading and writing in one transaction: [Flutter](platforms/flutter.md#transactions-in-flutter) · [JavaScript](platforms/javascript.md#transactions-in-javascript) · [Kotlin](platforms/kotlin.md#transactions-in-kotlin) · [Swift](platforms/swift.md#transactions-in-swift).
 
 To find documents whose array contains a value, use `IN` with the array field or `array_contains`:
 
@@ -319,25 +277,19 @@ Update only the fields that the user changed, so that concurrent edits to other 
 **❌ DON'T:**
 - Write back a whole in-memory copy of a document, even with `DO UPDATE_LOCAL_DIFF`.
 
-```dart
-// ❌ BAD: Writing back a whole in-memory copy after the user changed only the
-// status. If another device changed tableNumber to 12 after this copy was
-// loaded, the stale value 7 is written back. DO UPDATE_LOCAL_DIFF does not
-// prevent this, because 7 differs from the stored 12 (and DO UPDATE would also
-// rewrite every unchanged field).
-await ditto.store.execute(
-  'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-  arguments: {
-    'order': {'_id': 'order-1', 'status': 'ready', 'tableNumber': 7},
-  },
-);
+```sql
+-- ❌ BAD: Writing back a whole in-memory copy after the user changed only the
+-- status. If another device changed tableNumber to 12 after this copy was
+-- loaded, the stale value 7 is written back. DO UPDATE_LOCAL_DIFF does not
+-- prevent this, because 7 differs from the stored 12 (and DO UPDATE would also
+-- rewrite every unchanged field).
+-- Arguments: {"order": {"_id": "order-1", "status": "ready", "tableNumber": 7}}
+INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 
-// ✅ GOOD: Only the field the user changed is written, so a concurrent change
-// to tableNumber on another device is kept.
-await ditto.store.execute(
-  'UPDATE orders SET status = :status WHERE _id = :id',
-  arguments: {'id': 'order-1', 'status': 'ready'},
-);
+-- ✅ GOOD: Only the field the user changed is written, so a concurrent change
+-- to tableNumber on another device is kept.
+-- Arguments: {"id": "order-1", "status": "ready"}
+UPDATE orders SET status = :status WHERE _id = :id
 ```
 
 ### Flat or nested
@@ -367,23 +319,7 @@ A stored value computed from other fields (a line total, an order total, a remai
 }
 ```
 
-```dart
-// ✅ GOOD: Store the source data; derive totals at read time. Entries with a
-// missing or null price or quantity (an entry removed on one device while
-// another device edited it) are skipped instead of crashing the screen.
-int orderSubtotalCents(Map<String, dynamic> order) {
-  final items = (order['items'] as Map<String, dynamic>?) ?? const {};
-  var subtotal = 0;
-  for (final entry in items.values) {
-    if (entry is! Map<String, dynamic>) continue;
-    final price = entry['unitPriceCents'];
-    final quantity = entry['quantity'];
-    if (price is! int || quantity is! int) continue;
-    subtotal += price * quantity;
-  }
-  return subtotal;
-}
-```
+✅ Store the source data and derive totals when you read the document: sum `unitPriceCents * quantity` over the entries of `items`, and skip entries whose price or quantity is missing or `null` (an entry removed on one device while another device edited it) instead of failing. The code for such a read-time derivation: [Flutter](platforms/flutter.md#query-results-in-flutter) · [JavaScript](platforms/javascript.md#query-results-in-javascript) · [Kotlin](platforms/kotlin.md#query-results-in-kotlin) · [Swift](platforms/swift.md#query-results-in-swift).
 
 Aggregates over a collection can be computed in DQL instead of maintained in a stored field or counter:
 
@@ -404,7 +340,7 @@ Once a document has replicated, Ditto syncs only the fields that change, but eve
 - Derived values: totals, averages, ages, "days until" values.
 
 **✅ DO:**
-- Keep UI and device-local state in widget state, a state-management layer, or local preferences.
+- Keep UI and device-local state in your UI framework's state, a state-management layer, or local preferences.
 - Initialize flags you will filter on when you create the document (for example, `isDeleted: false`), or filter with `coalesce(isDeleted, false) = false`. A missing field is `MISSING`, not `false` (see [MISSING and NULL](dql.md#missing-and-null)).
 
 ### Field names
@@ -431,7 +367,7 @@ Log and error messages:
 Query failed: DQL Internal execution error: Insert failed: <store> Document `_id = "s5m1"` size is 5243067 bytes and exceeds limit of 5242880 bytes
 ```
 
-In Flutter, a failed statement throws a `DittoException`; catch it like any other DQL error (see [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing)).
+A failed statement fails with the SDK's error type; catch it like any other DQL error (see [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing)).
 
 > **Note (SDK 5.2.0):** A device on 5.2.0 drops a change that would push a document over its hard limit, so the devices keep different versions of the document, and both list it in `system:sync_degradations` with the reason `documentTooBig` (see [System Virtual Collections](../knowledge/system-reference.md#system-virtual-collections)); no API reports an error. In our testing, updates of that document then reached neither device, while other documents kept syncing, until one device evicted it, and **the evicting device lost its own changes to the document** (see [On SDK 5.2.0, an oversized document stops syncing until one side evicts it](../knowledge/observations/documents-and-limits.md#on-sdk-520-an-oversized-document-stops-syncing-until-one-side-evicts-it)). To recover, evict the document on the device whose changes you can afford to lose, and include `system:sync_degradations` in your diagnostics.
 >
@@ -452,22 +388,13 @@ On both releases, the protection is the same: keep large or growing data out of 
 - Append to a nested map forever.
 - Raise the hard limit to make a large document fit.
 
-```dart
-// ✅ GOOD: Handle the size error at the call site that may produce it.
-Future<bool> saveNotes(Ditto ditto, String visitId, String notes) async {
-  try {
-    await ditto.store.execute(
-      'UPDATE visits SET notes = :notes WHERE _id = :id',
-      arguments: {'id': visitId, 'notes': notes},
-    );
-    return true;
-  } on DittoException catch (error) {
-    // The message contains "exceeds limit of ... bytes" for oversized documents.
-    showError(error); // your app's error UI
-    return false;
-  }
-}
+```sql
+-- A write that may take the document over the hard limit
+-- Arguments: {"id": "visit-1", "notes": "Customer asked for a callback."}
+UPDATE visits SET notes = :notes WHERE _id = :id
 ```
+
+Catch the error at the call site that may produce it, and report it in your app's error UI; its message contains `exceeds limit of ... bytes` for oversized documents. The code for handling the size error: [Flutter](platforms/flutter.md#executing-dql-in-flutter) · [JavaScript](platforms/javascript.md#executing-dql-in-javascript) · [Kotlin](platforms/kotlin.md#executing-dql-in-kotlin) · [Swift](platforms/swift.md#executing-dql-in-swift).
 
 ### Monitoring size
 
@@ -531,14 +458,12 @@ Concurrent edits are **not** by themselves a reason to split: a map keyed by ID 
 }
 ```
 
-```dart
-// One subscription syncs the order with all of its items, and every write to an
-// item is an atomic update of the order document. Register it once in a
-// long-lived service and cancel it when it is no longer needed (see StoreSync below).
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders WHERE storeId = :storeId',
-  arguments: {'storeId': 'store-12'},
-);
+```sql
+-- One subscription syncs the order with all of its items, and every write to an
+-- item is an atomic update of the order document. Register it once in a
+-- long-lived service and cancel it when it is no longer needed.
+-- Arguments: {"storeId": "store-12"}
+SELECT * FROM orders WHERE storeId = :storeId
 ```
 
 ### Separate collections with JOIN (SDK 5.1+)
@@ -564,41 +489,19 @@ CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)
 
 Subscribe to each collection separately. A subscription reads a single collection with `SELECT *` (no JOIN or projection), so a child collection cannot be filtered by a field of its parent: copy the filter key (`storeId`) into the child documents when you create them.
 
-```dart
-/// Keeps the three collections needed by the order screens in sync.
-/// Subscriptions belong to an app- or feature-level service, not to a screen.
-class StoreSync {
-  StoreSync(this.ditto, this.storeId);
+```sql
+-- Keeps the three collections needed by the order screens in sync.
+-- Subscriptions belong to an app- or feature-level service, not to a screen.
+-- Arguments: {"storeId": "store-12"}
+SELECT * FROM orders WHERE storeId = :storeId
 
-  final Ditto ditto;
-  final String storeId;
-  final List<SyncSubscription> _subscriptions = [];
+-- Arguments: {"storeId": "store-12"}
+SELECT * FROM orderItems WHERE storeId = :storeId
 
-  Future<void> start() async {
-    await ditto.store.execute(
-      'CREATE INDEX IF NOT EXISTS idx_orderItems_orderId ON orderItems (orderId)',
-    );
-    _subscriptions.addAll([
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orders WHERE storeId = :storeId',
-        arguments: {'storeId': storeId},
-      ),
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orderItems WHERE storeId = :storeId',
-        arguments: {'storeId': storeId},
-      ),
-      ditto.sync.registerSubscription('SELECT * FROM products'),
-    ]);
-  }
-
-  void stop() {
-    for (final subscription in _subscriptions) {
-      subscription.cancel();
-    }
-    _subscriptions.clear();
-  }
-}
+SELECT * FROM products
 ```
+
+The code for a service that owns these subscriptions: [Flutter](platforms/flutter.md#subscriptions-in-flutter) · [JavaScript](platforms/javascript.md#subscriptions-in-javascript) · [Kotlin](platforms/kotlin.md#subscriptions-in-kotlin) · [Swift](platforms/swift.md#subscriptions-in-swift).
 
 Join locally, in a one-off query or an observer. Qualify every field with its alias and project the fields you need: with `SELECT *`, each collection's fields are nested under its alias, and an unqualified `_id` in the result is a composite such as `{"i": ..., "p": ...}`.
 
@@ -620,7 +523,7 @@ ORDER BY i.productId
 
 The first query drives from `orderItems` through the `idx_orderItems_orderId` index and looks up each product by `_id`. The second needs the same index because `orderItems` is the inner collection. Without a usable index, the statement fails with `Joining to "i" disallowed without appropriate index support`, unless you explicitly allow a scan of that join term with `USE INDEX ""` (see [Joining Collections (SDK 5.1+)](dql.md#joining-collections-sdk-51)).
 
-Observe the join with the standard observer pattern (see [Joins in observers](dql.md#joins-in-observers) and [Store Observers in Flutter](observers.md#store-observers-in-flutter)). If the `orderId` can change while the widget is mounted, re-register the observer in `didUpdateWidget` (see [Filter locally instead of re-registering](sync-and-subscriptions.md#filter-locally-instead-of-re-registering)).
+Observe the join like any other query (see [Joins in observers](dql.md#joins-in-observers) and [Observer Lifecycle](observers.md#observer-lifecycle)). If the `orderId` can change while the screen is shown, register the observer again for the new value (see [Filter locally instead of re-registering](sync-and-subscriptions.md#filter-locally-instead-of-re-registering)).
 
 **✅ DO:**
 - Subscribe to every collection a JOIN reads, and copy the subscription filter key into child documents.
@@ -667,112 +570,59 @@ Otherwise IDs compare by type and exact value. In our testing, `1` and `'1'`, `t
 
 When you copy a document this way, remember that a query result contains plain values, not CRDT types. Declare in the `SELECT` and in the `INSERT` the same types that every other statement on the collection uses (see [Keep type declarations consistent](#keep-type-declarations-consistent)); otherwise the copy stores a counter as a plain number and an attachment token as a map, and a field read with a different declaration (for example, a MAP read as a `REGISTER`) is missing from the copy. With `DQL_STRICT_MODE = true`, declare the `MAP` fields as well.
 
-```dart
-/// Copies an order to a new ID and deletes the original, atomically.
-/// Both statements declare the order's COUNTER, ATTACHMENT, and REGISTER
-/// fields exactly as the other statements on orders do, so the copy keeps
-/// their CRDT types. Undeclared objects such as shippingAddress are MAPs.
-Future<void> moveOrder(Ditto ditto, String oldId, String newId) async {
-  await ditto.store.transaction(hint: 'moveOrder', (tx) async {
-    final result = await tx.execute(
-      '''
-      SELECT * FROM COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
-      WHERE _id = :id
-      ''',
-      arguments: {'id': oldId},
-    );
-    if (result.items.isEmpty) return;
-    final copy = Map<String, dynamic>.from(result.items.first.value)
-      ..['_id'] = newId;
-    await tx.execute(
-      '''
-      INSERT INTO COLLECTION orders
-        (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
-      DOCUMENTS (:doc)
-      ''',
-      arguments: {'doc': copy},
-    );
-    await tx.execute(
-      'DELETE FROM orders WHERE _id = :id',
-      arguments: {'id': oldId},
-    );
-  });
-}
+Copy and remove in one transaction: read the document with the declarations, change `_id` in the copy in app code, insert the copy with the same declarations, and delete the original.
+
+```sql
+-- Both statements declare the order's COUNTER, ATTACHMENT, and REGISTER fields
+-- exactly as the other statements on orders do, so the copy keeps their CRDT
+-- types. Undeclared objects such as shippingAddress are MAPs.
+-- Arguments: {"id": "order-1"}
+SELECT * FROM COLLECTION orders
+  (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
+WHERE _id = :id
+
+-- Arguments: {"doc": {"_id": "order-1-moved", "status": "open", "printCount": 2}}
+INSERT INTO COLLECTION orders
+  (printCount COUNTER, receipt ATTACHMENT, deliveryLocation REGISTER)
+DOCUMENTS (:doc)
+
+-- Arguments: {"id": "order-1"}
+DELETE FROM orders WHERE _id = :id
 ```
+
+The code for the copy in one transaction: [Flutter](platforms/flutter.md#transactions-in-flutter) · [JavaScript](platforms/javascript.md#transactions-in-javascript) · [Kotlin](platforms/kotlin.md#transactions-in-kotlin) · [Swift](platforms/swift.md#transactions-in-swift).
 
 ### Generation strategies
 
 | Strategy | Use when | Notes |
 |---|---|---|
-| **UUID v4** (primary recommendation) | Almost always | 122 random bits; independent devices never coordinate. Use a maintained package (for example, `uuid` on pub.dev) or the helper below |
+| **UUID v4** (primary recommendation) | Almost always | 122 random bits; independent devices never coordinate. Use your platform's UUID generator (see the code below) |
 | **ULID** or another time-ordered random ID | You want IDs that sort roughly by creation time | Ordering follows each device's clock, so it is only approximate across devices; the ID reveals its creation time |
 | **Composite object** | Permissions or subscriptions are scoped by owner, location, or tenant; you group documents by a parent | Combine stable scope fields with a UUID: `{"storeId": "s1", "orderId": "<uuid>"}` |
 | **Natural key** | The domain already has a globally unique, immutable key (a SKU, an email address used as an account key) | Two devices that create the same entity intentionally end up with one document whose fields merge |
-| **Generated by Ditto** (omit `_id`) | Nothing else needs to know the ID before the insert | Read it back with `result.mutatedDocumentIDs()` |
+| **Generated by Ditto** (omit `_id`) | Nothing else needs to know the ID before the insert | Read it back from the mutated document IDs of the result |
 
-```dart
-import 'dart:math';
-
-final _random = Random.secure();
-
-/// Returns a random (version 4) UUID such as "3f0c9a8e-5b1d-4c2a-9e7f-1a2b3c4d5e6f".
-String uuidV4() {
-  final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
-  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
-      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-}
-
-Future<String> createOrder(Ditto ditto, String storeId) async {
-  final orderId = uuidV4();
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order)',
-    arguments: {
-      'order': {
-        '_id': orderId,
-        'storeId': storeId,
-        'status': 'open',
-        // utcTimestamp() is defined in the Timestamps section.
-        'createdAt': utcTimestamp(),
-      },
-    },
-  );
-  return orderId;
-}
+```sql
+-- ✅ GOOD: The app generates a UUID for _id before the insert.
+-- createdAt comes from the fixed-precision timestamp helper (see Timestamps).
+-- Arguments: {"order": {"_id": "3f0c9a8e-5b1d-4c2a-9e7f-1a2b3c4d5e6f", "storeId": "store-12", "status": "open", "createdAt": "2026-01-15T10:30:00.000Z"}}
+INSERT INTO orders DOCUMENTS (:order)
 ```
+
+The code for generating UUIDs: [Flutter](platforms/flutter.md#ids-and-timestamps-in-flutter) · [JavaScript](platforms/javascript.md#ids-and-timestamps-in-javascript) · [Kotlin](platforms/kotlin.md#ids-and-timestamps-in-kotlin) · [Swift](platforms/swift.md#ids-and-timestamps-in-swift).
 
 ### Composite IDs for permission scoping and grouping
 
 Ditto permission rules are queries on `_id` and its subfields. A hierarchical composite `_id` lets you grant access at any level, for example a whole region (`"_id.region == 'eu'"`) or a single store (`"_id.storeId == 'store-12'"`); see [Design `_id` for permission scoping](security.md#design-_id-for-permission-scoping) for the rule format. The same subfields can filter subscriptions and queries (`WHERE _id.storeId = :storeId`), and they can be indexed (see [The sending peer evaluates a subscription's WHERE clause like a local query](../knowledge/observations/subscriptions-and-replication.md#the-sending-peer-evaluates-a-subscriptions-where-clause-like-a-local-query)). Filtering on the complete `_id` value uses a direct ID lookup.
 
-```dart
-Future<void> createStoreOrder(
-  Ditto ditto, {
-  required String region,
-  required String storeId,
-  required String orderId,
-}) async {
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order)',
-    arguments: {
-      'order': {
-        '_id': {'region': region, 'storeId': storeId, 'orderId': orderId},
-        'status': 'open',
-      },
-    },
-  );
-}
+```sql
+-- Arguments: {"order": {"_id": {"region": "eu", "storeId": "store-12", "orderId": "3f0c9a8e-5b1d-4c2a-9e7f-1a2b3c4d5e6f"}, "status": "open"}}
+INSERT INTO orders DOCUMENTS (:order)
 
-// Each store device syncs only its own store's orders. The caller owns the
-// returned subscription and cancels it when it is no longer needed.
-SyncSubscription subscribeToStore(Ditto ditto, String storeId) =>
-    ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE _id.storeId = :storeId',
-      arguments: {'storeId': storeId},
-    );
+-- Each store device syncs only its own store's orders. The service that
+-- registers this subscription cancels it when it is no longer needed.
+-- Arguments: {"storeId": "store-12"}
+SELECT * FROM orders WHERE _id.storeId = :storeId
 ```
 
 ```sql
@@ -785,42 +635,29 @@ Put only **immutable** attributes into a composite `_id`. A store that might mov
 
 Devices that are offline cannot coordinate a sequence. Two of them will generate the same "next" ID, and after sync the two documents become one document whose fields merge: data from different orders ends up mixed together (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)). Timestamp-only IDs fail the same way whenever two devices create a record in the same millisecond, and device clocks are not reliable anyway (see [Timestamps](#timestamps)).
 
-```dart
-// ❌ BAD: Collides when two offline devices create the 42nd order of the day.
-String badSequentialId(int dailyCount) => 'order-$dailyCount';
+```sql
+-- ❌ BAD: Collides when two offline devices create the 42nd order of the day
+-- Arguments: {"order": {"_id": "order-42", "status": "open"}}
+INSERT INTO orders DOCUMENTS (:order)
 
-// ❌ BAD: Collides when two devices write within the same millisecond.
-String badTimestampId() => 'order-${DateTime.now().millisecondsSinceEpoch}';
+-- ❌ BAD: Collides when two devices write within the same millisecond
+-- Arguments: {"order": {"_id": "order-1760000000123", "status": "open"}}
+INSERT INTO orders DOCUMENTS (:order)
 ```
 
 ### Human-readable display IDs
 
 Customers and staff need short numbers such as "#A-0042". Keep them **separate from `_id`**, and treat them as labels rather than unique keys. One approach that avoids coordination is to prefix with a stable device or terminal code that you assign, and to show the date alongside the number:
 
-```dart
-/// A display label, not an identifier: uniqueness is not guaranteed across
-/// devices, so never use it as _id or as a lookup key.
-String displayNumber(String terminalCode, int localSequence) =>
-    '$terminalCode-${localSequence.toString().padLeft(4, '0')}';
-
-Future<void> createOrderWithLabel(
-  Ditto ditto, {
-  required String orderId,
-  required String terminalCode,
-  required int localSequence,
-}) async {
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order)',
-    arguments: {
-      'order': {
-        '_id': orderId, // UUID
-        'displayNumber': displayNumber(terminalCode, localSequence),
-        'createdAt': utcTimestamp(), // see the Timestamps section
-      },
-    },
-  );
-}
+```sql
+-- The display label (here, terminal code A plus a local sequence of 42) is a
+-- regular field, not an identifier: uniqueness is not guaranteed across
+-- devices, so never use it as _id or as a lookup key.
+-- Arguments: {"order": {"_id": "3f0c9a8e-5b1d-4c2a-9e7f-1a2b3c4d5e6f", "displayNumber": "A-0042", "createdAt": "2026-01-15T10:30:00.000Z"}}
+INSERT INTO orders DOCUMENTS (:order)
 ```
+
+The code for formatting the label: [Flutter](platforms/flutter.md#ids-and-timestamps-in-flutter) · [JavaScript](platforms/javascript.md#ids-and-timestamps-in-javascript) · [Kotlin](platforms/kotlin.md#ids-and-timestamps-in-kotlin) · [Swift](platforms/swift.md#ids-and-timestamps-in-swift).
 
 ## Counters
 
@@ -862,26 +699,14 @@ SELECT * FROM COLLECTION products (viewCount COUNTER)
 WHERE _id = :id
 ```
 
-```dart
-Future<void> createProduct(Ditto ditto, String productId, String name) async {
-  await ditto.store.execute(
-    'INSERT INTO COLLECTION products (viewCount COUNTER) DOCUMENTS (:product)',
-    arguments: {
-      'product': {'_id': productId, 'name': name, 'viewCount': 0},
-    },
-  );
-}
+```sql
+-- Arguments: {"product": {"_id": "p1", "name": "Pen", "viewCount": 0}}
+INSERT INTO COLLECTION products (viewCount COUNTER) DOCUMENTS (:product)
 
-Future<void> recordView(Ditto ditto, String productId) async {
-  await ditto.store.execute(
-    '''
-    UPDATE COLLECTION products (viewCount COUNTER)
-    APPLY viewCount INCREMENT BY 1
-    WHERE _id = :id
-    ''',
-    arguments: {'id': productId},
-  );
-}
+-- Arguments: {"id": "p1"}
+UPDATE COLLECTION products (viewCount COUNTER)
+APPLY viewCount INCREMENT BY 1
+WHERE _id = :id
 ```
 
 `APPLY` can be combined with `SET` in one statement; write `APPLY` first:
@@ -918,19 +743,13 @@ A typical consequence: a stock recount with `RESTART WITH :counted` silently era
 
 Run a stock recount, for example, only while every till is online and in sync. If devices keep recording changes offline during a recount, keep the recounts and the changes as separate event documents and derive the stock from them (see [When counters are appropriate](#when-counters-are-appropriate)).
 
-```dart
-// Run only while every device that increments stockCount is online and in
-// sync; increments that this device has not received yet are discarded.
-Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
-  await ditto.store.execute(
-    '''
-    UPDATE COLLECTION inventory (stockCount COUNTER)
-    APPLY stockCount RESTART WITH :counted
-    WHERE _id = :id
-    ''',
-    arguments: {'id': itemId, 'counted': counted},
-  );
-}
+```sql
+-- Run only while every device that increments stockCount is online and in
+-- sync; increments that this device has not received yet are discarded.
+-- Arguments: {"id": "item-1", "counted": 40}
+UPDATE COLLECTION inventory (stockCount COUNTER)
+APPLY stockCount RESTART WITH :counted
+WHERE _id = :id
 ```
 
 ### When counters are appropriate
@@ -950,27 +769,17 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
 
 **Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together, also between devices that are online (see [Conditions and Arithmetic across Devices](../knowledge/crdt-types.md#conditions-and-arithmetic-across-devices)). Everything else (registers, map entries) keeps one of the concurrent values, so `SET stockLevel = stockLevel - 1` (SDK 5.1+) on two devices loses one of the decrements (see [Read-modify-write increments lose most concurrent updates](../knowledge/observations/merge-behavior.md#read-modify-write-increments-lose-most-concurrent-updates)).
 
-```dart
-// ❌ BAD: Read-modify-write on a register. Two devices that each sell one item
-// while the stock is 10 both write 9; after sync the stock is 9 instead of 8.
-Future<void> sellOneIncorrectly(Ditto ditto, String itemId) async {
-  await ditto.store.execute(
-    'UPDATE inventory SET stockLevel = stockLevel - 1 WHERE _id = :id',
-    arguments: {'id': itemId},
-  );
-}
+```sql
+-- ❌ BAD: Read-modify-write on a register. Two devices that each sell one item
+-- while the stock is 10 both write 9; after sync the stock is 9 instead of 8.
+-- Arguments: {"id": "item-1"}
+UPDATE inventory SET stockLevel = stockLevel - 1 WHERE _id = :id
 
-// ✅ GOOD: Concurrent decrements are combined.
-Future<void> sellOne(Ditto ditto, String itemId) async {
-  await ditto.store.execute(
-    '''
-    UPDATE COLLECTION inventory (stockCount COUNTER)
-    APPLY stockCount INCREMENT BY -1
-    WHERE _id = :id
-    ''',
-    arguments: {'id': itemId},
-  );
-}
+-- ✅ GOOD: Concurrent decrements are combined.
+-- Arguments: {"id": "item-1"}
+UPDATE COLLECTION inventory (stockCount COUNTER)
+APPLY stockCount INCREMENT BY -1
+WHERE _id = :id
 ```
 
 ## Event History and Audit Logs
@@ -992,41 +801,15 @@ For a bounded history that belongs to one document, such as an order's status tr
 }
 ```
 
-```dart
-/// Appends a status transition. The timestamp key is passed as data inside a
-/// partial document; unchanged entries are not rewritten.
-Future<void> appendStatus(Ditto ditto, String orderId, String status) async {
-  // utcTimestamp() (see the Timestamps section) fixes millisecond precision,
-  // which keeps keys consistent across platforms.
-  final key = utcTimestamp();
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {
-      'patch': {
-        '_id': orderId,
-        'statusLog': {key: status},
-      },
-    },
-  );
-}
-
-// The workflow states, from earliest to most advanced.
-const _statusOrder = ['created', 'confirmed', 'shipped', 'delivered'];
-
-/// Derives the current status as the most advanced state, so a late write from
-/// a device that was offline cannot move the order backwards.
-String? currentStatus(Map<String, dynamic> order) {
-  final log = (order['statusLog'] as Map<String, dynamic>?) ?? const {};
-  String? best;
-  for (final status in log.values.whereType<String>()) {
-    if (best == null ||
-        _statusOrder.indexOf(status) > _statusOrder.indexOf(best)) {
-      best = status;
-    }
-  }
-  return best;
-}
+```sql
+-- Appends a status transition. The timestamp key (from the fixed-precision
+-- helper, see Timestamps, which keeps keys consistent across platforms) is
+-- passed as data inside a partial document; unchanged entries are not rewritten.
+-- Arguments: {"patch": {"_id": "order-1", "statusLog": {"2026-10-08T10:05:12.437Z": "confirmed"}}}
+INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```
+
+Derive the current status as the **most advanced state** when you read the document: walk the values of `statusLog` and keep the one that comes latest in the workflow (`created`, `confirmed`, `shipped`, `delivered`), so a late write from a device that was offline cannot move the order backwards. The code for such a derivation: [Flutter](platforms/flutter.md#query-results-in-flutter) · [JavaScript](platforms/javascript.md#query-results-in-javascript) · [Kotlin](platforms/kotlin.md#query-results-in-kotlin) · [Swift](platforms/swift.md#query-results-in-swift).
 
 Common derivation strategies are: the latest timestamp (simple linear workflows), the **most advanced state** (progressions that must not regress), the earliest occurrence ("when did this first happen?"), or custom rules that combine entries. A variant uses the status as the key and the timestamp as the value; it records "did this state happen, and when" but keeps only the latest time for a state that is entered more than once.
 
@@ -1036,33 +819,14 @@ When history is unbounded, accessed independently, or needed by other devices wi
 
 For events that arrive often, such as sensor readings, collect them for a short interval (for example, one second) and write them with one `INSERT` that has several documents (`INSERT INTO readings DOCUMENTS (:r1), (:r2), ...`). Each statement is one commit, and both the writing and the receiving device spend CPU on every commit: in our testing, one document per statement topped out at about 600 documents a second, while 50 documents per statement reached 5,000 a second at about a twelfth of the CPU per document, and the receiver saw every document, in the order written (see [One document per statement tops out at about 600 writes a second](../knowledge/observations/performance-measurements.md#one-document-per-statement-tops-out-at-about-600-writes-a-second)).
 
-```dart
-Future<void> recordOrderEvent(
-  Ditto ditto, {
-  required String eventId, // a new UUID
-  required String orderId,
-  required String storeId,
-  required String type,
-  required String userId,
-}) async {
-  await ditto.store.execute(
-    'INSERT INTO orderEvents DOCUMENTS (:event)',
-    arguments: {
-      'event': {
-        '_id': eventId,
-        'orderId': orderId,
-        'storeId': storeId,
-        'type': type,
-        'userId': userId,
-        // utcTimestamp() is defined in the Timestamps section.
-        'occurredAt': utcTimestamp(),
-      },
-    },
-  );
-}
+```sql
+-- The event ID is a new UUID; occurredAt comes from the fixed-precision
+-- timestamp helper (see Timestamps).
+-- Arguments: {"event": {"_id": "6d1f0b2a-8c3e-4f5a-9b7d-2e4c6a8b0d1f", "orderId": "order-1", "storeId": "store-12", "type": "confirmed", "userId": "u-7", "occurredAt": "2026-10-08T10:05:12.437Z"}}
+INSERT INTO orderEvents DOCUMENTS (:event)
 ```
 
-`utcTimestamp()` (see [Timestamps](#timestamps)) gives every `occurredAt` value the same millisecond precision, so `ORDER BY occurredAt` sorts chronologically:
+The fixed-precision timestamp helper (see [Timestamps](#timestamps)) gives every `occurredAt` value the same millisecond precision, so `ORDER BY occurredAt` sorts chronologically:
 
 ```sql
 SELECT * FROM orderEvents
@@ -1070,23 +834,12 @@ WHERE orderId = :orderId
 ORDER BY occurredAt ASC, _id ASC
 ```
 
-```dart
-// ❌ BAD: Appending to an array. Arrays are registers: if two devices append
-// concurrently, one of the appended events is lost after sync.
-Future<void> appendEventToArray(
-  Ditto ditto,
-  String orderId,
-  List<dynamic> currentHistory,
-  Map<String, dynamic> event,
-) async {
-  await ditto.store.execute(
-    'UPDATE orders SET history = :history WHERE _id = :id',
-    arguments: {
-      'id': orderId,
-      'history': [...currentHistory, event],
-    },
-  );
-}
+```sql
+-- ❌ BAD: Appending to an array: the app reads history, appends the event, and
+-- writes the whole array back. Arrays are registers: if two devices append
+-- concurrently, one of the appended events is lost after sync.
+-- Arguments: {"id": "order-1", "history": [{"type": "created"}, {"type": "confirmed"}]}
+UPDATE orders SET history = :history WHERE _id = :id
 ```
 
 Event collections grow forever; plan their cleanup from the start with eviction (see [EVICT](deletion-and-storage.md#evict)).
@@ -1100,45 +853,19 @@ When you need both the latest value with low latency and a complete history, wri
 
 Write both in one transaction so that local observers never see one without the other (see [Transactions](transactions.md)). The position is declared as a `REGISTER` because latitude and longitude from two different readings must never be mixed.
 
-```dart
-Future<void> recordPosition(
-  Ditto ditto, {
-  required String vehicleId,
-  required String eventId, // a new UUID
-  required double lat,
-  required double lon,
-}) async {
-  // utcTimestamp() is defined in the Timestamps section.
-  final recordedAt = utcTimestamp();
-  await ditto.store.transaction(hint: 'recordPosition', (tx) async {
-    await tx.execute(
-      'INSERT INTO vehiclePositions DOCUMENTS (:event)',
-      arguments: {
-        'event': {
-          '_id': eventId,
-          'vehicleId': vehicleId,
-          'position': {'lat': lat, 'lon': lon},
-          'recordedAt': recordedAt,
-        },
-      },
-    );
-    await tx.execute(
-      '''
-      INSERT INTO COLLECTION vehicles (position REGISTER)
-      DOCUMENTS (:vehicle)
-      ON ID CONFLICT DO UPDATE_LOCAL_DIFF
-      ''',
-      arguments: {
-        'vehicle': {
-          '_id': vehicleId,
-          'position': {'lat': lat, 'lon': lon},
-          'lastSeenAt': recordedAt,
-        },
-      },
-    );
-  });
-}
+```sql
+-- Both statements in one transaction; recordedAt is the same fixed-precision
+-- timestamp in both, and the event ID is a new UUID.
+-- Arguments: {"event": {"_id": "0c8e4a2f-7b1d-4e3a-8f6c-5d9b1a3e7c2f", "vehicleId": "v-1", "position": {"lat": 59.91, "lon": 10.75}, "recordedAt": "2026-10-08T10:05:12.437Z"}}
+INSERT INTO vehiclePositions DOCUMENTS (:event)
+
+-- Arguments: {"vehicle": {"_id": "v-1", "position": {"lat": 59.91, "lon": 10.75}, "lastSeenAt": "2026-10-08T10:05:12.437Z"}}
+INSERT INTO COLLECTION vehicles (position REGISTER)
+DOCUMENTS (:vehicle)
+ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```
+
+How to run statements in a transaction in each SDK: [Transactions](transactions.md).
 
 Devices can subscribe to what they need: a live map subscribes only to `vehicles`, and an analysis tool also subscribes to `vehiclePositions`. Keep in mind how transactions replicate: a peer that subscribes to only part of the documents a transaction changed receives only that part, and it can relay only that part to other peers (see [Transactions and Sync](transactions.md#transactions-and-sync)). Peers that need both halves together should subscribe to both collections.
 
@@ -1169,21 +896,11 @@ Across devices, the same rules apply when the deletion came from another device.
 - **A seed for an `_id` that another device deleted** stays deleted if its content is identical. If its content differs, it becomes a document with `null` fields **on every device**. This also happens when a newly installed device seeds before it first connects.
 - **Two devices that seed the same `_id` with different content** are merged field by field: `{v: 'A', onlyA: 1}` and `{v: 'B', onlyB: 1}` became `{v: 'B', onlyA: 1, onlyB: 1}`. A field that both seeds set is decided by its value, not by which device seeded later. A regular `INSERT` of the same `_id` wins over the seed (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)).
 
-```dart
-// Default categories that every device creates at startup. Running this on
-// every launch is safe: existing documents, including edited ones, are untouched.
-Future<void> seedDefaultCategories(Ditto ditto) async {
-  await ditto.store.execute(
-    'INSERT INTO categories INITIAL DOCUMENTS (:categories)',
-    arguments: {
-      'categories': [
-        {'_id': 'food', 'name': 'Food', 'sortOrder': 1},
-        {'_id': 'drinks', 'name': 'Drinks', 'sortOrder': 2},
-        {'_id': 'desserts', 'name': 'Desserts', 'sortOrder': 3},
-      ],
-    },
-  );
-}
+```sql
+-- Default categories that every device creates at startup. Running this on
+-- every launch is safe: existing documents, including edited ones, are untouched.
+-- Arguments: {"categories": [{"_id": "food", "name": "Food", "sortOrder": 1}, {"_id": "drinks", "name": "Drinks", "sortOrder": 2}, {"_id": "desserts", "name": "Desserts", "sortOrder": 3}]}
+INSERT INTO categories INITIAL DOCUMENTS (:categories)
 ```
 
 Counters can be seeded the same way, with a declaration (see [INITIAL DOCUMENTS keeps concurrent counter increments](../knowledge/observations/merge-behavior.md#initial-documents-keeps-concurrent-counter-increments)):
@@ -1211,22 +928,7 @@ INITIAL DOCUMENTS (:item)
 
 Adding a field needs no special pattern. Old app versions ignore fields they do not know; new versions must tolerate documents that do not have the field yet (`MISSING`).
 
-```dart
-// ✅ GOOD: A new field, read with a default for older documents.
-class Car {
-  Car({required this.id, required this.make, this.mileageKm});
-
-  final String id;
-  final String make;
-  final int? mileageKm; // added in app version 2; absent in older documents
-
-  factory Car.fromDocument(Map<String, dynamic> doc) => Car(
-        id: doc['_id'] as String,
-        make: doc['make'] as String,
-        mileageKm: doc['mileageKm'] as int?,
-      );
-}
-```
+✅ Read a new field with a default for older documents: a model type that the app maps each row into treats `mileageKm` as optional (it was added in app version 2 and is absent in older documents). The code for such a model: [Flutter](platforms/flutter.md#query-results-in-flutter) · [JavaScript](platforms/javascript.md#query-results-in-javascript) · [Kotlin](platforms/kotlin.md#query-results-in-kotlin) · [Swift](platforms/swift.md#query-results-in-swift).
 
 Instead of changing the meaning or unit of a field (`mileage` from miles to kilometers), **add a new field** (`mileageKm`) and let each version read the field it understands.
 
@@ -1240,25 +942,12 @@ Instead of changing the meaning or unit of a field (`mileage` from miles to kilo
 
 Store the schema version as a subfield of `_id`. Because `_id` is immutable, an `UPDATE` cannot change a document's version by accident, and a new-version document is a new record that coexists with the old one. Each app version subscribes only to the versions it understands:
 
-```dart
-SyncSubscription subscribeToCarsV2(Ditto ditto) =>
-    ditto.sync.registerSubscription(
-      'SELECT * FROM cars WHERE _id.schemaVersion = :version',
-      arguments: {'version': 2},
-    );
+```sql
+-- Arguments: {"version": 2}
+SELECT * FROM cars WHERE _id.schemaVersion = :version
 
-Future<void> insertCarV2(Ditto ditto, String carId) async {
-  await ditto.store.execute(
-    'INSERT INTO cars DOCUMENTS (:car)',
-    arguments: {
-      'car': {
-        '_id': {'id': carId, 'schemaVersion': 2},
-        'make': 'Hyundai',
-        'fuelEconomyMpg': 32,
-      },
-    },
-  );
-}
+-- Arguments: {"car": {"_id": {"id": "car-1", "schemaVersion": 2}, "make": "Hyundai", "fuelEconomyMpg": 32}}
+INSERT INTO cars DOCUMENTS (:car)
 ```
 
 ### Pattern 2: A separate collection per breaking version
@@ -1291,48 +980,31 @@ Every device stamps documents with its own clock, and device clocks disagree. St
 
 ### Store UTC with a zone designator
 
-Use one of two representations consistently within a field (in JavaScript, never pass a `Date` object: in our testing, it was stored as an empty object `{}` without an error; see [JavaScript values that are not plain JSON change when stored](../knowledge/observations/dql-behavior.md#javascript-values-that-are-not-plain-json-change-when-stored)):
+Use one of two representations consistently within a field (in JavaScript, never pass a `Date` object: in our testing, it was stored as an empty object `{}` without an error; see [JavaScript values that are not plain JSON change when stored](../knowledge/observations/javascript-sdk.md#javascript-values-that-are-not-plain-json-change-when-stored)):
 
-| Format | Dart | Notes |
-|---|---|---|
-| ISO-8601 string in UTC with a zone designator (recommended) | `utcTimestamp()` below (fixed millisecond precision, for example `2026-10-08T10:30:00.123Z`); `DateTime.now().toUtc().toIso8601String()` alone varies in precision (see below) | Human-readable; compares as text when every value uses the same precision |
-| Epoch milliseconds (integer) | `DateTime.now().millisecondsSinceEpoch` | Compact; DQL date functions accept epoch milliseconds, and `date_add`, `date_sub`, and `date_trunc` return them for numeric input |
+| Format | Notes |
+|---|---|
+| ISO-8601 string in UTC with a zone designator (recommended), with a fixed millisecond precision, for example `2026-10-08T10:30:00.123Z` | Human-readable; compares as text when every value uses the same precision |
+| Epoch milliseconds (integer) | Compact; DQL date functions accept epoch milliseconds, and `date_add`, `date_sub`, and `date_trunc` return them for numeric input |
 
-> **Note:** In Dart, `DateTime.now().toIso8601String()` returns local time **without** a zone designator (for example, `2026-10-08T19:30:00.123456`). DQL date functions return `MISSING` for such strings (`date_part`, `date_diff`, `date_add`, `date_cast`, and the others), and no error is raised. Always call `toUtc()` first. <!-- lint-ignore -->
+> **Note:** A language's default date formatting can produce local time **without** a zone designator (for example, `2026-10-08T19:30:00.123456`; Dart's `toIso8601String()` does so for a local `DateTime`). DQL date functions return `MISSING` for such strings (`date_part`, `date_diff`, `date_add`, `date_cast`, and the others), and no error is raised. Convert to UTC and include the zone designator. <!-- lint-ignore -->
 
-**Use one fixed-precision helper for timestamps that are sorted or compared.** On native platforms (iOS, Android, and desktop), Dart's `toIso8601String()` includes microseconds only when they are non-zero, so one device produces both `.123456Z` and `.123Z`; on the Web it includes only milliseconds (`.123Z`). ISO strings sort chronologically as text only when they share the same format: `'2026-10-08T10:30:45.123456Z'` sorts before `'2026-10-08T10:30:45.123Z'` although it is later, because `4` comes before `Z` in string order, and `'2026-10-08T10:30:45Z'` sorts after `'2026-10-08T10:30:45.123Z'` because `Z` comes after `.` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)). When a field is used in `ORDER BY`, range filters, or comparisons, produce every value with one helper that fixes the precision, such as `utcTimestamp()` below. The examples in this guide call this helper for every timestamp; define it once in your app.
+**Use one fixed-precision helper for timestamps that are sorted or compared.** A language's default formatting may vary the precision: Dart's `toIso8601String()`, for example, includes microseconds on native platforms only when they are non-zero, so one device produces both `.123456Z` and `.123Z`. ISO strings sort chronologically as text only when they share the same format: `'2026-10-08T10:30:45.123456Z'` sorts before `'2026-10-08T10:30:45.123Z'` although it is later, because `4` comes before `Z` in string order, and `'2026-10-08T10:30:45Z'` sorts after `'2026-10-08T10:30:45.123Z'` because `Z` comes after `.` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)). When a field is used in `ORDER BY`, range filters, or comparisons, produce every value with one helper that fixes the precision. The examples in this guide use such a helper for every timestamp; define it once in your app (see the code below).
 
-```dart
-/// Returns the current time as an ISO-8601 UTC string with exactly
-/// millisecond precision, e.g. "2026-10-08T10:30:00.123Z".
-String utcTimestamp([DateTime? time]) {
-  final utc = (time ?? DateTime.now()).toUtc();
-  return DateTime.fromMillisecondsSinceEpoch(
-    utc.millisecondsSinceEpoch,
-    isUtc: true,
-  ).toIso8601String();
-}
-
-// ✅ GOOD: Consistent UTC timestamps from the one helper.
-Future<void> markReady(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    'UPDATE orders SET readyAt = :readyAt WHERE _id = :id',
-    arguments: {'id': orderId, 'readyAt': utcTimestamp()},
-  );
-}
+```sql
+-- ✅ GOOD: Consistent UTC timestamps from the one helper
+-- Arguments: {"id": "order-1", "readyAt": "2026-10-08T10:30:00.123Z"}
+UPDATE orders SET readyAt = :readyAt WHERE _id = :id
 ```
 
-```dart
-// ❌ BAD: Local time without a zone. DQL date functions return MISSING for it,
-// and values written in different time zones do not compare correctly.
-await ditto.store.execute(
-  'UPDATE orders SET readyAt = :readyAt WHERE _id = :id',
-  arguments: {
-    'id': 'order-1',
-    'readyAt': DateTime.now().toIso8601String(), // lint-ignore
-  },
-);
+```sql
+-- ❌ BAD: Local time without a zone. DQL date functions return MISSING for it,
+-- and values written in different time zones do not compare correctly.
+-- Arguments: {"id": "order-1", "readyAt": "2026-10-08T19:30:00.123456"}
+UPDATE orders SET readyAt = :readyAt WHERE _id = :id
 ```
+
+The code for a fixed-precision UTC helper: [Flutter](platforms/flutter.md#ids-and-timestamps-in-flutter) · [JavaScript](platforms/javascript.md#ids-and-timestamps-in-javascript) · [Kotlin](platforms/kotlin.md#ids-and-timestamps-in-kotlin) · [Swift](platforms/swift.md#ids-and-timestamps-in-swift).
 
 ### Querying by time
 

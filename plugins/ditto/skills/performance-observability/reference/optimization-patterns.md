@@ -5,7 +5,7 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 ## Table of Contents
 
 - [Observer Behavior](#observer-behavior)
-- [Observer Lifecycle in Flutter](#observer-lifecycle-in-flutter)
+- [Observer Lifecycle](#observer-lifecycle)
 - [Backpressure Example: registerObserverV2](#backpressure-example-registerobserverv2)
 - [Differ](#differ)
 - [Index Usage Rules](#index-usage-rules)
@@ -24,15 +24,16 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 
 ## Observer Behavior
 
-**Guide**: `§ Observing Changes`, `§ When Observers Fire`, `§ Store Observers in Flutter`, `§ Observer lifecycle and cleanup`, `§ Diffing Results`
+**Guide**: `§ Observing Changes`, `§ When Observers Fire`, `§ Observer Lifecycle`, `§ Choosing an observer API`, `§ Diffing Results`; each SDK page's *Store Observers*, *Observer lifecycle*, and *Backpressure in <SDK>* sections
 
-| API (Flutter) | Status | Returns | Backpressure |
+| SDK | Default observer | Backpressure (SDK 5.1+) | Release |
 |---|---|---|---|
-| `registerObserver` | Stable | `StoreObserver` | None |
-| `registerObserverV2` | **(Experimental)** (SDK 5.1+) | `StoreObserverV2` | Automatic: follows pause/resume of `changes` |
-| `registerObserverWithSignalNext` | **(Experimental)** (SDK 5.1+) | `StoreObserverV2` | Manual: call `signalNext()` |
+| Flutter | `registerObserver` (returns `StoreObserver`; results in `changes`); none | `registerObserverV2` (automatic, follows pause/resume of `changes`: consume it with `await for`, since `listen(async ...)` does not pause it) and `registerObserverWithSignalNext` (manual), both **(Experimental)**, return `StoreObserverV2` | `cancel()` |
+| JavaScript | `registerObserver(query, handler, args)` signals when the handler **returns**; an `async` handler is not awaited | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` | `cancel()` |
+| Kotlin | `registerObserver(query, args) { result -> }` (suspending) or `observe(...)` returning a `Flow` | Suspending handlers, `collect(...)`, or `.conflate()`; no `signalNext` | `close()` |
+| Swift | `registerObserver(query:arguments:deliverOn:handler:)`, main queue by default | `handlerWithSignalNext:`; pass `deliverOn:` to move heavy work off the main queue | `cancel()` |
 
-All three accept only `SELECT` queries and take parameters through `arguments:`. Observers never cause data to sync; pair them with a subscription.
+Every SDK accepts only `SELECT` queries for observers and takes parameters as arguments. Observers never cause data to sync; pair them with a subscription.
 
 Behavior:
 - When an observer fires depends on its query (in testing with SDK 5.1.0 and 5.2.0): `SELECT *` fires on every write to a document in its result, even one that changes no value; a projection fires only when a projected value changes; an aggregate (`COUNT`, `GROUP BY`) fires on every write to the collection; writes to another collection call no observer. Project the fields a screen needs, plus `_id` (on 5.2.0, rows of a query that does not project `_id` have none).
@@ -40,56 +41,50 @@ Behavior:
 - Since SDK 5.1, an observer is called at most about 30 times a second (about every 34 ms in testing), so quickly changing values skip intermediate states, also for local writes (50 awaited writes reached an observer on the same device in 4 or 5 callbacks on 5.1.0 and 5.2.0); write each value as its own document if every one matters.
 - In JavaScript, `async` callbacks of `registerObserver` overlap, and a slow callback for an older result can finish last and leave the screen stale; use `registerObserverWithSignalNext`.
 - Large result sets cost memory on every callback: an observer of 200 documents under constant updates grew the JavaScript process by about 13 to 24 KiB per callback for 10 minutes, one of a single row leveled off after about 5 minutes on 5.1.0 and 5.2.0, and cancelling stopped the growth (`§ Query Scope and Execution`).
-- `registerObserver` has no backpressure: it never waits for your code.
-- With `onChange`, events emitted before the first listener attaches are buffered; listen right after registering. `registerObserverV2` starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` right away.
-- `registerObserverV2`: while the stream is paused, Ditto stops delivering after the update that arrived at the pause; on resume, that update and the latest state are delivered. Leaving an `await for` loop cancels the subscription and the observer; `ditto.close()` does not end the loop, so cancel the observer before closing.
-- `registerObserverWithSignalNext`: one result, then nothing until `signalNext()`. Do not pause or resume its stream (the SDK logs a warning).
+- Flutter `registerObserver` has no backpressure: it never waits for your code.
+- Flutter: with `onChange`, events emitted before the first listener attaches are buffered; listen right after registering. `registerObserverV2` starts observing as soon as it is registered, with or without `onChange`, so listen to its `changes` right away.
+- Flutter `registerObserverV2`: while the stream is paused, Ditto stops delivering after the update that arrived at the pause; on resume, that update and the latest state are delivered. Leaving an `await for` loop cancels the subscription and the observer; `ditto.close()` does not end the loop, so cancel the observer before closing.
+- `registerObserverWithSignalNext` (and Swift `handlerWithSignalNext:`): one result, then nothing until `signalNext()`. In Flutter, do not pause or resume its stream (the SDK logs a warning).
 - An observer does not re-run its query after writes to collections it does not observe: in testing with SDK 5.1.0 and 5.2.0, 50 writes to another collection ran no observer query (SDK 5.0.3 re-ran it after about every third write), although the 5.2.0 release notes list this as a fix. According to the same release notes, observers also hold less memory between updates in 5.2. Splitting observers by collection therefore costs little (`§ On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection`, `§ Query Scope and Execution`).
-- `ditto.store.observers` (SDK 5.2+) returns the uncancelled observers registered with `registerObserver` (not those from `registerObserverV2` or `registerObserverWithSignalNext`), and `ditto.store.attachmentFetchers` the active fetchers. A count that keeps growing while the user moves between screens points to an observer that is never cancelled (`§ Resource Cleanup and Shutdown`).
-- `Differ` keeps the previous result in memory, and diffing is computationally expensive; debounce updates for large or busy result sets and keep diffed queries bounded (for example, with `LIMIT`). `Differ` only accepts items produced by Ditto (test doubles throw an `ArgumentError`).
+- `ditto.store.observers` lists the uncancelled observers (in Flutter, SDK 5.2+, only those from `registerObserver`), and `ditto.store.attachmentFetchers` the active fetchers. A count that keeps growing while the user moves between screens points to an observer that is never cancelled (`§ Resource Cleanup and Shutdown`).
+- The differ keeps the previous result in memory, and diffing is computationally expensive; debounce updates for large or busy result sets and keep diffed queries bounded (for example, with `LIMIT`). It only accepts items produced by Ditto (in Flutter, test doubles throw an `ArgumentError`).
 
-Other platforms (`§ Backpressure on other platforms`):
-
-| Platform | Default observer | Backpressure |
-|---|---|---|
+---|---|---|
 | JavaScript | `registerObserver(query, handler, args)` signals when the handler **returns**; an `async` handler is not awaited | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` |
 | Swift | `registerObserver(query:arguments:deliverOn:handler:)`, main queue by default | `handlerWithSignalNext:`; pass `deliverOn:` to move heavy work off the main queue |
 | Kotlin | `registerObserver(query, args) { result -> }` (suspending) or `observe(...)` returning a `Flow` | No `signalNext`; suspending handlers, `collect(...)`, or `.conflate()`; release with `close()` |
 
 ---
 
-## Observer Lifecycle in Flutter
+## Observer Lifecycle
 
-**Guide**: `§ Observer lifecycle and cleanup`, `§ Resource Cleanup and Shutdown`
+**Guide**: `§ Observer Lifecycle`, `§ Resource Cleanup and Shutdown`; each SDK page's *Observer lifecycle in <SDK>* section
 
-| Behavior (`registerObserver`) | What to do |
+In every SDK:
+- Register observers in the owner's start hook (Flutter `initState()`, a view model, a service or controller), never in render code; let observers follow screen scope and keep subscriptions at app or feature scope.
+- Release every observer when its owner goes away (`cancel()`, `close()` in Kotlin); do not rely on garbage collection or on closing Ditto.
+- Add `ORDER BY` whenever result order matters (use `_id` as a tie-breaker); without it the order of observer results is not guaranteed (`§ Stable ordering`).
+- Copy values out of the result (plain values or your own model objects) instead of keeping result or row objects in state or caches (`§ Working with Query Results`).
+- Do not create an observer per list item; observe the list once and pass values down.
+
+Flutter (`registerObserver`; `§ Observer lifecycle in Flutter`):
+
+| Behavior | What to do |
 |---|---|
 | Without `onChange`, the query starts when `changes` is first listened to | Listen right after registering |
 | `changes` is single-subscription; a second `listen()` throws a `StateError` (`Bad state: Stream has already been listened to.`), even after the first subscription was cancelled | Hand the stream to exactly one listener or `StreamBuilder`, and keep that `StreamBuilder` mounted |
-| Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` as well |
+| Cancelling the `StreamSubscription` does not cancel a `StoreObserver` | Always call `observer.cancel()` as well, in `dispose()` |
 | `observer.cancel()` closes `changes` | A pending `await for` loop ends |
 | `await ditto.close()` does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2`, and `cancel()` does nothing once Ditto is closed | Cancel stream subscriptions and observers before closing |
 | Cancelling the stream subscription of a `StoreObserverV2` also cancels the observer | Still call `cancel()` in your cleanup path for clarity |
 
-**✅ DO:**
-- Register observers in `initState()` or in a service or controller, never in `build()`
-- Cancel the stream subscription **and** the observer in `dispose()`
-- Let observers follow screen scope; keep subscriptions at app or feature scope
-- Add `ORDER BY` whenever result order matters (use `_id` as a tie-breaker); without it the order of observer results is not guaranteed (`§ Stable ordering`)
-- Copy values out of the result (`item.value` or your own model objects) instead of keeping `QueryResult` or `QueryResultItem` objects in state or caches (`§ Working with Query Results`)
-
-**❌ DON'T:**
-- Create an observer per list item; observe the list once and pass values down
-- Rely on `ditto.close()` to end an `await for` loop over `registerObserver` results
-- Listen to `changes` twice; it is a single-subscription stream
-
-The full widget (`OrdersList`: `registerObserver` without `onChange` in `initState()`, one `StreamSubscription` that copies `item.value` into state inside `setState`, `ListView.builder` with `ValueKey(order['_id'])`, both cancelled in `dispose()`) is Pattern 1 of [../examples/flutter-observer-performance.dart](../examples/flutter-observer-performance.dart); the onChange-only anti-pattern is in the same file.
+The full widget for each SDK is in `observer-performance` in `../examples/<sdk>/` (Flutter: Pattern 1 of [../examples/flutter/observer-performance.dart](../examples/flutter/observer-performance.dart), with the onChange-only anti-pattern in the same file).
 
 ---
 
 ## Backpressure Example: registerObserverV2
 
-**Guide**: `§ Backpressure (SDK 5.1+)`, `§ registerObserverV2 (Experimental)`, `§ Choosing an observer API`
+**Guide**: `§ Backpressure (SDK 5.1+)`, `§ Backpressure in Flutter`, `§ Choosing an observer API`. This example is Flutter-only; the other SDKs' backpressure code is in `observer-backpressure` in `../examples/<sdk>/` and on each SDK page.
 
 ```dart
 // ✅ GOOD: registerObserverV2 (Experimental) with await for: one update at a time.
@@ -111,20 +106,20 @@ Future<void> exportOpenOrders(
 
 - `signalNext()` has no effect on observers registered with `registerObserverV2`.
 - Results passed to `onChange` of either experimental API are also queued in `changes`; consume the stream.
-- The experimental APIs may change in a future release; `registerObserver` remains the default for UI code.
+- The experimental APIs may change in a future release; `registerObserver` remains the default for Flutter UI code.
 
 ---
 
 ## Differ
 
-**Guide**: `§ Diffing Results`, `§ Animated lists`, `§ Partial UI Updates`
+**Guide**: `§ Diffing Results`, `§ Partial UI Updates`; each SDK page's *Diffing results in <SDK>* section
 
-- `diff()` takes a `List<QueryResultItem>` (pass `result.items.toList()`).
+- `Differ` in Flutter and JavaScript, `DittoDiffer` in Kotlin and Swift (Kotlin can also pass a `DittoDiff` to the observer handler). Flutter's `diff()` takes a `List<QueryResultItem>` (pass `result.items.toList()`).
 - The first call reports every item as an insertion.
-- `deletions` index the **old** list; `insertions` and `updates` index the **new** list.
+- Deletions index the **old** list; insertions and updates index the **new** list.
 - It does not give you the old items; keep previous values yourself.
-- `Differ` keeps the previous result in memory and diffing is expensive; use it only where you need to know what changed (for example `AnimatedList`), and keep diffed queries bounded with `LIMIT`. A `ListView.builder` with keys does not need it.
-- `item.value` creates a new `Map` for every result, and two maps with identical contents are never `==`; map results to immutable model classes that implement `==` if you rely on equality to skip rebuilds.
+- The differ keeps the previous result in memory and diffing is expensive; use it only where you need to know what changed (for example an animated list), and keep diffed queries bounded with `LIMIT`. A list keyed by `_id` does not need it.
+- Each result creates new value objects, so two rows with identical contents may not compare as equal (in Flutter, two `item.value` maps are never `==`); map results to immutable models that compare by content if you rely on equality to skip updates.
 
 ---
 
@@ -205,25 +200,9 @@ SELECT _id, status FROM orders WHERE status = :status
 ADVISE SELECT * FROM orders WHERE status = :status AND isDeleted = false ORDER BY createdAt DESC
 ```
 
-Development-only Dart helper that prints suggestions:
+A development-only helper that prints each suggestion's `statement` (and `outcome` when there are none) is in *Executing DQL in <SDK>* on each SDK page.
 
-```dart
-// ✅ GOOD: Development-only helper that prints index suggestions (SDK 5.1+).
-Future<void> printOrderIndexAdvice(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'ADVISE SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC',
-    arguments: {'status': 'open'},
-  );
-  final advice = result.items.first.value['advice'] as Map<String, dynamic>;
-  final suggested = (advice['suggestedIndexes'] as List<dynamic>?) ?? const [];
-  if (suggested.isEmpty) debugPrint('No suggestions: ${advice['outcome']}');
-  for (final index in suggested) {
-    debugPrint('${(index as Map<String, dynamic>)['statement']}');
-  }
-}
-```
-
-The `ADVISE` SQL statement above (not the Dart helper) filters with `isDeleted = false`, which is correct only when every document has the field; otherwise keep the `coalesce` form (see `§ Indexing soft-delete filters`).
+The `ADVISE` statement above filters with `isDeleted = false`, which is correct only when every document has the field; otherwise keep the `coalesce` form (see `§ Indexing soft-delete filters`).
 
 ---
 
@@ -274,7 +253,7 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 **Guide**: `§ Query Scope and Execution`, `§ Large results`
 
 **✅ DO:**
-- Filter in `WHERE`, not in Dart
+- Filter in `WHERE`, not in app code
 - Project only the fields you need (subscriptions still sync whole documents and accept only `SELECT *`)
 - Use `ORDER BY ... LIMIT` for local queries and observers that need the first rows
 - Keep query strings constant and pass values as parameters, for safety (a string built per value was not measurably slower in testing with SDK 5.0.3 to 5.2.0)
@@ -283,7 +262,7 @@ SELECT * FROM orders USE INDEX 'idx_orders_status' WHERE status = :status
 - Count with `COUNT(*)` and check existence with `LIMIT 1`
 
 **❌ DON'T:**
-- Observe an entire large collection and filter or paginate in Dart
+- Observe an entire large collection and filter or paginate in app code
 - Run one query per ID when `WHERE _id IN :ids` returns the same data (each `execute` call costs about 1.7 ms in testing with SDK 5.1.0 and 5.2.0: 500 lookups took 0.8 to 0.9 s, one `IN` query 6 to 15 ms); likewise, insert many documents with one array parameter, not one statement each (2,000 documents: about 4 s against 17 ms)
 - Use `DISTINCT` with `_id` or `*`
 
@@ -303,7 +282,7 @@ SELECT * FROM orders WHERE _id IN :ids
 
 ## Long-Running Requests and Execution Model
 
-**Guide**: `§ Long-running requests (SDK 5.1+)`, `§ Flutter execution model`
+**Guide**: `§ Long-running requests (SDK 5.1+)`, `§ Query execution and the UI thread`
 
 | Parameter | Default | Effect |
 |---|---|---|
@@ -316,9 +295,9 @@ ALTER SYSTEM SET DQL_SLOW_REQUEST_WARN_SECONDS = 10
 ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS = 30
 ```
 
-`ALTER SYSTEM` changes these values while the app runs, for example when support asks for slow-request warnings on a device in the field. System parameters are not persisted: for settings the app always needs, pass them in `DittoConfig.systemParameters` on every open (SDK 5.2+; on SDK 5.1, `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()`). Before enabling a timeout in production, handle the resulting error for every query.
+`ALTER SYSTEM` changes these values while the app runs, for example when support asks for slow-request warnings on a device in the field. System parameters are not persisted: for settings the app always needs, pass them in the system parameters of `DittoConfig` on every open (SDK 5.2+; on SDK 5.1, `ALTER SYSTEM` after every open, before sync starts). Before enabling a timeout in production, handle the resulting error for every query.
 
-On native platforms, `ditto.store.execute` runs on a long-lived worker isolate per `Ditto` instance, so a slow query does not block the UI isolate. `Store.experimentalSkipExecuteIsolateOffload` **(Experimental)** runs `execute` inline on the calling isolate; any slow query then blocks that isolate (usually the UI). Use it only after measuring a real throughput problem with many very small queries.
+`execute` is asynchronous in every SDK; decode large results and do heavy work on the values off the UI thread. In Flutter on native platforms, `ditto.store.execute` runs on a long-lived worker isolate per `Ditto` instance, so a slow query does not block the UI isolate. `Store.experimentalSkipExecuteIsolateOffload` **(Experimental)** runs `execute` inline on the calling isolate; any slow query then blocks that isolate (usually the UI). Use it only after measuring a real throughput problem with many very small queries.
 
 ---
 
@@ -352,10 +331,10 @@ UPDATE orders SET status = :status WHERE _id = :id AND coalesce(status, :none) !
 UPDATE orders UNSET discountCode, pricing.discount WHERE _id = :id
 ```
 
-An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers. Skip such writes with a `WHERE` condition (with `coalesce` so missing or `null` values stay eligible) or use `DO UPDATE_LOCAL_DIFF`.
+An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in the result's mutated document IDs, and can wake observers. Skip such writes with a `WHERE` condition (with `coalesce` so missing or `null` values stay eligible) or use `DO UPDATE_LOCAL_DIFF`.
 
 - Update nested fields individually (`SET address.city = :city`) instead of assigning the whole object.
-- Do not read a document, modify it in Dart, and write the whole map back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`: a stale value that differs from the stored one is written back.
+- Do not read a document, modify it in app code, and write the whole document back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`: a stale value that differs from the stored one is written back.
 - Do not expect `DO UPDATE` or `SET obj = {...}` to replace an object; with the default strict mode they merge, and fields not supplied remain (remove keys with `UNSET`).
 - Why: Ditto syncs changes at field level. Rewriting a whole document makes the change larger, and an unchanged field written by this device can win a merge against a real concurrent change made on another device.
 
@@ -363,9 +342,9 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 
 ## Logging Details
 
-**Guide**: `§ Logging`, `§ Configuring logging in Flutter`, `§ Forwarding logs to your own pipeline`, `§ On-disk logs and exporting them`
+**Guide**: `§ Logging`, `§ Configuring logging`, `§ Log levels`, `§ Forwarding logs to your own pipeline`, `§ On-disk logs and exporting them`; each SDK page's *Logging in <SDK>* section
 
-| `LogLevel` | Typical use |
+| Level | Typical use |
 |---|---|
 | `error` | Failures that need attention |
 | `warning` | Unexpected situations Ditto handled (recommended for production) |
@@ -373,14 +352,14 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 | `debug` | Detailed diagnostics (recommended while debugging) |
 | `verbose` | Very detailed tracing; can slow down replication |
 
-- `DittoLogger` members throw until the SDK is initialized; call `await Ditto.init()` before configuring logging, then `Ditto.open`.
+- Configure the logger before Ditto opens (Flutter: `DittoLogger` members throw until the SDK is initialized, so call `await Ditto.init()` first, then `Ditto.open`).
 - `isEnabled` and `minimumLogLevel` control the logs Ditto emits at runtime, not the on-disk logs. On-disk logs always include debug-level entries, so a `warning` console level in production does not reduce what support can retrieve.
 - Set the level explicitly: `warning` in production, `debug` while debugging; use `verbose` only for short, targeted investigations.
-- `customLogCallback` receives the log events that Ditto emits; keep it fast. `ditto.close()` resets it to `null` for the whole process, so set it again before every `Ditto.open()` (after `Ditto.init()`).
-- `DittoLogger.isDevtoolsLoggingEnabled = true` also sends Ditto logs to Flutter DevTools.
+- Forward log events with the SDK's callback or stream (Flutter `customLogCallback`, JavaScript `setCustomLogCallback`, Kotlin `observeLogEvents()`, Swift `setCustomLogCallback(_:)`); keep the receiving code fast. In Flutter, `ditto.close()` resets `customLogCallback` to `null` for the whole process, so set it again before every `Ditto.open()` (after `Ditto.init()`).
+- Flutter: `DittoLogger.isDevtoolsLoggingEnabled = true` also sends Ditto logs to Flutter DevTools.
 - On-disk logs (debug level and above) are kept in the persistence directory of the most recently created `Ditto` instance, about 15 MB of compressed logs or 15 days of logs by default (older entries are discarded once one of these limits is reached). They rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`); leave them at their defaults unless Ditto support advises otherwise.
 - Each write added about 1.5 KB of debug log on SDK 5.1.0 and 5.2.0 (in testing); the active file grew to 15 to 18 MB before rotating, each rotated file was about 0.6 MB compressed, and the 15 files held about 200,000 writes (about 5 hours at 10 writes a second).
-- Retrieve on-disk logs from the Ditto Portal device dashboard or with `DittoLogger.exportLogs(path)` (gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count). Use a fresh, timestamped `.jsonl.gz` path.
+- Retrieve on-disk logs from the Ditto Portal device dashboard or with the logger's export (Flutter `exportLogs(path)`, JavaScript and Kotlin `exportToFile(path)`, Swift `export(to:)`; gzip-compressed JSON Lines; the file must not exist and its directory must exist; returns the byte count). Use a fresh, timestamped `.jsonl.gz` path.
 - On-disk logs contain the text and argument values of this device's subscriptions and of those of directly connected devices, at every console level; document values, `execute` statements and arguments, and peer metadata did not appear (in testing with SDK 5.1.0 and 5.2.0). Do not filter subscriptions by personal data, because the logs leave the device when exported or requested.
 - Data bundles requested through the Ditto Portal include (SDK 5.1+) a `config_snapshot.json` file with the device's effective configuration.
 
@@ -442,7 +421,7 @@ SHOW ALL LIKE 'dql_slow%'
 ALTER SYSTEM RESET DQL_SLOW_REQUEST_WARN_SECONDS
 ```
 
-Settings are not persisted. Pass the ones your app always needs in `DittoConfig.systemParameters` on every open (SDK 5.2+), and use `ALTER SYSTEM` for changes while the app runs; on SDK 5.1, run `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()` (`§ Applying System Parameters`, `§ Applying parameters at startup`). Example: `appSystemParameters` and `logNonDefaultParameters` in [logging-configuration-good.dart](../examples/logging-configuration-good.dart).
+Settings are not persisted. Pass the ones your app always needs in the system parameters of `DittoConfig` on every open (SDK 5.2+), and use `ALTER SYSTEM` for changes while the app runs; on SDK 5.1, run `ALTER SYSTEM` after every open, before sync starts (`§ Applying System Parameters`, `§ Applying parameters at startup`). Example: `logging-configuration-good` in `../examples/<sdk>/` (Flutter: `appSystemParameters` and `logNonDefaultParameters`).
 
 ---
 
@@ -458,4 +437,4 @@ EXECUTE FUNCTION system_request_support_bundle({'metadata': {'requested_by': 'su
 SELECT * FROM system:support_bundles ORDER BY _id.created_at DESC
 ```
 
-The function returns one document with `_id` (the peer key and the capture time), `reason` (`USER_INITIATED`), and `file`, an attachment token for the archive; fetch it with `fetchAttachment()` (Dart: `saveSupportBundle` in [logging-configuration-good.dart](../examples/logging-configuration-good.dart)). A request over `SUPPORT_BUNDLE_REQUEST_RATE` fails with `support bundle request rate exceeded`, and the count survives restarts. The log export contains the full peer keys of other devices and absolute file paths on the device: review a bundle before you share it beyond Ditto support. Bundles stay on the device until the app fetches and shares them.
+The function returns one document with `_id` (the peer key and the capture time), `reason` (`USER_INITIATED`), and `file`, an attachment token for the archive; fetch it with `fetchAttachment()` (the code for each SDK: `logging-configuration-good` in `../examples/<sdk>/` and *Logging in <SDK>* on the SDK page). A request over `SUPPORT_BUNDLE_REQUEST_RATE` fails with `support bundle request rate exceeded`, and the count survives restarts. The log export contains the full peer keys of other devices and absolute file paths on the device: review a bundle before you share it beyond Ditto support. Bundles stay on the device until the app fetches and shares them.

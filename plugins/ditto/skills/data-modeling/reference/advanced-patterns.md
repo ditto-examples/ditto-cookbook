@@ -20,47 +20,20 @@ When you need both the latest value with low latency and a complete history, wri
 1. **Current state** (`vehicles`): one bounded document per entity; real-time screens observe it.
 2. **History** (`vehiclePositions`): one append-only document per change; analysis reads it.
 
-```dart
-Future<void> recordPosition(
-  Ditto ditto,
-  String vehicleId,
-  String eventId,
-  double lat,
-  double lon,
-) async {
-  // utcTimestamp() is the fixed-precision helper from the Timestamps section.
-  final recordedAt = utcTimestamp();
-  await ditto.store.transaction(hint: 'recordPosition', (tx) async {
-    await tx.execute(
-      'INSERT INTO vehiclePositions DOCUMENTS (:event)',
-      arguments: {
-        'event': {
-          '_id': eventId,
-          'vehicleId': vehicleId,
-          'position': {'lat': lat, 'lon': lon},
-          'recordedAt': recordedAt,
-        },
-      },
-    );
-    // position is a REGISTER: latitude and longitude from two readings never mix.
-    await tx.execute(
-      'INSERT INTO COLLECTION vehicles (position REGISTER) DOCUMENTS (:vehicle) '
-      'ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-      arguments: {
-        'vehicle': {
-          '_id': vehicleId,
-          'position': {'lat': lat, 'lon': lon},
-          'lastSeenAt': recordedAt,
-        },
-      },
-    );
-  });
-}
+```sql
+-- In one transaction, with one recordedAt from the fixed-precision helper.
+-- Arguments: {"event": {"_id": "3f0c9a8e-5b1d-4c2a-9e7f-1a2b3c4d5e6f", "vehicleId": "truck-7", "position": {"lat": 38.71, "lon": -9.14}, "recordedAt": "2026-10-08T10:30:00.123Z"}}
+INSERT INTO vehiclePositions DOCUMENTS (:event)
+
+-- position is a REGISTER: latitude and longitude from two readings never mix.
+-- Arguments: {"vehicle": {"_id": "truck-7", "position": {"lat": 38.71, "lon": -9.14}, "lastSeenAt": "2026-10-08T10:30:00.123Z"}}
+INSERT INTO COLLECTION vehicles (position REGISTER) DOCUMENTS (:vehicle)
+ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```
 
 Devices subscribe to what they need: a live map only to `vehicles`, an analysis tool to both. Ditto's [transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions) describes that a peer that subscribes to only part of the documents a transaction changed receives, and can relay, only that part, so peers that need both halves together subscribe to both collections.
 
-Guide: `§ Event History and Audit Logs`, `§ Transactions and Sync`. Example: [two-collection-pattern.dart](../examples/two-collection-pattern.dart).
+Guide: `§ Event History and Audit Logs`, `§ Transactions and Sync`. Example: [two-collection-pattern.sql](../examples/two-collection-pattern.sql).
 
 ---
 
@@ -93,7 +66,7 @@ INITIAL DOCUMENTS (:item)
 - Seed shared defaults with a regular `INSERT` (the second run fails with an ID conflict) or with `ON ID CONFLICT DO UPDATE` (overwrites users' edits).
 - Use `INITIAL DOCUMENTS` for data only one device should create (orders, events), or to keep data off the network: subscriptions decide what syncs.
 
-Guide: `§ Default Data with INITIAL Documents`. Example: [initial-documents.dart](../examples/initial-documents.dart).
+Guide: `§ Default Data with INITIAL Documents`. Example: [initial-documents.sql](../examples/initial-documents.sql).
 
 ---
 
@@ -129,7 +102,7 @@ SELECT * FROM cars WHERE _id.schemaVersion = :version
 
 **Changing CRDT types** (an array or a REGISTER object to a MAP, a number to a COUNTER) is also breaking: old and new values coexist under the same key. Introduce a new field with the new type (`stockCount` as a COUNTER next to the old `stock` register).
 
-Guide: `§ Schema Evolution`. Example: [composite-id-patterns.dart](../examples/composite-id-patterns.dart).
+Guide: `§ Schema Evolution`. Example: [composite-id-patterns.sql](../examples/composite-id-patterns.sql).
 
 ---
 
@@ -151,7 +124,7 @@ SELECT * FROM orders WHERE _id.storeId = :storeId
 - Put only **immutable** attributes into `_id`; a store that may change region or an order that may be reassigned needs those values as regular fields.
 - Human-readable numbers ("#A-0042") are labels in a separate field, never `_id` or a lookup key. A terminal code that you assign plus a local sequence, shown with the date, avoids coordination.
 
-Guide: `§ Composite IDs for permission scoping and grouping`, `§ Human-readable display IDs`, `§ Security`. Examples: [composite-id-patterns.dart](../examples/composite-id-patterns.dart), [id-generation-patterns.dart](../examples/id-generation-patterns.dart).
+Guide: `§ Composite IDs for permission scoping and grouping`, `§ Human-readable display IDs`, `§ Security`. Examples: [composite-id-patterns.sql](../examples/composite-id-patterns.sql), [id-generation-patterns.sql](../examples/id-generation-patterns.sql).
 
 ---
 
@@ -159,7 +132,7 @@ Guide: `§ Composite IDs for permission scoping and grouping`, `§ Human-readabl
 
 `_id` is immutable. To change it, copy the document to a new `_id` and remove the old document in one transaction. Declare the document's `COUNTER`, `ATTACHMENT`, and `REGISTER` fields in both the `SELECT` and the `INSERT`: a query result holds plain values, so an undeclared copy stores a counter as a plain number and an attachment token as a map.
 
-Guide: `§ IDs are immutable`. Example: [id-immutability-workaround.dart](../examples/id-immutability-workaround.dart).
+Guide: `§ IDs are immutable`. Example: [id-immutability-workaround.sql](../examples/id-immutability-workaround.sql).
 
 ---
 
@@ -190,21 +163,18 @@ JOIN customers AS c ON c.email = o.customerEmail
 
 JOIN reads local data only, so every joined collection needs its own subscription:
 
-```dart
-// ✅ GOOD: One subscription per joined collection (app or feature scope).
-// Subscriptions filter only on their own fields, so storeId is copied into
-// orderItems when items are created.
-List<SyncSubscription> subscribeForStore(Ditto ditto, String storeId) => [
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orders WHERE storeId = :storeId',
-        arguments: {'storeId': storeId},
-      ),
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orderItems WHERE storeId = :storeId',
-        arguments: {'storeId': storeId},
-      ),
-      ditto.sync.registerSubscription('SELECT * FROM products'),
-    ];
+<!-- subscription -->
+```sql
+-- ✅ GOOD: One subscription per joined collection (app or feature scope).
+-- Subscriptions filter only on their own fields, so storeId is copied into
+-- orderItems when items are created.
+-- Arguments: {"storeId": "store-12"}
+SELECT * FROM orders WHERE storeId = :storeId
+
+-- Arguments: {"storeId": "store-12"}
+SELECT * FROM orderItems WHERE storeId = :storeId
+
+SELECT * FROM products
 ```
 
-Guide: `§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)`. Example: [foreign-key-join.dart](../examples/foreign-key-join.dart).
+Guide: `§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)`. Example: [foreign-key-join.sql](../examples/foreign-key-join.sql).

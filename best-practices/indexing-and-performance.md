@@ -77,11 +77,11 @@ Example output for the indexes created above:
 - **Indexes are local to each device.** `CREATE INDEX` and `DROP INDEX` run on the local SDK. Create the indexes your queries need on every device, as part of startup.
 - **`CREATE INDEX` / `DROP INDEX` run only through `execute`.**
 - **Indexes speed up `execute` and store observers;** subscriptions and Ditto Server queries do not use them (in our testing, a Small Peer hub that served a subscription read the whole collection even with an index for the filter; see [Each new subscription makes the data holder read the whole collection](../knowledge/observations/subscriptions-and-replication.md#each-new-subscription-makes-the-data-holder-read-the-whole-collection)), and custom indexes are not supported on the Ditto Server.
-- **In-memory stores do not support indexes.** On the Web (Flutter Web and JavaScript Web), where the store is in memory, skip index creation; `CREATE INDEX` fails there with `the database implementation does not support indexing`.
+- **In-memory stores do not support indexes.** On the Web (Flutter Web and the JavaScript SDK in browsers), where the store is in memory, skip index creation; `CREATE INDEX` fails there with `the database implementation does not support indexing`.
 
 **✅ DO:**
 - Create indexes at startup with `CREATE INDEX IF NOT EXISTS`, which is idempotent and needs no extra query.
-- Create indexes after `Ditto.open` and before your queries and observers start, so the first queries already benefit.
+- Create indexes after opening Ditto and before your queries and observers start, so the first queries already benefit.
 - Use [ADVISE](#advise-sdk-51) during development to decide which indexes to create.
 - Drop indexes that no queries use any more; every index costs write time and storage.
 
@@ -91,30 +91,16 @@ Example output for the indexes created above:
 - Index a field with only a few distinct values (a boolean, a status with two or three values) on its own. The planner uses such an index, and it can be slower than no index: in our testing with SDK 5.1.0 and 5.2.0, an index on `status` alone made a query on 100,000 documents 1.3 to 1.6 times slower than no index, while a composite index on `(store, status)` made it about 5 times faster (see [On SDK 5.1.0 and 5.2.0, an index on a field with two values made a query slower than no index](../knowledge/observations/performance-measurements.md#on-sdk-510-and-520-an-index-on-a-field-with-two-values-made-a-query-slower-than-no-index)). Put such fields after a selective key in a composite index, and measure the time after adding an index, not only the plan.
 - Rely on indexes when [strict mode](data-modeling.md#strict-mode) is enabled (see [Strict mode and data types](#strict-mode-and-data-types)).
 
-```dart
-import 'package:flutter/foundation.dart' show kIsWeb;
+```sql
+-- ✅ GOOD: Create the indexes this app relies on, once per launch (skip them
+-- where the store is in memory). Report a failure and continue: without the
+-- index, queries fall back to a collection scan, and a JOIN on it fails.
+CREATE INDEX IF NOT EXISTS idx_orders_status_createdAt ON orders (status, createdAt DESC)
 
-// ✅ GOOD: Create the indexes this app relies on, once per launch.
-Future<void> ensureIndexes(Ditto ditto) async {
-  // In-memory stores (Flutter Web) do not support indexes.
-  if (kIsWeb) return;
-
-  const statements = [
-    'CREATE INDEX IF NOT EXISTS idx_orders_status_createdAt '
-        'ON orders (status, createdAt DESC)',
-    'CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)',
-  ];
-  for (final statement in statements) {
-    try {
-      await ditto.store.execute(statement);
-    } catch (error) {
-      // Without the index, queries that use it fall back to a collection scan
-      // (and a JOIN on it fails): report and continue.
-      showError(error);
-    }
-  }
-}
+CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)
 ```
+
+The code for creating indexes at startup: [Flutter](platforms/flutter.md#app-startup-in-flutter) · [JavaScript](platforms/javascript.md#app-startup-in-javascript) · [Kotlin](platforms/kotlin.md#app-startup-in-kotlin) · [Swift](platforms/swift.md#app-startup-in-swift).
 
 ### Upgrading and downgrading
 
@@ -249,25 +235,7 @@ The `outcome` field explains when there is nothing to suggest. Values include `o
 **❌ DON'T:**
 - Run `ADVISE AND PROVISION` from production code paths; it creates indexes as a side effect, and the result depends on whichever queries happen to run.
 
-```dart
-// ✅ GOOD (development only): print index suggestions for a query.
-Future<void> printIndexAdvice(
-  Ditto ditto,
-  String query,
-  Map<String, dynamic> arguments,
-) async {
-  final result = await ditto.store.execute('ADVISE $query', arguments: arguments);
-  final advice = result.items.first.value['advice'] as Map<String, dynamic>;
-  final suggested = (advice['suggestedIndexes'] as List<dynamic>?) ?? const [];
-  if (suggested.isEmpty) {
-    debugPrint('No suggestions: ${advice['outcome']}');
-  }
-  for (final index in suggested) {
-    final entry = index as Map<String, dynamic>;
-    debugPrint('${entry['reason']}\n  ${entry['statement']}');
-  }
-}
-```
+Development helpers that print the suggestions of `ADVISE` and the profile row of `PROFILE`: [Flutter](platforms/flutter.md#executing-dql-in-flutter) · [JavaScript](platforms/javascript.md#executing-dql-in-javascript) · [Kotlin](platforms/kotlin.md#executing-dql-in-kotlin) · [Swift](platforms/swift.md#executing-dql-in-swift).
 
 ## EXPLAIN and PROFILE
 
@@ -347,26 +315,7 @@ What to look for:
 - A `scan` or `fetch` with a high document count on a large collection.
 - `sort` or grouping steps on large inputs: they must collect all input before producing output, which costs memory.
 
-```dart
-import 'dart:convert';
-
-// ✅ GOOD (development only): separate the profile row from the results.
-Future<void> profileQuery(
-  Ditto ditto,
-  String query,
-  Map<String, dynamic> arguments,
-) async {
-  final result = await ditto.store.execute('PROFILE $query', arguments: arguments);
-  final rows = result.items.map((item) => item.value).toList();
-  final profile = rows.lastWhere(
-    (row) => row.containsKey('~request_profile'),
-    orElse: () => const {},
-  )['~request_profile'] as Map<String, dynamic>?;
-  final resultCount = rows.length - (profile == null ? 0 : 1);
-  debugPrint('rows=$resultCount times=${profile?['times']}');
-  debugPrint(const JsonEncoder.withIndent('  ').convert(profile?['plan']));
-}
-```
+The profile row is the last row of the result; separate it from the normal rows by its `~request_profile` key before you read the results.
 
 ### Directives
 
@@ -389,41 +338,24 @@ See the [DQL directives documentation](https://docs.ditto.live/dql/directives) f
 Indexes are only part of query performance. How much data a query touches and how often it runs matter just as much.
 
 **✅ DO:**
-- **Filter narrowly.** Put every condition you can into `WHERE` instead of filtering in Dart after the query.
+- **Filter narrowly.** Put every condition you can into `WHERE` instead of filtering in app code after the query.
 - **Project only what you need.** `SELECT _id, status, total` materializes less data than `SELECT *` and can enable covering scans. (Subscriptions are different: they always sync whole documents and only accept `SELECT *`; see [Subscription Rules](sync-and-subscriptions.md#subscription-rules).)
 - **Use `LIMIT` for local queries** that only need the first rows (for example the latest 50 orders), together with `ORDER BY`.
 - **Keep query strings constant and pass values as parameters.** A string built for every value is unsafe (see [Parameters and Literals](dql.md#parameters-and-literals)). It was not measurably slower in our testing (see [Constant query strings were not faster](../knowledge/observations/performance-measurements.md#constant-query-strings-were-not-faster)), so the reason is safety, not speed.
-- **Keep observer result sets small.** A store observer re-runs its query and delivers the full result set whenever relevant data changes. In our testing, an observer of 5,000 documents was called about 5 to 6 times later after a write than one limited to 50 rows on SDK 5.1.0 and 5.2.0, and an observer that returned 200 documents while other devices kept updating them grew the process's memory on every callback, steadily for 10 minutes, until it was cancelled (see [On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50](../knowledge/observations/performance-measurements.md#on-sdk-510-and-520-an-observer-of-5000-documents-was-called-about-5-to-6-times-later-than-one-of-50) and [An observer of 200 documents grows memory on every callback](../knowledge/observations/performance-measurements.md#an-observer-of-200-documents-grows-memory-on-every-callback)). On devices that run for hours, observe only the rows on screen and cancel observers of screens that are not visible. Prefer several focused observers with `WHERE` and `LIMIT` over one observer of a whole collection (see [Store Observers in Flutter](observers.md#store-observers-in-flutter)); a write to another collection does not call an observer (see [When Observers Fire](observers.md#when-observers-fire)).
+- **Keep observer result sets small.** A store observer re-runs its query and delivers the full result set whenever relevant data changes. In our testing, an observer of 5,000 documents was called about 5 to 6 times later after a write than one limited to 50 rows on SDK 5.1.0 and 5.2.0, and an observer that returned 200 documents while other devices kept updating them grew the process's memory on every callback, steadily for 10 minutes, until it was cancelled (see [On SDK 5.1.0 and 5.2.0, an observer of 5,000 documents was called about 5 to 6 times later than one of 50](../knowledge/observations/performance-measurements.md#on-sdk-510-and-520-an-observer-of-5000-documents-was-called-about-5-to-6-times-later-than-one-of-50) and [An observer of 200 documents grows memory on every callback](../knowledge/observations/performance-measurements.md#an-observer-of-200-documents-grows-memory-on-every-callback)). On devices that run for hours, observe only the rows on screen and cancel observers of screens that are not visible. Prefer several focused observers with `WHERE` and `LIMIT` over one observer of a whole collection (see [Partial UI Updates](observers.md#partial-ui-updates)); a write to another collection does not call an observer (see [When Observers Fire](observers.md#when-observers-fire)).
 
 **❌ DON'T:**
-- Observe an entire large collection and filter or paginate in Dart.
+- Observe an entire large collection and filter or paginate in app code.
 - Run queries in a tight loop when one query with `IN :ids` can return the same data. Each `execute` call has a fixed cost: in our testing with SDK 5.1.0 and 5.2.0, reading 500 of 20,000 documents took 0.8 to 0.9 seconds as 500 `_id = :id` queries and 6 to 15 ms as one `_id IN :ids` query (see [The number of execute calls matters more than the number of documents](../knowledge/observations/performance-measurements.md#the-number-of-execute-calls-matters-more-than-the-number-of-documents)).
 
-```dart
-// ❌ BAD: one query per ID
-Future<List<Map<String, dynamic>>> loadOrdersOneByOne(
-  Ditto ditto,
-  List<String> ids,
-) async {
-  final orders = <Map<String, dynamic>>[];
-  for (final id in ids) {
-    final result = await ditto.store.execute(
-      'SELECT * FROM orders WHERE _id = :id',
-      arguments: {'id': id},
-    );
-    orders.addAll(result.items.map((item) => item.value));
-  }
-  return orders;
-}
+```sql
+-- ❌ BAD: one query per ID, run once for every ID in a loop
+-- Arguments: {"id": "order-1"}
+SELECT * FROM orders WHERE _id = :id
 
-// ✅ GOOD: one query, planned as an ID scan
-Future<List<Map<String, dynamic>>> loadOrders(Ditto ditto, List<String> ids) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE _id IN :ids',
-    arguments: {'ids': ids},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- ✅ GOOD: one query, planned as an ID scan
+-- Arguments: {"ids": ["order-1", "order-2", "order-3"]}
+SELECT * FROM orders WHERE _id IN :ids
 ```
 
 ### Counting documents
@@ -449,16 +381,8 @@ ALTER SYSTEM SET DQL_REQUEST_TIMEOUT_SECONDS = 30
 
 The warning reads `Slow DQL request dump entry="{...}"` and includes the plan and its statistics as JSON; the timeout fails the request with `Request exceeded maximum permitted execution time.` (in our testing; see [Slow-request warnings and request timeouts work as documented](../knowledge/observations/configuration-and-diagnostics.md#slow-request-warnings-and-request-timeouts-work-as-documented)). A lower warning threshold during development surfaces slow queries early. `ALTER SYSTEM` changes these values while the app runs, for example when support asks for slow-request warnings on a device in the field. Pass the values your app always needs on every open (see [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters)). Before enabling a timeout in production, make sure your code handles the resulting error for every query.
 
-### Flutter execution model
+### Query execution and the UI thread
 
-On native platforms, `ditto.store.execute` runs the query on a long-lived worker isolate (one per `Ditto` instance), so a slow query does not block the UI isolate.
+`execute` is asynchronous in every SDK, but where the query runs differs. On native platforms, the Flutter SDK runs each query on a worker isolate that it manages, so a slow query does not block the UI isolate, and an experimental setting runs queries inline instead. The JavaScript, Kotlin, and Swift SDKs return a promise, a suspending call, or an `async` call that you await from your own concurrency context. Kotlin's suspending `execute` still blocks the thread that calls it for the whole query: in our testing, a coroutine on the same thread ran once during a query of about 200 ms, so call it from `Dispatchers.IO` or `Dispatchers.Default`, not from the main thread (see [In Kotlin, store.execute blocks the thread of its caller](../knowledge/observations/kotlin-sdk.md#in-kotlin-storeexecute-blocks-the-thread-of-its-caller)). Decode large results and do heavy work on the values off the UI thread in every SDK.
 
-> **Advanced:** `Store.experimentalSkipExecuteIsolateOffload` (Experimental, default `false`) runs `execute` inline on the calling isolate instead. It avoids the per-call dispatch cost for tight loops of very small queries, but any slow query then blocks the calling isolate (usually the UI). The setting applies to every `Store` in the current isolate, persists across `Ditto.open` and `close` for the lifetime of the isolate, does not propagate to isolates you spawn, and has no effect on Web. Avoid toggling it while `execute` calls are in flight. Use it only after measuring a real throughput problem.
-
-```dart
-// Advanced (Experimental): only when queries are known to be short and
-// throughput of many small queries matters more than UI responsiveness.
-void enableInlineExecute() {
-  Store.experimentalSkipExecuteIsolateOffload = true;
-}
-```
+How each SDK runs queries: [Flutter](platforms/flutter.md#executing-dql-in-flutter) · [JavaScript](platforms/javascript.md#executing-dql-in-javascript) · [Kotlin](platforms/kotlin.md#executing-dql-in-kotlin) · [Swift](platforms/swift.md#executing-dql-in-swift).

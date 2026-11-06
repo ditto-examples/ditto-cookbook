@@ -5,7 +5,7 @@ max_turns: 12
 allowed_tools: [Read, Glob, Grep, Skill]
 ---
 
-Review this Flutter code that uses Ditto SDK 5.1:
+Review this Flutter code that uses Ditto SDK 5.2:
 
 ```dart
 Future<void> payOrder(Ditto ditto, String orderId) async {

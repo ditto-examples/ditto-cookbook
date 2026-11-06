@@ -1,41 +1,35 @@
 # Logging and Observability
 
-**Set the log level explicitly (`warning` in production) after `Ditto.init()` and before `Ditto.open()`, forward warnings and errors with `customLogCallback` (set it again before every open), and give support a way to export the on-disk logs or a support bundle.** Ditto provides three complementary sources of diagnostic information: SDK logs, local system virtual collections that describe the state of the device and the query engine, and remote diagnostics through the Ditto Portal. The collections and the system parameters are listed in [System Collections and Parameters](../knowledge/system-reference.md).
+**Set the log level explicitly (`warning` in production) before you open Ditto, forward warnings and errors to your own logging, and give support a way to export the on-disk logs or a support bundle.** Ditto provides three complementary sources of diagnostic information: SDK logs, local system virtual collections that describe the state of the device and the query engine, and remote diagnostics through the Ditto Portal. The collections and the system parameters are listed in [System Collections and Parameters](../knowledge/system-reference.md).
 
 ## Logging
 
-### Configuring logging in Flutter
+### Configuring logging
 
-`DittoLogger` is a set of static members. Every member throws `Ditto not initialized` until the SDK is initialized, and `Ditto.open` initializes it implicitly. To configure logging **before** opening Ditto (recommended, so that startup is logged with your settings), call `await Ditto.init()` first:
+Every SDK has one process-wide logger with the same settings: whether logging is enabled, the minimum level, a way to forward log events to your code, and an export of the on-disk logs.
 
-```dart
-import 'package:flutter/foundation.dart';
+| | Flutter | JavaScript | Kotlin | Swift |
+|---|---|---|---|---|
+| Logger | `DittoLogger` (static members) | `Logger` (static members) | `DittoLogger` (an object) | `DittoLogger` (static members) |
+| Minimum level | `minimumLogLevel` | `minimumLogLevel` | `minimumLogLevel` | `minimumLogLevel` |
+| Forward log events | `customLogCallback` | `setCustomLogCallback(callback)` | `observeLogEvents()`, a `Flow` | `setCustomLogCallback(_:)` |
+| Export the on-disk logs | `exportLogs(path)` | `exportToFile(path)` | `exportToFile(path)` | `export(to:)` |
+| Code | [Logging in Flutter](platforms/flutter.md#logging-in-flutter) | [Logging in JavaScript](platforms/javascript.md#logging-in-javascript) | [Logging in Kotlin](platforms/kotlin.md#logging-in-kotlin) | [Logging in Swift](platforms/swift.md#logging-in-swift) |
 
-/// Call before Ditto.open().
-Future<void> configureDittoLogging() async {
-  // DittoLogger throws until Ditto is initialized.
-  await Ditto.init();
-
-  DittoLogger.isEnabled = true;
-  DittoLogger.minimumLogLevel =
-      kReleaseMode ? LogLevel.warning : LogLevel.debug;
-}
-```
+Configure the logger before you open Ditto, so that startup is logged with your settings. In Flutter, the logger throws until the SDK is initialized, so call `Ditto.init()` first (see [Logging in Flutter](platforms/flutter.md#logging-in-flutter)).
 
 **✅ DO:**
-- Call `await Ditto.init()` before touching `DittoLogger` while Ditto is not open.
-- Use `LogLevel.warning` in production and `LogLevel.debug` while debugging.
-- Use `LogLevel.verbose` only for short, targeted investigations.
+- Use the `warning` level in production and `debug` while debugging.
+- Use `verbose` only for short, targeted investigations.
 
 **❌ DON'T:**
-- Leave `LogLevel.verbose` enabled in production. It multiplies the log output: in our testing on SDK 5.2.0, 2,000 writes produced about 83,000 log lines at verbose, against 154 at info, while the write rate itself did not change (see [Exported logs include debug lines regardless of the console level](../knowledge/observations/configuration-and-diagnostics.md#exported-logs-include-debug-lines-regardless-of-the-console-level)).
-- Set `DittoLogger` properties before `Ditto.init()` (or `Ditto.open`) has completed; they throw.
+- Leave `verbose` enabled in production. It multiplies the log output: in our testing on SDK 5.2.0, 2,000 writes produced about 83,000 log lines at verbose, against 154 at info, while the write rate itself did not change (see [Exported logs include debug lines regardless of the console level](../knowledge/observations/configuration-and-diagnostics.md#exported-logs-include-debug-lines-regardless-of-the-console-level)).
 
 ### Log levels
 
-`LogLevel` has five values, from most to least severe:
+There are five levels, from most to least severe:
 
-| `LogLevel` | Typical use |
+| Level | Typical use |
 |---|---|
 | `error` | Failures that need attention |
 | `warning` | Unexpected situations Ditto handled (recommended for production) |
@@ -43,56 +37,17 @@ Future<void> configureDittoLogging() async {
 | `debug` | Detailed diagnostics (recommended while debugging) |
 | `verbose` | Very detailed tracing; a very large log volume |
 
-Defaults: `DittoLogger.isEnabled` is `true`, `DittoLogger.minimumLogLevel` is `LogLevel.info`, and `customLogCallback` is `null`. Set the level explicitly instead of relying on the default.
-
-`DittoLogger.isEnabled` and `minimumLogLevel` control the logs Ditto emits at runtime. They do not affect the on-disk logs described below.
+By default, logging is enabled, the minimum level is `info`, and no log events are forwarded. Set the level explicitly instead of relying on the default. The enabled setting and the minimum level control the logs Ditto emits at runtime. They do not affect the on-disk logs described below.
 
 ### Forwarding logs to your own pipeline
 
-`DittoLogger.customLogCallback` receives the log events that Ditto emits. Use it to forward Ditto logs to your logging or crash-reporting tool.
+Forward Ditto's log events to your logging or crash-reporting tool, and keep the code that receives them fast and non-blocking: it runs for every log event. Forward only warnings and errors in production.
 
-`ditto.close()` resets `customLogCallback` to `null` for the whole process, even if other `Ditto` instances are still open. If your app closes and reopens Ditto (for example when the user signs out and in again), set the callback again before each `Ditto.open()`, after `Ditto.init()`, so that logs emitted while Ditto opens are forwarded too.
-
-```dart
-/// Forwards Ditto warnings and errors to the app's logging pipeline.
-/// Call after Ditto.init() and before every Ditto.open(), because
-/// ditto.close() clears the callback.
-void installDittoLogForwarding(void Function(String line) report) {
-  DittoLogger.customLogCallback = (LogLevel level, String message) {
-    if (level == LogLevel.error || level == LogLevel.warning) {
-      report('[ditto ${level.name}] $message');
-    }
-  };
-}
-
-class DittoSession {
-  DittoSession(this._config, this._report);
-
-  final DittoConfig _config;
-  final void Function(String line) _report;
-  Ditto? _ditto;
-
-  Future<Ditto> open() async {
-    await Ditto.init(); // No-op after the first call.
-    installDittoLogForwarding(_report); // Set before every open.
-    final ditto = await Ditto.open(_config);
-    return _ditto = ditto;
-  }
-
-  Future<void> close() async {
-    await _ditto?.close(); // Also resets DittoLogger.customLogCallback.
-    _ditto = null;
-  }
-}
-```
-
-Keep the callback fast and non-blocking; it is called for every log event.
-
-In Flutter, `DittoLogger.isDevtoolsLoggingEnabled = true` additionally sends Ditto logs to Flutter DevTools through `dart:developer`.
+In Flutter, `ditto.close()` resets the log callback for the whole process, even if other `Ditto` instances are still open, so set it again before every open (see [Logging in Flutter](platforms/flutter.md#logging-in-flutter)).
 
 ### On-disk logs and exporting them
 
-Independently of `isEnabled` and `minimumLogLevel`, Ditto always collects a limited amount of logs at `LogLevel.debug` and above in the persistence directory of the most recently created `Ditto` instance. By default, Ditto retains about 15 MB of compressed logs or 15 days of logs, and periodically discards older entries once one of these limits is reached.
+Independently of the enabled setting and the minimum level, Ditto always collects a limited amount of logs at the `debug` level and above in the persistence directory of the most recently created `Ditto` instance. By default, Ditto retains about 15 MB of compressed logs or 15 days of logs, and periodically discards older entries once one of these limits is reached.
 
 On-disk logs rotate in files of up to 1 MB or 24 hours each, and at most 15 files are kept (`ROTATING_LOG_FILE_MAX_SIZE_MB`, `ROTATING_LOG_FILE_MAX_AGE_H`, `ROTATING_LOG_FILE_MAX_FILES_ON_DISK`). In our testing on SDK 5.2.0, the files kept the log of about 200,000 writes, about 5 hours at 10 writes a second (see [On SDK 5.2.0, the on-disk logs kept about 200,000 writes](../knowledge/observations/storage-and-deletion.md#on-sdk-520-the-on-disk-logs-kept-about-200000-writes)). Leave these at their defaults unless Ditto support advises otherwise.
 
@@ -101,21 +56,7 @@ On-disk logs rotate in files of up to 1 MB or 24 hours each, and at most 15 file
 The on-disk logs can be retrieved in two ways:
 
 - **From the Ditto Portal:** request logs from a device on the device dashboard (see [Remote Diagnostics](#remote-diagnostics)).
-- **From the app:** `DittoLogger.exportLogs(path)` (in JavaScript, `Logger.exportToFile(path)`) writes them to a gzip-compressed JSON Lines file and returns the number of bytes written. The file must not already exist (otherwise it throws a `DittoError`) and its directory must exist. The recommended extension is `.jsonl.gz`. Only logs of the most recently created `Ditto` instance are exported.
-
-```dart
-import 'dart:io';
-
-/// Exports Ditto's on-disk logs, for example for a "Send diagnostics" button.
-/// [directory] must exist, for example a temporary or support directory.
-Future<File> exportDittoLogs(Directory directory) async {
-  final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch;
-  final file = File('${directory.path}/ditto-logs-$timestamp.jsonl.gz');
-  final bytes = await DittoLogger.exportLogs(file.path);
-  debugPrint('Exported $bytes bytes of Ditto logs to ${file.path}');
-  return file;
-}
-```
+- **From the app:** the logger's export (see the table above) writes them to a gzip-compressed JSON Lines file and returns the number of bytes written. The file must not already exist (otherwise the export fails) and its directory must exist. The recommended extension is `.jsonl.gz`. Only logs of the most recently created `Ditto` instance are exported.
 
 Because the on-disk logs always include debug-level entries, setting the console level to `warning` in production does not reduce what you can retrieve later for support (see [Exported logs include debug lines regardless of the console level](../knowledge/observations/configuration-and-diagnostics.md#exported-logs-include-debug-lines-regardless-of-the-console-level)).
 
@@ -135,19 +76,7 @@ SELECT * FROM system:support_bundles ORDER BY _id.created_at DESC
 
 The function returns one document with `_id` (the peer key and the capture time), `reason` (`USER_INITIATED`), and `file`, an attachment token for the archive. Fetch the archive with `fetchAttachment()` like any other attachment (see [Fetching Attachments](attachments.md#fetching-attachments)). In our testing with the JavaScript SDK 5.2.0, the archive contained the logs, the device metadata, and a configuration snapshot (see [A support bundle holds the logs, device metadata, and a configuration snapshot](../knowledge/observations/configuration-and-diagnostics.md#a-support-bundle-holds-the-logs-device-metadata-and-a-configuration-snapshot)).
 
-```dart
-// ✅ GOOD: Create a support bundle and save it, for example to share it with
-// Ditto support. [path] must not exist yet.
-Future<void> saveSupportBundle(Ditto ditto, String path) async {
-  final result = await ditto.store.execute(
-    "EXECUTE FUNCTION system_request_support_bundle()",
-  );
-  final token = Map<String, dynamic>.from(result.items.single.value['file'] as Map);
-  final fetcher = ditto.store.fetchAttachment(token, (event) {});
-  final attachment = await fetcher.attachment;
-  await attachment!.copyToPath(path);
-}
-```
+The code for creating a support bundle and saving the archive: [Logging in Flutter](platforms/flutter.md#logging-in-flutter) · [JavaScript](platforms/javascript.md#logging-in-javascript) · [Kotlin](platforms/kotlin.md#logging-in-kotlin) · [Swift](platforms/swift.md#logging-in-swift).
 
 | System parameter | Default | Behavior |
 |---|---|---|

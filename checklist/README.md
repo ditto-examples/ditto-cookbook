@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-This directory contains the sources and the build script for the Ditto SDK Implementation Checklist, an interactive review checklist for Flutter apps that use the Ditto SDK. The checklist is derived from the Ditto SDK best practices guide ([best practices](../best-practices/README.md) and [knowledge](../knowledge/README.md)) and is distributed as one self-contained HTML file.
+This directory contains the sources and the build script for the Ditto SDK Implementation Checklist, an interactive review checklist for apps that use the Ditto SDK, in Flutter, JavaScript, Kotlin, or Swift. The checklist is derived from the Ditto SDK best practices guide ([best practices](../best-practices/README.md) and [knowledge](../knowledge/README.md)) and is distributed as one self-contained HTML file.
 
 ## Overview
 
@@ -55,8 +55,8 @@ An optional paragraph after the list.
 
 **Code Example**:
 
-```dart
-// Optional. One code block per item (dart, sql, or yaml).
+```sql
+-- Optional. One code block per item, usually DQL (sql); dart and yaml are also supported.
 ```
 ````
 
@@ -153,4 +153,4 @@ The page stores two `localStorage` entries: `ditto-checklist-state-v2` (the IDs 
 
 ---
 
-**Last Updated**: 2026-11-02
+**Last Updated**: 2026-11-07

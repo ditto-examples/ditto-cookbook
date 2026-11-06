@@ -23,86 +23,61 @@ Keep the number of collections small: do not create a collection per user, tenan
 
 DQL statements always run against the **local store** of the device. Which API you pass a statement to decides what happens with it:
 
-| API (Flutter) | What it does |
+| API (every SDK) | What it does |
 |---|---|
-| `ditto.store.execute(query, arguments: {...})` | Runs one statement against the local store and returns a `QueryResult`. Never contacts other peers. |
-| `tx.execute(query, arguments: {...})` | Same, inside `ditto.store.transaction(...)`. See [Transactions](transactions.md). |
-| `ditto.store.registerObserver(query, arguments: {...})` | Re-runs a `SELECT` whenever matching local data changes. See [Observing Changes](observers.md). |
-| `ditto.sync.registerSubscription(query, arguments: {...})` | Tells connected peers which documents this device wants. Only `SELECT * FROM c [WHERE ...]` is accepted. See [Sync and Subscriptions](sync-and-subscriptions.md). |
+| `ditto.store.execute` | Runs one statement against the local store and returns a query result. Never contacts other peers. |
+| `execute` on the transaction object | Same, inside `ditto.store.transaction`. See [Transactions](transactions.md). |
+| `ditto.store.registerObserver` | Re-runs a `SELECT` whenever matching local data changes. See [Observing Changes](observers.md). |
+| `ditto.sync.registerSubscription` | Tells connected peers which documents this device wants. Only `SELECT * FROM c [WHERE ...]` is accepted. See [Sync and Subscriptions](sync-and-subscriptions.md). |
+
+Each takes the statement and its arguments, a map from parameter names to values. How each SDK passes them, and which of its types it accepts as values: [Executing DQL in Flutter](platforms/flutter.md#executing-dql-in-flutter) · [JavaScript](platforms/javascript.md#executing-dql-in-javascript) · [Kotlin](platforms/kotlin.md#executing-dql-in-kotlin) · [Swift](platforms/swift.md#executing-dql-in-swift). The examples in this guide show the arguments of a statement in a comment, as JSON: `-- Arguments: {"status": "open"}`.
 
 Queries never fetch data from other peers: a `SELECT` sees only documents that were created on this device or that a subscription has already brought to it. See [Core Principles](../knowledge/understanding-ditto.md#core-principles) for how queries and subscriptions work together.
 
-```dart
-// ✅ GOOD: A long-lived subscription (owned by an app-level service) brings
-// matching documents to this device; execute() reads whatever has arrived so far.
-SyncSubscription subscribeToOpenOrders(Ditto ditto) =>
-    ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'open'},
-    );
+```sql
+-- ✅ GOOD: A long-lived subscription (owned by an app-level service) brings
+-- matching documents to this device
+-- Arguments: {"status": "open"}
+SELECT * FROM orders WHERE status = :status
 
-Future<List<Map<String, dynamic>>> loadOpenOrders(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC',
-    arguments: {'status': 'open'},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- execute reads whatever has arrived so far
+-- Arguments: {"status": "open"}
+SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC
 ```
 
 ### Parameters and Literals
 
 #### Always pass values as parameters
 
-Reference values with `:name` placeholders and pass them in `arguments`. Parameter names are case-sensitive (`:Status` and `:status` are different), and a placeholder without a matching argument fails with `Parameter Status was not provided`. Write argument names without the colon: an argument named `':status'` leaves `:status` without a value, which fails the same way. Arguments that the statement does not use are ignored, and `$status` is a syntax error.
+Reference values with `:name` placeholders and pass them as arguments. Parameter names are case-sensitive (`:Status` and `:status` are different), and a placeholder without a matching argument fails with `Parameter Status was not provided`. Write argument names without the colon: an argument named `':status'` leaves `:status` without a value, which fails the same way. Arguments that the statement does not use are ignored, and `$status` is a syntax error.
 
 **✅ DO:**
 - Use parameters for every value that comes from your app: IDs, user input, dates, limits, whole documents.
 - Pass whole documents to `INSERT` as a single parameter: `INSERT INTO orders DOCUMENTS (:order)`.
 - Pass arrays for membership tests: `WHERE status IN :statuses`.
+- Pass plain JSON values: strings, numbers, booleans, `null`, arrays, and maps. Convert dates to UTC strings or epoch milliseconds, and IDs to strings, yourself: each SDK converts the other values of its language in its own way, and some of them fail or are stored as something else, such as an object (see [Arguments and value types in Flutter](platforms/flutter.md#arguments-and-value-types-in-flutter), [JavaScript](platforms/javascript.md#arguments-and-value-types-in-javascript), [Kotlin](platforms/kotlin.md#arguments-and-value-types-in-kotlin), and [Swift](platforms/swift.md#arguments-and-value-types-in-swift)).
 
 **❌ DON'T:**
 - Build DQL strings with string interpolation or concatenation.
 - Write `IN (:statuses)` with an array parameter. The parentheses turn it into a one-element list whose only element is the array, so nothing matches.
 - Pass a single value where the statement expects an array. In our testing, `status IN :statuses` with a string instead of a list matched nothing, without an error (see [Wrong argument types fail silently](../knowledge/observations/dql-behavior.md#wrong-argument-types-fail-silently)); wrap a single value in a list.
 
-```dart
-// ✅ GOOD: Values travel as typed parameters
-Future<List<Map<String, dynamic>>> findOrders(
-  Ditto ditto,
-  String customerId,
-  List<String> statuses,
-  int pageSize,
-) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders '
-    'WHERE customerId = :customerId AND status IN :statuses '
-    'ORDER BY createdAt DESC LIMIT :pageSize',
-    arguments: {
-      'customerId': customerId,
-      'statuses': statuses,
-      'pageSize': pageSize,
-    },
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Values travel as typed parameters
+-- Arguments: {"customerId": "c-1", "statuses": ["open", "pending"], "pageSize": 50}
+SELECT * FROM orders
+WHERE customerId = :customerId AND status IN :statuses
+ORDER BY createdAt DESC LIMIT :pageSize
 ```
 
-```dart
-// ❌ BAD: Interpolated values (injection risk, broken quoting, no statement reuse)
-Future<void> findOrdersUnsafe(Ditto ditto, String customerId) async {
-  await ditto.store.execute(
-    "SELECT * FROM orders WHERE customerId = '$customerId'",
-  );
-}
+```sql
+-- ❌ BAD: The value was pasted into the statement text. Input such as
+-- x' OR '1' = '1 turns the filter into one that matches every order.
+SELECT * FROM orders WHERE customerId = 'x' OR '1' = '1'
 
-// ❌ BAD: The array becomes a single list element, so no document matches
-Future<void> findByStatusesWrong(Ditto ditto) async {
-  await ditto.store.execute(
-    'SELECT * FROM orders WHERE status IN (:statuses)',
-    arguments: {'statuses': ['open', 'pending']},
-  );
-}
+-- ❌ BAD: The array becomes a single list element, so no document matches
+-- Arguments: {"statuses": ["open", "pending"]}
+SELECT * FROM orders WHERE status IN (:statuses)
 ```
 
 **Why:**
@@ -130,16 +105,12 @@ SELECT 'it\'s' AS a, "double quoted" AS b, `my field` AS c, 0xFF AS d
 FROM orders
 ```
 
-Backslashes are interpreted twice when the statement is written inside a Dart string: first by Dart, then by DQL. This is another reason to pass text as a parameter.
+Backslashes are interpreted twice when the statement is written inside a string literal of Dart, JavaScript, Kotlin, or Swift: first by the language, then by DQL. This is another reason to pass text as a parameter.
 
-```dart
-// ✅ GOOD: The path is passed as data and stored exactly as given
-Future<void> saveExportPath(Ditto ditto) async {
-  await ditto.store.execute(
-    'UPDATE settings SET exportPath = :path WHERE _id = :id',
-    arguments: {'id': 'device', 'path': r'C:\temp\exports'},
-  );
-}
+```sql
+-- ✅ GOOD: The path is passed as data and stored exactly as given
+-- Arguments: {"id": "device", "path": "C:\\temp\\exports"}
+UPDATE settings SET exportPath = :path WHERE _id = :id
 ```
 
 #### Quote every key in inline object literals
@@ -203,7 +174,7 @@ In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The si
 
 Note that `IS NOT NULL` is true for a missing field, and that `!= true` drops both `null` and missing rows. <!-- lint-ignore -->
 
-In the JavaScript SDK, a field whose value is `undefined` is stored as `null`, not left out, so it no longer matches `IS MISSING`, also inside arrays and objects (in our testing; see [JavaScript values that are not plain JSON change when stored](../knowledge/observations/dql-behavior.md#javascript-values-that-are-not-plain-json-change-when-stored)). Omit the key to leave a field missing.
+An argument value that your language uses for "no value" may be stored as `null` rather than left out: in our testing with the JavaScript SDK, a field whose value was `undefined` was stored as `null`, so it no longer matched `IS MISSING`, also inside arrays and objects (see [JavaScript values that are not plain JSON change when stored](../knowledge/observations/javascript-sdk.md#javascript-values-that-are-not-plain-json-change-when-stored) and [Arguments and value types in JavaScript](platforms/javascript.md#arguments-and-value-types-in-javascript)). Omit the key to leave a field missing.
 
 **✅ DO:**
 - Filter optional booleans with `coalesce(field, default)`: `coalesce(isDeleted, false) = false`.
@@ -215,127 +186,67 @@ In the JavaScript SDK, a field whose value is `undefined` is stored as `null`, n
 - Use `field != true` or `NOT field` to mean "false or not set". <!-- lint-ignore -->
 - Use `IS NOT NULL` to check that a field exists. <!-- lint-ignore -->
 
-```dart
-// ✅ GOOD: Treat a missing or null isDeleted flag as "not deleted"
-Future<List<Map<String, dynamic>>> activeTasks(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM tasks WHERE coalesce(isDeleted, false) = false ORDER BY createdAt',
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Treat a missing or null isDeleted flag as "not deleted"
+SELECT * FROM tasks WHERE coalesce(isDeleted, false) = false ORDER BY createdAt
 
-// ❌ BAD: Tasks that never had isDeleted set (or have null) are silently excluded
-Future<List<Map<String, dynamic>>> activeTasksWrong(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM tasks WHERE isDeleted != true ORDER BY createdAt',
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- ❌ BAD: Tasks that never had isDeleted set (or have null) are silently excluded
+SELECT * FROM tasks WHERE isDeleted != true ORDER BY createdAt
 ```
 
 **Why:** Documents written by older app versions, by other platforms, or created before a field was introduced often lack the field entirely. A filter that ignores MISSING hides those documents without any error. The [Soft Delete](deletion-and-storage.md#soft-delete) pattern depends on getting this right.
 
 Related behavior:
-- In projections, an expression that evaluates to MISSING is omitted from the result row (the key is absent from `item.value`), while `null` appears as a `null` value.
+- In projections, an expression that evaluates to MISSING is omitted from the result row (the key is absent from the row's value), while `null` appears as a `null` value.
 - Comparing values of different types, including with `=` and `!=` (`1 = 'a'`, `1 != 'a'`, `1 < 'a'`), also evaluates to MISSING (see [Comparisons across types are MISSING, and strings sort by code point](../knowledge/observations/dql-behavior.md#comparisons-across-types-are-missing-and-strings-sort-by-code-point)), as do operators applied to the wrong types (`'a' || 1`). Integers and floats compare normally (`1 = 1.0` is `true`). <!-- lint-ignore -->
 - `ORDER BY` sorts `null` and missing values after all other values in ascending order (see [ORDER BY](#order-by) and [Descending order puts missing and null first](../knowledge/observations/dql-behavior.md#descending-order-puts-missing-and-null-first)).
 - Aggregates other than `COUNT` return MISSING, not `0`, over zero matching documents (see [Aggregates](#aggregates)).
 
 ### Working with Query Results
 
-`ditto.store.execute` returns a `QueryResult`:
+A query result has the same parts in every SDK; their names follow each SDK's conventions:
 
-| Member (Flutter) | Type | Description |
-|---|---|---|
-| `items` | `Iterable<QueryResultItem>` | The result rows. An `Iterable`, not a `List`: use `map`, `first`, `length`, or `toList()`. |
-| `item.value` | `Map<String, dynamic>` | The row decoded into Dart values. Decoded on first access and cached on that item object. |
-| `item.jsonString` | `String` | The row as a JSON string (a property, not a method). |
-| `item.cborBytes` | `Uint8List` | The row as CBOR bytes (a property, not a method). |
-| `mutatedDocumentIDs()` | `List<dynamic>` | IDs of documents changed by an `INSERT` / `UPDATE` / `DELETE` / `EVICT`. A method that builds a new list on every call; call it once and keep the list. IDs are raw values (a `String`, or a `Map` for composite IDs). |
-| `commitID` | `int?` | ID of the local commit for a mutating statement; `null` for reads. Inside a transaction it is only available after the transaction commits. |
+| Part | Flutter | JavaScript | Kotlin | Swift |
+|---|---|---|---|---|
+| The rows | `items` (an `Iterable`) | `items` (an array) | `items` (a `List`) | `items` (an array) |
+| A row as native values | `item.value` | `item.value` | `item.value` | `item.value` |
+| A row as JSON | `item.jsonString` (a property) | `item.jsonString()` | `item.jsonString()` | `item.jsonData()` |
+| A row as CBOR | `item.cborBytes` | `item.cborData()` | `item.cborData()` | `item.cborData()` |
+| IDs of the documents that a write changed | `mutatedDocumentIDs()` | `mutatedDocumentIDsV2()` | `mutatedDocumentIds()` | `mutatedDocumentIDs()` |
+| The local commit of a write | `commitID` | `commitID` | `commitId` | `commitID` |
+| Releasing the result | Garbage collection | Garbage collection | `close()`, or read it inside the mapping function of `execute` | Automatic reference counting |
 
-In the JavaScript SDK, the `QueryResult` equivalents are `items[i].value`, `items[i].jsonString()` (a method), and `mutatedDocumentIDsV2()`. Arguments are passed as the second positional parameter: `ditto.store.execute(query, { status: 'open' })`. <!-- lint-ignore -->
+The IDs of changed documents cover `INSERT`, `UPDATE`, `DELETE`, and `EVICT`, and they are the raw `_id` values: a string, or a map for composite IDs. The commit ID is empty for reads; inside a transaction, it is only available after the transaction commits.
 
-```dart
-// Read: convert rows to plain Dart data right away
-Future<List<Map<String, dynamic>>> openOrders(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT _id, total, status FROM orders WHERE status = :status ORDER BY _id',
-    arguments: {'status': 'open'},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+How each SDK reads rows, converts them into model objects, and releases the result: [Query results in Flutter](platforms/flutter.md#query-results-in-flutter) · [JavaScript](platforms/javascript.md#query-results-in-javascript) · [Kotlin](platforms/kotlin.md#query-results-in-kotlin) · [Swift](platforms/swift.md#query-results-in-swift).
 
-// Write: inspect which documents changed
-Future<List<dynamic>> closeOrders(Ditto ditto, List<String> ids) async {
-  final result = await ditto.store.execute(
-    'UPDATE orders SET status = :status WHERE _id IN :ids',
-    arguments: {'status': 'closed', 'ids': ids},
-  );
-  final int? commitId = result.commitID; // null for reads
-  debugPrint('Committed as $commitId');
-  return result.mutatedDocumentIDs(); // call once and keep the list
-}
-
-// Alternative encodings, for example to hand rows to a JSON decoder or another isolate
-Future<List<String>> openOrdersAsJson(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE status = :status',
-    arguments: {'status': 'open'},
-  );
-  return result.items.map((item) => item.jsonString).toList();
-}
-```
 
 #### Materialize values, then let the result go
 
 **✅ DO:**
-- Convert each row to a `Map` or to your own model class once, then work with those objects.
-- Iterate `items` once. Each pass over `items` creates new `QueryResultItem` wrappers, so `result.items.first.value` evaluated twice decodes the row twice. (JavaScript differs: `items` and `item.value` return the same objects every time; see [Platform Differences](../knowledge/platform-differences.md) and [In JavaScript, query results return the same objects](../knowledge/observations/observer-behavior.md#in-javascript-query-results-return-the-same-objects).)
-- Keep only the data you need; let the `QueryResult` go out of scope.
+- Convert each row to plain native values or to your own model type once, then work with those objects.
+- Read the rows once. Whether reading a row again decodes it again, and whether it returns the same object, differs by SDK (see the SDK pages above).
+- Keep only the data you need, and release the result (or let it go out of scope) as soon as you have it.
 
 **❌ DON'T:**
-- Store `QueryResult` or `QueryResultItem` objects in state, caches, or across observer callbacks. They reference native memory that is released only when the Dart object is garbage-collected.
+- Store result or row objects in state, caches, or across observer callbacks. They reference native memory that is released only when the result is released.
+- Change the value of a row to edit the document. The value is a copy for reading; write changes back with `UPDATE` (in the JavaScript SDK, changes to `item.value` even stay in the result object without reaching the store; see [Query results in JavaScript](platforms/javascript.md#query-results-in-javascript)).
 
-```dart
-class Order {
-  Order({required this.id, required this.status, required this.total});
-
-  factory Order.fromValue(Map<String, dynamic> value) => Order(
-        id: value['_id'] as String,
-        status: value['status'] as String? ?? 'unknown',
-        total: (value['total'] as num?)?.toDouble() ?? 0,
-      );
-
-  final String id;
-  final String status;
-  final double total;
-}
-
-// ✅ GOOD: One pass, plain Dart objects out
-Future<List<Order>> loadOrders(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT _id, status, total FROM orders WHERE status = :status ORDER BY _id',
-    arguments: {'status': 'open'},
-  );
-  return result.items.map((item) => Order.fromValue(item.value)).toList();
-}
-```
 
 #### Large results
 
 Every row of a `SELECT` is materialized in the result. To keep results small on mobile devices:
 
 - **Project** only the fields you need (`SELECT _id, title, status ...`). Projections do not change what syncs, but they reduce decoding work and memory.
-- **Filter** in `WHERE` rather than in Dart.
+- **Filter** in `WHERE` rather than in app code.
 - **Page** with `ORDER BY ... LIMIT` (see [LIMIT and OFFSET](#limit-and-offset)).
-- **Count** with `SELECT COUNT(*)` instead of loading documents to call `.length`.
+- **Count** with `SELECT COUNT(*)` instead of loading documents to count them.
 - **Let large results go** once you have extracted what you need, and read very large sets in pages. In our testing with the JavaScript SDK, the process's resident memory did not shrink after a large result had been released and garbage-collected; on 5.2.0, the same result used about 20 to 30% less memory than on 5.1.0 while it was held, and about 35% less once it was read, in line with the release notes, which say that query results stay compact until they are read (see [Large query results keep process memory after they are released](../knowledge/observations/performance-measurements.md#large-query-results-keep-process-memory-after-they-are-released)).
 - **Check existence** with `LIMIT 1`.
 
 ### When a Statement Fails or Returns Nothing
 
-In Flutter, a statement that Ditto rejects throws a `DittoException` from `execute`, `tx.execute`, or `registerSubscription`, and its message names the cause. Catch it where your app can report the failure (see the example in [Document Size Limits](data-modeling.md#document-size-limits)). Many mistakes raise no error and only return fewer rows than expected: when a query returns nothing, go through the second table before you suspect sync.
+A statement that Ditto rejects makes `execute`, the transaction's `execute`, or `registerSubscription` fail with the SDK's error type, and its message names the cause. Catch it where your app can report the failure; each SDK page shows the error type ([Executing DQL in Flutter](platforms/flutter.md#executing-dql-in-flutter), [JavaScript](platforms/javascript.md#executing-dql-in-javascript), [Kotlin](platforms/kotlin.md#executing-dql-in-kotlin), [Swift](platforms/swift.md#executing-dql-in-swift)). Many mistakes raise no error and only return fewer rows than expected: when a query returns nothing, go through the second table before you suspect sync.
 
 Errors, by a part of their message:
 
@@ -358,8 +269,10 @@ Errors, by a part of their message:
 | `Unsupported feature: ...` | A projection, aggregate, `DISTINCT`, `GROUP BY`, `JOIN`, `USE IDS`, `LIMIT`, or `ORDER BY` in `registerSubscription` | [Subscription Rules](sync-and-subscriptions.md#subscription-rules) |
 | `exceeds limit of` | A write that would take a document over the hard size limit | [Document Size Limits](data-modeling.md#document-size-limits) |
 | `recursion limit exceeded` | A condition nested 100 levels deep in parentheses | [Filtering by Membership](#filtering-by-membership) |
-| `while in a transaction scope` | `ditto.store.execute` inside a transaction callback | [Transaction Rules](transactions.md#transaction-rules) |
-| `DittoClosedException` | A call on an instance after `close()` | [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown) |
+| `while in a transaction scope` | `ditto.store.execute` inside a transaction callback (Flutter; in JavaScript, Kotlin, and Swift, a write through it never completes instead) | [Transaction Rules](transactions.md#transaction-rules) |
+| `Transaction is no longer valid` | In Flutter, `ditto.store.execute` called by a timer or listener that a transaction callback started, after the commit | [Transactions in Flutter](platforms/flutter.md#transactions-in-flutter) |
+| `Ditto closed before execute() completed` | In Flutter, an `execute` still pending when `close()` ran; its write may have been stored | [Closing Ditto in Flutter](platforms/flutter.md#closing-ditto-in-flutter) |
+| The SDK's error for a closed instance (`DittoClosedException` in Flutter) | A call on an instance after it was closed | [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown) |
 
 No error, but fewer rows or other values than expected:
 
@@ -381,7 +294,7 @@ No error, but fewer rows or other values than expected:
 | A value is gone after a nested `SET a.b = ...` | `a` held a string, a number, an array, or `null`, which the nested `SET` replaced with an object | [UPDATE](#update) |
 | An `UPDATE`, `DELETE`, or `EVICT` changed every document | The `WHERE` clause was left out, for example when it was built from optional filters | [DELETE and EVICT](#delete-and-evict) |
 | Keys left out of `SET obj = {...}` or an upsert are still there | Assigning an object merges it | [Assigning an object merges it](#assigning-an-object-merges-it) |
-| A statement in a transaction was not applied | The callback returned before the `tx.execute` call completed | [Transaction Rules](transactions.md#transaction-rules) |
+| A statement in a transaction was not applied | The callback returned before the `execute` call on the transaction completed | [Transaction Rules](transactions.md#transaction-rules) |
 
 ## Reading Data with SELECT
 
@@ -412,16 +325,11 @@ FROM collection [[AS] alias] [USE IDS ...]
 - Give every computed expression an explicit alias with `AS`. Without one, Ditto names the column after its position in the projection list, such as `($2)` for the second element.
 - Qualify `*` when combining it with other projections: `SELECT orders.*, ...`. An unqualified `SELECT *, total * 2 AS doubled` fails with `unqualified * with other projection elements is not supported`.
 
-```dart
-// ✅ GOOD: Only the fields the list screen shows, with readable aliases
-Future<List<Map<String, dynamic>>> orderSummaries(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT _id, customerName, total * 1.1 AS totalWithTax '
-    'FROM orders WHERE status = :status ORDER BY createdAt DESC',
-    arguments: {'status': 'open'},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Only the fields the list screen shows, with readable aliases
+-- Arguments: {"status": "open"}
+SELECT _id, customerName, total * 1.1 AS totalWithTax
+FROM orders WHERE status = :status ORDER BY createdAt DESC
 ```
 
 **Why:** A projection shapes the local result only. Synchronization works on whole documents and is controlled by subscriptions, which always use `SELECT *`. Smaller projections mean less decoding and memory, and an index that contains every projected field can answer the query without fetching documents (see [Indexing and Query Performance](indexing-and-performance.md)).
@@ -472,27 +380,17 @@ SELECT DISTINCT status FROM orders ORDER BY status
 - Use `COUNT(field)` to count "documents that have the field" when the field is a boolean: `false` values are not counted.
 - Use `MID` when you need the median.
 
-```dart
-// ✅ GOOD: Aggregates with explicit aliases and a default for empty sets
-Future<Map<String, dynamic>> orderStats(Ditto ditto, String customerId) async {
-  final result = await ditto.store.execute(
-    'SELECT COUNT(*) AS orderCount, '
-    'ifmissing(SUM(total), 0) AS revenue, '
-    'ifmissing(AVG(total), 0) AS averageOrder '
-    'FROM orders WHERE customerId = :customerId',
-    arguments: {'customerId': customerId},
-  );
-  return result.items.first.value;
-}
+```sql
+-- ✅ GOOD: Aggregates with explicit aliases and a default for empty sets
+-- Arguments: {"customerId": "c-1"}
+SELECT COUNT(*) AS orderCount,
+       ifmissing(SUM(total), 0) AS revenue,
+       ifmissing(AVG(total), 0) AS averageOrder
+FROM orders WHERE customerId = :customerId
 
-// ✅ GOOD: Existence check stops at the first match
-Future<bool> hasOpenOrders(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT _id FROM orders WHERE status = :status LIMIT 1',
-    arguments: {'status': 'open'},
-  );
-  return result.items.isNotEmpty;
-}
+-- ✅ GOOD: Existence check stops at the first match
+-- Arguments: {"status": "open"}
+SELECT _id FROM orders WHERE status = :status LIMIT 1
 ```
 
 **Why:** Aggregates must process every matching document before they return (they are blocking steps in the query pipeline). Memory grows with the number of groups, not with the number of documents, but the work still grows with the number of matching documents. Keep `WHERE` selective and avoid running expensive aggregates in observers that fire frequently.
@@ -530,19 +428,14 @@ HAVING SUM(total) > 1000
 ORDER BY day
 ```
 
-```dart
-// ✅ GOOD: Revenue per customer, highest first
-Future<List<Map<String, dynamic>>> revenueByCustomer(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    'SELECT customerId, COUNT(*) AS orderCount, SUM(total) AS revenue '
-    'FROM orders WHERE status = :status '
-    'GROUP BY customerId '
-    'HAVING COUNT(*) >= :minOrders '
-    'ORDER BY revenue DESC',
-    arguments: {'status': 'completed', 'minOrders': 2},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Revenue per customer, highest first
+-- Arguments: {"status": "completed", "minOrders": 2}
+SELECT customerId, COUNT(*) AS orderCount, SUM(total) AS revenue
+FROM orders WHERE status = :status
+GROUP BY customerId
+HAVING COUNT(*) >= :minOrders
+ORDER BY revenue DESC
 ```
 
 ### ORDER BY
@@ -585,40 +478,20 @@ Sorting large result sets costs memory and time unless an index provides the ord
 **❌ DON'T:**
 - Put `LIMIT` or `ORDER BY` in a subscription. Subscriptions reject them by default, and a subscription defines which documents sync, not how a screen pages through them. See [Subscription Rules](sync-and-subscriptions.md#subscription-rules).
 
-```dart
-// ✅ GOOD: Keyset pagination: continue after the last row of the previous page.
-// _id breaks ties between rows that share the same createdAt.
-// Load the first page with the same query without the WHERE clause.
-Future<List<Map<String, dynamic>>> nextPage(
-  Ditto ditto, {
-  required String afterCreatedAt,
-  required String afterId,
-  int pageSize = 50,
-}) async {
-  final result = await ditto.store.execute(
-    'SELECT _id, title, createdAt FROM tasks '
-    'WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId) '
-    'ORDER BY createdAt DESC, _id DESC LIMIT :pageSize',
-    arguments: {
-      'after': afterCreatedAt,
-      'afterId': afterId,
-      'pageSize': pageSize,
-    },
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Keyset pagination: continue after the last row of the previous page.
+-- _id breaks ties between rows that share the same createdAt. Load the first
+-- page with the same query without the WHERE clause.
+-- Arguments: {"after": "2026-01-15T10:30:00.000Z", "afterId": "task-42", "pageSize": 50}
+SELECT _id, title, createdAt FROM tasks
+WHERE createdAt < :after OR (createdAt = :after AND _id < :afterId)
+ORDER BY createdAt DESC, _id DESC LIMIT :pageSize
 
-// Works, but every page re-reads and skips all earlier rows.
-// _id makes the order unique, so rows are not repeated or skipped across pages.
-Future<List<Map<String, dynamic>>> pageByOffset(Ditto ditto, int page) async {
-  const pageSize = 50;
-  final result = await ditto.store.execute(
-    'SELECT _id, title, createdAt FROM tasks '
-    'ORDER BY createdAt DESC, _id DESC LIMIT :pageSize OFFSET :offset',
-    arguments: {'pageSize': pageSize, 'offset': page * pageSize},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- Works, but every page re-reads and skips all earlier rows.
+-- _id makes the order unique, so rows are not repeated or skipped across pages.
+-- Arguments: {"pageSize": 50, "offset": 100}
+SELECT _id, title, createdAt FROM tasks
+ORDER BY createdAt DESC, _id DESC LIMIT :pageSize OFFSET :offset
 ```
 
 ### USE IDS
@@ -642,15 +515,10 @@ A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID
 
 For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE predicate remove nothing](../knowledge/observations/dql-behavior.md#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-predicate-remove-nothing)); SDK 5.0.3 rejected `USE IDS` in `DELETE` as a syntax error in our testing (see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)).
 
-```dart
-// ✅ GOOD: Direct ID lookup with an array parameter
-Future<List<Map<String, dynamic>>> ordersByIds(Ditto ditto, List<String> ids) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE _id IN :ids',
-    arguments: {'ids': ids},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Direct ID lookup with an array parameter
+-- Arguments: {"ids": ["order-1", "order-2"]}
+SELECT * FROM orders WHERE _id IN :ids
 ```
 
 ### Filtering by Membership
@@ -667,27 +535,14 @@ Future<List<Map<String, dynamic>>> ordersByIds(Ditto ditto, List<String> ids) as
 
 An empty array returns no rows, also without an error (see [Wrong argument types fail silently](../knowledge/observations/dql-behavior.md#wrong-argument-types-fail-silently)). Pass a set of alternatives as one array parameter with `IN :values`, not as a chain of `OR` terms built in code. Long chains crashed SDK 5.1.0, in our testing at 15,000 `OR` terms and without an exception (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [Long OR chains crashed SDK 5.1.0](../knowledge/observations/dql-behavior.md#long-or-chains-crashed-sdk-510)), and in our testing with 5.1.0 and 5.2.0, a condition that wrapped each term in another pair of parentheses failed at 100 levels with `DQL parser error: recursion limit exceeded` (see [Conditions fail at 100 levels of nested parentheses](../knowledge/observations/dql-behavior.md#conditions-fail-at-100-levels-of-nested-parentheses)).
 
-```dart
-// ✅ GOOD: Membership against an array parameter
-Future<List<Map<String, dynamic>>> tasksWithStatus(
-  Ditto ditto,
-  List<String> statuses,
-) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM tasks WHERE status IN :statuses ORDER BY _id',
-    arguments: {'statuses': statuses},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Membership against an array parameter
+-- Arguments: {"statuses": ["open", "pending"]}
+SELECT * FROM tasks WHERE status IN :statuses ORDER BY _id
 
-// ✅ GOOD: Documents whose tags array contains a value
-Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM tasks WHERE :tag IN tags ORDER BY _id',
-    arguments: {'tag': tag},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- ✅ GOOD: Documents whose tags array contains a value
+-- Arguments: {"tag": "urgent"}
+SELECT * FROM tasks WHERE :tag IN tags ORDER BY _id
 ```
 
 > **Note (SDK 5.1.0 and 5.2.0):** An `ANY ... SATISFIES ... END` expression in a `WHERE` clause that iterates over a parameter or a literal array, such as `WHERE ANY s IN :statuses SATISFIES s = status END`, returns no rows. Use `status IN :statuses` (or `array_contains(:statuses, status)`) for membership filters. This is a known issue since 5.1.0, and 5.2.0 does not fix it; in our testing, 5.0.3 returned the matching documents (see [ANY and EVERY over a parameter or literal array return no rows since SDK 5.1.0](../knowledge/observations/dql-behavior.md#any-and-every-over-a-parameter-or-literal-array-return-no-rows-since-sdk-510)). A subscription with the same `WHERE` clause syncs the right documents, so the usual "subscribe and observe with the same query" pattern receives the data but shows an empty list. See [ANY and EVERY](../knowledge/dql-functions.md#any-and-every). <!-- lint-ignore -->
@@ -802,43 +657,21 @@ Always qualify fields with their alias (`c.name`, `o.total`) and alias projected
 
 `registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
 
-```dart
-// ✅ GOOD: Subscribe per collection (app or feature scope), join locally
-List<SyncSubscription> subscribeForOrderList(Ditto ditto) => [
-      ditto.sync.registerSubscription(
-        'SELECT * FROM orders WHERE status = :status',
-        arguments: {'status': 'open'},
-      ),
-      ditto.sync.registerSubscription('SELECT * FROM customers'),
-    ];
+```sql
+-- ✅ GOOD: Subscribe per collection (app or feature scope)
+-- Arguments: {"status": "open"}
+SELECT * FROM orders WHERE status = :status
 
-// ✅ GOOD: Observe the join (screen scope); call dispose() when the screen goes away
-class OpenOrdersWithCustomers {
-  OpenOrdersWithCustomers(
-    Ditto ditto,
-    void Function(List<Map<String, dynamic>> rows) onRows,
-  ) : _observer = ditto.store.registerObserver(
-          'SELECT o._id AS orderId, o.total, c.name AS customerName '
-          'FROM orders o JOIN customers c ON c._id = o.customerId '
-          'WHERE o.status = :status ORDER BY o.createdAt DESC, o._id',
-          arguments: {'status': 'open'},
-        ) {
-    _changes = _observer.changes.listen(
-      (result) => onRows(result.items.map((item) => item.value).toList()),
-    );
-  }
+SELECT * FROM customers
 
-  final StoreObserver _observer;
-  late final StreamSubscription<QueryResult> _changes;
-
-  void dispose() {
-    _changes.cancel();
-    _observer.cancel();
-  }
-}
+-- ✅ GOOD: Observe the join (screen scope), and project the keys of each row
+-- Arguments: {"status": "open"}
+SELECT o._id AS orderId, o.total, c.name AS customerName
+FROM orders o JOIN customers c ON c._id = o.customerId
+WHERE o.status = :status ORDER BY o.createdAt DESC, o._id
 ```
 
-For a complete widget lifecycle (register in `initState`, cancel the stream subscription and the observer in `dispose`), follow [Store Observers in Flutter](observers.md#store-observers-in-flutter).
+Register and release such an observer like any other (see [Observer Lifecycle](observers.md#observer-lifecycle)).
 
 #### Join or embed?
 
@@ -862,32 +695,15 @@ Joins make separate, normalized collections practical to query, but they do not 
 
 Insert documents by passing them as parameters. Each document needs a unique `_id` (or Ditto generates one; see [Document IDs](data-modeling.md#document-ids)).
 
-```dart
-// ✅ GOOD: One document as a parameter
-Future<void> createOrder(Ditto ditto, String id, String customerId) async {
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order)',
-    arguments: {
-      'order': {
-        '_id': id,
-        'customerId': customerId,
-        'status': 'open',
-        'total': 0,
-        // createdAt is sorted and compared, so it uses the fixed-precision
-        // helper. utcTimestamp() is defined in the Timestamps section.
-        'createdAt': utcTimestamp(),
-      },
-    },
-  );
-}
+```sql
+-- ✅ GOOD: One document as a parameter. createdAt is sorted and compared, so it
+-- comes from the fixed-precision helper (see Timestamps in Data Modeling).
+-- Arguments: {"order": {"_id": "order-1", "customerId": "c-1", "status": "open", "total": 0, "createdAt": "2026-01-15T10:30:00.000Z"}}
+INSERT INTO orders DOCUMENTS (:order)
 
-// ✅ GOOD: Several documents in one statement, as an array parameter
-Future<void> importProducts(Ditto ditto, List<Map<String, dynamic>> products) async {
-  await ditto.store.execute(
-    'INSERT INTO products DOCUMENTS (:products) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {'products': products},
-  );
-}
+-- ✅ GOOD: Several documents in one statement, as an array parameter
+-- Arguments: {"products": [{"_id": "p1", "name": "Pen"}, {"_id": "p2", "name": "Ink"}]}
+INSERT INTO products DOCUMENTS (:products) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```
 
 You can also list several parameters: `DOCUMENTS (:first), (:second)`. A multi-document insert is atomic: if one document fails (for example with an ID conflict under `FAIL`), none of them is inserted. Two documents with the same `_id` in one statement fail with `Expected unique document identifiers`.
@@ -901,7 +717,7 @@ The number of statements matters more than the number of documents. In our testi
 | `FAIL` (default when omitted) | The statement fails: `Identifier conflict on document "...": using FAIL conflict policy` |
 | `DO NOTHING` | The existing document is left unchanged; no error |
 | `DO UPDATE` | Fields from the new document are written into the existing one. Fields you do not supply are kept, and nested objects are merged. Every supplied field is written, even if the value is identical, so the document is reported as mutated and observers can fire again (a `SELECT *` observer on the collection does). A field written again with its current value still wins over an earlier concurrent edit of that field on another device. |
-| `DO UPDATE_LOCAL_DIFF` | Same merge, but only fields whose values differ from the local document are written. If nothing changed, nothing is written and `mutatedDocumentIDs()` is empty. A value from a stale copy differs from the local one and is written. |
+| `DO UPDATE_LOCAL_DIFF` | Same merge, but only fields whose values differ from the local document are written. If nothing changed, nothing is written and the result lists no mutated document IDs. A value from a stale copy differs from the local one and is written. |
 
 In our testing on one device with SDK 5.1.0 and 5.2.0, the four policies behaved as this table describes (see [The single-store DQL tables held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#the-single-store-dql-tables-held-on-sdk-510-and-520)).
 
@@ -915,36 +731,21 @@ In our testing on one device with SDK 5.1.0 and 5.2.0, the four policies behaved
 - Use `DO UPDATE` for periodic re-upserts of unchanged data. Every run rewrites all supplied fields, records a mutation, can wake observers, and overwrites concurrent edits of those fields that other devices made earlier.
 - Upsert documents that contain a `COUNTER` field. The upserted value restarts the counter and discards increments that have not reached this device yet (see [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters) and [An upsert that declares a counter restarts it](../knowledge/observations/merge-behavior.md#an-upsert-that-declares-a-counter-restarts-it)).
 
-```dart
-// ✅ GOOD: Re-upserting unchanged data is a no-op
-Future<bool> syncCatalogItem(Ditto ditto, Map<String, dynamic> item) async {
-  final result = await ditto.store.execute(
-    'INSERT INTO products DOCUMENTS (:item) ON ID CONFLICT DO UPDATE_LOCAL_DIFF',
-    arguments: {'item': item},
-  );
-  // Empty when the stored document already had the same values
-  return result.mutatedDocumentIDs().isNotEmpty;
-}
+```sql
+-- ✅ GOOD: Re-upserting unchanged data is a no-op: the mutated document IDs
+-- of the result are empty when the stored document already had the same values
+-- Arguments: {"item": {"_id": "p1", "name": "Pen", "price": 5}}
+INSERT INTO products DOCUMENTS (:item) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 ```
 
 Merge behavior, starting from `{"_id": "p1", "name": "Pen", "price": 5, "address": {"city": "Oslo", "zip": "0150"}}`:
 
-```dart
-Future<void> doUpdateMerges(Ditto ditto) async {
-  await ditto.store.execute(
-    'INSERT INTO products DOCUMENTS (:doc) ON ID CONFLICT DO UPDATE',
-    arguments: {
-      'doc': {
-        '_id': 'p1',
-        'price': 6,
-        'address': {'street': 'Main St'},
-      },
-    },
-  );
-  // Stored document afterwards:
-  // {"_id": "p1", "name": "Pen", "price": 6,
-  //  "address": {"city": "Oslo", "zip": "0150", "street": "Main St"}}
-}
+```sql
+-- Stored document afterwards:
+-- {"_id": "p1", "name": "Pen", "price": 6,
+--  "address": {"city": "Oslo", "zip": "0150", "street": "Main St"}}
+-- Arguments: {"doc": {"_id": "p1", "price": 6, "address": {"street": "Main St"}}}
+INSERT INTO products DOCUMENTS (:doc) ON ID CONFLICT DO UPDATE
 ```
 
 **Why:** With the default `DQL_STRICT_MODE = false`, objects are stored as CRDT maps that merge field by field (see [Strict Mode](data-modeling.md#strict-mode) and [CRDT Types and Merge Behavior](../knowledge/crdt-types.md)). A field that is written again, even with the value it already has, is a new write that wins over an earlier concurrent edit of that field on another device (see [Writing a Value That Did Not Change](../knowledge/crdt-types.md#writing-a-value-that-did-not-change) and [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits)). Writing only what changed avoids that, and it keeps sync deltas small.
@@ -959,20 +760,10 @@ Future<void> doUpdateMerges(Ditto ditto) async {
 
 How initial documents merge across peers, and what happens after a seeded document is deleted or evicted, is described in [Default Data with INITIAL Documents](data-modeling.md#default-data-with-initial-documents).
 
-```dart
-// ✅ GOOD: Seed defaults on every launch; existing (possibly edited) data is kept
-Future<void> seedDefaults(Ditto ditto) async {
-  await ditto.store.execute(
-    'INSERT INTO settings INITIAL DOCUMENTS (:defaults)',
-    arguments: {
-      'defaults': {
-        '_id': 'app',
-        'theme': 'light',
-        'currency': 'USD',
-      },
-    },
-  );
-}
+```sql
+-- ✅ GOOD: Seed defaults on every launch; existing (possibly edited) data is kept
+-- Arguments: {"defaults": {"_id": "app", "theme": "light", "currency": "USD"}}
+INSERT INTO settings INITIAL DOCUMENTS (:defaults)
 ```
 
 **❌ DON'T:** Use `INITIAL DOCUMENTS` to keep data off the network. Whether data syncs is decided by subscriptions.
@@ -1019,34 +810,18 @@ UPDATE collection [USE IDS ...]
 
 At least one of `APPLY`, `SET`, or `UNSET` is required. Without `WHERE`, every document in the collection is updated, without a warning. The clauses must appear in this order: `APPLY` (counters) before `SET`, and `UNSET` after `SET`. Counter updates are covered in [Counters](data-modeling.md#counters).
 
-```dart
-// ✅ GOOD: Change only the fields that changed
-Future<void> completeOrder(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    'UPDATE orders SET status = :status, completedAt = :completedAt WHERE _id = :id',
-    arguments: {
-      'id': orderId,
-      'status': 'completed',
-      'completedAt': utcTimestamp(), // fixed-precision helper (see Timestamps)
-    },
-  );
-}
+```sql
+-- ✅ GOOD: Change only the fields that changed
+-- Arguments: {"id": "order-1", "status": "completed", "completedAt": "2026-01-15T10:30:00.000Z"}
+UPDATE orders SET status = :status, completedAt = :completedAt WHERE _id = :id
 
-// ✅ GOOD: Nested paths; missing intermediate objects are created automatically
-Future<void> setShippingCity(Ditto ditto, String orderId, String city) async {
-  await ditto.store.execute(
-    'UPDATE orders SET shipping.address.city = :city WHERE _id = :id',
-    arguments: {'id': orderId, 'city': city},
-  );
-}
+-- ✅ GOOD: Nested paths; missing intermediate objects are created automatically
+-- Arguments: {"id": "order-1", "city": "Oslo"}
+UPDATE orders SET shipping.address.city = :city WHERE _id = :id
 
-// ✅ GOOD: UNSET removes fields (they become MISSING)
-Future<void> clearDiscount(Ditto ditto, String orderId) async {
-  await ditto.store.execute(
-    'UPDATE orders UNSET discountCode, pricing.discount WHERE _id = :id',
-    arguments: {'id': orderId},
-  );
-}
+-- ✅ GOOD: UNSET removes fields (they become MISSING)
+-- Arguments: {"id": "order-1"}
+UPDATE orders UNSET discountCode, pricing.discount WHERE _id = :id
 ```
 
 Errors to expect:
@@ -1073,26 +848,17 @@ Keys are removed only by `UNSET`, so replacing an object takes `UNSET` followed 
 - Expect `SET obj = {...}` to remove keys that are not in the new value.
 - Use `SET obj = {}` to clear an object.
 
-```dart
-// ✅ GOOD: Replace an object: remove the old map, then write the new one,
-// in one transaction so that no observer sees the object missing
-Future<void> replaceAddress(
-  Ditto ditto,
-  String customerId,
-  Map<String, dynamic> newAddress,
-) async {
-  await ditto.store.transaction(hint: 'replaceAddress', (tx) async {
-    await tx.execute(
-      'UPDATE customers UNSET address WHERE _id = :id',
-      arguments: {'id': customerId},
-    );
-    await tx.execute(
-      'UPDATE customers SET address = :address WHERE _id = :id',
-      arguments: {'id': customerId, 'address': newAddress},
-    );
-  });
-}
+```sql
+-- ✅ GOOD: Replace an object: remove the old map, then write the new one, as two
+-- statements in one transaction so that no observer sees the object missing
+-- Arguments: {"id": "c-1"}
+UPDATE customers UNSET address WHERE _id = :id
+
+-- Arguments: {"id": "c-1", "address": {"street": "Main St", "city": "Oslo"}}
+UPDATE customers SET address = :address WHERE _id = :id
 ```
+
+How to run statements in a transaction in each SDK: [Transactions](transactions.md).
 
 #### Prefer field-level updates over whole-document rewrites
 
@@ -1101,34 +867,23 @@ Future<void> replaceAddress(
 - Skip writes that would not change anything, for example with a condition in `WHERE`, or use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts (it skips unchanged fields but does not protect a stale in-memory copy; see [Prefer field-level updates](data-modeling.md#prefer-field-level-updates) in Document Structure).
 
 **❌ DON'T:**
-- Read a document, modify it in Dart, and write the whole map back with `INSERT ... ON ID CONFLICT DO UPDATE`.
-- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in `mutatedDocumentIDs()`, and can wake observers (a `SELECT *` observer fires again with an identical result; see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits) and [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)).
+- Read a document, modify it in app code, and write the whole document back with `INSERT ... ON ID CONFLICT DO UPDATE`.
+- Write values that are already stored. An `UPDATE` that sets a field to its current value is still recorded as a mutation, appears in the result's mutated document IDs, and can wake observers (a `SELECT *` observer fires again with an identical result; see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)). It is also synced: in our testing, a `SELECT *` observer on another device fired for it as well, and the rewritten value replaced a concurrent edit of the field that the other device had made earlier (see [Rewriting an unchanged value overwrites concurrent edits](../knowledge/observations/merge-behavior.md#rewriting-an-unchanged-value-overwrites-concurrent-edits) and [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)).
 
-```dart
-// ❌ BAD: Read-modify-write of the whole document
-Future<void> completeOrderByRewrite(Ditto ditto, String orderId) async {
-  final result = await ditto.store.execute(
-    'SELECT * FROM orders WHERE _id = :id',
-    arguments: {'id': orderId},
-  );
-  if (result.items.isEmpty) return;
-  final order = Map<String, dynamic>.from(result.items.first.value);
-  order['status'] = 'completed';
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE',
-    arguments: {'order': order},
-  );
-}
+```sql
+-- ❌ BAD: Read-modify-write of the whole document: read it, change status in
+-- app code, and write every field back
+-- Arguments: {"id": "order-1"}
+SELECT * FROM orders WHERE _id = :id
 
-// ✅ GOOD: Single field-level update that skips unchanged documents
-Future<bool> setStatus(Ditto ditto, String orderId, String status) async {
-  final result = await ditto.store.execute(
-    'UPDATE orders SET status = :status '
-    'WHERE _id = :id AND coalesce(status, :none) != :status',
-    arguments: {'id': orderId, 'status': status, 'none': ''},
-  );
-  return result.mutatedDocumentIDs().isNotEmpty;
-}
+-- Arguments: {"order": {"_id": "order-1", "customerId": "c-1", "status": "completed", "total": 42}}
+INSERT INTO orders DOCUMENTS (:order) ON ID CONFLICT DO UPDATE
+
+-- ✅ GOOD: Single field-level update that skips unchanged documents; the mutated
+-- document IDs of the result tell whether anything changed
+-- Arguments: {"id": "order-1", "status": "completed", "none": ""}
+UPDATE orders SET status = :status
+WHERE _id = :id AND coalesce(status, :none) != :status
 ```
 
 The `coalesce` in the condition keeps documents whose `status` is missing or `null` eligible for the update; a plain `status != :status` would skip them (see [MISSING and NULL](#missing-and-null)).
@@ -1147,33 +902,18 @@ Add `RETURNING` to `INSERT`, `UPDATE`, `DELETE`, or `EVICT` to get the affected 
 
 In our testing on SDK 5.1.0 and 5.2.0, `INSERT`, `UPDATE`, and `DELETE` returned the rows this table describes (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
-`commitID` is populated as usual when `RETURNING` is used, and so is `mutatedDocumentIDs()`. With `RETURNING`, read the affected documents from `items`, and include `_id` in the `RETURNING` projection when you need the IDs instead of relying on `mutatedDocumentIDs()`.
+The commit ID and the mutated document IDs are populated as usual when `RETURNING` is used. With `RETURNING`, read the affected documents from `items`, and include `_id` in the `RETURNING` projection when you need the IDs instead of relying on the mutated document IDs.
 
-```dart
-// ✅ GOOD: Update and read the new values in one statement
-Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) async {
-  final result = await ditto.store.execute(
-    'UPDATE orders SET status = :status, shippedAt = :now '
-    'WHERE _id IN :ids AND status = :expected '
-    'RETURNING _id, status, shippedAt',
-    arguments: {
-      'ids': ids,
-      'status': 'shipped',
-      'expected': 'packed',
-      'now': utcTimestamp(),
-    },
-  );
-  return result.items.map((item) => item.value).toList();
-}
+```sql
+-- ✅ GOOD: Update and read the new values in one statement
+-- Arguments: {"ids": ["order-1"], "status": "shipped", "expected": "packed", "now": "2026-01-15T10:30:00.000Z"}
+UPDATE orders SET status = :status, shippedAt = :now
+WHERE _id IN :ids AND status = :expected
+RETURNING _id, status, shippedAt
 
-// ✅ GOOD: Keep a copy of what was deleted (for an undo banner or an audit log)
-Future<List<Map<String, dynamic>>> deleteDrafts(Ditto ditto, List<String> ids) async {
-  final result = await ditto.store.execute(
-    'DELETE FROM drafts WHERE _id IN :ids RETURNING *',
-    arguments: {'ids': ids},
-  );
-  return result.items.map((item) => item.value).toList();
-}
+-- ✅ GOOD: Keep a copy of what was deleted (for an undo banner or an audit log)
+-- Arguments: {"ids": ["draft-1"]}
+DELETE FROM drafts WHERE _id IN :ids RETURNING *
 ```
 
 The projection syntax is the same as in `SELECT`, including aliases and expressions. Aggregates summarize all affected documents:

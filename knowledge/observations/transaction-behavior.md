@@ -1,14 +1,14 @@
 # Transaction Behavior
 
-How transactions behave on one device: what other reads, writes, and incoming changes do while a read-write transaction or a large statement runs, which parallel read-then-write sequences lose updates, how long transactions are logged, how transactions fail in JavaScript, and what `close()` waits for in JavaScript. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transactions](../../best-practices/transactions.md), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), and [Platform Differences](../platform-differences.md).
+How transactions behave on one device: what other reads, writes, and incoming changes do while a read-write transaction or a large statement runs, which parallel read-then-write sequences lose updates, how long transactions are logged, and what a deadlocked transaction does. How each SDK's transaction API fails, and what its shutdown waits for, is on the page of that SDK: [Flutter](flutter-sdk.md), [JavaScript](javascript-sdk.md), [Kotlin](kotlin-sdk.md), or [Swift](swift-sdk.md). How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transactions](../../best-practices/transactions.md), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), and [Platform Differences](../platform-differences.md).
 
 **In brief**
 
 - While a read-write transaction is open, other reads see only committed data, other writes wait, and changes from other devices reach neither the store nor observers until it ends, also when it only reads. A large statement holds them up in the same way, on the writing and on the receiving device ([Reads outside a read-write transaction see only committed data](#reads-outside-a-read-write-transaction-see-only-committed-data), [Incoming changes wait while a read-write transaction is open](#incoming-changes-wait-while-a-read-write-transaction-is-open), [Large statements delay incoming changes and local writes](#large-statements-delay-incoming-changes-and-local-writes)).
 - On one device, read-then-write sequences that run in parallel lose updates without an error, while the same sequences in transactions, or `UPDATE ... SET n = n + 1` statements, do not ([Parallel writes are safe, but parallel read-modify-write loses updates](#parallel-writes-are-safe-but-parallel-read-modify-write-loses-updates)).
 - A long transaction is logged at rising levels: with the log level at Info, the first line appears after 20 seconds ([Long transactions are logged at rising levels](#long-transactions-are-logged-at-rising-levels)).
-- In JavaScript, a write through `store.execute` inside a transaction and a nested read-write transaction deadlock without an exception and without ending the process, a `tx.execute` that is not awaited is not applied, and a Node.js script that keeps neither sync nor a timer running ends with a panic while it awaits a transaction ([In JavaScript, store.execute writes inside a transaction deadlock](#in-javascript-storeexecute-writes-inside-a-transaction-deadlock), [A deadlocked transaction does not end the process](#a-deadlocked-transaction-does-not-end-the-process), [A tx.execute that is not awaited is not applied](#a-txexecute-that-is-not-awaited-is-not-applied), [A Node.js script that keeps neither sync nor a timer running ends with a panic while awaiting a transaction](#a-nodejs-script-that-keeps-neither-sync-nor-a-timer-running-ends-with-a-panic-while-awaiting-a-transaction)).
-- In JavaScript, `close()` waits for open transactions and pending writes, but not until changes have been sent to other devices ([In JavaScript, close() waits for open transactions](#in-javascript-close-waits-for-open-transactions), [In JavaScript, close() completes pending writes](#in-javascript-close-completes-pending-writes)).
+- A deadlocked transaction blocks the store but does not end the process ([A deadlocked transaction does not end the process](#a-deadlocked-transaction-does-not-end-the-process)).
+- What each SDK does with `store.execute` inside a transaction, nested transactions, statements that are not awaited, and `close()` during a transaction is on the SDK pages: [Flutter SDK Behavior](flutter-sdk.md), [JavaScript SDK Behavior](javascript-sdk.md), [Kotlin SDK Behavior](kotlin-sdk.md), and [Swift SDK Behavior](swift-sdk.md).
 
 ## Concurrency, Waiting, and Long Transactions
 
@@ -90,7 +90,7 @@ How transactions behave on one device: what other reads, writes, and incoming ch
 
 **Not tested:** `n = n + 1` on 5.0.3, which does not accept a reference to a field in `SET`.
 
-**Used in:** [Transactions](../../best-practices/transactions.md).
+**Used in:** [Transactions](../../best-practices/transactions.md#transactions).
 
 ### Long transactions are logged at rising levels
 
@@ -113,27 +113,14 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 
 **Used in:** [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration).
 
-## Transactions in JavaScript
-
-### In JavaScript, store.execute writes inside a transaction deadlock
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; the results were the same on all three releases |
-| Setup | Inside a read-write transaction, we ran an `INSERT` and a `SELECT` through `ditto.store.execute`, and started a read-write transaction and a read-only transaction. A call that had not completed after 4 seconds counted as deadlocked (in [A deadlocked transaction does not end the process](#a-deadlocked-transaction-does-not-end-the-process), one had still not completed after 306 seconds) |
-| Documentation | The description of `Store.transaction()` in the JavaScript SDK's type definitions (the same text in 5.0.3 and 5.2.0) warns: "**Warning:** Calling `ditto.store.execute()` or creating a nested transaction within a transaction may lead to a deadlock." |
-
-- An `INSERT` through `ditto.store.execute` inside a read-write transaction never completes, and raises no exception. A `SELECT` completes, but, like any read outside the transaction, it does not see the transaction's writes (see [Reads outside a read-write transaction see only committed data](#reads-outside-a-read-write-transaction-see-only-committed-data)).
-- A read-write transaction started inside a read-write transaction never completes. A read-only transaction started inside completes.
-
-**Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules), [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Platform Differences](../platform-differences.md).
+## Deadlocked Transactions
 
 ### A deadlocked transaction does not end the process
 
 | | |
 |---|---|
 | Observed on | SDK 5.2.0, one run, stopped by hand after 306 seconds |
-| Setup | A read-write transaction deadlocked by a write through `store.execute` inside it (as in [In JavaScript, store.execute writes inside a transaction deadlock](#in-javascript-storeexecute-writes-inside-a-transaction-deadlock)), with the minimum log level set to Error |
+| Setup | A read-write transaction deadlocked by a write through `store.execute` inside it (as in [In JavaScript, store.execute writes inside a transaction deadlock](javascript-sdk.md#in-javascript-storeexecute-writes-inside-a-transaction-deadlock)), with the minimum log level set to Error |
 | Documentation | The JavaScript SDK's type definitions describe a deadlock detection for Node.js only: it ends the process when an asynchronous callback that Ditto called does not finish within a set time |
 
 - `Ditto.hasDeadlockDetection()` returned `true`. Even so, the deadlocked transaction had not ended the process after 306 seconds.
@@ -142,74 +129,3 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 **Not tested:** which callbacks the deadlock detection applies to.
 
 **Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules).
-
-### A tx.execute that is not awaited is not applied
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; without a handler for the statement's failure, five runs each; the `forEach` case, three runs each. The results were the same on all three releases |
-| Setup | The callback of a read-write transaction called `tx.execute(...)` to change `v`, which was 1, without `await`, and returned. Variants: with and without a handler for the statement's failure; three `INSERT` statements in `[1, 2, 3].forEach(async (i) => { await tx.execute(INSERT ...) })`; and, for comparison, `await Promise.all(items.map((item) => tx.execute(...)))` |
-
-- When the callback returns without awaiting `tx.execute(...)`, the transaction ends without an error. The statement fails afterwards with a `store/backend` error, `No active write transaction found with id ... Active write transaction id: None`, and the value does not change (`v` stays 1).
-- When nothing handles that failure, it becomes an unhandled promise rejection, and Node.js ends the process with exit code 1. This happened in 4 of 5 runs on 5.2.0 and in 1 of 5 runs on 5.1.0, depending on when the rejection occurred.
-- The `forEach` form behaves the same: the transaction ends without an error, none of the three documents is inserted, and all three statements become unhandled rejections. Each is caused by `No active write transaction found`; on 5.1.0 and 5.2.0, the message has the prefix `Query failed: ... Insert failed: <store> No active write transaction found ...`. Later transactions and `close()` worked normally.
-- `await Promise.all(items.map((item) => tx.execute(...)))` worked correctly on all three releases, with 10 `INSERT` statements, and with 10 `SELECT` statements in a read-only transaction. Running the statements in parallel is not the problem; not awaiting them is.
-- A `tx` taken out of the transaction and used after the transaction has ended fails with the same error.
-- The callback's return value becomes the result of `transaction()`, and a callback that throws rolls back its writes.
-
-**Not tested:** Dart. A `tx.execute` left `unawaited` there probably behaves the same.
-
-**Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules).
-
-### A Node.js script that keeps neither sync nor a timer running ends with a panic while awaiting a transaction
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, five runs each for each kind of callback, for `store.execute`, and for the script that kept a timer; deterministic. The CommonJS script, and the script that started sync: three runs each on 5.1.0 and 5.2.0. The results were the same on all three releases |
-| Setup | A Node.js script with nothing else that kept the event loop alive (no timer, no server) awaited `ditto.store.transaction(...)` with a read-write callback, a read-only callback, or a callback that did nothing. For comparison, the same script ran `store.execute` without a transaction, and kept a `setInterval` timer. Variants: a CommonJS script without top-level `await`, which called `async function main()`, and a script that started sync with `sync.start()` before the same transaction |
-
-- Without anything that keeps the event loop alive, `await ditto.store.transaction(...)` makes Node.js print `Warning: Detected unsettled top-level await` and begin to exit. An SDK callback that arrives afterwards ends the process with `Panic: Error { status: PendingException, reason: "" }` (exit code 134). This happened with all three kinds of callback, in all five runs.
-- A CommonJS script without top-level `await` fails the same way. No warning appears: Node.js begins to exit normally (`process.on('exit')` is called with exit code 0), and then the same panic ends the process (exit code 134). In both forms, the code after the transaction does not run.
-- `store.execute` without a transaction completed in all five runs, and so did 500 `store.execute` calls run in parallel with `Promise.all` (see [Parallel writes are safe, but parallel read-modify-write loses updates](#parallel-writes-are-safe-but-parallel-read-modify-write-loses-updates)).
-- With a `setInterval` timer kept running, the failure did not occur in any of the five runs. It did not occur inside a `node --test` test either, because the test runner keeps the event loop alive. Apps whose event loop always runs, such as servers or Electron apps, are not affected.
-- A script that started sync (`sync.start()`, then the same transaction) completed in every run. Run again without sync on the same day, the script ended abnormally in every run (exit code 134 or 139, with `PendingException` or `InvalidArg` in the panic message). Only scripts that do not start sync, such as seed, migration, and command-line scripts, are affected.
-- The same kind of abnormal exit also occurs occasionally with `fetchAttachment()`; with a transaction, it occurred every time. The other tests behind these pages always kept a timer running, so this failure did not affect them.
-
-**Used in:** [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Platform Differences](../platform-differences.md).
-
-## Closing Ditto in JavaScript
-
-### In JavaScript, close() waits for open transactions
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each |
-| Setup | While a read-write transaction was paused at an `await` inside its callback, we called `ditto.close()`, and then let the transaction continue |
-| Documentation | The description of `Store.transaction()` in the JavaScript SDK's type definitions says: "When a Ditto instance goes out of scope, it will drive all pending transactions to completion before being shut down." |
-
-- `close()` had not completed after 3 seconds. When the transaction continued, its next `tx.execute` succeeded, the transaction ended, and then `close()` completed.
-- The SDK's code matches: in the JavaScript SDK 5.2.0, `Ditto.close()` sets `isClosed`, stops sync, and then waits with `Promise.allSettled` until all pending operations have finished.
-- A transaction that never ends, such as a deadlocked one, therefore probably keeps `close()` from completing as well.
-
-**Not tested:** Flutter.
-
-**Used in:** [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](../platform-differences.md).
-
-### In JavaScript, close() completes pending writes
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, two runs each (cancelling an observer: one run each). Calls after `close()`: one run each on 5.1.0 and 5.2.0. Sending to another device: 54 runs |
-| Setup | We started 200 `INSERT` statements without awaiting them and then awaited `ditto.close()` at once; we also started an `INSERT` right after calling `close()`, before awaiting it. Then we reopened the directory and counted the documents. Separately, we cancelled a store observer while writes continued, called each API after `close()`, and closed Ditto right after a write that was not awaited while another device was connected |
-
-- `close()` completed in 81 to 172 ms, and all 200 inserts had succeeded; after reopening, all 200 documents were there.
-- An `INSERT` started right after `close()` was called, before it was awaited, also succeeded and was there after reopening.
-- `execute` after `close()` had completed failed with `Can't perform operation using a Ditto instance that has been closed.`
-- After a store observer was cancelled with `cancel()` while writes continued, it received 0 callbacks.
-- The JavaScript SDK wraps `execute` in `deferCloseAsync`, the same mechanism as for transactions (see [In JavaScript, close() waits for open transactions](#in-javascript-close-waits-for-open-transactions)), so `close()` waits for operations in progress.
-- After `close()`, `store.execute`, `store.transaction`, `registerObserver`, `registerSubscription`, `sync.start()`, `sync.isActive`, `presence.graph`, and `updateTransportConfig` all throw `Error: Can't perform operation using a Ditto instance that has been closed.` This is a plain `Error`, not a `DittoError`. `cancel()` on subscriptions and observers registered before closing, and a second `close()`, raise no error, so cleanup code can cancel after closing and can call `close()` twice.
-- `close()` waits only for local writes, not until they have been sent. When `close()` followed right after a write that was not awaited, the write was stored but reached the other device in 0 of 54 runs; it arrives at the next sync (see [A write made right before close or stop may not leave the device](subscriptions-and-replication.md#a-write-made-right-before-close-or-stop-may-not-leave-the-device)).
-
-**Not tested:** Flutter, including whether its `close()` waits for pending work on 5.2.0.
-
-**Used in:** [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](../platform-differences.md).

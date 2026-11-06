@@ -25,11 +25,11 @@ When you work inside this repository, you do not need to install the plugin: `.c
 
 | Skill | Use it for |
 |---|---|
-| `query-sync` | DQL reads and writes, parameters, MISSING vs NULL, subscription rules and lifecycle, the Flutter observer pattern, upserts, JOIN, RETURNING |
+| `query-sync` | DQL reads and writes, parameters, MISSING vs NULL, subscription rules and lifecycle, observer registration and release, upserts, JOIN, RETURNING |
 | `data-modeling` | CRDT-safe documents: merge behavior, maps instead of arrays, strict mode and type declarations, relationships, counters, IDs, document size, timestamps |
 | `storage-lifecycle` | DELETE vs soft delete vs EVICT, tombstones and their TTL, husk documents, eviction with complementary subscriptions |
 | `transactions-attachments` | `store.transaction` rules, shutdown with transactions in flight, creating, fetching, and replacing attachments |
-| `performance-observability` | Observer performance and backpressure, Flutter rebuild scope, redundant writes, indexes and query plans, logging |
+| `performance-observability` | Observer performance and backpressure, narrow UI updates, redundant writes, indexes and query plans, logging |
 | `sdk-setup` | `DittoConfig` and `Ditto.open`, authentication, system parameters, sync start and stop, shutdown, transports, presence, production security |
 | `testing` | Local-store test helper, tests for DQL, filters, merge-sensitive writes, observers, and subscriptions, multi-peer tests in one process |
 | `audit` | A review workflow: a bundled scanner for known anti-patterns, triage, a manual checklist, and a severity-ranked report |
@@ -38,8 +38,8 @@ When you work inside this repository, you do not need to install the plugin: `.c
 ## How the Skills Are Built for Agents
 
 - **Short descriptions, early rules.** Claude Code lists every Skill description in a shared budget, so each description is one paragraph that names the Ditto APIs and symptoms it covers. Each `SKILL.md` stays under about 5,000 tokens and puts the CRITICAL rules first, because that is what remains attached to the conversation after context compaction.
-- **Progressive disclosure.** `SKILL.md` holds the rules, a workflow, and a checklist. Longer code and edge cases are in each Skill's `reference/` files, and complete, compiled examples are in `examples/`. Claude reads them only when needed.
-- **Version awareness.** Every Skill starts by checking the Ditto SDK version of the project. A **Note (SDK ...)** names the releases on which the behavior was observed, and is verified before it is applied to another version; issues fixed in 5.2.0 are collected in the guide's `§ Known Issues in SDK 5.1.0`.
+- **Progressive disclosure.** `SKILL.md` holds the rules, a workflow, and a checklist. Longer code and edge cases are in each Skill's `reference/` files, and complete examples are in `examples/`: DQL examples that apply to every SDK as `examples/*.sql`, and code examples per SDK in `examples/flutter/`, `examples/javascript/`, `examples/kotlin/`, and `examples/swift/`, with the same base name in every SDK. Claude reads them only when needed.
+- **SDK and version awareness.** Every Skill starts by identifying the project's SDK (Flutter, JavaScript, Kotlin, or Swift) and its version, and reads that SDK's page of the guide (`best-practices/platforms/<sdk>.md`). A **Note (SDK ...)** names the releases on which the behavior was observed, and is verified before it is applied to another version; issues fixed in 5.2.0 are collected in the guide's `§ Known Issues in SDK 5.1.0`.
 - **The guide travels with the plugin.** `skills/guide/reference/best-practices` and `skills/guide/reference/knowledge` are symbolic links to the guide's [best practices](../../best-practices/README.md) and [knowledge](../../knowledge/README.md) pages; Claude Code copies their content into installed copies of the plugin. The Skills cite the guide as `§ Heading`, every heading is unique across its pages, and Claude finds the section by searching for the heading, offline and for the exact guide version the Skills were written against.
 - **Deterministic checks.** The `audit` Skill runs [`scan.py`](skills/audit/scripts/scan.py) (Python 3.8+, no dependencies) to find candidate anti-patterns in Dart, JavaScript, TypeScript, Swift, and Kotlin before reviewing by hand. You can run it yourself: `python3 skills/audit/scripts/scan.py path/to/app/lib`.
 

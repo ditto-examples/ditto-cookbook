@@ -13,7 +13,7 @@ best-practices/ + knowledge/       The guide
 └──> examples/simple-pos/          End-to-end Flutter example
 ```
 
-A change to the guide is complete only when the derived content agrees with it. The repository covers Ditto only; general Flutter, Dart, or Claude Code material does not belong here.
+A change to the guide is complete only when the derived content agrees with it. The repository covers Ditto only; general material about Flutter, JavaScript, Kotlin, Swift, or Claude Code does not belong here.
 
 ## Prerequisites
 
@@ -25,8 +25,8 @@ A change to the guide is complete only when the derived content agrees with it. 
 
 ### Where content belongs
 
-- **`best-practices/`**: guidance on what to do, with ✅ DO / ❌ DON'T lists, recommended patterns, and review lists. Each page covers one topic.
-- **`knowledge/`**: how Ditto behaves and reference material: concepts, merge rules, functions, system collections and parameters, platform differences, changes between SDK releases, and terms. **`knowledge/observations/`** holds what we observed in testing, one entry per observation.
+- **`best-practices/`**: guidance on what to do, with ✅ DO / ❌ DON'T lists, recommended patterns, and review lists. Each topic page covers one topic for every SDK, with DQL statements and their arguments but no SDK code. **`best-practices/platforms/`** holds one page per SDK (Flutter, JavaScript, Kotlin, Swift) with that SDK's code; the four pages have the same sections, so a change to one SDK's section usually needs the same change on the other three.
+- **`knowledge/`**: how Ditto behaves and reference material: concepts, merge rules, functions, system collections and parameters, platform differences, changes between SDK releases, and terms. **`knowledge/observations/`** holds what we observed in testing, one entry per observation; what one SDK's API does is on that SDK's page (`flutter-sdk.md`, `javascript-sdk.md`, `kotlin-sdk.md`, `swift-sdk.md`).
 
 Observations from testing flow in one direction: test → `knowledge/observations/` → `best-practices/` → Skills and checklist.
 
@@ -66,7 +66,8 @@ After you change a guide page, update the derived content that it affects:
 | `best-practices/observers.md`, `indexing-and-performance.md`, `logging-and-observability.md`, `knowledge/system-reference.md` | `performance-observability` Skill |
 | `best-practices/setup-and-lifecycle.md`, `security.md` | `sdk-setup` Skill (`SKILL.md`, `reference/`) |
 | `best-practices/testing.md` | `testing` Skill (`SKILL.md`, `reference/`) |
-| A new or changed anti-pattern that can be found in source text, or a renamed heading that a scanner rule cites | `audit` Skill: `scripts/scan.py`, then regenerate `reference/scanner-rules.md` with `python3 scripts/scan.py --list-rules > reference/scanner-rules.md` |
+| `best-practices/platforms/<sdk>.md`, `knowledge/observations/<sdk>-sdk.md` | The `examples/<sdk>/` files of the Skills whose topic the section covers, the scanner rules of that SDK in the `audit` Skill, and the row of `knowledge/platform-differences.md`; check whether the other three SDK pages need the same change |
+| A new or changed anti-pattern that can be found in source text, or a renamed heading that a scanner rule cites | `audit` Skill: `scripts/scan.py`, with a test in `scripts/test_scan.py` at the repository root that the rule reports the anti-pattern and stays silent on the correct code, then regenerate `reference/scanner-rules.md` with `python3 scripts/scan.py --list-rules > reference/scanner-rules.md` |
 | A new page, or a page whose scope changes | The page tables in the `guide` Skill's `SKILL.md`, and in `best-practices/README.md` or `knowledge/README.md` |
 | A rule, caveat, or code example that a checklist item covers, or a renamed heading that an item names under "Best-practices guide" | `checklist/`: see [Updating content](checklist/README.md#updating-content) |
 | An API, DQL statement, or pattern that the POS example uses | `examples/simple-pos/`: `simple_pos_example.dart`, `simple_pos_schema.yaml` |
@@ -98,7 +99,7 @@ python3 scripts/check.py                  # guide headings and observation links
 claude plugin validate . --strict         # plugin and marketplace manifests
 ```
 
-After changing `scripts/check.py`, also run its tests with `python3 -m unittest discover -s scripts`.
+After changing `scripts/check.py` or the scanner of the `audit` Skill, also run their tests with `python3 -m unittest discover -s scripts`.
 
 ## Standards
 

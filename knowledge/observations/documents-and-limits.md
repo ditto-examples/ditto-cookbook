@@ -29,7 +29,7 @@ What happens at the edges of a document: a merge that pushes a document over the
 - On 5.2.0, `system:sync_degradations` on each device had one row: `{"collection": "blobs", "document_id": "big", "reason": "documentTooBig", "senderPeerKey": "<the other device's peer key>"}`. No API reported an error or a warning.
 - On 5.1.0, the result is a document that no device can update; on 5.2.0, it is a document whose version differs from device to device. What happens to later updates, and to an eviction, is described in [On SDK 5.2.0, an oversized document stops syncing until one side evicts it](#on-sdk-520-an-oversized-document-stops-syncing-until-one-side-evicts-it).
 
-**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Upgrading from SDK 5.1](../upgrading.md).
+**Used in:** [Document Size Limits](../../best-practices/data-modeling.md#document-size-limits), [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [System Virtual Collections](../system-reference.md#system-virtual-collections), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
 
 ### On SDK 5.2.0, an oversized document stops syncing until one side evicts it
 
@@ -169,4 +169,4 @@ Bytes for the first sync and for one change made on the hub:
 - **5.1.0**: without a peer, 5.1.0 can build and read a 1,000-level document (see [Nesting depth is limited differently for arguments, literals, and paths](#nesting-depth-is-limited-differently-for-arguments-literals-and-paths)), so it fails when it sends the change to the other peer. We think that the same defect as on the 5.2.0 receiving side appears in different places on the sending and the receiving side.
 - **5.0.3**: a document 30 or more levels deep can be written, but every query on its collection ends the process with `Panic: able to deserialize document: ... recursion limit exceeded`, also a `SELECT` by the ID of another document and `COUNT(*)`. Documents up to 29 levels deep can be read. A 5.0.3 device that received a 40-level document written by a 5.1.0 or 5.2.0 device behaved the same: receiving the document did not end the process, but reading the collection did, also after reopening. `EVICT` by ID failed with `Failed to deserialize TLV into requested type`. `EVICT` without a condition on the collection succeeded, but the device received the document again when it synced, and ended again. Other collections could be read.
 
-**Used in:** [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), [Upgrading from SDK 5.1](../upgrading.md).
+**Used in:** [Flat or nested](../../best-practices/data-modeling.md#flat-or-nested), [Mixed Releases](../upgrading.md#mixed-releases).

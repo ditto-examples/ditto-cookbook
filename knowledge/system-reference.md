@@ -66,33 +66,21 @@ SELECT text, state, times, `~qualifier` AS qualifier FROM system:request_history
 - Which requests are recorded is controlled by `DQL_REQUEST_HISTORY_QUALIFIERS`, for example failed requests and requests slower than a threshold. Setting this parameter replaces the whole qualifier object; see the [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) for the available qualifiers. **Note (SDK 5.2.0):** the documentation describes a `threshold` qualifier of 1,000 ms that is always active, but in our testing, 5.2.0 with the default setting did not record queries that took 1.9 and 8 seconds, while 5.1.0 recorded the same joins, which took 2.9 and 11 seconds there (see [On SDK 5.2.0, the request history records slow queries only with an explicit threshold](observations/configuration-and-diagnostics.md#on-sdk-520-the-request-history-records-slow-queries-only-with-an-explicit-threshold)). On 5.2.0, failed requests and `DELETE FROM system:request_history` were recorded by default. To record slow queries on 5.2.0, set the threshold explicitly, for example `{'threshold': 1000}`.
 - On Small Peers, querying `system:active_requests` at exactly the right moment is often impractical; the slow-request warning (see [Long-running requests (SDK 5.1+)](../best-practices/indexing-and-performance.md#long-running-requests-sdk-51)) writes the same details to the log.
 
-```dart
-// ✅ GOOD: Collect a small diagnostics snapshot on demand.
-Future<Map<String, Object?>> diagnosticsSnapshot(Ditto ditto) async {
-  Future<List<Map<String, dynamic>>> rows(String query) async {
-    final result = await ditto.store.execute(query);
-    return result.items.map((item) => item.value).toList();
-  }
+```sql
+-- ✅ GOOD: A small diagnostics snapshot, collected on demand
+SELECT key, value FROM system:system_info WHERE namespace = 'core' AND key LIKE 'ditto_sdk%'
 
-  return {
-    'core': await rows(
-      "SELECT key, value FROM system:system_info "
-      "WHERE namespace = 'core' AND key LIKE 'ditto_sdk%'",
-    ),
-    'nonDefaultParameters': await rows(
-      "SELECT key, value FROM system:system_info "
-      "WHERE key LIKE 'non_default_system_parameter%'",
-    ),
-    'syncConnections': await rows('SELECT * FROM system:data_sync_info'),
-    // Documents that stopped syncing on this device (SDK 5.2+). On SDK 5.1,
-    // this query fails with "Unsupported feature", so leave it out there.
-    'syncDegradations': await rows('SELECT * FROM system:sync_degradations'),
-    'indexes': await rows('SELECT _id FROM system:indexes'),
-    'activeRequests': await rows(
-      'SELECT _id, text, state, times FROM system:active_requests',
-    ),
-  };
-}
+SELECT key, value FROM system:system_info WHERE key LIKE 'non_default_system_parameter%'
+
+SELECT * FROM system:data_sync_info
+
+-- Documents that stopped syncing on this device (SDK 5.2+). On SDK 5.1,
+-- this query fails with "Unsupported feature", so leave it out there.
+SELECT * FROM system:sync_degradations
+
+SELECT _id FROM system:indexes
+
+SELECT _id, text, state, times FROM system:active_requests
 ```
 
 In our testing, every query of this snapshot ran without an error on SDK 5.1.0 and 5.2.0, except `system:sync_degradations`, which fails on 5.1.0 with `Unsupported feature` (see [The diagnostics snapshot queries run on both releases, except system:sync_degradations on 5.1.0](observations/configuration-and-diagnostics.md#the-diagnostics-snapshot-queries-run-on-both-releases-except-systemsync_degradations-on-510)).
@@ -150,24 +138,11 @@ In our testing, `SHOW ALL` returned the defaults in this table on SDK 5.1.0 and 
 
 Because settings are not persisted, keep them in one place and pass them each time Ditto is opened. A compact way to verify the result is to read back the non-default parameters:
 
-```dart
-/// This app's system parameters, passed in DittoConfig.systemParameters on
-/// every open (SDK 5.2+).
-const appSystemParameters = <String, Object>{
-  'DQL_SLOW_REQUEST_WARN_SECONDS': 30,
-};
-
-/// Logs the parameters that differ from their defaults, for example after
-/// Ditto.open() in debug builds.
-Future<void> logNonDefaultParameters(Ditto ditto) async {
-  final result = await ditto.store.execute(
-    "SELECT key, value FROM system:system_info "
-    "WHERE key LIKE 'non_default_system_parameter%'",
-  );
-  for (final item in result.items) {
-    debugPrint('${item.value['key']} = ${item.value['value']}');
-  }
-}
+```sql
+-- The parameters that differ from their defaults, for example to log after
+-- opening Ditto in debug builds. Compare them with the system parameters that
+-- the app passes in DittoConfig on every open (SDK 5.2+).
+SELECT key, value FROM system:system_info WHERE key LIKE 'non_default_system_parameter%'
 ```
 
 See [Applying System Parameters](../best-practices/setup-and-lifecycle.md#applying-system-parameters) for the complete startup sequence.

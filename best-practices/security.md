@@ -7,14 +7,14 @@ Ditto syncs data directly between devices, so security decisions apply to every 
 | Layer | How Ditto protects it |
 |---|---|
 | Peer identity | Each authenticated peer holds a certificate issued for its identity. With a shared key, each peer issues a self-signed certificate with the shared private key. |
-| Encryption in transit | TLS 1.3 between peers (mutual TLS) and TLS between peers and Ditto Server. **Exception:** `DittoConfigConnectSmallPeersOnly()` without a `privateKey` has no secret: peers do not authenticate each other, and the SDK documents the mode as unencrypted (see [Small-Peers-Only Deployments](#small-peers-only-deployments)). |
+| Encryption in transit | TLS 1.3 between peers (mutual TLS) and TLS between peers and Ditto Server. **Exception:** small-peers-only without a private key has no secret: peers do not authenticate each other, and the SDK documents the mode as unencrypted (see [Small-Peers-Only Deployments](#small-peers-only-deployments)). |
 | Authorization | Read and write permissions returned by your authentication webhook, enforced by Ditto Server and by every participating device. |
 | Revocation | Certificates issued to server-authenticated peers can be revoked centrally (SDK 5.1+). |
 | Data at rest | Encrypted with an app-provided key on Swift and Kotlin (SDK 5.2+). On Flutter, JavaScript, and the other SDKs, not encrypted by Ditto: rely on OS protections and application-level encryption (see [Data at Rest](#data-at-rest)). |
 
 ## Authentication in Production
 
-For production apps with real users, connect with `DittoConfigConnectServer` and authenticate through an **authentication webhook** that you operate:
+For production apps with real users, connect to Ditto Server and authenticate through an **authentication webhook** that you operate:
 
 1. Your app signs the user in with your own identity system and receives a token (often a JWT).
 2. In the expiration handler, the app calls `ditto.auth.login(token: ..., provider: 'YOUR_PROVIDER_NAME')`.
@@ -36,14 +36,14 @@ The client-side setup (expiration handler, `login`, `AuthResponse.exception`, `l
 
 ## Small-Peers-Only Deployments
 
-`DittoConfigConnectSmallPeersOnly(privateKey: key)` lets devices sync without Ditto Server, for example in air-gapped or closed networks. All peers share one private key and trust any peer that holds it.
+Small-peers-only with a private key lets devices sync without Ditto Server, for example in air-gapped or closed networks. All peers share one private key and trust any peer that holds it.
 
 **✅ DO:**
-- Always pass a `privateKey` in production. Without it, peers do not authenticate each other: any device that runs the SDK with your Database ID (and a valid offline license token) can join the mesh and read and write all data. The SDK's API reference describes this mode as unencrypted in transit. In our testing over TCP, the traffic was TLS-wrapped with and without a key, but without a key no shared secret authenticated the peers, so treat the mode as unprotected (see [Shared keys must match, and traffic is TLS-wrapped without a key](../knowledge/observations/connections-and-presence.md#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key)).
+- Always pass a private key in production. Without it, peers do not authenticate each other: any device that runs the SDK with your Database ID (and a valid offline license token) can join the mesh and read and write all data. The SDK's API reference describes this mode as unencrypted in transit. In our testing over TCP, the traffic was TLS-wrapped with and without a key, but without a key no shared secret authenticated the peers, so treat the mode as unprotected (see [Shared keys must match, and traffic is TLS-wrapped without a key](../knowledge/observations/connections-and-presence.md#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key)).
 - Roll out a new key to all devices together. Peers with different keys, or a peer with a key and one without, never connect. No API reports this; only `WARN` log lines appear on every retry (`invalid peer certificate: BadSignature`, or `DecryptError`).
 - Distribute the key through a controlled channel, such as mobile device management (MDM) or secure provisioning, and keep it in secure storage on the device.
-- Generate the key with Ditto's `ditto-authtool` or OpenSSL as described in the [authentication documentation](https://docs.ditto.live/key-concepts/authentication-and-authorization). `privateKey` takes a P-256 key with a named curve, as PKCS#8 DER encoded in base64 on one line: `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER | base64` (on Linux, `base64 -w 0`). In our testing, `Ditto.open()` failed with a PEM file and with keys in other formats, such as those that `openssl genpkey` produces by default with LibreSSL on macOS (see [Shared keys must match, and traffic is TLS-wrapped without a key](../knowledge/observations/connections-and-presence.md#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key) for the error messages).
-- Set the offline license token from Ditto with `ditto.setOfflineOnlyLicenseToken()` before `ditto.sync.start()`, and distribute a new token well before the current one expires. The expiry is checked against the device clock when the token is set: in our testing, a device whose clock was past the expiry could not start sync, while a running device whose clock jumped past the expiry kept syncing for the 10 seconds we watched (see [The offline license token expiry is checked against the device clock](../knowledge/observations/configuration-and-diagnostics.md#the-offline-license-token-expiry-is-checked-against-the-device-clock)).
+- Generate the key with Ditto's `ditto-authtool` or OpenSSL as described in the [authentication documentation](https://docs.ditto.live/key-concepts/authentication-and-authorization). The private key is a P-256 key with a named curve, as PKCS#8 DER encoded in base64 on one line: `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER | base64` (on Linux, `base64 -w 0`). In our testing, opening Ditto failed with a PEM file and with keys in other formats, such as those that `openssl genpkey` produces by default with LibreSSL on macOS (see [Shared keys must match, and traffic is TLS-wrapped without a key](../knowledge/observations/connections-and-presence.md#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key) for the error messages).
+- Set the offline license token from Ditto with `setOfflineOnlyLicenseToken` before you start sync, and distribute a new token well before the current one expires. The expiry is checked against the device clock when the token is set: in our testing, a device whose clock was past the expiry could not start sync, while a running device whose clock jumped past the expiry kept syncing for the 10 seconds we watched (see [The offline license token expiry is checked against the device clock](../knowledge/observations/configuration-and-diagnostics.md#the-offline-license-token-expiry-is-checked-against-the-device-clock)).
 
 **❌ DON'T:**
 - Hardcode the shared key in source code. Keys in an app binary can be extracted by decompiling the app.
@@ -51,40 +51,7 @@ The client-side setup (expiration handler, `login`, `AuthResponse.exception`, `l
 
 **Why:** Shared-key mode has no per-user identity. Every holder of the key has full access, individual devices cannot be revoked, and a leaked key compromises the whole deployment. If you need per-user access control or revocation, use a server connection with an authentication webhook.
 
-```dart
-// ✅ GOOD: The key and license token come from secure provisioning.
-Future<Ditto> openProvisionedSmallPeer({
-  required Future<String> Function() readKeyFromSecureStorage,
-  required Future<String> Function() readLicenseFromSecureStorage,
-}) async {
-  final ditto = await Ditto.open(
-    DittoConfig(
-      databaseID: 'YOUR_DATABASE_ID', // any UUID shared by all peers
-      connect: DittoConfigConnectSmallPeersOnly(
-        privateKey: await readKeyFromSecureStorage(),
-      ),
-    ),
-  );
-  // Required before sync.start() in small-peers-only mode.
-  ditto.setOfflineOnlyLicenseToken(await readLicenseFromSecureStorage());
-  ditto.sync.start(); // no expiration handler is needed in this mode
-  return ditto;
-}
-```
-
-```dart
-// ❌ BAD: No privateKey means peers are not authenticated (and the SDK
-// documents the mode as unencrypted); a key in source code would be visible
-// to anyone who decompiles the app.
-Future<Ditto> openUnprotectedSmallPeer() {
-  return Ditto.open(
-    const DittoConfig(
-      databaseID: 'YOUR_DATABASE_ID',
-      connect: DittoConfigConnectSmallPeersOnly(),
-    ),
-  );
-}
-```
+The code that reads the key and the license token from secure provisioning, and the mistake of opening without a key: [DittoConfig in Flutter](platforms/flutter.md#dittoconfig-in-flutter) · [JavaScript](platforms/javascript.md#dittoconfig-in-javascript) · [Kotlin](platforms/kotlin.md#dittoconfig-in-kotlin) · [Swift](platforms/swift.md#dittoconfig-in-swift).
 
 ## Permissions
 
@@ -130,22 +97,11 @@ Express permission rules as simple comparisons on `_id` fields, as in the exampl
 
 Permission queries can only reference the document's `_id`. Permissions on other (mutable) fields are not supported. Put every attribute you need for access control into a structured `_id`:
 
-```dart
-// ✅ GOOD: The store that owns the order is part of the immutable _id,
-// so a permission rule such as "_id.storeId == 'store-1'" can match it.
-Future<void> createOrder(Ditto ditto, String storeId, String orderId) async {
-  await ditto.store.execute(
-    'INSERT INTO orders DOCUMENTS (:order)',
-    arguments: {
-      'order': {
-        '_id': {'storeId': storeId, 'orderId': orderId},
-        'status': 'open',
-        // utcTimestamp() is defined in the Timestamps section.
-        'createdAt': utcTimestamp(),
-      },
-    },
-  );
-}
+```sql
+-- ✅ GOOD: The store that owns the order is part of the immutable _id,
+-- so a permission rule such as "_id.storeId == 'store-1'" can match it
+-- Arguments: {"order": {"_id": {"storeId": "store-1", "orderId": "order-1"}, "status": "open", "createdAt": "2026-01-15T10:30:00.000Z"}}
+INSERT INTO orders DOCUMENTS (:order)
 ```
 
 **✅ DO:**
@@ -191,28 +147,12 @@ See the [revocations documentation](https://docs.ditto.live/cloud/revocations) f
 
 In our testing with SDK 5.1.0 and 5.2.0, the handler behaved as follows (see [A denied peer retries at the retry interval](../knowledge/observations/connections-and-presence.md#a-denied-peer-retries-at-the-retry-interval)):
 - **Both directions:** the handler runs not only for incoming connections but also for connections that this device initiates, and `deny` blocks those too.
-- **New connections only:** switching the handler to `deny` does not drop existing connections. Setting it back to `null` lets peers in again.
-- **Retries:** a denied peer retries at its connection retry interval (`TransportConfig.connect.retryInterval`, 5 seconds by default), so the handler runs again at that interval for each rejected peer. The rejected peer gets no API signal; only an error appears in its log.
-- **Errors:** a handler that throws, or whose `Future` fails, denies the connection, but only after the 10-second timeout (observed with the JavaScript SDK). Catch errors and return `deny` explicitly.
+- **New connections only:** switching the handler to `deny` does not drop existing connections. Removing the handler lets peers in again.
+- **Retries:** a denied peer retries at its connection retry interval (`connect.retryInterval` of the transport configuration, 5 seconds by default), so the handler runs again at that interval for each rejected peer. The rejected peer gets no API signal; only an error appears in its log.
+- **Errors:** a handler that throws, or whose asynchronous result fails, denies the connection, but only after the 10-second timeout (observed with the JavaScript SDK). Catch errors and return `deny` explicitly.
 - **Small-peers-only mode:** `identityServiceMetadata` is always empty, because there is no authentication webhook. `peerMetadata` is available, but each peer sets its own, so it is not a security check.
 
-```dart
-// ✅ GOOD: Accept only peers whose signed metadata belongs to this store.
-// Requires DittoConfigConnectServer: identityServiceMetadata comes from your
-// authentication webhook and is empty in small-peers-only mode.
-void restrictConnectionsToStore(Ditto ditto, String storeId) {
-  ditto.presence.connectionRequestHandler = (request) async {
-    try {
-      final metadata = request.identityServiceMetadata;
-      return metadata['storeId'] == storeId
-          ? ConnectionRequestAuthorization.allow
-          : ConnectionRequestAuthorization.deny;
-    } catch (_) {
-      return ConnectionRequestAuthorization.deny; // decide now, not after the timeout
-    }
-  };
-}
-```
+A handler that accepts only peers whose signed metadata belongs to this store, and denies at once on any error: [Transports and Presence in Flutter](platforms/flutter.md#transports-and-presence-in-flutter) · [JavaScript](platforms/javascript.md#transports-and-presence-in-javascript) · [Kotlin](platforms/kotlin.md#transports-and-presence-in-kotlin) · [Swift](platforms/swift.md#transports-and-presence-in-swift).
 
 `global.syncGroup` in the transport configuration is an optimization, not a security boundary.
 
@@ -222,33 +162,21 @@ Ditto collections are schema-free, so the application is responsible for validat
 
 **✅ DO:**
 - Validate required fields, types, and ranges before `INSERT` or `UPDATE`.
-- Pass every value through `arguments` (`:name` placeholders), including documents (`INSERT INTO orders DOCUMENTS (:order)`).
+- Pass every value as an argument (`:name` placeholders), including documents (`INSERT INTO orders DOCUMENTS (:order)`).
 - Treat documents received from other peers as untrusted input when you render or process them.
 
 **❌ DON'T:**
 - Filter subscriptions by personal data or secrets, such as an email address. The subscription query and its arguments go to directly connected devices, and both devices write them to their on-disk logs (see [On-disk logs and exporting them](logging-and-observability.md#on-disk-logs-and-exporting-them) and [Subscription queries and arguments appear in other devices' logs](../knowledge/observations/configuration-and-diagnostics.md#subscription-queries-and-arguments-appear-in-other-devices-logs)). Filter by IDs that mean nothing on their own.
 - Build DQL strings by interpolating user input. In our testing, the input `nobody' OR '1'='1` embedded as a string literal made a `SELECT` return every document and a `DELETE` delete every document; passed as an argument, it matched none (see [User input embedded in a statement changes what it matches](../knowledge/observations/dql-behavior.md#user-input-embedded-in-a-statement-changes-what-it-matches)).
 
-```dart
-// ✅ GOOD: Validate, then pass values as parameters.
-Future<void> updateOrderStatus(Ditto ditto, String orderId, String status) async {
-  const allowedStatuses = {'open', 'preparing', 'done'};
-  if (orderId.isEmpty || !allowedStatuses.contains(status)) {
-    throw ArgumentError('Invalid order update');
-  }
-  await ditto.store.execute(
-    'UPDATE orders SET status = :status WHERE _id = :id',
-    arguments: {'id': orderId, 'status': status},
-  );
-}
+```sql
+-- ✅ GOOD: Validate the values in app code (a known order ID, a status from
+-- an allow list), then pass them as parameters
+-- Arguments: {"id": "order-1", "status": "preparing"}
+UPDATE orders SET status = :status WHERE _id = :id
 ```
 
-```dart
-// ❌ BAD: User input becomes part of the query text (DQL injection).
-Future<void> findOrdersByName(Ditto ditto, String name) async {
-  await ditto.store.execute("SELECT * FROM orders WHERE customerName = '$name'");
-}
-```
+How each SDK passes arguments, and what interpolated input does to a statement: [Executing DQL in Flutter](platforms/flutter.md#executing-dql-in-flutter) · [JavaScript](platforms/javascript.md#executing-dql-in-javascript) · [Kotlin](platforms/kotlin.md#executing-dql-in-kotlin) · [Swift](platforms/swift.md#executing-dql-in-swift).
 
 **Why:** Parameters keep values separate from the query text, so input cannot change the meaning of a statement. See [Parameters and Literals](dql.md#parameters-and-literals).
 
@@ -256,7 +184,7 @@ Future<void> findOrdersByName(Ditto ditto, String name) async {
 
 **On Swift and Kotlin (SDK 5.2+), encrypt the local store with `DittoConfig.encryptionKey`; on Flutter and the other SDKs, rely on OS protection and encrypt sensitive values in your app.** Since SDK 5.2, the **Swift and Kotlin** SDKs can encrypt the local store, including attachments, with a 32-byte key that your app generates and passes in `DittoConfig.encryptionKey` on every open. Ditto does not store or manage the key: keep it outside the persistence directory, in the Keychain or the Android Keystore. Ditto does not convert an existing store in place, so switching between encrypted and unencrypted storage means deleting the local store (`Ditto.deleteStore` or `DittoFactory.deleteStore`) and syncing it again. The **Flutter**, JavaScript, and other SDKs do not encrypt the local database at rest, and have no API to enable it; see the [encryption at rest documentation](https://docs.ditto.live/sdk/latest/sync/encryption-at-rest).
 
-Every SDK reports a typed error when a store cannot be opened for an encryption reason (in Flutter, a `DittoEncryptionException` whose `reason` is `keyRequired`, `keyUnexpected`, `keyInvalid`, `unsupportedScheme`, or `metadataCorrupt`). In Flutter, `DittoConfigExperimental.passphrase` remains only for compatibility: `Ditto.open()` rejects any value other than `null`.
+Every SDK reports a typed error when a store cannot be opened for an encryption reason, with a reason such as a required, unexpected, or invalid key, an unsupported scheme, or corrupt metadata (see [DittoConfig in Kotlin](platforms/kotlin.md#dittoconfig-in-kotlin) and [DittoConfig in Swift](platforms/swift.md#dittoconfig-in-swift)).
 
 The rest of this section applies wherever Ditto does not encrypt the store.
 
@@ -301,7 +229,7 @@ See the [webhook security documentation](https://docs.ditto.live/cloud/webhook-s
 **❌ DON'T:**
 - Ship the development provider or development token.
 - Hardcode shared keys, tokens, or API keys in the app.
-- Use `DittoConfigConnectSmallPeersOnly()` without a key outside development and tests.
+- Use small-peers-only without a private key outside development and tests.
 - Rely on mutable fields, `syncGroup`, sync scopes, or client-side checks for access control.
 - Put sensitive information in `identityServiceMetadata` or peer metadata.
 - Store secrets such as tokens or keys in Ditto documents.

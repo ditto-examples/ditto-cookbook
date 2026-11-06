@@ -5,13 +5,13 @@ description: Ditto SDK data removal and local storage management covering DELETE
 
 # Ditto Storage Lifecycle
 
-Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings, and keeping local storage bounded. Targets Ditto SDK 5.2.0; examples are Flutter (Dart), and the DQL rules apply to every SDK.
+Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings, and keeping local storage bounded. Targets Ditto SDK 5.2.0; the rules and the DQL examples are the same in every SDK.
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
-- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`, then read that section.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *Subscriptions in Kotlin*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
 
 ## Prevents
 
@@ -63,24 +63,21 @@ With a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typ
 
 **✅ DO**:
 - Target documents with `WHERE _id = :id` or `WHERE _id IN :ids`.
-- Add `RETURNING` (SDK 5.1+) when you need the removed content (undo banner, audit record); the tombstone keeps no values. Read it from `result.items` (each document as it was before deletion), not from `mutatedDocumentIDs()`.
+- Add `RETURNING` (SDK 5.1+) when you need the removed content (undo banner, audit record); the tombstone keeps no values. Read it from the result's `items` (each document as it was before deletion), not from its mutated document IDs.
 
 **❌ DON'T**:
 - Write `DELETE FROM orders USE IDS LIST :ids` or `EVICT FROM orders USE IDS 'a'` while any device runs SDK 5.1.0.
 - Use `DELETE` to free space on one device; it removes the data for every peer.
 
-```dart
-// ✅ GOOD: Delete by ID and capture what was removed (SDK 5.1+).
-final result = await ditto.store.execute(
-  'DELETE FROM orders WHERE _id IN :ids RETURNING _id, status, total',
-  arguments: {'ids': orderIds},
-);
-final removed = result.items.map((item) => item.value).toList();
+```sql
+-- ✅ GOOD: Delete by ID and capture what was removed (SDK 5.1+).
+-- Arguments: {"ids": ["order-1", "order-2"]}
+DELETE FROM orders WHERE _id IN :ids RETURNING _id, status, total
 ```
 
 `RETURNING` also accepts aggregates: `DELETE FROM orders WHERE status = 'cancelled' AND createdAt < :cutoff RETURNING COUNT(*) AS removed`.
 
-`§ DELETE and Tombstones`, `§ Capturing deleted content with RETURNING (SDK 5.1+)`, `§ RETURNING (SDK 5.1+)` · Example: [examples/evict-subscription-management-bad.dart](examples/evict-subscription-management-bad.dart) (anti-pattern 5, EVICT form)
+`§ DELETE and Tombstones`, `§ Capturing deleted content with RETURNING (SDK 5.1+)`, `§ RETURNING (SDK 5.1+)` · Example: [examples/evict-subscription-management-bad.sql](examples/evict-subscription-management-bad.sql) (anti-pattern 5, EVICT form)
 
 ### 2. Respect the Tombstone TTL (CRITICAL)
 
@@ -97,8 +94,8 @@ Inspect with `SHOW ALL LIKE '%tombstone%'`.
 
 **✅ DO**:
 - Make sure every device connects within the tombstone TTL, or use a soft delete for that data.
-- If devices can legitimately stay offline longer than 7 days, raise `TOMBSTONE_TTL_HOURS` on the device, staying at or below the Ditto Server TTL (for 14 days: `DittoConfig(systemParameters: {'TOMBSTONE_TTL_HOURS': 336})`).
-- Pass system parameters in `DittoConfig.systemParameters` (SDK 5.2+) on every open; they are not persisted. On SDK 5.1, run `ALTER SYSTEM` after every `Ditto.open`, before `ditto.sync.start()`.
+- If devices can legitimately stay offline longer than 7 days, raise `TOMBSTONE_TTL_HOURS` on the device, staying at or below the Ditto Server TTL (for 14 days: `{"TOMBSTONE_TTL_HOURS": 336}` in the system parameters of `DittoConfig`).
+- Pass system parameters in the system parameters of `DittoConfig` (SDK 5.2+) on every open; they are not persisted. On SDK 5.1, run `ALTER SYSTEM` after every open, before sync starts.
 
 **❌ DON'T**:
 - Configure the Edge TTL (`TOMBSTONE_TTL_HOURS` on Small Peers) above the Ditto Server TTL. The Ditto Server always syncs documents, so tombstones that outlive its copy are sent back to it repeatedly. The Ditto Server tombstone TTL defaults to 30 days; changes to the server side go through Ditto support. <!-- lint-ignore -->
@@ -107,7 +104,7 @@ Inspect with `SHOW ALL LIKE '%tombstone%'`.
 
 Clock skew, off-hours reaping, and what else `DELETE` leaves behind (re-insert, `INITIAL DOCUMENTS`): [reference/deletion-patterns.md](reference/deletion-patterns.md#what-delete-leaves-behind).
 
-`§ Tombstone TTL and reaping`, `§ System Parameters Reference`, `§ Applying System Parameters` · Example: [examples/ttl-eviction-small-peer.dart](examples/ttl-eviction-small-peer.dart)
+`§ Tombstone TTL and reaping`, `§ System Parameters Reference`, `§ Applying System Parameters` · Example: [examples/ttl-eviction-small-peer.sql](examples/ttl-eviction-small-peer.sql)
 
 ### 3. Filter Soft-Deleted Documents with coalesce (CRITICAL)
 
@@ -130,7 +127,7 @@ In DQL, a comparison with a missing or `null` field never passes a `WHERE` claus
 
 **Indexes**: `coalesce(isDeleted, false) = false` alone cannot use an index on `isDeleted` (collection scan). Lead with an indexed field (`status = :status AND coalesce(...)`) or use the equivalent `isDeleted IS MISSING OR isDeleted IS NULL OR isDeleted = false`; options in [reference/deletion-patterns.md](reference/deletion-patterns.md#indexing-soft-delete-filters).
 
-`§ Soft Delete`, `§ Indexing soft-delete filters`, `§ MISSING and NULL`, `§ Timestamps` · Example: [examples/soft-delete-relay.dart](examples/soft-delete-relay.dart) (create, soft delete, restore, query helpers)
+`§ Soft Delete`, `§ Indexing soft-delete filters`, `§ MISSING and NULL`, `§ Timestamps` · Example: [examples/soft-delete-relay.sql](examples/soft-delete-relay.sql) (create, soft delete, restore, query helpers)
 
 ### 4. Keep Soft-Deleted Documents in Subscriptions (CRITICAL)
 
@@ -138,7 +135,7 @@ A subscription that excludes soft-deleted documents (for example `WHERE coalesce
 
 **✅ DO**:
 - Keep soft-deleted documents in the subscriptions of devices that relay data to others, at least for as long as a device may stay offline.
-- Hide them in local queries and observers with `coalesce(isDeleted, false) = false`. Observers use the `changes` stream pattern (register without `onChange`, listen to `changes`, cancel both in `dispose()`); see `§ Store Observers in Flutter`.
+- Hide them in local queries and observers with `coalesce(isDeleted, false) = false`. Register and release those observers as the SDK page shows (*Store Observers in <SDK>*; `§ Observer Lifecycle`).
 - Choose one subscription design and clean up accordingly:
   - **Variant A (whole collection or partition)**: subscribe with `SELECT * FROM orders WHERE storeId = :storeId` (includes flagged documents), owned by a long-lived service. Clean up after the retention period, once flagged documents are no longer edited, with a `DELETE` that syncs to every device, run on the Ditto Server (for example through its HTTP API) or by another authorized peer: `DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000`.
   - **Variant B (retention window)**: subscribe with `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff` and evict exactly the complement (`isDeleted = true AND deletedAt < :cutoff`), cancelling the old subscription first and re-registering it with the moved cutoff. Choose a window longer than the longest expected offline period, so that other devices can still relay the flag, and move the cutoff only when you run cleanup, not on every screen change.
@@ -149,7 +146,7 @@ A subscription that excludes soft-deleted documents (for example `WHERE coalesce
 
 Trade-offs and the full comparison: [reference/deletion-patterns.md](reference/deletion-patterns.md#cleaning-up-soft-deleted-documents).
 
-`§ Soft delete, subscriptions, and cleanup`, `§ Multi-hop relay` · Example: [examples/soft-delete-relay.dart](examples/soft-delete-relay.dart) (Variant A and B, observer filtering)
+`§ Soft delete, subscriptions, and cleanup`, `§ Multi-hop relay` · Examples: [examples/soft-delete-relay.sql](examples/soft-delete-relay.sql) (Variant A and B, observer filtering), `retention-service` in `examples/<sdk>/`
 
 ### 5. Evict Only Outside Every Active Subscription (CRITICAL)
 
@@ -165,27 +162,20 @@ Trade-offs and the full comparison: [reference/deletion-patterns.md](reference/d
 - Evict and then register a subscription that matches the evicted documents again (for example `SELECT * FROM orders`).
 - Evict documents that an active subscription still covers.
 
-```dart
-// ✅ GOOD: Keep the last 7 days of orders (from OrderRetention.evictExpired).
-_subscription?.cancel(); // 1. Stop asking peers for these documents.
-try {
-  // 2. Evict exactly the complement of the new subscription.
-  await ditto.store.execute(
-    'EVICT FROM orders WHERE createdAt < :cutoff',
-    arguments: {'cutoff': cutoff},
-  );
-} finally {
-  // 3. Subscribe again with the moved boundary, even if the eviction failed.
-  _subscription = ditto.sync.registerSubscription(
-    'SELECT * FROM orders WHERE createdAt >= :cutoff',
-    arguments: {'cutoff': cutoff},
-  );
-}
+```sql
+-- ✅ GOOD: Keep the last 7 days of orders. 1. Cancel the subscription.
+-- 2. Evict exactly the complement of the new subscription:
+-- Arguments: {"cutoff": "2026-10-01T10:30:00.123Z"}
+EVICT FROM orders WHERE createdAt < :cutoff
+
+-- 3. Subscribe again with the moved boundary, even if the eviction failed:
+-- Arguments: {"cutoff": "2026-10-01T10:30:00.123Z"}
+SELECT * FROM orders WHERE createdAt >= :cutoff
 ```
 
 **Flag-based eviction**: when a central component (typically the Ditto Server, which can make sure documents have synced first) sets `evictionFlag = true`, devices subscribe with `coalesce(evictionFlag, false) = false` and evict `evictionFlag = true`. The subscription never matches flagged documents, so it does not need to be cancelled before each eviction.
 
-`§ EVICT`, `§ Time-based eviction`, `§ Flag-based eviction`, `§ Cancelling subscriptions and local data` · Examples: [ttl-eviction-small-peer.dart](examples/ttl-eviction-small-peer.dart) (full `OrderRetention`), [evict-subscription-management-good.dart](examples/evict-subscription-management-good.dart), [-bad.dart](examples/evict-subscription-management-bad.dart), [flag-based-eviction.dart](examples/flag-based-eviction.dart), [ttl-eviction-ditto-server.dart](examples/ttl-eviction-ditto-server.dart)
+`§ EVICT`, `§ Time-based eviction`, `§ Flag-based eviction`, `§ Cancelling subscriptions and local data` · Examples: `retention-service` in `examples/<sdk>/` (the service), [ttl-eviction-small-peer.sql](examples/ttl-eviction-small-peer.sql), [evict-subscription-management-good.sql](examples/evict-subscription-management-good.sql), [-bad.sql](examples/evict-subscription-management-bad.sql), [flag-based-eviction.sql](examples/flag-based-eviction.sql), [ttl-eviction-ditto-server.sql](examples/ttl-eviction-ditto-server.sql)
 
 ### 6. Avoid Husk Documents (HIGH)
 
@@ -200,7 +190,7 @@ When one device deletes a document while another concurrently updates it, the ad
 
 **❌ DON'T**: Use `DELETE` for shared records that other devices edit.
 
-Merge outcomes and a null-tolerant widget: [reference/deletion-patterns.md](reference/deletion-patterns.md#husk-documents).
+Merge outcomes and a null-tolerant list: [reference/deletion-patterns.md](reference/deletion-patterns.md#husk-documents).
 
 `§ Husk documents`
 
@@ -217,24 +207,16 @@ Each eviction triggers a resync with every connected peer, which costs network t
 - Evict on every screen change or app resume.
 - Change `DISABLE_REPLICATION_GC_ON_EVICT` (default `false`) unless profiling shows eviction-time write latency.
 
-```dart
-// ✅ GOOD: Evict in batches of 1,000 until nothing is left to evict.
-var total = 0;
-while (true) {
-  final result = await ditto.store.execute(
-    'EVICT FROM orders WHERE createdAt < :cutoff LIMIT 1000 '
-    'RETURNING COUNT(*) AS evicted',
-    arguments: {'cutoff': cutoff},
-  );
-  final evicted = result.items.first.value['evicted'] as int;
-  total += evicted;
-  if (evicted == 0) break;
-}
+```sql
+-- ✅ GOOD: Evict in batches of 1,000; repeat until evicted is 0.
+-- Arguments: {"cutoff": "2026-10-01T10:30:00.123Z"}
+EVICT FROM orders WHERE createdAt < :cutoff LIMIT 1000
+RETURNING COUNT(*) AS evicted
 ```
 
 Batching keeps write transactions short. It does not reduce the sync cost of eviction: run the whole batched cleanup on the usual schedule, not as many separate cleanups.
 
-`§ Batching evictions`, `§ Eviction frequency` · Example: [examples/ttl-eviction-small-peer.dart](examples/ttl-eviction-small-peer.dart)
+`§ Batching evictions`, `§ Eviction frequency` · Examples: [examples/ttl-eviction-small-peer.sql](examples/ttl-eviction-small-peer.sql), `retention-service` in `examples/<sdk>/`
 
 ## Checklist
 
@@ -266,6 +248,6 @@ Monitoring:
 ## More
 
 - Reference: [reference/deletion-patterns.md](reference/deletion-patterns.md) - what `DELETE` leaves behind, husks, Ditto Server deletion, soft-delete indexing and cleanup, store switch, eviction scheduling, storage monitoring (`system:system_info`)
-- Examples: [examples/](examples/) - one Dart file per pattern; each rule links its file
+- Examples: [examples/](examples/) - one DQL file per pattern, linked from each rule; `examples/<sdk>/retention-service` for the services that run them
 - Guide sections: `§ Subscription Lifecycle`, `§ Monitoring Storage`, `§ Testing Deletion and Soft Delete`
 - Related skills: `query-sync` (subscription scope and lifecycle, `RETURNING`), `data-modeling` (deletion flag field design, timestamps), `performance-observability` (indexes, `ADVISE`/`EXPLAIN`, observers)

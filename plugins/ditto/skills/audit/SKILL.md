@@ -5,12 +5,13 @@ description: Reviews code that uses the Ditto SDK against the Ditto best practic
 
 # Ditto Code Audit
 
-A repeatable review of an app that uses the Ditto SDK. It combines a fast pattern scan with a manual checklist, and relies on the topic skills for the rules. Targets Ditto SDK 5.2.0; the scanner reads Dart, JavaScript/TypeScript, Swift, and Kotlin.
+A repeatable review of an app that uses the Ditto SDK in Flutter, JavaScript, Kotlin, or Swift. It combines a fast pattern scan with a manual checklist, and relies on the topic skills for the rules. Targets Ditto SDK 5.2.0; the scanner reads Dart, JavaScript/TypeScript, Swift, and Kotlin (its DQL rules apply to all of them; the rules for API calls name the SDKs they check in [reference/scanner-rules.md](reference/scanner-rules.md)).
 
 ## Before You Apply
 
-- Check the Ditto SDK version the project uses (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). The rules target 5.2.0, checked on one device with the JavaScript SDK (system parameters, DQL, observers, diagnostics); Flutter and multi-peer behavior were observed with 5.1.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks behavior observed on 5.1.0 and not yet repeated on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
-- `§ <Heading>` cites a section of the full guide: Grep the heading text in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). The rules target 5.2.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks behavior observed on 5.1.0 and not yet repeated on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
+- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`): its *Behavior Specific to the <SDK> SDK* section lists what only that SDK does, and the topic skills' `examples/<sdk>/` show the correct code.
+- `§ <Heading>` cites a section of the full guide: Grep the heading text in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`.
 - Review only; do not change code unless the user asks for fixes.
 
 ## Workflow
@@ -33,7 +34,7 @@ Ditto audit progress:
 python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py lib/ test/
 ```
 
-(`${CLAUDE_SKILL_DIR}` is this skill's directory; if it is not substituted, use the path of this file's directory.) Options: `--json` for machine-readable output, `--min-severity HIGH` to hide MEDIUM hits. The script needs only Python 3.8+. If Python is unavailable, Grep for the same patterns listed in [reference/scanner-rules.md](reference/scanner-rules.md).
+Pass the project's source and test directories, such as `lib/ test/` (Flutter), `src/` (JavaScript), `app/src/` (Android), or `Sources/ Tests/` (Swift). (`${CLAUDE_SKILL_DIR}` is this skill's directory; if it is not substituted, use the path of this file's directory.) Options: `--json` for machine-readable output, `--min-severity HIGH` to hide MEDIUM hits. The script needs only Python 3.8+. If Python is unavailable, Grep for the same patterns listed in [reference/scanner-rules.md](reference/scanner-rules.md).
 
 Every hit is a candidate, not a finding. The scanner matches lines; it cannot tell a test fixture, a deliberate counter-example, or a validated identifier from a defect.
 
@@ -51,16 +52,17 @@ The scanner cannot see design and lifecycle problems. Check each area that the a
 
 | Area | What to look for | Skill |
 |---|---|---|
-| Subscriptions | Scoped by stable keys; owned by a long-lived service; registered again after every `Ditto.open()`; not re-registered per screen, filter, or search; no `!=`, `NOT IN`, or `clock()` in their filters; relays subscribe to what devices behind them need; soft-deleted documents stay in scope | `query-sync` |
-| Observers | Registered outside `build()`; `changes` consumed once; stream subscription and observer cancelled in `dispose()`; no `QueryResult` kept in state; narrow observers per screen region | `query-sync`, `performance-observability` |
+| Subscriptions | Scoped by stable keys; owned by a long-lived service; registered again every time Ditto opens; not re-registered per screen, filter, or search; no `!=`, `NOT IN`, or `clock()` in their filters; relays subscribe to what devices behind them need; soft-deleted documents stay in scope | `query-sync` |
+| Observers | Registered once per owner, outside render code; released when the owner goes away (Flutter: `changes` consumed once, stream subscription and observer cancelled in `dispose()`; Kotlin: `close()`, or cancelling the coroutine that collects `observe`); no result objects kept in state; narrow observers per screen region; backpressure for slow work | `query-sync`, `performance-observability` |
 | Data model | Arrays edited by several devices; whole-document rewrites; stored totals; sequential or timestamp-only IDs; consistent type declarations; documents that can grow without bound | `data-modeling` |
 | Deletion | Strategy per collection (DELETE, soft delete, EVICT); offline periods vs tombstone TTL; eviction complementary to subscriptions, at most daily | `storage-lifecycle` |
-| Transactions | Only `tx.execute` inside; no nesting, including through helper methods; no I/O or dialogs inside; pending work awaited before `close()` | `transactions-attachments` |
+| Transactions | Only the transaction object's `execute` inside, each awaited; no nesting, including through helper methods; no I/O or dialogs inside; pending work awaited before closing | `transactions-attachments` |
 | Attachments | Explicit, lazy, cancellable fetches with a stall timeout; ATTACHMENT declarations; no binaries in documents | `transactions-attachments` |
-| Startup and lifecycle | One instance per persistence directory; auth handler set before `sync.start()` and never throwing; system parameters passed in `DittoConfig.systemParameters` on every open (SDK 5.2+; on 5.1, `ALTER SYSTEM` after open and before `sync.start()`); no `close()` on background; writes that must reach another device confirmed before `close()`; transports changed with `updateTransportConfig()` | `sdk-setup` |
+| Startup and lifecycle | One instance per persistence directory; auth handler set before sync starts, login result checked the SDK's way, no error escaping the handler; system parameters passed in `DittoConfig` on every open (SDK 5.2+; on 5.1, `ALTER SYSTEM` after open and before sync starts); no close on background; writes that must reach another device confirmed before closing; transports changed with `updateTransportConfig` | `sdk-setup` |
 | Security | No development token or keyless small-peers mode in production; no hardcoded keys; permissions in the webhook based on immutable `_id` fields; nothing sensitive in peer metadata; users signed out of shared devices as in `§ Switching users on a shared device` | `sdk-setup` |
 | Indexes and queries | Indexes created at startup for hot filters, sorts, and JOIN keys; no mixed `ASC`/`DESC` composite keys while devices run 5.1.0; no functions on indexed fields; `ORDER BY` with a tie-breaker where order matters | `performance-observability` |
 | Tests | Local-store tests for DQL statements, soft-delete filters, observer cleanup, and subscription registration | `testing` |
+| SDK-specific behavior | The items of *Behavior Specific to the <SDK> SDK* on the SDK page (for example, Flutter `onChange` with an unconsumed `changes` stream, `async` observer handlers in JavaScript) | `guide` |
 | SDK version | Where devices still run 5.1.0: `USE IDS` in `DELETE`/`EVICT`, mixed-direction composite indexes (including ones from `ADVISE`), `ANY ... SATISFIES` on several properties, sorted index queries with projections, constants on the left of comparisons; values that Kotlin, Java, Swift, or C# stored incorrectly before 5.2 (`§ Known Issues in SDK 5.1.0`) | `guide` |
 
 The complete severity-ranked list is the guide's `§ Anti-Pattern Checklist`; the security-specific list is `§ Security Checklist`.
@@ -81,7 +83,7 @@ End with: the SDK version and platforms reviewed, the areas checked with no find
 ## Scanner Limits
 
 - Line-based: a statement split across lines, or built in another function, can be missed.
-- Not detectable: nested transactions through helper methods, observers or subscriptions registered in `build()`, subscription scope design, array-vs-map decisions, eviction that overlaps an active subscription, missing indexes.
+- Not detectable: nested transactions through helper methods, observers or subscriptions registered in render code, subscription scope design, array-vs-map decisions, eviction that overlaps an active subscription, missing indexes.
 - Example and test code that demonstrates anti-patterns on purpose produces hits; treat them as such.
 
 ## More

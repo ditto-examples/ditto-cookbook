@@ -10,7 +10,8 @@ What the persistence directory holds, and what happens when it is copied, restor
 - A device whose `ditto_store` subdirectory alone was deleted keeps its peer key, and on SDK 5.1.0 and 5.2.0 some documents that it creates before sync starts do not reach other devices, without an error; a device whose whole directory was deleted comes back with a new peer key and syncs everything ([Deleting only ditto_store keeps the peer key, and on SDK 5.1.0 and 5.2.0 leaves some writes unsynced](#deleting-only-ditto_store-keeps-the-peer-key-and-on-sdk-510-and-520-leaves-some-writes-unsynced)).
 - A directory deleted after `close()` opens as an empty store with a new peer key, and no earlier value remains in any file; in a small store, the values stay in the write-ahead log file after `close()` ([Deleting the directory after close() leaves no data behind](#deleting-the-directory-after-close-leaves-no-data-behind), [After close(), a small store keeps its values in the write-ahead log](#after-close-a-small-store-keeps-its-values-in-the-write-ahead-log)).
 - On macOS, deleting the directory while Ditto is open raises no error, but the writes made afterwards are lost when Ditto closes ([On macOS, deleting the directory while Ditto is open loses later writes](#on-macos-deleting-the-directory-while-ditto-is-open-loses-later-writes)).
-- A directory that another process holds, even a suspended one, fails to open after about 1 second; the lock of a process that crashed does not remain ([A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second), [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails), [The lock file keeps a process ID after the process is killed](#the-lock-file-keeps-a-process-id-after-the-process-is-killed)).
+- A directory that another process holds, even a suspended one, fails to open after about 1 second; the lock of a process that crashed does not remain ([A directory locked by another process fails to open after about 1 second](#a-directory-locked-by-another-process-fails-to-open-after-about-1-second), [The lock file keeps a process ID after the process is killed](#the-lock-file-keeps-a-process-id-after-the-process-is-killed)).
+- What happens when the same process opens a directory again differs by SDK; it is on the SDK pages: [Flutter SDK Behavior](flutter-sdk.md), [JavaScript SDK Behavior](javascript-sdk.md), [Kotlin SDK Behavior](kotlin-sdk.md), and [Swift SDK Behavior](swift-sdk.md).
 
 ## Copies of a Directory
 
@@ -113,7 +114,7 @@ The tendency was the same on both releases:
 
 **Not tested:** other operating systems than macOS; whether sync must be stopped before `close()` and the deletion.
 
-**Used in:** [Authentication](../../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](../platform-differences.md).
+**Used in:** [Authentication](../../best-practices/setup-and-lifecycle.md#authentication).
 
 ### On macOS, deleting the directory while Ditto is open loses later writes
 
@@ -122,7 +123,7 @@ The tendency was the same on both releases:
 | Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result on all three releases. macOS only: what happens when files in use are deleted depends on the operating system (Windows, in general, does not allow deleting a file that is open) |
 | Setup | While Ditto was open, we deleted the directory, wrote and read, opened a second instance at the same path, then closed both and opened the path again |
 
-- `INSERT` and reads after the deletion raised no error, and the documents written before it could still be read, probably because the operating system keeps deleted files for a process that has them open. After 1 second, the files had still not been created again. A second instance at the same path meanwhile opened, because the lock file was gone too (no error as in [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails)), and the two instances held different contents (the first 4 documents, the second 1). After both were closed and the path was opened again, only the 1 document written by the second instance remained. Everything else was gone, including the documents that the first instance wrote after the deletion.
+- `INSERT` and reads after the deletion raised no error, and the documents written before it could still be read, probably because the operating system keeps deleted files for a process that has them open. After 1 second, the files had still not been created again. A second instance at the same path meanwhile opened, because the lock file was gone too (no error as in [In JavaScript, opening an open directory again fails](javascript-sdk.md#in-javascript-opening-an-open-directory-again-fails)), and the two instances held different contents (the first 4 documents, the second 1). After both were closed and the path was opened again, only the 1 document written by the second instance remained. Everything else was gone, including the documents that the first instance wrote after the deletion.
 
 **Not tested:** other operating systems than macOS.
 
@@ -158,21 +159,9 @@ The tendency was the same on both releases:
 
 - The 1.1 seconds match the values of `filelock_retry_maximum` (5) and `filelock_retry_delay` (200 ms) in `SHOW ALL`.
 - The lock of a process that crashed does not remain, and its committed writes are not lost.
-- Opening the same directory again in the same process also fails in JavaScript (see [In JavaScript, opening an open directory again fails](#in-javascript-opening-an-open-directory-again-fails)).
+- Opening the same directory again in the same process also fails in JavaScript (see [In JavaScript, opening an open directory again fails](javascript-sdk.md#in-javascript-opening-an-open-directory-again-fails)).
 
 **Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory).
-
-### In JavaScript, opening an open directory again fails
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each |
-| Setup | In one process, we called `Ditto.open()` a second time on a directory that was already open, and again after `close()` of the first instance had completed |
-
-- The second `Ditto.open()` failed within 10 seconds with `File already locked, working dir = ..., retried 5 times. Multiple Ditto instances cannot run at the same time within the same working directory.`
-- After `close()` had completed, the directory opened.
-
-**Used in:** [One instance per persistence directory](../../best-practices/setup-and-lifecycle.md#one-instance-per-persistence-directory), [Platform Differences](../platform-differences.md).
 
 ### The lock file keeps a process ID after the process is killed
 

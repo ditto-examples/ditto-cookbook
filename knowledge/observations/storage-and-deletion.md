@@ -258,4 +258,4 @@ What a new peer received in its first sync:
 
 **Not tested:** how long the values remain with the default settings; whether overwriting a field removes its old value in general (one document only).
 
-**Used in:** [Data at Rest](../../best-practices/security.md#data-at-rest), [Authentication](../../best-practices/setup-and-lifecycle.md#authentication), [Platform Differences](../platform-differences.md).
+**Used in:** [Data at Rest](../../best-practices/security.md#data-at-rest), [Authentication](../../best-practices/setup-and-lifecycle.md#authentication).

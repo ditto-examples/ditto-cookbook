@@ -115,7 +115,7 @@ Results were the same on both releases.
 - A wrote `amount = 15000` and `currency = 'JPY'` together in a transaction; B later wrote only `amount = 120`. After sync, both devices had `120 JPY`, on both releases.
 - A transaction does not keep its values together with respect to other devices: another device's later edit of one field mixes with the transaction's other fields.
 
-**Used in:** [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [Transactions](../../best-practices/transactions.md).
+**Used in:** [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce), [Transactions](../../best-practices/transactions.md#transactions).
 
 ### A text field keeps only one of two concurrent edits
 
@@ -279,7 +279,7 @@ Results were the same on all three releases.
 
 - The later write of each field wins (see [The merge table held on SDK 5.1.0 and 5.2.0](#the-merge-table-held-on-sdk-510-and-520) and [The later write wins by when it was written, not when it arrived](#the-later-write-wins-by-when-it-was-written-not-when-it-arrived)), so the more entries a reorder renumbers, the more of a concurrent reorder it overwrites. Renumbering every entry leaves nothing of the other device's move.
 - Values between neighbors run out when entries keep being added into the same gap. Between b (2) and c (3), we wrote each new entry right after b, at half the distance to the entry after it: the first 51 entries had distinct values, and the 52nd had 2, the same value as b. Doubles have coarser steps at larger values, so the number of possible additions depends on the ratio of the gap to the neighbors' values: with a gap of 1,000 and values in the thousands, it hardly changes (in a JavaScript calculation, the first equal value moved only from the 52nd addition to the 54th). In Ditto, we checked only a gap of 1.
-- All 60 values kept their exact double values through sync (compared with `Object.is`; see [JavaScript values that are not plain JSON change when stored](dql-behavior.md#javascript-values-that-are-not-plain-json-change-when-stored)).
+- All 60 values kept their exact double values through sync (compared with `Object.is`; see [JavaScript values that are not plain JSON change when stored](javascript-sdk.md#javascript-values-that-are-not-plain-json-change-when-stored)).
 
 **Not tested:** gaps other than 1 in Ditto (the gap of 1,000 was only calculated in JavaScript); positions stored as strings, a form that would not need renumbering.
 
@@ -315,7 +315,7 @@ Results were the same on all three releases:
 
 - `APPLY cnt INCREMENT BY 0.1` fails with `Expected 0.1 to be an integer value`. It also fails with an argument (`BY :n` with 0.25), and with `BY 0.5` after an increment by an integer. An `INSERT` that declares `COUNTER` and writes 2.5 fails with `Expected an integer (not number) value for counter field`. Each error comes when the statement runs; no value is rounded silently.
 - The legacy `PN_COUNTER` accepts `PN_INCREMENT BY 0.1`, and ten such increments gave `0.9999999999999999` (a floating-point error).
-- A COUNTER wraps around at the int64 maximum: after `INCREMENT BY 9223372036854775807`, an increment by 1 gave `-9223372036854775808n`, without an error. A JavaScript `number` above 2^53 (`2 ** 53 + 2`) passed as an argument fails with `Expected :n to be an integer value`; integers beyond the safe range are passed as a `BigInt` (see [JavaScript values that are not plain JSON change when stored](dql-behavior.md#javascript-values-that-are-not-plain-json-change-when-stored)).
+- A COUNTER wraps around at the int64 maximum: after `INCREMENT BY 9223372036854775807`, an increment by 1 gave `-9223372036854775808n`, without an error. A JavaScript `number` above 2^53 (`2 ** 53 + 2`) passed as an argument fails with `Expected :n to be an integer value`; integers beyond the safe range are passed as a `BigInt` (see [JavaScript values that are not plain JSON change when stored](javascript-sdk.md#javascript-values-that-are-not-plain-json-change-when-stored)).
 
 **Used in:** [Counters](../../best-practices/data-modeling.md#counters), [When counters are appropriate](../../best-practices/data-modeling.md#when-counters-are-appropriate).
 

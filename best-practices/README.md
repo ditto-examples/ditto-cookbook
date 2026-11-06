@@ -1,8 +1,8 @@
 # Ditto SDK Best Practices
 
-> **Version**: 4.58
-> **Last Updated**: 2026-11-06
-> **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
+> **Version**: 5.0
+> **Last Updated**: 2026-11-07
+> **Applies to**: Ditto SDK 5.2.0 for Flutter (`ditto_live`), JavaScript (`@dittolive/ditto`), Kotlin (`com.ditto:ditto-kotlin`), and Swift (`DittoSwift`). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
 This guide helps you build offline-first applications on the Ditto SDK that stay correct when many devices change the same data without a connection. It concentrates on two kinds of guidance:
 
@@ -13,6 +13,8 @@ The guide complements the [Ditto documentation](https://docs.ditto.live), which 
 
 The guide has two parts: these best practices, which say what to do and what to avoid, and the [knowledge pages](../knowledge/README.md), which explain how Ditto works and collect the reference material that the best practices build on. The version and date above cover both parts.
 
+The topic pages apply to every SDK: they state the rules, the reasons, and the DQL. How to apply them with one SDK, its API calls, its patterns for UI and app lifecycle, and the behavior specific to it, is on that SDK's page: [Flutter](platforms/flutter.md), [JavaScript](platforms/javascript.md), [Kotlin](platforms/kotlin.md), and [Swift](platforms/swift.md). The four SDK pages have the same sections.
+
 ## How to Use This Guide
 
 **Who it is for**: Developers and architects who build, review, or operate applications on the Ditto SDK. The guide assumes familiarity with SQL and with your platform's asynchronous programming model. No prior knowledge of CRDTs is needed.
@@ -22,6 +24,7 @@ The guide has two parts: these best practices, which say what to do and what to 
 | If you are... | Start with |
 |---|---|
 | New to Ditto | [The Essentials](#the-essentials), [Understanding Ditto](../knowledge/understanding-ditto.md), then [SDK Setup and Lifecycle](setup-and-lifecycle.md) |
+| Writing code with one SDK | The page of your SDK: [Flutter](platforms/flutter.md), [JavaScript](platforms/javascript.md), [Kotlin](platforms/kotlin.md), or [Swift](platforms/swift.md) |
 | Designing a data model or sync scope | [Data Modeling](data-modeling.md), [Sync and Subscriptions](sync-and-subscriptions.md), and [Deletion and Storage Management](deletion-and-storage.md) |
 | Reviewing code or preparing a release | [Anti-Pattern Checklist](anti-patterns.md), [Security Checklist](security.md#security-checklist), and [Testing Strategies](testing.md) |
 | Upgrading from SDK 5.1, or running devices that still use 5.1.0 | [Upgrading from SDK 5.1](../knowledge/upgrading.md) |
@@ -32,7 +35,7 @@ The guide has two parts: these best practices, which say what to do and what to 
 
 **Conventions**:
 
-- **Code examples** use Flutter (Dart) with `import 'package:ditto_live/ditto_live.dart';`. The DQL statements, the data modeling guidance, and the sync behavior apply to every SDK; where the JavaScript, Swift, or Kotlin APIs or behavior differ, the guide says so (see [Platform Differences](../knowledge/platform-differences.md)).
+- **Code examples**: the topic pages show DQL in `sql` blocks, with the arguments of each statement as JSON in a comment above it (`-- Arguments: {"status": "open"}`); pass them as the arguments map of your SDK's `execute`, observer, or subscription call. Code that calls an SDK's API is on the SDK pages, which show the same examples in Flutter (Dart), JavaScript, Kotlin, and Swift. Where the SDKs' APIs or behavior differ, the topic pages say so in a table or link to the SDK pages (see also [Platform Differences](../knowledge/platform-differences.md)). A block marked `<!-- subscription -->` holds statements meant for `registerSubscription`, and one marked `<!-- expect-error -->` holds statements that fail on purpose.
 - **✅ DO / ❌ DON'T**: Each topic lists recommended practices and anti-patterns, followed by examples marked `// ✅ GOOD` and `// ❌ BAD`.
 - **(SDK 5.1+)** / **(SDK 5.2+)**: Marks features introduced in Ditto SDK 5.1 or 5.2. Everything else is available in 5.0 and later, apart from a few small features, such as `object_size()`, that carry the mark because SDK 5.0.3 rejected them in our testing (see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)).
 - **(Experimental)** / **(Beta)**: Marks APIs that the SDK itself marks as experimental or beta. Their signatures or behavior may change in a future release.
@@ -40,7 +43,7 @@ The guide has two parts: these best practices, which say what to do and what to 
 - **Section citations**: The plugin Skills and the checklist cite a section as `§ Heading`. Every heading is unique across both parts of the guide, so a search for its text finds exactly one section.
 - **Placeholders** such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
 
-**How the content was verified**: A statement that a behavior was observed "in our testing" names the releases it was observed on and links to its observation entry, which gives the setup, every number, and what was not tested. It describes how those releases behaved, not a documented guarantee; statements whose only source is the 5.2.0 release notes say so. [How We Tested](../knowledge/observations/how-we-tested.md) describes the environment that the observations share (mostly the JavaScript SDK on Node.js, with peers on one machine connected over TCP) and the checks that run on every change of the guide: every DQL statement runs on SDK 5.1.0 and 5.2.0, and the Dart examples were compiled against `ditto_live` 5.1.0 (examples of APIs added in 5.2 follow the 5.2.0 API reference).
+**How the content was verified**: A statement that a behavior was observed "in our testing" names the releases it was observed on and links to its observation entry, which gives the setup, every number, and what was not tested. It describes how those releases behaved, not a documented guarantee; statements whose only source is the 5.2.0 release notes say so. [How We Tested](../knowledge/observations/how-we-tested.md) describes the environment that the observations share (Ditto's own behavior mostly with the JavaScript SDK on Node.js, with peers on one machine connected over TCP, and each SDK's API with that SDK) and the checks of the guide itself: every DQL statement runs on SDK 5.1.0 and 5.2.0, and the code on each SDK page was built against SDK 5.2.0 and, where it can run without Ditto Server or a real device, run against a local store.
 
 ## The Essentials
 
@@ -51,10 +54,10 @@ If you take only ten things from this guide, take these. Each one links to the s
 3. **Model every shared field for the merge you want.** Use maps keyed by ID for lists that several devices edit (an array is replaced as a whole), `COUNTER` for tallies, and values computed at read time instead of stored totals. See [What Concurrent Edits Produce](../knowledge/crdt-types.md#what-concurrent-edits-produce).
 4. **Generate collision-free IDs.** Use UUIDs, or composite `_id` objects that contain a UUID, and never sequential numbers. Put the attributes that permissions depend on into `_id`, because `_id` cannot change. See [Document IDs](data-modeling.md#document-ids).
 5. **Choose a deletion strategy per collection.** Prefer a soft delete for shared records that several devices edit, and wherever devices can stay offline longer than the tombstone TTL (7 days by default); `DELETE` is safe only when neither applies. To free storage on one device, use `EVICT` on documents that no active subscription matches. See [Choosing DELETE, Soft Delete, or EVICT](deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
-6. **Pass system parameters in `DittoConfig` every time you open Ditto.** System parameters are not persisted. `DittoConfig.systemParameters` (SDK 5.2+) applies them before Ditto starts and makes `Ditto.open()` fail on an unknown name or a wrong type; use `ALTER SYSTEM` only to change a value while the app runs. See [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters).
+6. **Pass system parameters in `DittoConfig` every time you open Ditto.** System parameters are not persisted. The system parameters of `DittoConfig` (SDK 5.2+) are applied before Ditto starts, and opening Ditto fails on an unknown name or a wrong type; use `ALTER SYSTEM` only to change a value while the app runs. See [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters).
 7. **Pass every value as a parameter, and account for missing fields.** Use `:name` placeholders, `IN :values` for membership, and `coalesce(flag, false) = false` for optional flags. See [Parameters and Literals](dql.md#parameters-and-literals) and [MISSING and NULL](dql.md#missing-and-null).
 8. **Keep documents small.** Stay well below 256 KiB per document, store files as attachments, and fetch attachments only when they are shown. See [Document Size Limits](data-modeling.md#document-size-limits) and [Attachments](attachments.md).
-9. **Release everything you register.** Cancel subscriptions and observers, and stop attachment fetchers, explicitly. In Flutter, consume an observer's `changes` stream instead of passing only `onChange`. See [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown) and [Store Observers in Flutter](observers.md#store-observers-in-flutter).
+9. **Release everything you register.** Cancel subscriptions and observers, and stop attachment fetchers, explicitly; garbage collection does not release them. Register each observer once per owner, in the way your SDK's page shows. See [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown) and [Observer Lifecycle](observers.md#observer-lifecycle).
 10. **Secure production deployments.** Authenticate through a webhook provider (never the development token), or use a provisioned `privateKey` in small-peers-only deployments, and never hardcode keys. See [Security Checklist](security.md#security-checklist).
 
 Before release, check your code against the [Anti-Pattern Checklist](anti-patterns.md), and cover your queries and merge-sensitive writes with tests (see [Testing Strategies](testing.md)).
@@ -63,20 +66,29 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 
 | Page | Covers |
 |---|---|
-| [SDK Setup and Lifecycle](setup-and-lifecycle.md) | Requirements, `DittoConfig` and `Ditto.open`, authentication and switching users on a shared device, applying system parameters, starting and stopping sync, shutdown, transports, presence |
+| [SDK Setup and Lifecycle](setup-and-lifecycle.md) | Requirements, `DittoConfig` and one shared instance, authentication and switching users on a shared device, applying system parameters, starting and stopping sync, shutdown, transports, presence |
 | [Reading and Writing Data with DQL](dql.md) | Where queries run, parameters and literals, MISSING and NULL, query results, error messages and empty results, `SELECT` (projections, aggregates, `GROUP BY`, `ORDER BY`, `LIMIT`, `USE IDS`, membership, `JOIN`), `INSERT` and `ON ID CONFLICT`, `UPDATE`, `RETURNING`, `DELETE` and `EVICT` |
 | [Data Modeling](data-modeling.md) | Strict mode, arrays and maps, document structure and size, relationships, document IDs, counters, event history, `INITIAL DOCUMENTS`, schema evolution, timestamps |
 | [Sync and Subscriptions](sync-and-subscriptions.md) | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
-| [Observing Changes](observers.md) | Choosing an observer API, when observers fire, store observers in Flutter, backpressure, diffing results, partial UI updates |
-| [Transactions](transactions.md) | `store.transaction`, transaction rules, concurrency and duration, sync, other platforms |
+| [Observing Changes](observers.md) | The observer APIs of each SDK, when observers fire, observer lifecycle, backpressure and choosing an observer API, diffing results, partial UI updates |
+| [Transactions](transactions.md) | `store.transaction` in each SDK, transaction rules, concurrency and duration, sync |
 | [Attachments](attachments.md) | Architecture, creating, fetching, immutability, thumbnails, availability, size |
 | [Deletion and Storage Management](deletion-and-storage.md) | `DELETE` and tombstones, soft delete, `EVICT`, choosing a strategy, monitoring storage |
 | [Indexing and Query Performance](indexing-and-performance.md) | Creating indexes, index usage rules, `ADVISE`, `EXPLAIN` and `PROFILE`, query scope |
-| [Logging and Observability](logging-and-observability.md) | Logging, support bundles, remote diagnostics |
+| [Logging and Observability](logging-and-observability.md) | The logger of each SDK, log levels, on-disk logs, support bundles, remote diagnostics |
 | [Security](security.md) | Security model, production authentication, small-peers-only deployments, permissions, certificate revocation, incoming connections, input validation, data at rest, webhooks, the security checklist |
-| [Testing Strategies](testing.md) | A local-store test helper, tests for merge-sensitive writes, deletion, observers, subscriptions, and DQL, tests on several devices |
+| [Testing Strategies](testing.md) | What a local-store test helper does, tests for merge-sensitive writes, deletion, observers, subscriptions, and DQL, tests on several devices |
 | [Anti-Pattern Checklist](anti-patterns.md) | A review list ranked by severity |
 | [Quick Reference](quick-reference.md) | A condensed DO list, where to look when something goes wrong, and common code shapes |
+
+The SDK pages have the same sections: installing the SDK, opening Ditto and `DittoConfig`, authentication, sync and the app lifecycle, closing, executing DQL and value types, subscriptions, store observers (lifecycle, backpressure, diffing, partial UI updates), transactions, attachments, IDs and timestamps, transports and presence, logging, testing, and the behavior specific to the SDK.
+
+| Page | SDK |
+|---|---|
+| [Ditto on Flutter](platforms/flutter.md) | `ditto_live` (Dart) on iOS, Android, macOS, Windows, Linux, and the Web |
+| [Ditto on JavaScript](platforms/javascript.md) | `@dittolive/ditto` on Node.js, in browsers, and in React Native |
+| [Ditto on Kotlin](platforms/kotlin.md) | `com.ditto:ditto-kotlin` on Android |
+| [Ditto on Swift](platforms/swift.md) | `DittoSwift` on iOS and macOS |
 
 ## Disclaimer
 

@@ -5,21 +5,21 @@ description: Designs CRDT-safe Ditto documents, covering merge behavior, maps vs
 
 # Ditto Data Modeling
 
-How to shape Ditto documents so concurrent offline edits merge correctly. Targets Ditto SDK 5.2.0 with the default `DQL_STRICT_MODE = false`; examples are Flutter (Dart), and the rules are the same on every platform.
+How to shape Ditto documents so concurrent offline edits merge correctly. Targets Ditto SDK 5.2.0 with the default `DQL_STRICT_MODE = false`; the rules and the DQL examples are the same in every SDK.
 
 ## Before You Apply
 
-- Check the project's Ditto SDK version (`ditto_live` in `pubspec.lock`, `@dittolive/ditto` in `package-lock.json`, `DittoSwift` in `Package.resolved`, `com.ditto` in Gradle files). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior (wrong results, lost data, crashes, hangs) confirmed on both releases, and **Note (SDK 5.1.0)** behavior observed on 5.1.0 and not yet repeated on 5.2.0; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Examples are Dart. For JavaScript, Swift, or Kotlin, translate with `§ Platform Differences` and do not port Flutter observer or transaction code one-to-one.
-- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`, then read that section.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *IDs and Timestamps in Swift*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
 
 ## Prevents
 
 - Lost edits in arrays changed on several devices (an array is one last-writer-wins register)
-- Keys that never go away because `SET obj = {...}` and `ON ID CONFLICT DO UPDATE` merge into maps
+- Keys that never go away because `SET obj = {...}` and `DO UPDATE` merge into maps
 - Values that seem to vanish when type declarations differ between statements
 - Lost increments from read-modify-write instead of the `COUNTER` type
-- JOIN errors and empty results (unindexed join key, JOIN in a subscription, unsynced collection)
+- JOIN errors and empty results
 - Derived totals that diverge from the merged data
 - ID collisions from sequential or timestamp-only IDs
 - Documents over the 256 KiB soft limit or the 5 MiB hard limit
@@ -75,7 +75,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 - Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out, or clear a map with `SET obj = {}` or by assigning a scalar.
 - Write back a stale in-memory copy with `DO UPDATE` (every supplied field) or `DO UPDATE_LOCAL_DIFF` (every field that differs locally, including old values): either overrides a concurrent change.
 
-`§ CRDT Types and Merge Behavior`, `§ Local Write Semantics You Must Know`, `§ Document Structure` · Example: [examples/field-level-updates.dart](examples/field-level-updates.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, replacing an object, `UNSET` metadata)
+`§ CRDT Types and Merge Behavior`, `§ Local Write Semantics You Must Know`, `§ Document Structure` · Example: [examples/field-level-updates.sql](examples/field-level-updates.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, replacing an object, `UNSET` metadata)
 
 ### 2. Use maps keyed by ID, not arrays, for data several devices edit (CRITICAL)
 
@@ -101,7 +101,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 
 **❌ DON'T**: splice unchecked input into a query; write a map under the array's field name (it changes the CRDT type, so the old array and the new map coexist under the same key).
 
-`§ Arrays and Maps` · Example: [examples/array-to-map.dart](examples/array-to-map.dart)
+`§ Arrays and Maps` · Example: [examples/array-to-map.sql](examples/array-to-map.sql)
 
 ### 3. Keep the default strict mode and declare types consistently (CRITICAL)
 
@@ -123,7 +123,7 @@ Choose `true` only when nearly every object needs replacement semantics and you 
 
 **❌ DON'T**: mix declarations for one field. Each statement reads or writes the value of its declared type, so values seem to vanish even on one device: a `REGISTER` insert followed by an undeclared `SET obj.a = 11` makes an undeclared `SELECT` return `"obj": {"a": 11}`.
 
-`§ Strict Mode`, `§ Keep type declarations consistent` · Example: [examples/strict-mode-and-declarations.dart](examples/strict-mode-and-declarations.dart)
+`§ Strict Mode`, `§ Keep type declarations consistent` · Example: [examples/strict-mode-and-declarations.sql](examples/strict-mode-and-declarations.sql)
 
 ### 4. Use COUNTER with APPLY for concurrent tallies (CRITICAL)
 
@@ -138,7 +138,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 - Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 
-`§ Counters` · Example: [examples/counter-patterns.dart](examples/counter-patterns.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (Pattern 5)
+`§ Counters` · Example: [examples/counter-patterns.sql](examples/counter-patterns.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (Pattern 5)
 
 ### 5. Generate collision-free document IDs (CRITICAL)
 
@@ -148,7 +148,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 | ULID / time-ordered random ID | Rough creation-time ordering (device clocks make it approximate) |
 | Composite object `{"storeId": ..., "orderId": "<uuid>"}` | Permissions or subscriptions scoped by owner, location, or tenant |
 | Natural key (SKU) | Globally unique, immutable domain key |
-| Generated by Ditto (omit `_id`) | Nothing needs the ID before insert; read `result.mutatedDocumentIDs()` |
+| Generated by Ditto (omit `_id`) | Nothing needs the ID before insert; read the result's mutated document IDs |
 
 - **Never** use sequential or timestamp-only IDs: two offline devices produce the same ID, and the documents merge into one.
 - Strings and objects are recommended; floats and `null` are rejected. Do not depend on the format of generated IDs.
@@ -156,7 +156,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 - Put only immutable attributes into a composite `_id`; filter and index its subfields (`_id.storeId`).
 - Keep human-readable numbers (`#A-0042`) in a separate field: labels, not keys.
 
-`§ Document IDs` · Examples: [examples/id-generation-patterns.dart](examples/id-generation-patterns.dart), [examples/composite-id-patterns.dart](examples/composite-id-patterns.dart), [examples/id-immutability-workaround.dart](examples/id-immutability-workaround.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (ID types, changing an ID, composite IDs, display numbers)
+`§ Document IDs` · Examples: [examples/id-generation-patterns.sql](examples/id-generation-patterns.sql), `ids-and-timestamps` in `examples/<sdk>/`, [examples/composite-id-patterns.sql](examples/composite-id-patterns.sql), [examples/id-immutability-workaround.sql](examples/id-immutability-workaround.sql) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (ID types, changing an ID, composite IDs, display numbers)
 
 ### 6. Embed by default; JOIN separate collections locally (HIGH)
 
@@ -184,49 +184,38 @@ Concurrent edits alone are **not** a reason to split: map entries merge.
 - Silence the index error with `USE INDEX ''` on a large collection.
 - Split a small, bounded, single-owner sub-entity only because JOIN exists.
 
-`§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)` · Examples: [examples/embedded-relationship.dart](examples/embedded-relationship.dart), [examples/foreign-key-join.dart](examples/foreign-key-join.dart) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (JOIN queries, index error, subscriptions)
+`§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)` · Examples: [examples/embedded-relationship.sql](examples/embedded-relationship.sql), [examples/foreign-key-join.sql](examples/foreign-key-join.sql) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (JOIN queries, index error, subscriptions)
 
 ### 7. Do not store derived values (HIGH)
 
-A stored total is a separate register that devices recompute from partial views; after the merge it can match neither. Compute it at read time, in Dart or DQL (`SELECT COUNT(*) AS openOrders FROM orders WHERE status = 'open'`).
+A stored total is a separate register that devices recompute from partial views; after the merge it can match neither. Compute it at read time, in app code or DQL (`SELECT COUNT(*) AS openOrders FROM orders WHERE status = 'open'`).
 
 **✅ DO**: copy snapshot values, which are facts, not derivations (`unitPriceCents` into the line item when it is added); initialize flags you filter on (`isDeleted: false`) or filter with `coalesce(isDeleted, false) = false`.
 
 **❌ DON'T**: store UI state, progress flags, or device-local paths in synced documents.
 
-`§ Document Structure` · Example: [examples/derived-values.dart](examples/derived-values.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (document structure, field names)
+`§ Document Structure` · Example: [examples/derived-values.sql](examples/derived-values.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (document structure, field names)
 
 ### 8. Keep documents well under the size limits (HIGH)
 
 | Threshold | Default | Behavior |
 |---|---|---|
 | Soft limit | 256 KiB | Write succeeds; warning `exceeds recommended limit` is logged |
-| Hard limit | 5 MiB | A local `INSERT` / `UPDATE` fails (`DittoException`); the stored document is unchanged |
+| Hard limit | 5 MiB | A local `INSERT` / `UPDATE` fails with the SDK's error; the stored document is unchanged |
 
 **Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data. On 5.2.0, receivers drop them; copies diverge until one is evicted, losing its changes (see the reference).
 
 **✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate, so leave headroom; to shrink an oversized document, move large values out and `UNSET` them.
 
-`§ Document Size Limits` · Example: [examples/document-size.dart](examples/document-size.dart) · More: [reference/common-patterns.md](reference/common-patterns.md) (causes of growth, system parameters)
+`§ Document Size Limits` · Example: [examples/document-size.sql](examples/document-size.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (causes of growth, system parameters)
 
 ### 9. Store timestamps in UTC with a zone designator and fixed precision (MEDIUM)
 
-Store UTC with a zone designator (`DateTime.now().toUtc().toIso8601String()`) or epoch milliseconds, consistently per field. Zone-less ISO strings make every DQL date function return `MISSING` silently. Clocks drift: never resolve conflicting writes with your own timestamp fields.
+Store UTC with a zone designator (an ISO-8601 string ending in `Z`) or epoch milliseconds, consistently per field. Zone-less ISO strings make every DQL date function return `MISSING` silently. Clocks drift: never resolve conflicting writes with your own timestamp fields.
 
-ISO strings sort as text only at one precision. Native Dart emits microseconds (`...00.123456Z`) but omits them when zero (`...00.123Z`), and the web emits milliseconds, so even one device mixes precisions. Write every sorted or compared timestamp with one fixed-precision helper:
+ISO strings sort as text only at one precision; some formatters vary it even on one device (native Dart omits zero microseconds). Write every sorted or compared timestamp with one helper that writes UTC with exactly millisecond precision (`2026-10-08T10:30:00.123Z`): `ids-and-timestamps` in `examples/<sdk>/`.
 
-```dart
-/// ISO-8601 UTC string with exactly millisecond precision.
-String utcTimestamp([DateTime? time]) {
-  final utc = (time ?? DateTime.now()).toUtc();
-  return DateTime.fromMillisecondsSinceEpoch(
-    utc.millisecondsSinceEpoch,
-    isUtc: true,
-  ).toIso8601String();
-}
-```
-
-`§ Timestamps` · Example: [examples/timestamps.dart](examples/timestamps.dart)
+`§ Timestamps` · Examples: [examples/timestamps.sql](examples/timestamps.sql), `ids-and-timestamps` in `examples/<sdk>/`
 
 ## Checklist
 
@@ -248,5 +237,5 @@ String utcTimestamp([DateTime? time]) {
 
 - Reference: [reference/common-patterns.md](reference/common-patterns.md) - conflict policies, event history and audit logs, document structure, field names, document size
 - Reference: [reference/advanced-patterns.md](reference/advanced-patterns.md) - current state plus history, `INITIAL DOCUMENTS`, schema evolution, IDs, JOIN
-- Examples: [examples/](examples/) - Dart files linked from each rule and reference pattern
+- Examples: [examples/](examples/) - DQL files linked from each rule; `examples/<sdk>/` for the ID and timestamp helpers
 - Related skills: `query-sync` (DQL, subscriptions, observers), `storage-lifecycle` (DELETE, soft delete, EVICT), `transactions-attachments` (transactions, attachments), `performance-observability` (indexes, EXPLAIN, ADVISE)

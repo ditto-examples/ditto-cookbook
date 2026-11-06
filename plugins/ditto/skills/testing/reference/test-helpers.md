@@ -1,88 +1,22 @@
 # Test Helper for a Local Store
 
-The helper and test file skeleton from `§ A Test Helper for a Local Store` (verified with `ditto_live` 5.1.0).
+What a local-store test helper does, from `§ A Test Helper for a Local Store`, for every SDK. The helper for each SDK is `local-store-test-helper` in `../examples/<sdk>/` and the *A local-store test helper in <SDK>* section of its page.
 
-## Contents
+## A Test Helper for a Local Store
 
-- [What the helper does](#what-the-helper-does)
-- [Test file with the helper](#test-file-with-the-helper)
-- [Running the tests](#running-the-tests)
-- [How the other examples fit in](#how-the-other-examples-fit-in)
+Write one helper that every local store test uses. It:
 
-## What the helper does
+1. Creates a new temporary directory for each test and opens a small-peers-only instance (the default connection mode) in it, with any UUID as the Database ID.
+2. Passes the same system parameters that your app passes in its `DittoConfig`, and runs the same startup code that creates your app's indexes.
+3. Never starts sync, so it needs no license token and no network and can run in CI.
+4. Closes the instance and deletes the directory when the test ends, also when it fails (on Flutter 5.2.0, after the last test of the file: `§ A local-store test helper in Flutter`).
 
-- Opens a small-peers-only instance (the default `connect` mode, `DittoConfigConnectSmallPeersOnly()`) in its own temporary directory, and closes it automatically when the test ends (`addTearDown`), even when the test fails.
-- Never starts sync, so it needs no license token and no network, and can run in CI. The local store works without a license; in small-peers-only mode `ditto.sync.start()` throws without an offline license token (`§ Initializing Ditto`).
-- Takes the same `systemParameters` that your app passes in its `DittoConfig` (SDK 5.2+), and a `configure` callback for the indexes your app creates at startup (system parameters are not persisted; `§ Applying System Parameters`).
-- Gives every test an empty store. Never share one persistence directory between tests or open it twice; in Flutter, a second `Ditto.open()` on an open directory may never complete (`§ One instance per persistence directory`).
-- As your suite grows, move the helper into a shared file under `integration_test/`.
-
-## Test file with the helper
-
-```dart
-// integration_test/orders_test.dart
-import 'dart:io';
-
-import 'package:ditto_live/ditto_live.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:integration_test/integration_test.dart';
-
-/// Opens a Ditto instance for one test. Sync is never started, so no
-/// license token or network connection is needed.
-Future<Ditto> openTestDitto({
-  Map<String, Object> systemParameters = const {},
-  Future<void> Function(Ditto ditto)? configure,
-}) async {
-  final directory = await Directory.systemTemp.createTemp('ditto_test_');
-  final ditto = await Ditto.open(
-    DittoConfig(
-      // Any UUID works for local tests; each test gets its own directory.
-      databaseID: '00000000-0000-4000-8000-000000000001',
-      persistenceDirectory: directory.path,
-      // The same parameters as the app's DittoConfig (SDK 5.2+).
-      systemParameters: systemParameters,
-    ),
-  );
-
-  // Runs after the test, even when it fails.
-  addTearDown(() async {
-    await ditto.close();
-    try {
-      await directory.delete(recursive: true);
-    } on FileSystemException {
-      // Best effort: the OS removes temporary directories eventually.
-    }
-  });
-
-  // Create the app's indexes, as at app startup.
-  await configure?.call(ditto);
-  return ditto;
-}
-
-void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-
-  // Every test starts with an empty store.
-  late Ditto ditto;
-  setUp(() async {
-    // Pass `systemParameters:` and `configure:` with the settings and
-    // indexes your app uses; see "Applying System Parameters".
-    ditto = await openTestDitto();
-  });
-
-  test('a new store is empty', () async {
-    final result = await ditto.store.execute('SELECT COUNT(*) AS n FROM orders');
-    expect(result.items.first.value['n'], 0);
-  });
-
-  // The tests in the following sections go here.
-}
+```sql
+-- A first test: a new store is empty
+SELECT COUNT(*) AS n FROM orders
+-- Expected: one row, {"n": 0}
 ```
 
-## Running the tests
+A real Ditto instance needs the SDK's native library, so tests that open Ditto run where the SDK runs: a desktop or device target in Flutter, a simulator or macOS in Swift, an emulator or device in Kotlin, and Node.js or a browser in JavaScript. Tests that use only a mock of your own interface run without it.
 
-A real `Ditto` instance needs the SDK's native library, which is packaged with your app build for each platform. Run tests that open Ditto with the `integration_test` package on a supported desktop or device target, for example `flutter test integration_test/orders_test.dart -d macos`. Tests that use only a mock of your own interface run with a plain `flutter test`. On Flutter Web the store is in memory and does not support indexes (`§ Requirements`), so skip index assertions there.
-
-## How the other examples fit in
-
-The examples in [local-store-tests.md](local-store-tests.md) are written as `test(...)` calls (and, in one case, a helper function) that go inside `main()` of such a file, with `ditto` provided by `setUp`. Their `import` lines belong at the top of the file. The examples define the statements and functions under test inline so that each one is complete; in your suite, call your app's repository functions instead, so that a test fails when the app code changes.
+The examples in the following sections show each test as the statements it runs and the result it expects. They define the statements under test inline so that each one is complete; in your suite, call your app's repository functions instead, so that a test fails when the app code changes. The helper and the tests for each SDK: [A local-store test helper in Flutter](../../guide/reference/best-practices/platforms/flutter.md#a-local-store-test-helper-in-flutter) · [JavaScript](../../guide/reference/best-practices/platforms/javascript.md#a-local-store-test-helper-in-javascript) · [Kotlin](../../guide/reference/best-practices/platforms/kotlin.md#a-local-store-test-helper-in-kotlin) · [Swift](../../guide/reference/best-practices/platforms/swift.md#a-local-store-test-helper-in-swift).

@@ -35,10 +35,10 @@ There is no statement to create or drop a collection: a collection exists as soo
 
 ## Parameters
 
-- Placeholders are `:name`; values go in `arguments`. Names are case-sensitive, and a placeholder without an argument fails with `Parameter <name> was not provided`. Argument names have no colon (`{':id': ...}` leaves `:id` without a value); unused arguments are ignored; `$id` is a syntax error.
+- Placeholders are `:name`; values go in the arguments map. Names are case-sensitive, and a placeholder without an argument fails with `Parameter <name> was not provided`. Argument names have no colon (`{':id': ...}` leaves `:id` without a value); unused arguments are ignored; `$id` is a syntax error.
 - `LIMIT` and `OFFSET` accept parameters.
 - Pass whole documents as one parameter: `DOCUMENTS (:order)`, or several: `DOCUMENTS (:first), (:second)`, or an array parameter for many documents.
-- Parameters keep their exact value and type (an `int` stays an integer). Inline strings interpret backslash escapes, and inside a Dart string they are interpreted twice (Dart, then DQL).
+- Parameters keep their exact value and type (an `int` stays an integer). Inline strings interpret backslash escapes, and inside a string literal of Dart, JavaScript, Kotlin, or Swift they are interpreted twice (the language, then DQL).
 
 ## Literals and Identifiers
 
@@ -281,7 +281,7 @@ With `UNSET` and `SET`, the field is still a map, so a nested edit that another 
 
 ## RETURNING (SDK 5.1+)
 
-Use `RETURNING` instead of "write, then query again", and to capture deleted content (`DELETE ... RETURNING *`). Example: `UPDATE orders SET status = :status WHERE _id IN :ids AND status = :expected RETURNING _id, status`; more in [dql-writes.dart](../examples/dql-writes.dart).
+Use `RETURNING` instead of "write, then query again", and to capture deleted content (`DELETE ... RETURNING *`). Example: `UPDATE orders SET status = :status WHERE _id IN :ids AND status = :expected RETURNING _id, status`; more in [dql-writes.sql](../examples/dql-writes.sql).
 
 | Statement | Rows in `items` |
 |---|---|

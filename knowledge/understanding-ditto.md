@@ -49,21 +49,16 @@ The [Glossary](glossary.md) defines these and the other terms that the guide use
 
 A device receives a document only if one of its subscriptions matches it. Register subscriptions for the data the device needs, keep them stable, and filter further with local queries.
 
-```dart
-// Tells connected peers to send matching documents to this device.
-// Register it once (for example at startup), not before every query, and
-// keep the returned object so you can cancel the subscription later.
-final subscription = ditto.sync.registerSubscription(
-  'SELECT * FROM orders WHERE storeId = :storeId',
-  arguments: {'storeId': 'store-1'},
-);
+```sql
+-- The subscription tells connected peers to send matching documents to this
+-- device. Register it once (for example at startup), not before every query,
+-- and keep the returned object so you can cancel the subscription later.
+-- Arguments: {"storeId": "store-1"}
+SELECT * FROM orders WHERE storeId = :storeId
 
-// Reads only what has already arrived in the local store.
-final result = await ditto.store.execute(
-  'SELECT * FROM orders WHERE storeId = :storeId AND status = :status',
-  arguments: {'storeId': 'store-1', 'status': 'open'},
-);
-debugPrint('Open orders on this device: ${result.items.length}');
+-- The query reads only what has already arrived in the local store.
+-- Arguments: {"storeId": "store-1", "status": "open"}
+SELECT * FROM orders WHERE storeId = :storeId AND status = :status
 ```
 
 See [Sync and Subscriptions](../best-practices/sync-and-subscriptions.md) for subscription design.

@@ -191,7 +191,7 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 
 - This suggests that a production app that keeps `Debug` logging pays mainly in storage for the log output and in the amount of log data it sends, rather than in speed.
 
-**Used in:** [On-disk logs and exporting them](../../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them), [Platform Differences](../platform-differences.md), [Configuring logging in Flutter](../../best-practices/logging-and-observability.md#configuring-logging-in-flutter).
+**Used in:** [On-disk logs and exporting them](../../best-practices/logging-and-observability.md#on-disk-logs-and-exporting-them), [Configuring logging](../../best-practices/logging-and-observability.md#configuring-logging), [Behavior Specific to the JavaScript SDK](../../best-practices/platforms/javascript.md#behavior-specific-to-the-javascript-sdk).
 
 ### Subscription queries and arguments appear in other devices' logs
 

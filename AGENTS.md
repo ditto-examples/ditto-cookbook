@@ -6,16 +6,16 @@ Instructions for coding agents that work in this repository. [CONTRIBUTING.md](C
 
 | Path | Contents |
 |------|----------|
-| `best-practices/` | The Ditto SDK best practices guide: what to do and what to avoid, one page per topic. `README.md` holds the guide's version, conventions, and essentials |
+| `best-practices/` | The Ditto SDK best practices guide: what to do and what to avoid, one page per topic that applies to every SDK, and one page per SDK (Flutter, JavaScript, Kotlin, Swift) in `best-practices/platforms/` with its code. `README.md` holds the guide's version, conventions, and essentials |
 | `knowledge/` | The guide's knowledge pages: how Ditto works and the reference material that the best practices build on; `knowledge/observations/` holds what we observed in testing, with the releases, setup, and numbers |
 | `checklist/` | Customer-facing checklist (sources, build script, generated HTML) derived from the guide |
 | `examples/simple-pos/` | Flutter POS example that applies the guide |
 | `plugins/ditto/` | The `ditto` Claude Code plugin: Skills derived from the guide, and evals |
 | `.claude-plugin/marketplace.json` | Marketplace that publishes the plugin |
-| `scripts/check.py` | Checks the guide, the Skills, the checklist, and Markdown links (tests in `scripts/test_check.py`) |
+| `scripts/check.py` | Checks the guide, the Skills, the checklist, and Markdown links (tests in `scripts/test_check.py`; the tests of the `audit` Skill's scanner are in `scripts/test_scan.py`) |
 | `.claude/skills/` | Symbolic links to the plugin Skills |
 
-`best-practices/` and `knowledge/` together are the **source of truth** for everything Ditto-specific. The repository covers Ditto only: do not add general Flutter, Dart, or Claude Code material.
+`best-practices/` and `knowledge/` together are the **source of truth** for everything Ditto-specific. The repository covers Ditto only: do not add general material about Flutter, JavaScript, Kotlin, Swift, or Claude Code.
 
 Edit the Ditto Skills in `plugins/ditto/skills/`, never through the links in `.claude/skills/`.
 
@@ -37,7 +37,7 @@ python3 scripts/check.py
 claude plugin validate . --strict
 ```
 
-After changing `scripts/check.py`, also run `python3 -m unittest discover -s scripts`.
+After changing `scripts/check.py` or `plugins/ditto/skills/audit/scripts/scan.py`, also run `python3 -m unittest discover -s scripts`.
 
 ## Language Policy
 
@@ -53,8 +53,9 @@ This project is managed by a corporate entity. All language must be professional
 
 ## Best Practices and Technology Updates
 
-- Check the latest official documentation for Ditto, Flutter, and Claude Code before writing guidance or code; the guide and the Skills target Ditto SDK 5.2.0.
-- Consult the guide (`best-practices/` and `knowledge/`) for Ditto code. For Flutter itself, follow the official Flutter and Dart documentation.
+- Check the latest official documentation for Ditto, the SDK's platform (Flutter, JavaScript, Kotlin, or Swift), and Claude Code before writing guidance or code; the guide and the Skills target Ditto SDK 5.2.0.
+- Consult the guide (`best-practices/` and `knowledge/`) for Ditto code. For the platform itself, follow its official documentation, such as Flutter and Dart, Node.js and the Web platform, Kotlin and Android, or Swift and Apple's frameworks.
+- Keep the topic pages free of SDK code: state the rule for every SDK, show DQL with its arguments, and put each SDK's code on its page in `best-practices/platforms/`, in the section of the same name on all four pages. Behavior of one SDK's API goes on that SDK's observation page (`knowledge/observations/<sdk>-sdk.md`).
 - Mark behavior with the SDK releases on which it was observed, for example **Note (SDK 5.1.0 and 5.2.0)**, and collect issues that a later release fixed in "Known Issues in SDK 5.1.0" (`knowledge/upgrading.md`).
 
 ## Security Guidelines
@@ -68,6 +69,6 @@ This repository is a reference that readers copy from, so code quality and reada
 
 - **Prioritize readability**: clear names and structure that explain the code; comments explain the "why", not the "what".
 - **Keep it simple**: no abstraction for hypothetical needs, no premature optimization.
-- **Follow platform conventions**: idiomatic Dart, Flutter, and Ditto SDK patterns.
+- **Follow platform conventions**: idiomatic code in each SDK's language and UI framework, and Ditto SDK patterns.
 - **Make examples complete**: functional code, not conceptual fragments.
 - **Follow existing style**: match the conventions already present in the file you edit.

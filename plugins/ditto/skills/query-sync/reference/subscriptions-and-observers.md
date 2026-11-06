@@ -11,7 +11,6 @@ Detailed rules behind the subscription and observer patterns in [SKILL.md](../SK
 - [Observer APIs](#observer-apis)
 - [Observer Lifecycle](#observer-lifecycle)
 - [Backpressure Behavior](#backpressure-behavior)
-- [Other Platforms](#other-platforms)
 - [Differ](#differ)
 
 ---
@@ -62,41 +61,31 @@ Consequences:
 ## Subscription Lifecycle
 
 - Avoid changing subscriptions more often than about every 15 minutes: each change makes peers re-evaluate which documents they must send to the device. The guideline is about that re-evaluation work, not data transfer: documents already held are not downloaded again, and an identical second registration transferred nothing in our testing, but data keeps syncing until **every** copy of it is cancelled. In testing with a Small Peer hub (Ditto Server was not tested), each registration made the hub read the whole collection again, in proportion to its size; indexes and `_id` filters did not shorten it, and each further subscription of the same device cost a little more (with 50,000 documents: about 0.1 s of hub CPU for the first, 0.2 s for the tenth). Register the long-lived set together, before `sync.start()` where possible (about a sixth of the cost); reconnecting cost almost nothing, and since SDK 5.1, so did cancelling.
-- Register when data becomes relevant (app start, login, entering a workspace) in an app- or feature-level service; keep every `SyncSubscription` reference.
+- Register when data becomes relevant (app start, login, entering a workspace) in an app- or feature-level service; keep every subscription object.
 - Re-register only when the set of data the device needs changes (switching store or tenant). Search, tabs, filters, and sort orders change observers.
-- Subscriptions stay active until `cancel()` or `ditto.close()`. Always release them explicitly; do not rely on garbage collection to cancel them.
-- Subscriptions are not persisted: register them again after every `Ditto.open()`. Until then, the device sends its own changes but receives neither updates nor new documents from other peers, without an error (in testing with SDK 5.1.0 and 5.2.0; `§ Subscription Lifecycle`).
+- Subscriptions stay active until released (`cancel()`, `close()` in Kotlin) or until Ditto is closed. Always release them explicitly; do not rely on garbage collection to cancel them.
+- Subscriptions are not persisted: register them again every time Ditto opens. Until then, the device sends its own changes but receives neither updates nor new documents from other peers, without an error (in testing with SDK 5.1.0 and 5.2.0; `§ Subscription Lifecycle`).
 - In JavaScript, subscriptions and observers whose objects were garbage-collected kept syncing and calling back (in testing); cancel them through the entries of `ditto.sync.subscriptions` and `ditto.store.observers`, and keep your own references.
 - While a device receives a large initial sync, its other sync waits: changes for existing subscriptions and its own writes to others (30,000 documents held them about 2 s in testing with SDK 5.1.0 and 5.2.0; other devices were unaffected). Splitting the subscription only helps when the parts are registered one after another; the whole download then takes about 2.5 times as long.
 - The receiver shows an initial sync all at once, not document by document (in testing with SDK 5.1.0 and 5.2.0, 20,000 documents appeared together after about 2.4 s; local reads still returned within 2 ms). An initial sync interrupted with `sync.stop()` resumes where it stopped. Show that data is downloading, not a document count.
 - The number of subscriptions did not change what was transferred: 300 subscriptions by `_id`, one by `_id IN :ids`, and one for the whole collection of the same documents cost the same time and bytes (in testing with SDK 5.1.0 and 5.2.0). Keep subscriptions few to keep them manageable, not to save bandwidth.
 - Cancelling does not delete local data; documents stop receiving updates, new documents, and deletions from other peers. A device receives the union of its subscriptions, so documents that another active subscription matches keep syncing. To free storage, cancel every subscription that matches the documents (including overlapping ones), then `EVICT`; a document that another active subscription still matches is synced back. Data that was already being transferred can still arrive after cancelling; if the device must not keep it, run the eviction again later (for example, on the next app start or in a periodic cleanup).
-- `ditto.sync.stop()` pauses all subscriptions; `start()` resumes them. `await ditto.close()` marks them cancelled; `cancel()` afterwards is a no-op.
-- `ditto.sync.subscriptions` is for debugging: read `queryString` and `isCancelled` only.
+- `sync.stop()` pauses all subscriptions; `start()` resumes them. Closing Ditto cancels them; releasing them afterwards is a no-op.
+- `sync.subscriptions` is for debugging: read the query string and whether a subscription is cancelled only; what the SDKs return for its arguments differs.
 
-> **Note (SDK 5.1.0):** Do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate a Flutter app (in testing, the JavaScript SDK 5.1.0 and 5.2.0 returned `null` instead). Keep your own references when you need the arguments.
+> **Note (SDK 5.1.0):** In Flutter, do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate the app (in testing, the JavaScript SDK 5.1.0 and 5.2.0 returned `null` instead). Keep your own references when you need the arguments.
 
-```dart
-// ✅ GOOD: Switching stores: cancel, evict the old store's data, subscribe again.
-Future<List<SyncSubscription>> switchStore(
-  Ditto ditto,
-  List<SyncSubscription> current,
-  String newStoreId,
-) async {
-  for (final subscription in current) {
-    subscription.cancel();
-  }
-  await ditto.store.execute(
-    'EVICT FROM orders WHERE storeId != :storeId',
-    arguments: {'storeId': newStoreId},
-  );
-  return [
-    ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE storeId = :storeId',
-      arguments: {'storeId': newStoreId},
-    ),
-  ];
-}
+Switching stores: cancel the old store's subscriptions, evict its documents, then subscribe to the new store (`§ Cancelling subscriptions and local data`; services in `retention-service` and `subscription-lifecycle-good` in the Skills' `examples/<sdk>/`):
+
+<!-- subscription -->
+```sql
+-- After cancelling the old subscriptions:
+-- Arguments: {"storeId": "store-2"}
+EVICT FROM orders WHERE storeId != :storeId
+
+-- Then the new subscription:
+-- Arguments: {"storeId": "store-2"}
+SELECT * FROM orders WHERE storeId = :storeId
 ```
 
 ## When Data Does Not Sync
@@ -111,7 +100,7 @@ Documents that exist on one device but do not appear on another, stop updating, 
 | Query or observer empty, another device holds the data | No subscription on this device matches | `§ Where Queries Run` |
 | Documents with the field missing or `null` never arrive | Subscription filters with `!=` or `NOT IN` | `§ Subscription Rules` | <!-- lint-ignore -->
 | Data arrives, the screen shows none of it | The local query filters it out (`ANY ... SATISFIES` over a parameter) | `§ When a Statement Fails or Returns Nothing` | <!-- lint-ignore -->
-| Old data and no new documents after a restart | Subscriptions not registered again after `Ditto.open()` | `§ Subscription Lifecycle` |
+| Old data and no new documents after a restart | Subscriptions not registered again after opening Ditto | `§ Subscription Lifecycle` |
 | A document stops updating; its deletion never arrives | It left the subscription (frozen copy), or the subscription was cancelled | `§ Multi-hop relay`, `§ Cancelling subscriptions and local data` |
 | Documents entering a time window do not arrive | `clock()` in the subscription | `§ Date and Time` |
 | Devices behind another device miss data | The relay subscribes to less, or may not write the documents | `§ Multi-hop relay`, `§ Write authority and peer-to-peer relaying` |
@@ -125,24 +114,33 @@ Documents that exist on one device but do not appear on another, stop updating, 
 
 ## Observer APIs
 
-| API | Status | Returns | Backpressure | Use for |
+Every SDK accepts only `SELECT` for observers and takes parameters as arguments. Observers never cause data to sync.
+
+| SDK | Default observer | Backpressure for slow work (SDK 5.1+) | Release |
+|---|---|---|---|
+| Flutter | `registerObserver(query, arguments:)` + `changes`; no backpressure | `registerObserverV2` (automatic, follows pause/resume of `changes`: consume it with `await for`, since `listen(async ...)` does not pause it) or `registerObserverWithSignalNext` (manual), both (Experimental) | `cancel()` |
+| JavaScript | `registerObserver(query, handler, args)` signals when a synchronous handler returns; `async` handlers are not awaited | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` | `cancel()` |
+| Kotlin | `registerObserver(query, args) { result -> }` with a suspending handler, or `observe(...)` returning a `Flow` | The handler or the collector suspends; `collect(query, args) { }`; `.conflate()` for slow collectors; no `signalNext` | `close()` |
+| Swift | `registerObserver(query:arguments:deliverOn:handler:)` signals when the handler returns; main queue by default | `handlerWithSignalNext:`; `deliverOn:` to move heavy work off the main queue | `cancel()` |
+
+| Situation | Flutter | JavaScript | Kotlin | Swift |
 |---|---|---|---|---|
-| `registerObserver` | Stable | `StoreObserver` | None | UI updates and fast synchronous work (default) |
-| `registerObserverV2` | (Experimental) (SDK 5.1+) | `StoreObserverV2` | Automatic: follows pause/resume of `changes` | Slow or async work with `await for` |
-| `registerObserverWithSignalNext` | (Experimental) (SDK 5.1+) | `StoreObserverV2` | Manual: `signalNext()` | Work that completes elsewhere |
+| Updating UI state | `registerObserver` + `changes` | `registerObserver`, synchronous handler | `observe(...)` in the owner's scope | `registerObserver(... handler:)` |
+| Slow or `async` work per update | `registerObserverV2` + `await for` | `registerObserverWithSignalNext` | Suspending handler, or `collect` | `handlerWithSignalNext:` |
+| Work that completes elsewhere (animation, external callback) | `registerObserverWithSignalNext` | `registerObserverWithSignalNext` | Suspend until done | `handlerWithSignalNext:` |
+| Only the latest state matters | `registerObserverV2` with a slow consumer, or throttle | Throttle | `observe(...).conflate()` | Throttle |
 
-All three accept only `SELECT` and take parameters through `arguments:`. Observers never cause data to sync.
-
-| Situation | Recommended API |
-|---|---|
-| Updating widgets from a query result | `registerObserver` + `changes` |
-| Slow or `async` work per update, expressible as a loop | `registerObserverV2` + `await for` |
-| Work for an update finishes in another place (animation, external callback) | `registerObserverWithSignalNext` |
-| Very frequent updates where only the latest state matters | `registerObserverV2` with a slow consumer, or a throttled `registerObserver` listener |
-
-The experimental APIs may change in a future release; the stable `registerObserver` remains the default for UI code.
+The experimental APIs may change in a future release. Each SDK page has the code: *Store Observers*, *Observer lifecycle*, and *Backpressure in <SDK>* (`§ Choosing an observer API`). Do not port one SDK's observer code to another one-to-one.
 
 ## Observer Lifecycle
+
+Rules for every SDK (`§ Observer Lifecycle`):
+- Give each observer one owner (screen, view model, service); register it when the owner starts, never in render code; release it when the owner goes away. Do not rely on garbage collection or `close()`: in JavaScript (in testing), garbage-collected observers kept running.
+- Copy plain values out of results; do not keep result or row objects.
+- Observe a list once and pass values down; on devices that still run SDK 5.1.0, stay well below about 60 observers in total.
+- Each SDK can list the uncancelled observers (`ditto.store.observers`); a count that keeps growing while the user moves between screens points to an observer that is never released.
+
+### Flutter observer lifecycle
 
 | Behavior (`registerObserver`) | Consequence |
 |---|---|
@@ -153,61 +151,49 @@ The experimental APIs may change in a future release; the stable `registerObserv
 | `observer.cancel()` closes `changes` | A pending `await for` ends |
 | Cancelling the `StreamSubscription` of a `StoreObserverV2` (`registerObserverV2` or `registerObserverWithSignalNext`) also cancels the observer | Leaving an `await for` loop over `changes` does the same |
 | `await ditto.close()` marks observers cancelled but does not close the `changes` stream of a `StoreObserver` or `StoreObserverV2` | Cancel observers explicitly before closing |
-| With `onChange`, events emitted before the first listener attaches are buffered | Listen right after registering |
-| `ditto.store.observers` (SDK 5.2+) lists the uncancelled observers from `registerObserver` (not `registerObserverV2` or `registerObserverWithSignalNext`) | A count that keeps growing while the user moves between screens points to an observer that is never cancelled |
+| `ditto.store.observers` (SDK 5.2+) lists the uncancelled observers from `registerObserver` (not `registerObserverV2` or `registerObserverWithSignalNext`) | |
 
-> **Note (SDK 5.1.0):** With `onChange` and an unconsumed `changes` stream, every delivered result stays in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` right after registering it. Register without `onChange` and consume `changes`; if `onChange` is required, also drain the stream. The `ditto_live` 5.2.0 source registers observers the same way, so expect the same behavior there.
+> **Note (SDK 5.1.0 and 5.2.0):** With `onChange` and an unconsumed `changes` stream, every delivered result stays in memory for the observer's lifetime, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` right after registering it. Register without `onChange` and consume `changes`; if `onChange` is required, also drain the stream.
 
-Callback rules:
-- `registerObserver` has no backpressure: it never waits for your code, and pausing its stream only queues results.
-- Keep listeners synchronous: copy values, map to models, call `setState`. Move heavy computation off the UI isolate (for example `compute()` on copied values).
-- Do not `await` network, file, or database work in a `registerObserver` listener; do not write to the observed collection without a guard.
+The lifecycle in JavaScript, Kotlin, and Swift (what the release call does, what happens to a handle that is no longer referenced, what `close()` does): *Observer lifecycle in <SDK>* on each SDK page.
+
+Callback rules for every SDK:
+- Default observers without backpressure (Flutter `registerObserver`, JavaScript `registerObserver` with an `async` handler) never wait for your work: keep callbacks synchronous and short (copy values, map to models, update UI state); move heavy computation off the UI thread.
+- Do not wait for network, file, or database work in a default observer callback; do not write to the observed collection without a guard.
 - An observer does not re-run its query after writes to collections it does not observe: in testing with SDK 5.1.0 and 5.2.0, 50 writes to another collection ran no observer query (SDK 5.0.3 re-ran it after about every third write), although the 5.2.0 release notes list this as a fix. According to the same release notes, observers also hold less memory between updates in 5.2. Splitting observers by collection therefore costs little (`§ On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection`).
 - Changes that arrive through sync are delivered in batches: expect fewer callbacks than remote writes (a remote transaction arrives as one callback), and do not count or log changes through callbacks. Local writes are batched too: 50 awaited writes reached an observer on the same device in 4 or 5 callbacks (in testing with SDK 5.1.0 and 5.2.0), and a local transaction produced one callback after its commit.
-- How often observers on `system:data_sync_info` fire varies: Ditto's sync status page describes a callback every 500 ms, while its virtual collections reference does not list the collection as timer-driven, and in testing with SDK 5.1.0 and 5.2.0 an observer with one idle peer was called 3 or 4 times in 40 seconds. Write code that works with either behavior: use one small observer and rebuild only when the derived value changes. See `§ Monitoring Sync Status`.
-- With state management libraries, let one provider or controller own each observer and cancel it in the provider's dispose hook. `item.value` creates a new `Map` per result, so map rows to immutable models with `==` if you rely on equality to skip rebuilds.
+- How often observers on `system:data_sync_info` fire varies: Ditto's sync status page describes a callback every 500 ms, while its virtual collections reference does not list the collection as timer-driven, and in testing with SDK 5.1.0 and 5.2.0 an observer with one idle peer was called 3 or 4 times in 40 seconds. Write code that works with either behavior: use one small observer and update the UI only when the derived value changes. See `§ Monitoring Sync Status`.
+- With a state management library, let one store, provider, or view model own each observer and release it in its dispose hook. Each result creates new value objects, so map rows to immutable models that compare by content if you rely on equality to skip updates.
 
 ## Backpressure Behavior
 
-`registerObserverV2` (Experimental):
+Flutter `registerObserverV2` (Experimental):
 - Readiness is signalled automatically after each result is added to `changes`; `await for` pauses the subscription while the loop body runs.
 - While paused, delivery stops after the update that arrived at the pause; on resume, that update and the latest state are delivered and intermediate states are merged.
 - Leaving the loop cancels the stream subscription, which also cancels the observer. `observer.cancel()` ends the loop; `ditto.close()` does not, so cancel the observer before closing.
 - `signalNext()` has no effect.
 
-`registerObserverWithSignalNext` (Experimental):
-- Delivers one result, then waits for `signalNext()` (callback parameter or `observer.signalNext()`). Without it, updates stop.
-- Call `signalNext()` in `finally` so errors do not stop updates.
-- Do not pause/resume its `changes` stream; the SDK logs a warning.
-- Its `onChange` receives `signalNext` as the second parameter, but results are also queued in `changes`; consume `changes` and call `observer.signalNext()` instead.
+`registerObserverWithSignalNext` (Flutter and JavaScript; Swift `handlerWithSignalNext:`):
+- Delivers one result, then waits for `signalNext()`. Without it, updates stop.
+- Call `signalNext()` in `finally` (or `defer`) so errors do not stop updates.
+- Flutter: do not pause/resume its `changes` stream (the SDK logs a warning); its `onChange` receives `signalNext` as the second parameter, but results are also queued in `changes`, so consume `changes` and call `observer.signalNext()` instead.
 
-## Other Platforms
-
-| Platform | Default observer | Backpressure |
-|---|---|---|
-| Flutter | `registerObserver(query, arguments:)` + `changes` | `registerObserverV2` or `registerObserverWithSignalNext` (Experimental) |
-| JavaScript | `registerObserver(query, handler, args)` signals when the handler returns; async handlers are not awaited | `registerObserverWithSignalNext(query, (result, signalNext) => {...}, args)` |
-| Swift | `registerObserver(query:arguments:deliverOn:handler:)` signals when the handler returns; main queue by default | `handlerWithSignalNext:`; `deliverOn:` to move heavy work off the main queue |
-| Kotlin | `registerObserver(query, args) { result -> }` with a suspending handler, or `observe(...)` returning a `Flow` (`.conflate()` for slow collectors) | No `signalNext`; `collect(query, args) { result -> }` requests the next event after the handler returns; release with `close()` |
-
-JavaScript passes arguments as the second positional parameter (`execute(query, { status: 'open' })`) and reads changed IDs with `mutatedDocumentIDsV2()`. See `§ Backpressure on other platforms`.
-
-Do not port Flutter observer code one-to-one.
+Kotlin has no `signalNext`: the observer waits for the suspending handler, and `observe(...)` for the `Flow` collector.
 
 ## Differ
 
-| `Diff` field | Contents |
+| Field | Contents |
 |---|---|
-| `insertions` | Indexes in the new list of added items |
-| `deletions` | Indexes in the old list of removed items |
-| `updates` | Indexes in the new list of changed items |
-| `moves` | `DiffMove(from: oldIndex, to: newIndex)` |
+| Insertions | Indexes in the new list of added items |
+| Deletions | Indexes in the old list of removed items |
+| Updates | Indexes in the new list of changed items |
+| Moves | Pairs of an old and a new index |
 
-An observer delivers the full result every time. A plain `ListView.builder` with `ValueKey(_id)` does not need `Differ`; use it for `AnimatedList` or for processing only new items.
+`Differ` in Flutter and JavaScript, `DittoDiffer` in Kotlin and Swift (Kotlin can also pass a `DittoDiff` to the observer handler). An observer delivers the full result every time. A list keyed by `_id` does not need a differ; use it for an animated list or for processing only new items.
 
-- `diff()` takes a `List<QueryResultItem>` (`result.items.toList()`); the first call reports every item as inserted.
+- The first diff reports every item as inserted.
 - Identity is `_id`, so project `_id` in a diffed query: on SDK 5.2.0 (JavaScript, in testing), rows of a query without `_id` had none, and `Differ` reported a reordering as updates. Values are compared deeply, and only two successive results are compared: a value that changed and changed back is not an update, and moving one item to the top of a list reports a move for every item whose position shifted (JavaScript `Differ`, in testing).
-- `Differ` keeps the previous result and is expensive: bound the query (`LIMIT`) and debounce large or busy results.
-- `Differ` does not return old items; keep previous values or IDs yourself.
-- Only items produced by Ditto are accepted (test doubles throw `ArgumentError`).
-- For `AnimatedList`, apply removals in descending old-index order and insertions in ascending new-index order; treat moves as removal plus insertion. See [observer-differ.dart](../examples/observer-differ.dart).
+- The differ keeps the previous result and is expensive: bound the query (`LIMIT`) and debounce large or busy results.
+- It does not return old items; keep previous values or IDs yourself.
+- Only items produced by Ditto are accepted (in Flutter, test doubles throw `ArgumentError`; Flutter's `diff()` takes `result.items.toList()`).
+- For an animated list, apply removals in descending old-index order and insertions in ascending new-index order; treat moves as removal plus insertion. See `observer-differ` in `../examples/<sdk>/`.

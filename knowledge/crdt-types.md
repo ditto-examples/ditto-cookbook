@@ -125,36 +125,24 @@ In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [The si
 - Assume `SET obj = {...}` or `ON ID CONFLICT DO UPDATE` removes keys that you left out.
 - Clear a map with `SET obj = {}` or by assigning a scalar.
 
-```dart
-// ✅ GOOD: Update one field of a nested object. Concurrent edits to other
-// fields of shippingAddress merge cleanly.
-await ditto.store.execute(
-  'UPDATE orders SET shippingAddress.city = :city WHERE _id = :id',
-  arguments: {'city': 'Lisbon', 'id': 'order-1'},
-);
+```sql
+-- ✅ GOOD: Update one field of a nested object. Concurrent edits to other
+-- fields of shippingAddress merge cleanly.
+-- Arguments: {"city": "Lisbon", "id": "order-1"}
+UPDATE orders SET shippingAddress.city = :city WHERE _id = :id
 
-// ✅ GOOD: Remove one key from a map.
-await ditto.store.execute(
-  'UPDATE orders UNSET shippingAddress.line2 WHERE _id = :id',
-  arguments: {'id': 'order-1'},
-);
+-- ✅ GOOD: Remove one key from a map.
+-- Arguments: {"id": "order-1"}
+UPDATE orders UNSET shippingAddress.line2 WHERE _id = :id
 ```
 
 To replace a whole MAP value, clear it and then write the new object in one transaction, so that no reader sees the intermediate state (see `replaceAddress()` in [Assigning an object merges it](../best-practices/dql.md#assigning-an-object-merges-it)).
 
-```dart
-// ❌ BAD: Expecting this to replace the address. Under the default settings the
-// object is merged into the existing map: keys missing from newAddress remain.
-Future<void> replaceShippingAddressIncorrectly(
-  Ditto ditto,
-  String orderId,
-  Map<String, dynamic> newAddress,
-) async {
-  await ditto.store.execute(
-    'UPDATE orders SET shippingAddress = :address WHERE _id = :id',
-    arguments: {'id': orderId, 'address': newAddress},
-  );
-}
+```sql
+-- ❌ BAD: Expecting this to replace the address. Under the default settings the
+-- object is merged into the existing map: keys missing from the new address remain.
+-- Arguments: {"id": "order-1", "address": {"line1": "Rua Augusta 10", "city": "Lisbon"}}
+UPDATE orders SET shippingAddress = :address WHERE _id = :id
 ```
 
 **Why:** The add-wins MAP is what lets offline edits from many devices merge without data loss. The price is that removal must be explicit: Ditto needs to distinguish "this key was not part of my write" from "this key was intentionally removed".

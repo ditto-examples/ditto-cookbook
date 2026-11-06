@@ -7,6 +7,9 @@ Behavior tests for the `ditto` plugin, run with [`claude plugin eval`](https://c
 | `soft-delete-filter` | storage-lifecycle / query-sync | `coalesce(isDeleted, false) = false` instead of `!= true` |
 | `array-line-items` | data-modeling | Map keyed by ID instead of an array edited on several devices |
 | `flutter-observer-widget` | query-sync | `changes` stream, no `onChange`, observer cancelled, parameters |
+| `javascript-observer-hook` | query-sync | React hook: synchronous handler, observer cancelled, parameters |
+| `kotlin-observer-viewmodel` | query-sync | ViewModel: `StateFlow`, observer released with the ViewModel, parameters |
+| `swift-observer-model` | query-sync | SwiftUI model: observer kept and cancelled, arguments, parameters |
 | `subscription-per-filter` | query-sync | Stable subscription; filter locally |
 | `transaction-review` | transactions-attachments | `store.execute` and network I/O inside a transaction |
 | `server-startup` | sdk-setup | Expiration handler before `sync.start()`, no throwing, no `await` on `start()` |

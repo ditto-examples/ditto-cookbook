@@ -1,6 +1,6 @@
 # DQL Behavior
 
-How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.1.0 and 5.2.0, what statements without `WHERE`, mismatched arguments, user input embedded in a statement, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, which plans the planner chose, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, where SDK 5.0.3 differs, and what happens to JavaScript values that are not plain JSON. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [UPDATE](../../best-practices/dql.md#update), [Document IDs](../../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
+How DQL statements behaved when we ran them: which tables and statements of the guide held on SDK 5.1.0 and 5.2.0, what statements without `WHERE`, mismatched arguments, user input embedded in a statement, and `USE IDS` do, how values of different types compare and sort, how integers, floats, and strings behave, how document IDs and field names are compared, which plans the planner chose, how indexes and query plans changed results on SDK 5.1.0 and across upgrades, how long conditions and `ANY` behave, and where SDK 5.0.3 differs. How each SDK stores the values of its language is on the page of that SDK: [Flutter](flutter-sdk.md), [JavaScript](javascript-sdk.md), [Kotlin](kotlin-sdk.md), or [Swift](swift-sdk.md). How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Parameters and Literals](../../best-practices/dql.md#parameters-and-literals), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [ORDER BY](../../best-practices/dql.md#order-by), [Filtering by Membership](../../best-practices/dql.md#filtering-by-membership), [UPDATE](../../best-practices/dql.md#update), [Document IDs](../../best-practices/data-modeling.md#document-ids), [Keep type declarations consistent](../../best-practices/data-modeling.md#keep-type-declarations-consistent), [Index Usage Rules](../../best-practices/indexing-and-performance.md#index-usage-rules), [Composite indexes and key order (SDK 5.1+)](../../best-practices/indexing-and-performance.md#composite-indexes-and-key-order-sdk-51), and [Known Issues in SDK 5.1.0](../upgrading.md#known-issues-in-sdk-510).
 
 **In brief**
 
@@ -19,7 +19,8 @@ How DQL statements behaved when we ran them: which tables and statements of the 
 - On SDK 5.1.0, index plans returned wrong results without an error: a composite index with a descending key and an `ORDER BY` on projected fields returned rows in the wrong order, and a comparison with the constant on the left (`1 < a`) returned the wrong rows, as on 5.0.3. An index created on an empty collection broke in the migration by 5.1.0, and 5.2.0 does not repair it ([On SDK 5.1.0, composite indexes with a descending key return rows in the wrong order](#on-sdk-510-composite-indexes-with-a-descending-key-return-rows-in-the-wrong-order), [On SDK 5.1.0, ORDER BY on a projected field was ignored in an index plan](#on-sdk-510-order-by-on-a-projected-field-was-ignored-in-an-index-plan), [Before SDK 5.2.0, a comparison with the constant on the left returned wrong rows through an index](#before-sdk-520-a-comparison-with-the-constant-on-the-left-returned-wrong-rows-through-an-index), [An index created on an empty collection breaks in the 5.1.0 migration](#an-index-created-on-an-empty-collection-breaks-in-the-510-migration)).
 - On SDK 5.1.0, long `OR` chains ended the process, and `ANY` with a condition on several properties matched every document; on 5.1.0 and 5.2.0, conditions fail at 100 levels of parentheses, and since 5.1.0, `ANY` and `EVERY` over a parameter or literal array return no rows ([Long OR chains crashed SDK 5.1.0](#long-or-chains-crashed-sdk-510), [On SDK 5.1.0, ANY with a condition on several properties matched every document](#on-sdk-510-any-with-a-condition-on-several-properties-matched-every-document), [Conditions fail at 100 levels of nested parentheses](#conditions-fail-at-100-levels-of-nested-parentheses), [ANY and EVERY over a parameter or literal array return no rows since SDK 5.1.0](#any-and-every-over-a-parameter-or-literal-array-return-no-rows-since-sdk-510)).
 - On SDK 5.0.3, some statements of the guide fail, and `SELECT _id` on an indexed collection returned too few rows ([Some features that are not marked SDK 5.1+ fail on 5.0.3](#some-features-that-are-not-marked-sdk-51-fail-on-503), [On SDK 5.0.3, SELECT _id on an indexed collection returned too few rows](#on-sdk-503-select-_id-on-an-indexed-collection-returned-too-few-rows)).
-- In JavaScript, a `Date` is stored as `{}`, `undefined` as `null`, and an unpaired surrogate merges with the next character into another one, all without an error ([JavaScript values that are not plain JSON change when stored](#javascript-values-that-are-not-plain-json-change-when-stored), [char_length counts code points, and JavaScript damages lone surrogates](#char_length-counts-code-points-and-javascript-damages-lone-surrogates)).
+- Date functions return MISSING, without an error, for JavaScript dates formatted with `toString()`, `toLocaleString()`, `toUTCString()`, or `toDateString()`, also when the string names a zone; they read the `toISOString()` form and epoch milliseconds ([Date functions read only the ISO 8601 and epoch-millisecond forms of a JavaScript date](#date-functions-read-only-the-iso-8601-and-epoch-millisecond-forms-of-a-javascript-date)).
+- `char_length` counts code points, and an unpaired surrogate in a string argument can change when it is stored: in JavaScript, it merged with the next character into another one, without an error ([char_length counts code points, and JavaScript damages lone surrogates](#char_length-counts-code-points-and-javascript-damages-lone-surrogates)). How each SDK stores the values of its language is on the SDK pages: [Flutter SDK Behavior](flutter-sdk.md), [JavaScript SDK Behavior](javascript-sdk.md), [Kotlin SDK Behavior](kotlin-sdk.md), and [Swift SDK Behavior](swift-sdk.md).
 
 ## DQL Tables and Statements That Held on SDK 5.1.0 and 5.2.0
 
@@ -99,7 +100,7 @@ On 5.0.3, the results were the same, with two differences:
 
 **Not tested:** what the page says about indexes; functions that the page does not describe, such as `object_content`; date and duration formats and time zones other than those above; arguments from Dart (the arguments came from JavaScript).
 
-**Used in:** [DQL Functions and Operators](../dql-functions.md), [Checks of the Guide Itself](how-we-tested.md#checks-of-the-guide-itself).
+**Used in:** [Checks of the Guide Itself](how-we-tested.md#checks-of-the-guide-itself), [DQL Functions and Operators](../dql-functions.md#dql-functions-and-operators).
 
 ### ADVISE returned the documented output
 
@@ -265,7 +266,7 @@ On 5.0.3, the results were the same, with two differences:
 - Arithmetic with a float gives a float: `UPDATE ... SET n = qty * 2.5`, with `qty` at 4, stored `n` as the float `10` (5.1.0 and 5.2.0; on 5.0.3, a `SET` value cannot refer to a field, see [Some features that are not marked SDK 5.1+ fail on 5.0.3](#some-features-that-are-not-marked-sdk-51-fail-on-503)). A float is rejected as a document ID even when it is `2.0`: `Floats are not supported in document IDs` (see [Document IDs compare by type and exact value](#document-ids-compare-by-type-and-exact-value)).
 - Dart has separate `int` and `double` types, and values such as `jsonDecode('10.0')` and `price * 1.0` are doubles, so a Flutter app can probably store both types in one field in the same way.
 
-**Used in:** [Type Checking](../dql-functions.md#type-checking).
+**Used in:** [Type Checking](../dql-functions.md#type-checking), [Arguments and value types in JavaScript](../../best-practices/platforms/javascript.md#arguments-and-value-types-in-javascript).
 
 ### char_length counts code points, and JavaScript damages lone surrogates
 
@@ -289,7 +290,31 @@ On 5.0.3, the results were the same, with two differences:
 
 **Not tested:** what devices on other platforms receive (probably the changed characters); the Flutter SDK (Dart strings are UTF-16 as well and can hold the same unpaired surrogates).
 
-**Used in:** [String Functions](../dql-functions.md#string-functions).
+**Used in:** [String Functions](../dql-functions.md#string-functions), [Arguments and value types in JavaScript](../../best-practices/platforms/javascript.md#arguments-and-value-types-in-javascript).
+
+### Date functions read only the ISO 8601 and epoch-millisecond forms of a JavaScript date
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, two runs each; every run gave the same result, on both releases |
+| Setup | One device without sync, the JavaScript SDK on Node.js 24 in the time zone Asia/Tokyo. One instant, `2026-11-06T13:30:00.123Z`, written in each form below as a field value through an argument; then `type()`, `date_part(at, 'year')`, and `date_cast(at)` of the field. `Date()` without `new` took the time of the run |
+
+| Form | Stored value (`type()`) | `date_part(at, 'year')` | `date_cast(at)` |
+|---|---|---|---|
+| `toISOString()` | `'2026-11-06T13:30:00.123Z'` (`string`) | `2026` | `1793971800123` |
+| `getTime()` (epoch milliseconds) | `1793971800123` (`integer`) | `2026` | `1793971800123` |
+| `toString()` | `'Fri Nov 06 2026 22:30:00 GMT+0900 (Japan Standard Time)'` (`string`) | MISSING | MISSING |
+| `toLocaleString()` (the same string as `toLocaleString('en-US')`) | `'11/6/2026, 10:30:00 PM'` (`string`) | MISSING | MISSING |
+| `toUTCString()` | `'Fri, 06 Nov 2026 13:30:00 GMT'` (`string`) | MISSING | MISSING |
+| `toDateString()` | `'Fri Nov 06 2026'` (`string`) | MISSING | MISSING |
+| `Date()` without `new` | A string in the form of `toString()` (`string`) | MISSING | MISSING |
+
+- `toString()` and `toUTCString()` name a zone (`GMT+0900`, `GMT`) and were still MISSING: the string must be ISO 8601, and a zone designator alone is not enough.
+- No write and no query raised an error. A `Date` object passed as the argument is stored as an empty object `{}` (see [JavaScript values that are not plain JSON change when stored](javascript-sdk.md#javascript-values-that-are-not-plain-json-change-when-stored)), and both functions return MISSING for it as well.
+
+**Not tested:** ISO 8601 strings with an offset such as `+09:00` and strings with a date only; `date_cast` with an explicit format; other locales and time zones; the same strings written from the other SDKs, which reach DQL as the same strings.
+
+**Used in:** [IDs and Timestamps in JavaScript](../../best-practices/platforms/javascript.md#ids-and-timestamps-in-javascript).
 
 ## Document IDs and Field Names
 
@@ -603,30 +628,3 @@ Some statements failed because they use features marked (SDK 5.1+) or (SDK 5.2+)
 **Not tested:** which index, collection size, or store history triggers it; queries with `WHERE`.
 
 **Used in:** none yet.
-
-## JavaScript Values in DQL
-
-### JavaScript values that are not plain JSON change when stored
-
-| | |
-|---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; every run gave the same result, and the results were the same on all three releases |
-| Setup | One device without sync. JavaScript values of each kind written as field values through arguments, then read back; large integers also written as DQL literals; the result of `SHOW ALL` |
-
-| JavaScript value | Stored and read back as |
-|---|---|
-| `Date` | An empty object `{}`: the time is lost, without an error |
-| A field whose value is `undefined` | `null`, so the field no longer matches `IS MISSING`; `undefined` inside arrays and objects also becomes `null` |
-| `NaN`, `Infinity` | The write fails: `Unable to encode query arguments: Non-finite float values are not supported` |
-| `-0` | `-0` |
-| `BigInt` | An integer, read back as a `BigInt` |
-| `Uint8Array` | Bytes, read back as a `Uint8Array` |
-| `Map` | An object |
-| An integer above 2^53 − 1, also when written as a DQL literal | Read back as a `BigInt` (`9007199254740993n`) |
-| The largest int64 value plus 1 | No error; read back as `9223372036854775808n` |
-
-- A row that contains a `BigInt` makes `JSON.stringify` fail with `Do not know how to serialize a BigInt`. The result of `SHOW ALL` contains two `BigInt` values.
-
-**Not tested:** integers written as int64 values by the other SDKs (they probably come back as `BigInt` in JavaScript as well).
-
-**Used in:** [Platform Differences](../platform-differences.md), [MISSING and NULL](../../best-practices/dql.md#missing-and-null), [Store UTC with a zone designator](../../best-practices/data-modeling.md#store-utc-with-a-zone-designator).
