@@ -1,6 +1,6 @@
 # Anti-Pattern Checklist
 
-Use this list in code reviews. Each item links to the section that explains the problem and the recommended pattern.
+Use this list in code reviews. Each item links to the section that explains the problem and the recommended pattern. To start from a symptom instead of the code, see [When Data Does Not Sync](sync-and-subscriptions.md#when-data-does-not-sync) and [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing).
 
 ## Critical (data loss, wrong results, crashes, security)
 
@@ -11,6 +11,8 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] `RESTART WITH` to recalibrate a counter that other devices keep changing while offline (their unsynced increments are discarded, even later ones) → [RESTART](data-modeling.md#restart)
 - [ ] Sequential or timestamp-only document IDs (offline devices create the same ID, and the documents merge) → [Never use sequential or timestamp-only IDs](data-modeling.md#never-use-sequential-or-timestamp-only-ids)
 - [ ] Soft-delete filters written as `isDeleted != true` or `NOT isDeleted` (documents without the flag disappear) → [Soft Delete](deletion-and-storage.md#soft-delete) <!-- lint-ignore -->
+- [ ] Subscriptions registered only once instead of after every `Ditto.open()` (the device keeps sending its changes but receives nothing, without an error) → [Subscription Lifecycle](sync-and-subscriptions.md#subscription-lifecycle)
+- [ ] Subscription filters with `!=` or `NOT IN` on a field that some documents lack (those documents never reach the device), or with `clock()` (documents that enter the time window later are not sent) → [Subscription Rules](sync-and-subscriptions.md#subscription-rules) <!-- lint-ignore -->
 - [ ] `IN (:values)` with an array parameter (matches nothing) → [Parameters and Literals](dql.md#parameters-and-literals)
 - [ ] `ANY` or `EVERY ... SATISFIES ... END` over a parameter or literal array in `WHERE`, such as `ANY s IN :statuses SATISFIES s = status END` (returns no rows in local queries and observers in 5.1.0 and 5.2.0, although the subscription syncs the documents; use `status IN :statuses`) → [Filtering by Membership](dql.md#filtering-by-membership) <!-- lint-ignore -->
 - [ ] Where devices still run SDK 5.1.0: `DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate (removes nothing; use `WHERE _id IN :ids`), composite indexes that mix `ASC` and `DESC` keys, including indexes created from `ADVISE` (results in the wrong order), or `ANY ... SATISFIES` conditions on several properties of an element (match every document) → [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)
@@ -31,6 +33,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] `DittoConfigConnectSmallPeersOnly()` without a `privateKey` outside development and tests (peers are not authenticated; documented as unencrypted) → [Small-Peers-Only Deployments](security.md#small-peers-only-deployments)
 - [ ] Shared keys, tokens, or API keys hardcoded in the app → [Small-Peers-Only Deployments](security.md#small-peers-only-deployments)
 - [ ] Secrets, tokens, or personal data in peer metadata or in the `identityServiceMetadata` returned by the authentication webhook (shared with every peer in the mesh) → [Presence](setup-and-lifecycle.md#presence), [Identity metadata is visible to the mesh](security.md#identity-metadata-is-visible-to-the-mesh)
+- [ ] Signing a user out of a shared device without evicting their documents (they stay visible to local queries), without cancelling their subscriptions first (the documents sync back), or before their writes are confirmed → [Switching users on a shared device](setup-and-lifecycle.md#switching-users-on-a-shared-device)
 - [ ] Revocation checking (`PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED`) disabled in production → [Certificate Revocation (SDK 5.1+)](security.md#certificate-revocation-sdk-51)
 - [ ] DQL built with string interpolation or concatenation → [Always pass values as parameters](dql.md#always-pass-values-as-parameters)
 - [ ] Unquoted keys in inline DQL object literals (rejected in `INSERT`, silently `{}` in `SELECT`) → [Quote every key in inline object literals](dql.md#quote-every-key-in-inline-object-literals)
@@ -60,7 +63,7 @@ Use this list in code reviews. Each item links to the section that explains the 
 - [ ] Fetching every attachment as soon as its document syncs → [Fetching Attachments](attachments.md#fetching-attachments)
 - [ ] `ON ID CONFLICT DO UPDATE` for periodic re-upserts of unchanged data, or `UPDATE` statements that write values already stored → [ON ID CONFLICT](dql.md#on-id-conflict)
 - [ ] Long transactions, or network calls, dialogs, and timers inside a transaction → [Transaction Rules](transactions.md#transaction-rules), [Concurrency and Duration](transactions.md#concurrency-and-duration)
-- [ ] Closing Ditto in Flutter without awaiting pending queries and transactions → [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown)
+- [ ] Closing Ditto in Flutter without awaiting pending queries and transactions, or, where a write must reach another device, without waiting until it is confirmed → [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown)
 - [ ] Missing indexes on the filter and sort fields of hot queries → [Index Usage Rules](indexing-and-performance.md#index-usage-rules)
 - [ ] `USE INDEX ''` on a large inner collection to silence the JOIN index error (every outer row scans the whole inner collection) → [Performance tips](dql.md#performance-tips)
 - [ ] Functions applied to indexed fields in `WHERE` (for example `lower(name) = :name`), or `OR` branches without indexes → [Index Usage Rules](indexing-and-performance.md#index-usage-rules)

@@ -9,7 +9,8 @@ A condensed summary of the main recommendations. Follow the links for the reason
 - ✅ For Ditto Server connections, set the expiration handler before `ditto.sync.start()`; check `response.exception` and never throw in the handler.
 - ✅ Pass system parameters in `DittoConfig.systemParameters` on every open (SDK 5.2+); use `ALTER SYSTEM` only for values that change while the app runs.
 - ✅ Configure `DittoLogger` after `await Ditto.init()` and before `Ditto.open()`.
-- ✅ Cancel observers and subscriptions, stop fetchers, and await pending work before `await ditto.close()`.
+- ✅ Cancel observers and subscriptions, stop fetchers, and await pending work before `await ditto.close()`; where a write must reach another device, wait until it is confirmed.
+- ✅ On a shared device, sign a user out in the order of [Switching users on a shared device](setup-and-lifecycle.md#switching-users-on-a-shared-device).
 
 **Data modeling** ([Data Modeling](data-modeling.md))
 - ✅ Update fields, not whole documents; use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts.
@@ -27,6 +28,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 
 **Sync and observers** ([Sync and Subscriptions](sync-and-subscriptions.md), [Observing Changes](observers.md))
 - ✅ Scope subscriptions by stable partition keys (tenant, store, user), keep them stable and owned by an app- or feature-level service, and filter UI views locally instead of re-registering.
+- ✅ Register the subscriptions again after every `Ditto.open()`; they are not persisted.
 - ✅ Use `SELECT * FROM <collection> [WHERE ...]` for subscriptions; subscribe to every collection a JOIN reads. Bound what syncs with `WHERE`, not `LIMIT`.
 - ✅ On a TCP hub with more than six clients, raise `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` before `ditto.sync.start()`.
 - ✅ In Flutter, register observers without `onChange`, consume `changes`, and cancel both in `dispose()`.
@@ -40,6 +42,16 @@ A condensed summary of the main recommendations. Follow the links for the reason
 **Security** ([Security](security.md))
 - ✅ Use a webhook authentication provider in production, and a provisioned `privateKey` in small-peers-only deployments.
 - ✅ Validate input, and encrypt sensitive fields at the application level.
+
+## Where to Look When Something Goes Wrong
+
+| Symptom | Start with |
+|---|---|
+| A statement throws, or returns nothing although the data is on the device | [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing) |
+| Data does not appear on another device, stops updating, or comes back | [When Data Does Not Sync](sync-and-subscriptions.md#when-data-does-not-sync) |
+| No peer connects | [Diagnosing transport problems (SDK 5.1+)](setup-and-lifecycle.md#diagnosing-transport-problems-sdk-51) |
+| A query is slow | The steps at the top of [Indexing and Query Performance](indexing-and-performance.md) |
+| A screen janks or memory grows | [Observing Changes](observers.md) and [Query Scope and Execution](indexing-and-performance.md#query-scope-and-execution) |
 
 ## Common Code Shapes
 

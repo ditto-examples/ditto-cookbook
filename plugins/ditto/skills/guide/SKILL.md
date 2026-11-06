@@ -36,7 +36,7 @@ Best practices, in `reference/best-practices/`:
 | `security.md` | Authentication in production, small-peers-only keys, permissions, revocation, incoming connections, data at rest (encryption on Swift and Kotlin), webhooks, security checklist |
 | `testing.md` | Local-store test helper, merge, deletion, observer, and subscription tests, multi-peer tests |
 | `anti-patterns.md` | Severity-ranked review list (Critical, High, Medium) |
-| `quick-reference.md` | Condensed DO list and common code shapes |
+| `quick-reference.md` | Condensed DO list, where to look when something goes wrong, common code shapes |
 
 Knowledge, in `reference/knowledge/`:
 
