@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 4.44
+> **Version**: 4.45
 > **Last Updated**: 2026-11-06
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -66,7 +66,7 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 | [Reading and Writing Data with DQL](dql.md) | Where queries run, parameters and literals, MISSING and NULL, query results, `SELECT` (projections, aggregates, `GROUP BY`, `ORDER BY`, `LIMIT`, `USE IDS`, membership, `JOIN`), `INSERT` and `ON ID CONFLICT`, `UPDATE`, `RETURNING`, `DELETE` and `EVICT` |
 | [Data Modeling](data-modeling.md) | Strict mode, arrays and maps, document structure and size, relationships, document IDs, counters, event history, `INITIAL DOCUMENTS`, schema evolution, timestamps |
 | [Sync and Subscriptions](sync-and-subscriptions.md) | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status |
-| [Observing Changes](observers.md) | Store observers in Flutter, backpressure, diffing results, partial UI updates |
+| [Observing Changes](observers.md) | Choosing an observer API, when observers fire, store observers in Flutter, backpressure, diffing results, partial UI updates |
 | [Transactions](transactions.md) | `store.transaction`, transaction rules, concurrency and duration, sync, other platforms |
 | [Attachments](attachments.md) | Architecture, creating, fetching, immutability, thumbnails, availability, size |
 | [Deletion and Storage Management](deletion-and-storage.md) | `DELETE` and tombstones, soft delete, `EVICT`, choosing a strategy, monitoring storage |

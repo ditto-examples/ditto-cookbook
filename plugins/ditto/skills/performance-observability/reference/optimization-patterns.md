@@ -24,7 +24,7 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 
 ## Observer Behavior
 
-**Guide**: `§ Observing Changes`, `§ Store Observers in Flutter`, `§ Observer lifecycle and cleanup`, `§ Diffing Results`
+**Guide**: `§ Observing Changes`, `§ When Observers Fire`, `§ Store Observers in Flutter`, `§ Observer lifecycle and cleanup`, `§ Diffing Results`
 
 | API (Flutter) | Status | Returns | Backpressure |
 |---|---|---|---|
@@ -35,7 +35,7 @@ Detailed rules behind the [performance-observability skill](../SKILL.md). Everyt
 All three accept only `SELECT` queries and take parameters through `arguments:`. Observers never cause data to sync; pair them with a subscription.
 
 Behavior:
-- When an observer fires depends on its query (in testing with SDK 5.1.0 and 5.2.0): `SELECT *` fires on every write to a document in its result, even one that changes no value; a projection fires only when a projected value changes; an aggregate (`COUNT`, `GROUP BY`) fires on every write to the collection. Project the fields a screen needs.
+- When an observer fires depends on its query (in testing with SDK 5.1.0 and 5.2.0): `SELECT *` fires on every write to a document in its result, even one that changes no value; a projection fires only when a projected value changes; an aggregate (`COUNT`, `GROUP BY`) fires on every write to the collection; writes to another collection call no observer. Project the fields a screen needs, plus `_id` (on 5.2.0, rows of a query that does not project `_id` have none).
 - A `SELECT *` observer that writes the same value to its own document is called again about every 35 ms without end; compare before writing, or use `DO UPDATE_LOCAL_DIFF`.
 - Since SDK 5.1, an observer is called at most about 30 times a second (about every 34 ms in testing), so quickly changing values skip intermediate states, also for local writes (50 awaited writes reached an observer on the same device in 4 or 5 callbacks on 5.1.0 and 5.2.0); write each value as its own document if every one matters.
 - In JavaScript, `async` callbacks of `registerObserver` overlap, and a slow callback for an older result can finish last and leave the screen stale; use `registerObserverWithSignalNext`.

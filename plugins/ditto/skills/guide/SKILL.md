@@ -27,7 +27,7 @@ Best practices, in `reference/best-practices/`:
 | `dql.md` | Where queries run, parameters and literals, MISSING vs NULL, query results; SELECT (projections, DISTINCT, aggregates, GROUP BY, ORDER BY, LIMIT, USE IDS, membership, JOIN); INSERT and ON ID CONFLICT, UPDATE, RETURNING, DELETE and EVICT |
 | `data-modeling.md` | Strict mode, arrays vs maps, document structure and size, relationships, IDs, counters, event history, INITIAL documents, schema evolution, timestamps |
 | `sync-and-subscriptions.md` | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status |
-| `observers.md` | Flutter store observers, backpressure, diffing, partial UI updates |
+| `observers.md` | Choosing an observer API, when observers fire (by query shape), Flutter store observers, backpressure, diffing, partial UI updates |
 | `transactions.md` | `store.transaction`, rules, concurrency, sync, other platforms |
 | `attachments.md` | Architecture, creating, fetching, immutability, thumbnails, availability, size |
 | `deletion-and-storage.md` | DELETE and tombstones, soft delete, EVICT, choosing a strategy, monitoring storage |

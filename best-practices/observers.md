@@ -2,11 +2,7 @@
 
 A **store observer** is a live local query. Ditto re-runs it whenever a local write or an incoming sync affects its query, and delivers the new result to your code. Observers never cause data to sync; pair them with a subscription (see [Sync and Subscriptions](sync-and-subscriptions.md)).
 
-When an observer fires depends on its query. In our testing with SDK 5.1.0 and 5.2.0, a `SELECT *` observer fired on every write to a document in its result, even when the write did not change any value; an observer that projected fields (`SELECT _id, status ...`) fired only when a projected value changed; an observer with `LIMIT` was not called for writes to documents outside its result; and an aggregate observer (`COUNT`, `GROUP BY`) fired on every write to the collection, also to documents that its `WHERE` excluded (see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)). Project the fields a screen needs to avoid needless callbacks.
-
-Since SDK 5.1, an observer is called at most about 30 times a second, so a quickly changing value skips intermediate states but the latest one arrives within tens of milliseconds, also for local writes (see [A device receives nearly every value of a fast-changing field](../knowledge/observations/observer-behavior.md#a-device-receives-nearly-every-value-of-a-fast-changing-field) and [Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](../knowledge/observations/observer-behavior.md#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart)). To process every value, write each one as its own document (see [Pattern 2: Append-only event documents](data-modeling.md#pattern-2-append-only-event-documents)). Changes that arrive through sync are delivered in batches, not one callback per remote write: in our testing, 20 documents written one by one on another device arrived in two or three callbacks, and a transaction, local or remote, arrived as one callback with all of its documents (see [Remote changes arrive in a few callbacks, and a transaction in one](../knowledge/observations/observer-behavior.md#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)). Do not use observer callbacks to count or log every local or remote change; intermediate states can be skipped.
-
-Flutter offers three ways to register an observer:
+Flutter offers three ways to register an observer. All three accept only `SELECT` queries and take parameters through `arguments:`. For UI code, use `registerObserver` without `onChange` and consume its `changes` stream (see [Store Observers in Flutter](#store-observers-in-flutter)).
 
 | API | Status | Returns | Backpressure | Use for |
 |---|---|---|---|---|
@@ -14,7 +10,27 @@ Flutter offers three ways to register an observer:
 | `registerObserverV2` | **(Experimental)** (SDK 5.1+) | `StoreObserverV2` | Automatic: follows pause/resume of the `changes` stream | Slow or asynchronous per-update work with `await for` |
 | `registerObserverWithSignalNext` | **(Experimental)** (SDK 5.1+) | `StoreObserverV2` | Manual: call `signalNext()` when ready | Explicit control over when the next update may arrive |
 
-All three accept only `SELECT` queries and take parameters through `arguments:`.
+## When Observers Fire
+
+Which writes call an observer depends on its query. Project the fields a screen needs, including `_id`, so that writes to other fields do not call it (on SDK 5.2.0, rows of a query that does not project `_id` have no `_id`; see [Diffing Results](#diffing-results)). In our testing with SDK 5.1.0 and 5.2.0, observers were called as follows (see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)):
+
+| Query | Called for |
+|---|---|
+| `SELECT *` | Every write to a document in its result, also a write that changes no value |
+| A projection, such as `SELECT _id, status ...` | Only writes that change a projected value |
+| `LIMIT` | Writes to documents in its result; not writes to documents outside it |
+| An aggregate (`COUNT`, `GROUP BY`) | Every write to the collection, also to documents that its `WHERE` excludes, and also when the result stays the same |
+| Any query, for writes to another collection | None: 50 writes to another collection ran no observer query (SDK 5.0.3 re-ran it after about every third write; see [On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection](../knowledge/observations/observer-behavior.md#on-sdk-510-and-520-an-observer-did-not-re-run-its-query-after-writes-to-another-collection)) |
+
+An observer does not see every intermediate state. Since SDK 5.1, it is called at most about 30 times a second, for local writes and for changes from sync alike: a quickly changing value skips intermediate states, but the latest one arrives within tens of milliseconds (see [Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](../knowledge/observations/observer-behavior.md#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart) and [A device receives nearly every value of a fast-changing field](../knowledge/observations/observer-behavior.md#a-device-receives-nearly-every-value-of-a-fast-changing-field)). Changes from sync also arrive in batches: in our testing, 20 documents written one by one on another device arrived in two or three callbacks, and a transaction, local or remote, arrived as one callback with all of its documents (see [Remote changes arrive in a few callbacks, and a transaction in one](../knowledge/observations/observer-behavior.md#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
+
+**✅ DO:**
+- Project only the fields that a screen shows, plus `_id`.
+- Skip the rebuild when an aggregate result equals the previous one (see [Partial UI Updates](#partial-ui-updates)).
+- Write each value as its own document when every value must be processed (see [Pattern 2: Append-only event documents](data-modeling.md#pattern-2-append-only-event-documents)).
+
+**❌ DON'T:**
+- Count or log every local or remote change from observer callbacks; intermediate states can be skipped.
 
 ## Store Observers in Flutter
 
@@ -69,7 +85,7 @@ class _OrdersListState extends State<OrdersList> {
 **✅ DO:**
 - Register observers in `initState()` (or in a service), never in `build()`.
 - Copy plain values out of the result (`item.value`, or your own model objects) before storing them in state; do not keep `QueryResult` or `QueryResultItem` objects around (see [Working with Query Results](dql.md#working-with-query-results)).
-- Add `ORDER BY` whenever the order of results matters; without it, the order of observer results is not guaranteed.
+- Add `ORDER BY` with a tie-breaker whenever the order of results matters (see [Stable ordering](#stable-ordering)).
 - Cancel the stream subscription **and** the observer in `dispose()`.
 
 **❌ DON'T:**
@@ -474,7 +490,7 @@ An observer delivers a new result for **any** change that affects its query. If 
 **✅ DO:**
 - Give each screen region its own small observer and its own widget, so a change rebuilds only that region.
 - Use lazy list builders (`ListView.builder`) with a `ValueKey(_id)` per row; only visible rows are built, and keys preserve row state across updates.
-- Use aggregate queries for summary widgets (a badge needs `COUNT(*)`, not the full list). An aggregate observer is called on every write to its collection, also when its result stays the same (see [When an observer fires depends on its query](../knowledge/observations/observer-behavior.md#when-an-observer-fires-depends-on-its-query)), so skip the rebuild when the value equals the previous one.
+- Use aggregate queries for summary widgets (a badge needs `COUNT(*)`, not the full list), and skip the rebuild when the value equals the previous one: an aggregate observer is called on every write to its collection (see [When Observers Fire](#when-observers-fire)).
 - With state management libraries (Riverpod, Bloc, Provider), let one provider or controller own each observer, cancel it in the provider's dispose hook, and remember that `changes` can only be listened to once.
 - Map results to immutable model classes that implement `==` if you rely on equality checks to skip rebuilds; `item.value` creates a new `Map` for every result, so two maps with identical contents are never `==` to each other.
 
@@ -547,6 +563,6 @@ class OrdersScreen extends StatelessWidget {
 }
 ```
 
-**Why:** Several narrow observers (one per region) often cost less than rebuilding the entire screen for every change, and they make each widget self-contained. Each observer re-runs its query when its data changes, so keep the number of observers on busy collections reasonable. Writes to other collections do not re-run it: in our testing with SDK 5.1.0 and 5.2.0, 50 writes to another collection ran no observer query, while SDK 5.0.3 re-ran it after about every third write (see [On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection](../knowledge/observations/observer-behavior.md#on-sdk-510-and-520-an-observer-did-not-re-run-its-query-after-writes-to-another-collection)). Use Flutter DevTools to confirm which widgets rebuild before optimizing further.
+**Why:** Several narrow observers (one per region) often cost less than rebuilding the entire screen for every change, and they make each widget self-contained. Each observer re-runs its query when a write affects it (see [When Observers Fire](#when-observers-fire)), so keep the number of observers on busy collections reasonable. Use Flutter DevTools to confirm which widgets rebuild before optimizing further.
 
-Many observers are affordable on 5.2.0 but not on 5.1.0. In our testing on one Mac, 1,000 observers worked on 5.2.0, and with 500 observers of different documents, the observer of a written document was called after about 23 ms instead of about 4 ms with one. On 5.1.0, 60 or more observers stopped every callback, without an exception, and cancelling most of them did not bring the others back (see [On SDK 5.1.0, observers stall beyond about 60](../knowledge/observations/observer-behavior.md#on-sdk-510-observers-stall-beyond-about-60)). The threshold may differ on other devices, so on devices that still run 5.1.0, stay well below about 60 observers in total, and do not register one observer per row of a list (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)).
+**How many observers**: On devices that still run SDK 5.1.0, stay well below about 60 observers in total, and do not register one observer per row of a list. In our testing on one Mac, 60 or more observers on 5.1.0 stopped every callback, without an exception, and cancelling most of them did not bring the others back; on 5.2.0, 1,000 observers worked, and with 500 observers of different documents, the observer of a written document was called after about 23 ms instead of about 4 ms with one (see [On SDK 5.1.0, observers stall beyond about 60](../knowledge/observations/observer-behavior.md#on-sdk-510-observers-stall-beyond-about-60) and [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510)). The threshold may differ on other devices.

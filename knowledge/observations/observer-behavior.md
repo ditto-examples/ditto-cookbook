@@ -43,7 +43,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - An observer of `ORDER BY score DESC LIMIT 10`, which returns the top 10 of 1,000 documents, was not called for writes to documents outside its result: updates of other fields, updates to values that do not reach the top 10, `INSERT`, and `DELETE`. It was called once for each update of a document in its result and for each update to a value that enters the top 10, like an observer of `WHERE score >= 990`. With only `_id` and `score` projected, it was not called for updates of other fields of the documents in its result either.
 - A projecting observer does not fall into the loop of [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing) (one run on 5.1.0 and 5.2.0). When the callback wrote the same value again with `DO UPDATE`, in 2 seconds, `SELECT *` was called 58 to 59 times, and `SELECT _id, v` only once, for its first result.
 
-**Used in:** [Observing Changes](../../best-practices/observers.md), [Prefer field-level updates over whole-document rewrites](../../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites).
+**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire), [Prefer field-level updates over whole-document rewrites](../../best-practices/dql.md#prefer-field-level-updates-over-whole-document-rewrites).
 
 ### Remote changes arrive in a few callbacks, and a transaction in one
 
@@ -61,7 +61,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - The writing device's own observer was called only 3 times for its 20 writes: local writes are coalesced too.
 - A local transaction that wrote 10 documents 50 ms apart called the observer once, after the commit (10 documents), and not at all when it was rolled back. Without a transaction, 10 writes 50 ms apart called it 10 times.
 
-**Used in:** [Observing Changes](../../best-practices/observers.md).
+**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire).
 
 ### Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart
 
@@ -79,7 +79,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - Since 5.1, the changes within about 30 ms are combined into one callback.
 - With `registerObserverWithSignalNext`, no callback arrived during the 5 writes until `signalNext()` was called; then one callback delivered the latest result (5 documents). This was the same on all three releases.
 
-**Used in:** [Observing Changes](../../best-practices/observers.md), [registerObserverWithSignalNext (Experimental)](../../best-practices/observers.md#registerobserverwithsignalnext-experimental).
+**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire), [registerObserverWithSignalNext (Experimental)](../../best-practices/observers.md#registerobserverwithsignalnext-experimental).
 
 ### A device receives nearly every value of a fast-changing field
 
@@ -104,7 +104,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** whether the values missing at 200 updates a second were missed by the reader or skipped by sync; whether sync delivered every state at the fastest rate; writing each value as its own document, so that an observer can process every value (we think no value is lost that way, because every document stays in the result).
 
-**Used in:** [Observing Changes](../../best-practices/observers.md).
+**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire).
 
 ### Writing the same value from an observer keeps it firing
 
@@ -187,7 +187,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** observers of joins or of several collections; changes that arrive through sync; writes in transactions; whether other conditions make 5.1.0 run an observer after writes to another collection.
 
-**Used in:** [Partial UI Updates](../../best-practices/observers.md#partial-ui-updates).
+**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire).
 
 ### On SDK 5.2.0, observer rows include _id only when it is projected
 
