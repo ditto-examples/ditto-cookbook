@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 4.51
+> **Version**: 4.52
 > **Last Updated**: 2026-11-06
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -63,7 +63,7 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 
 | Page | Covers |
 |---|---|
-| [SDK Setup and Lifecycle](setup-and-lifecycle.md) | Requirements, `DittoConfig` and `Ditto.open`, authentication, applying system parameters, starting and stopping sync, shutdown, transports, presence |
+| [SDK Setup and Lifecycle](setup-and-lifecycle.md) | Requirements, `DittoConfig` and `Ditto.open`, authentication and switching users on a shared device, applying system parameters, starting and stopping sync, shutdown, transports, presence |
 | [Reading and Writing Data with DQL](dql.md) | Where queries run, parameters and literals, MISSING and NULL, query results, error messages and empty results, `SELECT` (projections, aggregates, `GROUP BY`, `ORDER BY`, `LIMIT`, `USE IDS`, membership, `JOIN`), `INSERT` and `ON ID CONFLICT`, `UPDATE`, `RETURNING`, `DELETE` and `EVICT` |
 | [Data Modeling](data-modeling.md) | Strict mode, arrays and maps, document structure and size, relationships, document IDs, counters, event history, `INITIAL DOCUMENTS`, schema evolution, timestamps |
 | [Sync and Subscriptions](sync-and-subscriptions.md) | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |

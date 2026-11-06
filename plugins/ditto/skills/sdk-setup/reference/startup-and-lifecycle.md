@@ -358,6 +358,16 @@ Future<void> configureAuthenticationBadly(Ditto ditto) async {
 
 To remove local data as part of logging out, pass a `cleanup` callback (SDK 5.2+): `await ditto.auth.logout(cleanup: (ditto) async { ... })`. It runs after sync has stopped, and `logout()` completes only after it finishes. After logout the instance may no longer write, except for `EVICT`, so the callback can evict sensitive documents. Evicted values can still be read from the database files (`§ Data at Rest`); to remove them for sure, delete the persistence directory after `close()`. Exceptions thrown by the callback are logged and do not reach the caller, so check the result yourself (for example with a `SELECT COUNT(*)`) when the cleanup must succeed. Concurrent `logout()` calls collapse into one, and only the first caller's `cleanup` runs.
 
+**Switching users on a shared device**: the local store belongs to the device. Documents that one user's subscriptions brought to it stay after logout and stay visible to local queries until evicted. Sign a user out in this order:
+
+1. Wait, with a timeout, until another device has confirmed the user's important writes (`waitUntilServerHas()` below): `logout()` stops sync, and evicting can discard changes that have not left the device.
+2. Cancel the user's subscriptions and screen observers; documents that an active subscription still matches sync back after the next `sync.start()`.
+3. `await ditto.auth.logout(cleanup: ...)` and `EVICT` the user's documents in the callback; check with a `SELECT COUNT(*)` that they are gone.
+4. For data that must not remain readable in the database files, close Ditto and delete the persistence directory instead.
+5. After the next login, register the new user's subscriptions and call `ditto.sync.start()`.
+
+`§ Switching users on a shared device`
+
 `§ Authentication`
 
 ## Applying system parameters

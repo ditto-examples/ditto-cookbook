@@ -1,5 +1,7 @@
 # SDK Setup and Lifecycle
 
+This page covers what an app does from the first launch to shutdown: requirements, opening one shared instance, authentication, system parameters, starting and stopping sync, cleanup, transports, and presence. The order at startup is: `Ditto.init()` when you configure logging first, `Ditto.open()` with your system parameters, the expiration handler (server connections) or the offline license token (small-peers-only), indexes, long-lived subscriptions, and `ditto.sync.start()` (see [Complete app startup](#complete-app-startup)). At shutdown, cancel observers and subscriptions, wait for writes that must reach another device, and `await ditto.close()` (see [Resource Cleanup and Shutdown](#resource-cleanup-and-shutdown)).
+
 ## Requirements
 
 Ditto SDK 5.2.0 for Flutter (`ditto_live` 5.2.0) has the following requirements:
@@ -112,7 +114,7 @@ Future<Ditto> openWithoutAwaitingOpen() async {
 
 ### One instance per persistence directory
 
-Only one `Ditto` instance can use a persistence directory at a time, and only one app can use a database at the same time. `Ditto.open()` on a directory that another process holds (a second window of the app, an old process left behind by a development server, or a suspended process) fails with the error code `store/persistence-directory-locked`, after about one second in our testing; the lock of a process that crashed did not remain (see [A directory locked by another process fails to open after about 1 second](../knowledge/observations/persistence-directory.md#a-directory-locked-by-another-process-fails-to-open-after-about-1-second)). Open Ditto once at app start, share the instance (for example through your app's dependency injection or a service object), and close it only when the app no longer needs it.
+**Open Ditto once at app start, share the instance, and close it only when the app no longer needs it.** Only one `Ditto` instance can use a persistence directory at a time, and only one app can use a database at the same time. `Ditto.open()` on a directory that another process holds (a second window of the app, an old process left behind by a development server, or a suspended process) fails with the error code `store/persistence-directory-locked`, after about one second in our testing; the lock of a process that crashed did not remain (see [A directory locked by another process fails to open after about 1 second](../knowledge/observations/persistence-directory.md#a-directory-locked-by-another-process-fails-to-open-after-about-1-second)). Share the instance through your app's dependency injection or a service object.
 
 > **Note (SDK 5.1.0):** In the Flutter SDK, calling `Ditto.open()` on a persistence directory that is already open may never complete instead of throwing. Instead of opening the directory again, share the existing instance. (In the JavaScript SDK 5.0.3 to 5.2.0, the second `Ditto.open()` failed within 10 seconds with `File already locked, ... Multiple Ditto instances cannot run at the same time within the same working directory.`; see [In JavaScript, opening an open directory again fails](../knowledge/observations/persistence-directory.md#in-javascript-opening-an-open-directory-again-fails).)
 
@@ -265,7 +267,7 @@ Step 5 creates one index as an example; see [Creating Indexes](indexing-and-perf
 
 ## Authentication
 
-With `DittoConfigConnectServer`, a device must authenticate before it can sync. Authentication is driven by an **expiration handler** that you register with `await ditto.auth.setExpirationHandler(...)`.
+**Set the expiration handler with `await` before `ditto.sync.start()`, log in from it with a fresh token, check `response.exception`, and never throw from it.** With `DittoConfigConnectServer`, a device must authenticate before it can sync. Authentication is driven by an **expiration handler** that you register with `await ditto.auth.setExpirationHandler(...)`.
 
 | Behavior | Details |
 |---|---|
@@ -351,9 +353,54 @@ Future<void> configureAuthenticationBadly(Ditto ditto) async {
 
 To remove local data as part of logging out, pass a `cleanup` callback (SDK 5.2+): `await ditto.auth.logout(cleanup: (ditto) async { ... })`. It runs after sync has stopped, and `logout()` completes only after it finishes. After logout the instance may no longer write, except for `EVICT`, so the callback can evict sensitive documents. Evicted values can still be read from the database files (see [Data at Rest](security.md#data-at-rest) and [Most deleted and evicted values remain in the database files](../knowledge/observations/storage-and-deletion.md#most-deleted-and-evicted-values-remain-in-the-database-files)); to remove them for sure, delete the persistence directory after `close()` (see [Deleting the directory after close() leaves no data behind](../knowledge/observations/persistence-directory.md#deleting-the-directory-after-close-leaves-no-data-behind)). Exceptions thrown by the callback are logged and do not reach the caller, so check the result yourself (for example with a `SELECT COUNT(*)`) when the cleanup must succeed. Concurrent `logout()` calls collapse into one, and only the first caller's `cleanup` runs.
 
+### Switching users on a shared device
+
+The local store belongs to the device, not to the user: documents that one user's subscriptions brought to the device stay in it after logout and remain visible to local queries until they are evicted (see [Cancelling subscriptions and local data](sync-and-subscriptions.md#cancelling-subscriptions-and-local-data)). When several people use one device, sign a user out in this order:
+
+1. **Wait for the user's important writes**, with a timeout, until another device has confirmed them (see [Resource Cleanup and Shutdown](#resource-cleanup-and-shutdown)). `logout()` stops sync, and evicting a document can discard changes that have not left the device.
+2. **Cancel the user's subscriptions** and the observers of their screens. Documents that an active subscription still matches sync back after the next `ditto.sync.start()`.
+3. **Call `logout(cleanup:)`** (SDK 5.2+) and evict the user's documents in the callback, then check that they are gone, because exceptions in the callback do not reach the caller.
+4. **For data that must not remain readable in the database files**, close Ditto and delete the persistence directory instead (see [Data at Rest](security.md#data-at-rest)).
+5. **After the next user logs in**, register that user's subscriptions and call `ditto.sync.start()`.
+
+```dart
+// ✅ GOOD: Sign a user out of a shared device. waitUntilServerHas() is defined
+// in Resource Cleanup and Shutdown; OrderSync owns the subscriptions (see
+// Subscription Lifecycle in Sync and Subscriptions).
+Future<bool> signOut(
+  Ditto ditto,
+  OrderSync orderSync, {
+  required String storeId,
+  int? lastCommitId,
+}) async {
+  if (lastCommitId != null && !await waitUntilServerHas(ditto, lastCommitId)) {
+    // Evicting now could discard changes that no other device has yet.
+    showError('Some changes have not been uploaded yet. Try again online.');
+    return false;
+  }
+  orderSync.leaveStore(); // cancel first, or evicted documents sync back
+  await ditto.auth.logout(cleanup: (ditto) async {
+    // Runs after sync has stopped; EVICT is still allowed after logout.
+    await ditto.store.execute(
+      'EVICT FROM orders WHERE storeId = :storeId',
+      arguments: {'storeId': storeId},
+    );
+    await ditto.store.execute(
+      'EVICT FROM orderItems WHERE storeId = :storeId',
+      arguments: {'storeId': storeId},
+    );
+  });
+  final left = await ditto.store.execute(
+    'SELECT COUNT(*) AS n FROM orders WHERE storeId = :storeId',
+    arguments: {'storeId': storeId},
+  );
+  return left.items.first.value['n'] == 0;
+}
+```
+
 ## Applying System Parameters
 
-System parameters change SDK behavior. **They are kept in memory only and are not persisted**: after the app restarts, or after closing and reopening Ditto, every parameter is back at its default value. There are two ways to set them:
+**Pass the settings your app always needs in `DittoConfig.systemParameters` on every open (SDK 5.2+), and use `ALTER SYSTEM` only for values you change while the app runs.** System parameters change SDK behavior. **They are kept in memory only and are not persisted**: after the app restarts, or after closing and reopening Ditto, every parameter is back at its default value. There are two ways to set them:
 
 | | `DittoConfig.systemParameters` (SDK 5.2+) | `ALTER SYSTEM SET ...` |
 |---|---|---|
@@ -580,7 +627,7 @@ class AppShutdown {
 
 ## Transport Configuration
 
-A new Ditto instance enables the peer-to-peer transports that are stable on the current platform (Bluetooth LE, LAN, and AWDL or Wi-Fi Aware). When you connect with `DittoConfigConnectServer`, the Server URL is used automatically; you do not need to add it to the transport configuration.
+**Change transports with `ditto.updateTransportConfig()`, which starts from the current configuration; never assign a new `TransportConfig()`, which disables every transport.** A new Ditto instance enables the peer-to-peer transports that are stable on the current platform (Bluetooth LE, LAN, and AWDL or Wi-Fi Aware). When you connect with `DittoConfigConnectServer`, the Server URL is used automatically; you do not need to add it to the transport configuration.
 
 `TransportConfig` is immutable. Change it with `ditto.updateTransportConfig()`, which gives you a builder initialized with the current configuration.
 
@@ -588,9 +635,12 @@ A new Ditto instance enables the peer-to-peer transports that are stable on the 
 - Use `updateTransportConfig()` and change only the settings you need.
 - Enable or disable all peer-to-peer transports at once with `setAllPeerToPeerEnabled()`, or individual transports through `peerToPeer`.
 - Observe transport conditions to detect missing permissions or disabled radios.
+- Configure each TCP link in one direction only: the hub listens, and the clients list the hub in `connect.tcpServers`.
+- On a hub that more than six devices connect to over TCP, raise the TCP connection limit on the hub so that it is in effect before `ditto.sync.start()` (see the note and the `hubConfig` example below).
 
 **❌ DON'T:**
 - Build a `TransportConfig()` from scratch and assign it: a new `TransportConfig` has **every transport disabled**, including the peer-to-peer transports that a default instance enables.
+- Use `MESH_CHOOSER_AT_CAPACITY_ACTION` to admit more TCP clients than the limit; the hub keeps replacing connections (see the note below).
 - Treat `global.syncGroup` as a security boundary. It is an optimization only: in our testing, devices in different sync groups still synced when they were connected explicitly (see [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)).
 
 ```dart
@@ -627,9 +677,7 @@ void connectToHub(Ditto ditto) {
 >
 > On 5.2.0, a device also counts the connections that it opened itself when it decides whether to accept another one (the 5.2.0 release notes describe this as counting accepted and outgoing LAN connections together). In our testing, a hub that also connected to two other devices dropped two of its six clients on 5.2.0, and a relay that connected to an upstream hub accepted only five clients (see [SDK 5.2.0 counts outgoing connections toward the TCP limit](../knowledge/observations/connections-and-presence.md#sdk-520-counts-outgoing-connections-toward-the-tcp-limit)). Outgoing connections themselves are not limited (see [Outgoing TCP connections are not limited](../knowledge/observations/connections-and-presence.md#outgoing-tcp-connections-are-not-limited)), and the default is still 6.
 >
-> A client that the hub did not accept appears in no device's presence graph, so presence shows correctly that it is not connected (see [The presence graph includes indirect peers and all of their connections](../knowledge/observations/connections-and-presence.md#the-presence-graph-includes-indirect-peers-and-all-of-their-connections)). Configure each TCP link in one direction only (the clients list the hub): two devices that listed each other in `connect.tcpServers` kept two TCP connections, and when every device lists every other device, a mesh of seven or more devices on 5.2.0 is not fully connected: each device kept 3 to 7 direct connections and reached the others through them (in our testing; see [On SDK 5.2.0, devices in a full TCP mesh of seven or more keep 3 to 7 direct connections](../knowledge/observations/connections-and-presence.md#on-sdk-520-devices-in-a-full-tcp-mesh-of-seven-or-more-keep-3-to-7-direct-connections)). Count devices with `remotePeers`, not with direct connections.
->
-> When every device lists every other device in `connect.tcpServers`, a device on 5.2.0 kept 3 to 7 direct connections (6 to 9 TCP connections), so a mesh of seven or more devices was not fully connected. Every device still listed all the others in `remotePeers`, and changes reached every device within 24 to 80 ms through the others. On 5.1.0, devices kept up to 15 TCP connections, many of them duplicates. Count devices with `remotePeers`, not with direct connections.
+> A client that the hub did not accept appears in no device's presence graph, so presence shows correctly that it is not connected (see [The presence graph includes indirect peers and all of their connections](../knowledge/observations/connections-and-presence.md#the-presence-graph-includes-indirect-peers-and-all-of-their-connections)). Two devices that listed each other in `connect.tcpServers` kept two TCP connections. When every device lists every other device, a device on 5.2.0 kept 3 to 7 direct connections (6 to 9 TCP connections), so a mesh of seven or more devices was not fully connected, although every device still listed all the others in `remotePeers` and changes reached every device within 24 to 80 ms through the others; on 5.1.0, devices kept up to 15 TCP connections, many of them duplicates (in our testing; see [On SDK 5.2.0, devices in a full TCP mesh of seven or more keep 3 to 7 direct connections](../knowledge/observations/connections-and-presence.md#on-sdk-520-devices-in-a-full-tcp-mesh-of-seven-or-more-keep-3-to-7-direct-connections)). Count devices with `remotePeers`, not with direct connections.
 >
 > `MESH_CHOOSER_AT_CAPACITY_ACTION` decides what a full hub does when another client arrives. It takes an integer (a string such as `'DropOldest'` is rejected), and with the default, 0, the extra client never connected. According to the 5.2.0 release notes, the settings that drop the oldest or the newest peer wait until the new peer has finished connecting. In our testing with the values 1 and 2, every client received data, but the hub kept replacing connections in a 5-second cycle, and at every check, at least one client was not connected (on 5.2.0, and on 5.1.0 with 2; on 5.1.0 with 1, the cycle stopped in some runs; see [At-capacity actions 1 and 2 admit extra clients but keep replacing connections](../knowledge/observations/connections-and-presence.md#at-capacity-actions-1-and-2-admit-extra-clients-but-keep-replacing-connections)). Raise `MESH_CHOOSER_MAX_WLAN_CONNECTIONS` instead.
 >

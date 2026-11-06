@@ -23,7 +23,7 @@ Best practices, in `reference/best-practices/`:
 | Page | Covers |
 |---|---|
 | `README.md` | How to use the guide (audience, conventions such as (SDK 5.1+)/(SDK 5.2+), Experimental/Beta, and the Note (SDK ...) labels, how the content was verified), the ten essential rules, the disclaimer |
-| `setup-and-lifecycle.md` | Requirements, DittoConfig, `Ditto.open`, authentication, system parameters (`DittoConfig.systemParameters`, `ALTER SYSTEM`), sync start/stop, shutdown, transports, presence |
+| `setup-and-lifecycle.md` | Requirements, DittoConfig, `Ditto.open`, authentication, switching users, system parameters (`DittoConfig.systemParameters`, `ALTER SYSTEM`), sync start/stop, shutdown, transports, presence |
 | `dql.md` | Where queries run, parameters and literals, MISSING vs NULL, query results, error messages and empty results (a lookup table); SELECT (projections, DISTINCT, aggregates, GROUP BY, ORDER BY, LIMIT, USE IDS, membership, JOIN); INSERT and ON ID CONFLICT, UPDATE, RETURNING, DELETE and EVICT |
 | `data-modeling.md` | Strict mode, arrays vs maps, document structure and size, relationships, IDs, counters, event history, INITIAL documents, schema evolution, timestamps |
 | `sync-and-subscriptions.md` | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
