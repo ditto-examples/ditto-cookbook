@@ -357,7 +357,7 @@ To remove local data as part of logging out, pass a `cleanup` callback (SDK 5.2+
 
 The local store belongs to the device, not to the user: documents that one user's subscriptions brought to the device stay in it after logout and remain visible to local queries until they are evicted (see [Cancelling subscriptions and local data](sync-and-subscriptions.md#cancelling-subscriptions-and-local-data)). When several people use one device, sign a user out in this order:
 
-1. **Wait for the user's important writes**, with a timeout, until another device has confirmed them (see [Resource Cleanup and Shutdown](#resource-cleanup-and-shutdown)). `logout()` stops sync, and evicting a document can discard changes that have not left the device.
+1. **Wait for the user's important writes**, with a timeout, until Ditto Server (or, without a server, the hub or another device) has confirmed them (see [Resource Cleanup and Shutdown](#resource-cleanup-and-shutdown)). `logout()` stops sync, and evicting a document can discard changes that have not left the device.
 2. **Cancel the user's subscriptions** and the observers of their screens. Documents that an active subscription still matches sync back after the next `ditto.sync.start()`.
 3. **Call `logout(cleanup:)`** (SDK 5.2+) and evict the user's documents in the callback, then check that they are gone, because exceptions in the callback do not reach the caller.
 4. **For data that must not remain readable in the database files**, close Ditto and delete the persistence directory instead (see [Data at Rest](security.md#data-at-rest)).
@@ -378,6 +378,7 @@ Future<bool> signOut(
     showError('Some changes have not been uploaded yet. Try again online.');
     return false;
   }
+  // Screens dispose their own observers when the user leaves them.
   orderSync.leaveStore(); // cancel first, or evicted documents sync back
   await ditto.auth.logout(cleanup: (ditto) async {
     // Runs after sync has stopped; EVICT is still allowed after logout.

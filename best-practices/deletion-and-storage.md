@@ -17,11 +17,11 @@ Ditto offers three tools for these needs:
 | Soft delete | An `UPDATE` that sets a flag such as `isDeleted`; queries filter flagged documents out | Mesh-wide (it is an ordinary update) |
 | `EVICT` | Removes documents from the local store only; the removal is not propagated to other peers | This device only |
 
-In deployments with a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typically on the Ditto Server) and `EVICT` to manage storage on edge devices. If you plan to use `DELETE` in a deployment with Small Peers only, contact Ditto support to review the design. See [Choosing DELETE, Soft Delete, or EVICT](#choosing-delete-soft-delete-or-evict) for a decision table.
+**Default to a soft delete for shared records that several devices edit, `EVICT` to manage storage on edge devices, and `DELETE` for data that one user owns and for permanent cleanup, typically on the Ditto Server (formerly Big Peer).** If you plan to use `DELETE` in a deployment with Small Peers only, contact Ditto support to review the design. See [Choosing DELETE, Soft Delete, or EVICT](#choosing-delete-soft-delete-or-evict) for a decision table.
 
 ## DELETE and Tombstones
 
-`DELETE` permanently removes documents from the user's perspective:
+**Use `DELETE` only for documents that no other device edits at the same time, in deployments where every device syncs within the tombstone TTL (7 days by default).** `DELETE` permanently removes documents from the user's perspective:
 
 ```sql
 DELETE FROM orders WHERE _id = :orderId
@@ -114,7 +114,7 @@ const config = DittoConfig(
 );
 ```
 
-Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. Ditto reads them only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in `DittoConfig.systemParameters` (see [DITTO_ environment variables set system parameters at startup](../knowledge/observations/configuration-and-diagnostics.md#ditto_-environment-variables-set-system-parameters-at-startup)). `REAPER_PREFERRED_HOUR` is an hour of the device's **local** time (0 to 23; 0 by default), and a device reaps only when it runs during that hour: in our testing with SDK 5.1.0 and 5.2.0, it checked at startup and then every hour after it had started, not at the start of that hour (see [Reaping at a preferred hour runs at startup or a whole number of hours later, within that hour](../knowledge/observations/storage-and-deletion.md#reaping-at-a-preferred-hour-runs-at-startup-or-a-whole-number-of-hours-later-within-that-hour)). A point-of-sale app that is closed at night and keeps the default hour 0 would never remove its tombstones. WASM-based platforms (JavaScript Web and Flutter Web) do not support these parameters. Contact Ditto support before relying on them.
+Reaping can be expensive on devices with very many tombstones. The parameters `ENABLE_REAPER_PREFERRED_HOUR_SCHEDULING` and `REAPER_PREFERRED_HOUR` schedule reaping during off-hours. **Contact Ditto support before relying on them, and choose an hour during which the app runs**: a point-of-sale app that is closed at night and keeps the default hour 0 would never remove its tombstones. Ditto reads both parameters only at startup: `ALTER SYSTEM` accepts new values at runtime, but they are not applied. Set them through environment variables before the process starts, or, since SDK 5.2, in `DittoConfig.systemParameters` (see [DITTO_ environment variables set system parameters at startup](../knowledge/observations/configuration-and-diagnostics.md#ditto_-environment-variables-set-system-parameters-at-startup)). `REAPER_PREFERRED_HOUR` is an hour of the device's **local** time (0 to 23; 0 by default), and a device reaps only when it runs during that hour: in our testing with SDK 5.1.0 and 5.2.0, it checked at startup and then every hour after it had started, not at the start of that hour (see [Reaping at a preferred hour runs at startup or a whole number of hours later, within that hour](../knowledge/observations/storage-and-deletion.md#reaping-at-a-preferred-hour-runs-at-startup-or-a-whole-number-of-hours-later-within-that-hour)). WASM-based platforms (JavaScript Web and Flutter Web) do not support these parameters.
 
 ### Husk documents
 
@@ -163,7 +163,7 @@ There is no `DROP COLLECTION` statement. `DELETE FROM orders` without a `WHERE` 
 
 ## Soft Delete
 
-A soft delete marks a document as deleted with an ordinary `UPDATE` instead of removing it. Because the flag is just a field, it syncs like any other change and has none of the tombstone limitations:
+**Set `isDeleted = true` and `deletedAt` in one `UPDATE`, filter every query with `coalesce(isDeleted, false) = false`, and plan the cleanup from the start.** A soft delete marks a document as deleted with an ordinary `UPDATE` instead of removing it. Because the flag is just a field, it syncs like any other change and has none of the tombstone limitations:
 
 - **No TTL dependency:** the flag stays on the document, so a device that was offline for weeks still learns that the document is deleted.
 - **No husk documents:** a concurrent update merges with the flag instead of resurrecting a partially deleted document. In our testing, an edit made offline on another device was kept, and the document stayed flagged (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520) and [Deleting a counter during a concurrent increment leaves a husk](../knowledge/observations/merge-behavior.md#deleting-a-counter-during-a-concurrent-increment-leaves-a-husk)).
@@ -369,7 +369,7 @@ class OrderSoftDeleteRetention {
 
 ## EVICT
 
-`EVICT` removes documents from the **local** store only. It has the same shape as `DELETE`, including `WHERE`, `LIMIT`, and `RETURNING` (SDK 5.1+):
+**Evict only documents that no active subscription on the device matches: cancel or narrow the subscriptions first, and evict the complement of what remains.** `EVICT` removes documents from the **local** store only. It has the same shape as `DELETE`, including `WHERE`, `LIMIT`, and `RETURNING` (SDK 5.1+):
 
 ```sql
 EVICT FROM orders WHERE createdAt < :cutoff
@@ -546,7 +546,7 @@ Typical choices:
 
 ## Monitoring Storage
 
-`system:system_info` reports storage usage and document counts for the local device. The values are collected periodically, so they can lag behind recent writes:
+**Read storage values with `execute` when you need them, not with an observer, and take the newest row of each key.** `system:system_info` reports storage usage and document counts for the local device. The values are collected periodically, so they can lag behind recent writes:
 
 ```sql
 SELECT key, value FROM system:system_info WHERE key LIKE 'fs_usage%'
