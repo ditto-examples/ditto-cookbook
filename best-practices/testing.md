@@ -1,6 +1,6 @@
 # Testing Strategies
 
-Many problems in Ditto apps come from the data model and the queries: a write that replaces a map instead of updating one entry, a soft-delete filter that hides documents without the flag, an observer that is never cancelled. These are cheap to catch in automated tests that run against a **real local Ditto store** on a single device. Multi-device behavior (concurrent edits, deletions that meet updates, multi-hop relay) needs a separate, smaller set of tests with real sync; most of them can run as several Ditto instances in one test process (see [Several peers in one test process](#several-peers-in-one-test-process)).
+**Test every DQL statement and write shape against a real local store with sync off, test merges and deletions with several instances that sync over localhost, and keep real devices for transports, permissions, and clocks.** Many problems in Ditto apps come from the data model and the queries: a write that replaces a map instead of updating one entry, a soft-delete filter that hides documents without the flag, an observer that is never cancelled. These are cheap to catch in automated tests that run against a **real local Ditto store** on a single device. Multi-device behavior (concurrent edits, deletions that meet updates, multi-hop relay) needs a separate, smaller set of tests with real sync; most of them can run as several Ditto instances in one test process (see [Several peers in one test process](#several-peers-in-one-test-process)).
 
 | Test layer | What it covers | Ditto instance | License or server needed |
 |---|---|---|---|
@@ -324,7 +324,7 @@ test("the app's subscriptions are valid", () async {
 
 ## Validating DQL in Tests
 
-Keep the DQL statements of your app as constants in one place (for example, a repository class), and run each of them through `EXPLAIN` with representative arguments. `EXPLAIN` parses and plans a statement without executing it (see [EXPLAIN and PROFILE](indexing-and-performance.md#explain-and-profile)), so the test catches syntax errors and other statements that cannot be planned, without touching any data. For hot queries, also assert that the plan uses the index you created; a later change to the query or to strict mode (which disables index scans in 5.1.0, see [Strict Mode](data-modeling.md#strict-mode)) then fails the test.
+Keep the DQL statements of your app as constants in one place (for example, a repository class), and run each of them through `EXPLAIN` with representative arguments. `EXPLAIN` parses and plans a statement without executing it (see [EXPLAIN and PROFILE](indexing-and-performance.md#explain-and-profile)), so the test catches syntax errors and other statements that cannot be planned, without touching any data. For hot queries, also assert that the plan uses the index you created; a later change to the query or to strict mode (which disables index scans on SDK 5.1.0 and 5.2.0; see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types)) then fails the test.
 
 ```dart
 import 'dart:convert';
@@ -580,7 +580,9 @@ Scenarios worth covering (with the helpers above, or on real devices):
 - Two devices add, edit, and remove entries of the same map (and, for comparison, the same array) while offline.
 - One device deletes a document while another updates it (expect a [husk document](deletion-and-storage.md#husk-documents)), and the same with a soft delete.
 - A device that missed a soft delete while offline and then syncs only through a relay (see [Soft delete, subscriptions, and cleanup](deletion-and-storage.md#soft-delete-subscriptions-and-cleanup)).
-- A counter that one device recounts with `RESTART WITH` while another keeps incrementing it (see [RESTART](data-modeling.md#restart)).
+- A counter that one device recounts with `RESTART WITH`, or re-imports with an upsert, while another keeps incrementing it (see [RESTART](data-modeling.md#restart) and [Writing documents that contain counters](data-modeling.md#writing-documents-that-contain-counters)).
+- Shutdown right after a write: the code waits until the hub confirms the write's `commitID` before `close()`, and the hub then has the document (see [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown)).
+- A user signs out of a shared device and another signs in: the first user's documents are gone and do not sync back after sync starts again (see [Switching users on a shared device](setup-and-lifecycle.md#switching-users-on-a-shared-device)).
 - A device behind a relay with narrower subscriptions (see [Multi-hop relay](sync-and-subscriptions.md#multi-hop-relay)).
 - Attachments created offline and fetched by other peers later (see [Availability](attachments.md#availability)).
 - Each transport your users rely on, including Bluetooth LE as the only transport (on real devices).

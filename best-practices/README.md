@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 4.56
+> **Version**: 4.57
 > **Last Updated**: 2026-11-06
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
