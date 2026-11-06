@@ -743,8 +743,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
         </div>
       </div>
       <div class="metadata">
-        <span data-i18n="versionLabel">Version</span> 2.33 |
-        <span data-i18n="lastUpdatedLabel">Last Updated:</span> 2026-11-03 |
+        <span data-i18n="versionLabel">Version</span> 2.34 |
+        <span data-i18n="lastUpdatedLabel">Last Updated:</span> 2026-11-06 |
         <span data-i18n="appliesToLabel">Applies to:</span> Ditto SDK 5.2.0 (Flutter <code>ditto_live</code> 5.2.0)
       </div>
       <p class="intro" data-i18n-html="intro"></p>
@@ -3705,6 +3705,35 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 
         <article class="item" data-item-index="73">
           <div class="item-header">
+            <input type="checkbox" class="item-checkbox" id="item-sign-users-out-of-shared-devices-in-a-fixed-order">
+            <label class="item-title" for="item-sign-users-out-of-shared-devices-in-a-fixed-order">Sign users out of shared devices in a fixed order</label>
+          </div>
+          <div class="item-details">
+            <div class="detail-section">
+              <div class="detail-heading what-heading">What this means</div>
+              <div class="detail-content what-content">
+<p>When several people use one device, sign a user out in this order:</p>
+<ul>
+<li>Wait, with a timeout, until Ditto Server (or, without a server, the hub or another device) has confirmed the user's important writes</li>
+<li>Cancel the user's subscriptions and the observers of their screens</li>
+<li>Call <code>logout(cleanup:)</code> (SDK 5.2+), evict the user's documents in the callback, and check afterwards that they are gone</li>
+<li>For data that must not remain readable in the database files, close Ditto and delete the persistence directory instead</li>
+<li>After the next user logs in, register that user's subscriptions and call <code>ditto.sync.start()</code></li>
+</ul>
+              </div>
+            </div>
+            <div class="detail-section">
+              <div class="detail-heading why-heading">Why this matters</div>
+              <div class="detail-content why-content">
+<p>The local store belongs to the device, not to the user. Documents that one user's subscriptions brought to the device stay after logout and remain visible to local queries until they are evicted. Documents that an active subscription still matches sync back after the next <code>ditto.sync.start()</code>. <code>logout()</code> stops sync, so evicting before the writes are confirmed can discard changes that no other device has yet. Exceptions thrown in the cleanup callback do not reach the caller.</p>
+              </div>
+            </div>
+            <p class="guide-reference"><span class="guide-label">Best-practices guide:</span> Switching users on a shared device, Data at Rest</p>
+          </div>
+        </article>
+
+        <article class="item" data-item-index="74">
+          <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-reject-identities-in-the-webhook-before-revoking-certificates-sdk-5-1">
             <label class="item-title" for="item-reject-identities-in-the-webhook-before-revoking-certificates-sdk-5-1">Reject identities in the webhook before revoking certificates (SDK 5.1+)</label>
           </div>
@@ -3737,7 +3766,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       </h2>
       <div class="section-content" id="section-12-content">
 
-        <article class="item" data-item-index="74">
+        <article class="item" data-item-index="75">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-configure-logging-before-opening-ditto">
             <label class="item-title" for="item-configure-logging-before-opening-ditto">Configure logging before opening Ditto</label>
@@ -3781,7 +3810,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="75">
+        <article class="item" data-item-index="76">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-use-presence-and-transport-conditions-for-connectivity-diagnostics">
             <label class="item-title" for="item-use-presence-and-transport-conditions-for-connectivity-diagnostics">Use presence and transport conditions for connectivity diagnostics</label>
@@ -3826,7 +3855,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="76">
+        <article class="item" data-item-index="77">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-test-your-dql-statements-against-a-real-local-store">
             <label class="item-title" for="item-test-your-dql-statements-against-a-real-local-store">Test your DQL statements against a real local store</label>
@@ -3905,7 +3934,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="77">
+        <article class="item" data-item-index="78">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-test-the-behaviors-that-fail-silently">
             <label class="item-title" for="item-test-the-behaviors-that-fail-silently">Test the behaviors that fail silently</label>
@@ -4054,6 +4083,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "Encode permission scopes in an immutable _id",
       "Validate input and treat synced data as untrusted",
       "Protect sensitive data at rest and keep it out of metadata",
+      "Sign users out of shared devices in a fixed order",
       "Reject identities in the webhook before revoking certificates (SDK 5.1+)",
       "Configure logging before opening Ditto",
       "Use presence and transport conditions for connectivity diagnostics",
@@ -4134,6 +4164,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>The permission queries that your webhook returns can reference only the document's <code>_id</code>. Decide the permission boundaries (user, store, organization) before you ship, and put them into a structured <code>_id</code> such as <code>{\"storeId\": \"store-1\", \"orderId\": \"...\"}</code>. Rules such as <code>_id.storeId == 'store-1'</code> can then match them. Permission queries use Ditto's legacy query syntax, not DQL, so compare with <code>==</code>, not with the DQL <code>=</code>. Grant each role only the <code>read</code> and <code>write</code> rules it needs.</p>",
       "<p>Before an <code>INSERT</code> or <code>UPDATE</code>, validate required fields, types, and value ranges, and pass every value as a parameter. When you render or process documents received from other peers, treat them as untrusted input.</p>",
       "<p>The Flutter SDK does not encrypt its local database at rest, and no API enables it. (Since SDK 5.2, the Swift and Kotlin SDKs can encrypt the store with <code>DittoConfig.encryptionKey</code>.) Instead:</p>\n<ul>\n<li>Rely on OS protection: screen lock and file-based encryption, enforced through MDM on managed devices</li>\n<li>Encrypt sensitive field values in the app before writing them, and keep the keys in secure storage</li>\n<li>Never store secrets in documents, peer metadata, or <code>identityServiceMetadata</code></li>\n</ul>",
+      "<p>When several people use one device, sign a user out in this order:</p>\n<ul>\n<li>Wait, with a timeout, until Ditto Server (or, without a server, the hub or another device) has confirmed the user's important writes</li>\n<li>Cancel the user's subscriptions and the observers of their screens</li>\n<li>Call <code>logout(cleanup:)</code> (SDK 5.2+), evict the user's documents in the callback, and check afterwards that they are gone</li>\n<li>For data that must not remain readable in the database files, close Ditto and delete the persistence directory instead</li>\n<li>After the next user logs in, register that user's subscriptions and call <code>ditto.sync.start()</code></li>\n</ul>",
       "<p>To remove a user's or device's access, first reject the identity in your authentication webhook, then create a certificate revocation through the Ditto Server HTTP API. Keep <code>PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED</code> at its default (enabled).</p>",
       "<p>Before <code>Ditto.open()</code>, call <code>await Ditto.init()</code> and then set <code>DittoLogger.minimumLogLevel</code>, for example to <code>kReleaseMode ? LogLevel.warning : LogLevel.debug</code>. Forward warnings and errors with <code>DittoLogger.customLogCallback</code>. Set the callback again before every <code>Ditto.open()</code>, because <code>ditto.close()</code> resets it. Use <code>LogLevel.verbose</code> only for short, targeted investigations.</p>",
       "<p>Show connection indicators with <code>ditto.presence.observe(...)</code>, and stop the returned <code>PresenceObserver</code> when you no longer need it. Use <code>ditto.observeTransportConditions()</code> (SDK 5.1+) to detect missing permissions or disabled radios, and <code>DittoSyncPermissions</code> to find missing runtime permissions on Android. Keep peer metadata small and free of sensitive data, and set it and <code>ditto.deviceName</code> once, before you start sync.</p>",
@@ -4214,6 +4245,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>Permissions based on mutable fields such as <code>status</code> or <code>ownerId</code> are not supported, and <code>_id</code> cannot be changed after a document is created. Sync scopes, <code>syncGroup</code>, and client-side checks do not provide access control.</p>",
       "<p>Ditto collections have no schema, so validating data before writing it is your application's job. Parameters keep values separate from the query text, so input cannot change the meaning of a statement. Subscription queries and their arguments are an exception to keeping values private: they go to directly connected devices and into both devices' on-disk logs (SDK 5.1.0 and 5.2.0), so filter subscriptions by opaque IDs, not by personal data such as email addresses.</p>",
       "<p>OS protection requires a passcode or screen lock. With the default settings, it protects data mainly while the device is powered off or has not been unlocked since it started. An app installed from a public app store cannot enforce device encryption. Peer metadata and identity metadata are shared with every peer in the mesh, not only with directly connected peers. <code>DELETE</code> and <code>EVICT</code> do not remove values from the database files: in our testing with SDK 5.1.0 and 5.2.0, most deleted values could still be read from the files after Ditto was closed. To remove data from a shared device for sure, close Ditto and delete the persistence directory.</p>",
+      "<p>The local store belongs to the device, not to the user. Documents that one user's subscriptions brought to the device stay after logout and remain visible to local queries until they are evicted. Documents that an active subscription still matches sync back after the next <code>ditto.sync.start()</code>. <code>logout()</code> stops sync, so evicting before the writes are confirmed can discard changes that no other device has yet. Exceptions thrown in the cleanup callback do not reach the caller.</p>",
       "<p>If the webhook still accepts the user, the device re-authenticates and regains access, because a revocation applies only to certificates issued before it was created. Revocations are permanent. They reach offline peers when those peers next connect, and they do not apply to shared-key deployments.</p>",
       "<p><code>DittoLogger</code> throws until the SDK is initialized. Verbose logging produces a very large log volume. A production console level of <code>warning</code> does not limit later diagnosis: on-disk logs always include debug-level entries, which you can export with <code>DittoLogger.exportLogs()</code>, request from the Ditto Portal, or, since SDK 5.2, package on the device as a support bundle with <code>EXECUTE FUNCTION system_request_support_bundle()</code>.</p>",
       "<p>Transport configuration changes do not throw, so transport conditions are how you find out why peers do not connect. Peer metadata is shared with every peer in the mesh. In our testing with SDK 5.1.0 and 5.2.0, other peers saw metadata changes at most about once per second, a <code>deviceName</code> changed during sync did not reach them until sync restarted, and a peer that stopped responding over TCP stayed in the presence graph for about 7 to 9 seconds.</p>",
@@ -4371,6 +4403,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "権限のスコープを変更できない _id に組み込む",
       "入力を検証し、同期されてきたデータも信頼できない入力として扱う",
       "保存データの機密情報を保護し、メタデータに入れない",
+      "共有端末では決まった順序でユーザーをログアウトさせる",
       "証明書を失効させる前に、WebhookでIDを拒否する（SDK 5.1+）",
       "ロギングはDittoを開く前に設定する",
       "接続の診断にはpresenceとトランスポートの状態を使う",
@@ -4451,6 +4484,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>Webhookが返す権限クエリは、ドキュメントの <code>_id</code> しか参照できません。権限の境界（ユーザー、店舗、組織）はリリース前に決め、<code>{\"storeId\": \"store-1\", \"orderId\": \"...\"}</code> のような構造化した <code>_id</code> に含めます。こうすると、<code>_id.storeId == 'store-1'</code> のようなルールでマッチできます。権限クエリはDQLではなくDittoの従来のクエリ構文で書くため、比較にはDQLの <code>=</code> ではなく <code>==</code> を使います。各ロールには、必要最小限の <code>read</code> と <code>write</code> のルールだけを与えます。</p>",
       "<p><code>INSERT</code> や <code>UPDATE</code> の前に、必須フィールド、型、値の範囲を検証し、すべての値をパラメーターとして渡します。他のピアから受け取ったドキュメントも、表示や処理の際には信頼できない入力として扱います。</p>",
       "<p>Flutter SDKはローカルデータベースを保存時に暗号化せず、暗号化を有効にするAPIもありません（SDK 5.2以降、Swift SDKとKotlin SDKでは <code>DittoConfig.encryptionKey</code> でストアを暗号化できます）。代わりに次のようにします。</p>\n<ul>\n<li>OSの保護機能（画面ロックとファイルベースの暗号化。管理対象デバイスではMDMで強制する）に頼る</li>\n<li>機密性の高いフィールドの値は書き込む前にアプリで暗号化し、鍵はセキュアストレージに保管する</li>\n<li>秘密情報をドキュメント、ピアのメタデータ、<code>identityServiceMetadata</code> に保存しない</li>\n</ul>",
+      "<p>1台の端末を複数の人が使う場合は、次の順序でユーザーをログアウトさせます。</p>\n<ul>\n<li>ユーザーの重要な書き込みを、Ditto Server（サーバーがない場合はハブかほかのデバイス）が確認するまで、タイムアウトを付けて待つ</li>\n<li>そのユーザーのサブスクリプションと、ユーザーの画面のオブザーバーをキャンセルする</li>\n<li><code>logout(cleanup:)</code> （SDK 5.2+）を呼び、コールバックの中でユーザーのドキュメントを <code>EVICT</code> し、消えたことを後で確かめる</li>\n<li>データベースのファイルに残してはならないデータは、代わりにDittoを閉じてから永続化ディレクトリを削除する</li>\n<li>次のユーザーがログインしたら、そのユーザーのサブスクリプションを登録し、<code>ditto.sync.start()</code> を呼ぶ</li>\n</ul>",
       "<p>ユーザーやデバイスのアクセスを取り消すときは、まず認証WebhookでそのIDを拒否し、次にDitto ServerのHTTP APIで証明書の失効（revocation）を作成します。<code>PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED</code> はデフォルト（有効）のままにします。</p>",
       "<p><code>Ditto.open()</code> の前に <code>await Ditto.init()</code> を呼び、続けて <code>DittoLogger.minimumLogLevel</code> を設定します（例: <code>kReleaseMode ? LogLevel.warning : LogLevel.debug</code>）。警告とエラーは <code>DittoLogger.customLogCallback</code> で転送します。<code>ditto.close()</code> でコールバックがリセットされるため、<code>Ditto.open()</code> の前に毎回設定し直します。<code>LogLevel.verbose</code> は、対象を絞った短時間の調査にだけ使います。</p>",
       "<p>接続状態の表示には <code>ditto.presence.observe(...)</code> を使い、不要になったら返された <code>PresenceObserver</code> を停止します。権限の不足や無線のオフを検出するには <code>ditto.observeTransportConditions()</code>（SDK 5.1+）を、Androidで不足しているランタイム権限を調べるには <code>DittoSyncPermissions</code> を使います。ピアのメタデータは小さく保ち、機密情報を含めないようにします。ピアのメタデータと <code>ditto.deviceName</code> は、同期を始める前に一度だけ設定します。</p>",
@@ -4531,6 +4565,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p><code>status</code> や <code>ownerId</code> のように値が変わるフィールドに基づく権限はサポートされておらず、<code>_id</code> はドキュメントの作成後に変更できません。sync scope、<code>syncGroup</code>、クライアント側のチェックは、アクセス制御の代わりになりません。</p>",
       "<p>Dittoのコレクションにはスキーマがないため、書き込むデータの検証はアプリケーションの責任です。パラメーターを使えば値はクエリ文字列と分離されるため、入力によってステートメントの意味が変わることはありません。ただし、サブスクリプションのクエリと引数は、直接接続しているデバイスに送られ、両方のデバイスのディスク上のログに残ります（SDK 5.1.0と5.2.0）。サブスクリプションはメールアドレスなどの個人データではなく、それだけでは意味を持たないIDで絞り込みます。</p>",
       "<p>OSの保護機能にはパスコードまたは画面ロックが必要です。デフォルト設定で主に保護されるのは、デバイスの電源が切れているときと、起動後に一度もロックを解除していないときのデータです。公開アプリストアからインストールしたアプリは、デバイスの暗号化を強制できません。ピアのメタデータとIDのメタデータは、直接接続しているピアだけでなく、メッシュ内のすべてのピアに共有されます。<code>DELETE</code> や <code>EVICT</code> は、データベースのファイルから値を消しません。SDK 5.1.0と5.2.0でのテストでは、削除した値の大半が、Dittoを閉じた後もファイルから読み取れました。共有のデバイスからデータを確実に消すには、Dittoを閉じてから永続化ディレクトリを削除します。</p>",
+      "<p>ローカルストアはユーザーではなく端末のものです。あるユーザーのサブスクリプションが端末に持ち込んだドキュメントは、ログアウトした後も残り、evictするまでローカルクエリから見えます。アクティブなサブスクリプションがまだ一致するドキュメントは、次に <code>ditto.sync.start()</code> を呼んだ後に同期で戻ってきます。<code>logout()</code> は同期を止めるので、書き込みが確認される前にevictすると、まだほかのデバイスにない変更を失うことがあります。cleanupコールバックの中で投げた例外は、呼び出し元に届きません。</p>",
       "<p>失効が適用されるのは、失効を作成する前に発行された証明書だけです。そのため、Webhookがまだそのユーザーを受け入れていると、デバイスは再認証してアクセスを取り戻します。失効は取り消せません。オフラインのピアには次回の接続時に届き、共有キーのデプロイには適用されません。</p>",
       "<p>SDKが初期化されるまで、<code>DittoLogger</code> は例外を投げます。verboseのログは非常に大きな量になります。本番でコンソールのレベルを <code>warning</code> にしても、後からの調査には影響しません。ディスク上のログには常にdebugレベルのエントリーが含まれ、<code>DittoLogger.exportLogs()</code> でエクスポートしたり、Ditto Portalから取得したりできます。SDK 5.2以降は、<code>EXECUTE FUNCTION system_request_support_bundle()</code> でデバイス上にsupport bundleとしてまとめることもできます。</p>",
       "<p>トランスポート設定を変更しても例外は発生しないため、ピアが接続しない理由はトランスポートの状態から調べます。ピアのメタデータは、メッシュ内のすべてのピアに共有されます。SDK 5.1.0と5.2.0でのテストでは、メタデータの変更がほかのピアに見えるのは多くても約1秒に1回で、同期中に変えた <code>deviceName</code> は同期をやり直すまで届かず、TCPで応答しなくなったピアは約7〜9秒のあいだpresenceのグラフに残りました。</p>",

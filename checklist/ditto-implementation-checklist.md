@@ -1,7 +1,7 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 2.33
-> **Last Updated**: 2026-11-03
+> **Version**: 2.34
+> **Last Updated**: 2026-11-06
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0)
 >
 > **Ditto documentation**: [https://docs.ditto.live](https://docs.ditto.live)
@@ -1651,6 +1651,19 @@ Future<void> updateOrderStatus(Ditto ditto, String orderId, String status) async
 **Why this matters:** OS protection requires a passcode or screen lock. With the default settings, it protects data mainly while the device is powered off or has not been unlocked since it started. An app installed from a public app store cannot enforce device encryption. Peer metadata and identity metadata are shared with every peer in the mesh, not only with directly connected peers. `DELETE` and `EVICT` do not remove values from the database files: in our testing with SDK 5.1.0 and 5.2.0, most deleted values could still be read from the files after Ditto was closed. To remove data from a shared device for sure, close Ditto and delete the persistence directory.
 
 **Best-practices guide:** Data at Rest, Identity metadata is visible to the mesh
+
+### ☐ Sign users out of shared devices in a fixed order
+
+**What this means:** When several people use one device, sign a user out in this order:
+- Wait, with a timeout, until Ditto Server (or, without a server, the hub or another device) has confirmed the user's important writes
+- Cancel the user's subscriptions and the observers of their screens
+- Call `logout(cleanup:)` (SDK 5.2+), evict the user's documents in the callback, and check afterwards that they are gone
+- For data that must not remain readable in the database files, close Ditto and delete the persistence directory instead
+- After the next user logs in, register that user's subscriptions and call `ditto.sync.start()`
+
+**Why this matters:** The local store belongs to the device, not to the user. Documents that one user's subscriptions brought to the device stay after logout and remain visible to local queries until they are evicted. Documents that an active subscription still matches sync back after the next `ditto.sync.start()`. `logout()` stops sync, so evicting before the writes are confirmed can discard changes that no other device has yet. Exceptions thrown in the cleanup callback do not reach the caller.
+
+**Best-practices guide:** Switching users on a shared device, Data at Rest
 
 ### ☐ Reject identities in the webhook before revoking certificates (SDK 5.1+)
 
