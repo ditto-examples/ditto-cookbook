@@ -15,7 +15,7 @@ How each CRDT type merges is described in [CRDT Types and Merge Behavior](../kno
 
 ## Strict Mode
 
-`DQL_STRICT_MODE` controls how Ditto types values that a statement does not declare explicitly. **The default is `false`**, and the rest of this guide assumes it. You can check the current value:
+**Keep `DQL_STRICT_MODE` at its default, `false`, unless almost every object in your data model needs whole-object replacement, and use the same value on every peer.** The rest of this guide assumes the default. The system parameter controls how Ditto types values that a statement does not declare explicitly; with the default, declare the few fields that need whole-object replacement as `REGISTER` (see [When to choose strict mode](#when-to-choose-strict-mode)). You can check the current value:
 
 ```sql
 SHOW DQL_STRICT_MODE
@@ -82,7 +82,7 @@ Future<void> setShippingAddress(
 
 ### Keep type declarations consistent
 
-A field can hold more than one CRDT value at the same time when statements disagree about its type. Each statement reads or writes the value of the type it declares (or infers), and an undeclared `SELECT` shows the most recently written type (see [Changing a register to a counter leaves both values](../knowledge/observations/merge-behavior.md#changing-a-register-to-a-counter-leaves-both-values)). Mixed declarations therefore produce results that look like data loss, even on a single device:
+**Declare a field the same way in every `INSERT`, `UPDATE`, and `SELECT` that touches it, and change a counter only with `APPLY`.** A field can hold more than one CRDT value at the same time when statements disagree about its type. Each statement reads or writes the value of the type it declares (or infers), and an undeclared `SELECT` shows the most recently written type (see [Changing a register to a counter leaves both values](../knowledge/observations/merge-behavior.md#changing-a-register-to-a-counter-leaves-both-values)). Mixed declarations therefore produce results that look like data loss, even on a single device:
 
 | Sequence (default settings) | Result |
 |---|---|
@@ -117,11 +117,9 @@ const strictModeConfig = DittoConfig(
 
 ### Peers with different settings
 
-Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. In our testing with SDK 5.1.0 and 5.2.0, one strict and one non-strict peer showed these effects (see [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)):
+**Use the same `DQL_STRICT_MODE` value on every peer that writes to the database; if a peer must differ, declare the map fields it reads in every statement there.** Strict mode is a local setting of each peer. Data syncs between peers regardless of their settings, but **each peer interprets the data with its own setting**. A peer with `DQL_STRICT_MODE = true` does not show undeclared objects that another peer wrote as maps, so nested updates from a `false` peer appear to be missing on the `true` peer, although they have synced correctly. In our testing with SDK 5.1.0 and 5.2.0, one strict and one non-strict peer showed these effects (see [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)):
 - A nested update such as `SET obj.a = 2` on the strict peer failed with `Unsupported DML operation on REGISTER field "obj"` when `obj` had been written as an object by a strict peer.
 - After concurrent edits, an undeclared `SELECT *` kept showing different values for the same document on the two peers.
-
-The remedies are to use the same setting on all peers (recommended) or to declare the fields as `MAP` on the strict peers.
 
 **✅ DO:**
 - Use the same `DQL_STRICT_MODE` value on every peer, in every app and backend integration that writes to the same database.
@@ -132,7 +130,7 @@ The remedies are to use the same setting on all peers (recommended) or to declar
 
 ## Arrays and Maps
 
-Arrays are registers: the whole array is replaced on every write, and when two devices change the same array concurrently, one version wins and the other change is lost silently (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)). Maps keyed by ID merge each entry independently (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)). Choose the shape as follows:
+**Store items that several devices add, edit, or remove as a map keyed by a stable ID, not as an array.** Arrays are registers: the whole array is replaced on every write, and when two devices change the same array concurrently, one version wins and the other change is lost silently (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)). Maps keyed by ID merge each entry independently (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)). Choose the shape as follows:
 
 | Use a **map keyed by ID** when | Use an **array** when |
 |---|---|
@@ -418,12 +416,12 @@ Once a document has replicated, Ditto syncs only the fields that change, but eve
 
 ## Document Size Limits
 
-Ditto enforces two thresholds on the **size of each stored document**:
+**Keep every document well below the 256 KiB soft limit, store binary content as attachments, and leave both limits at their defaults.** Ditto enforces two thresholds on the **size of each stored document**:
 
 | Threshold | Default | System parameter | Behavior |
 |---|---|---|---|
 | Soft limit | 256 KiB (262,144 bytes) | `DOCUMENT_SIZE_SOFT_LIMIT_BYTES` | The write succeeds and a warning is logged |
-| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. Changes that arrive from other devices are not checked in 5.1.0, and are dropped on the receiving device in 5.2.0 (see below and [An oversized merge ends differently on each release](../knowledge/observations/documents-and-limits.md#an-oversized-merge-ends-differently-on-each-release)). SDK 5.0.3 did not check the limit in our testing (see [SDK 5.0.3 does not check the hard size limit when a document is written](../knowledge/observations/documents-and-limits.md#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)) |
+| Hard limit | 5 MiB (5,242,880 bytes) | `DOCUMENT_SIZE_HARD_LIMIT_BYTES` | `INSERT` and `UPDATE` statements on this device that would exceed it **fail**; the stored document is unchanged. On 5.2.0, a change from another device that would exceed it is dropped on the receiving device; 5.1.0 does not check such changes (see below and [An oversized merge ends differently on each release](../knowledge/observations/documents-and-limits.md#an-oversized-merge-ends-differently-on-each-release)). SDK 5.0.3 did not check the limit in our testing (see [SDK 5.0.3 does not check the hard size limit when a document is written](../knowledge/observations/documents-and-limits.md#sdk-503-does-not-check-the-hard-size-limit-when-a-document-is-written)) |
 
 Log and error messages:
 
@@ -433,11 +431,13 @@ Log and error messages:
 Query failed: DQL Internal execution error: Insert failed: <store> Document `_id = "s5m1"` size is 5243067 bytes and exceeds limit of 5242880 bytes
 ```
 
-In Flutter, a failed statement throws a `DittoException`; catch it like any other DQL error.
+In Flutter, a failed statement throws a `DittoException`; catch it like any other DQL error (see [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing)).
 
-> **Note (SDK 5.1.0):** The hard limit is checked only when a device writes, not when changes from other devices merge. In our testing, two devices that each added 3 MiB to the same document while offline both stored the 6 MiB document without an error, and from then on **every `UPDATE` of that document failed on every device** until an `UNSET` removed enough data (see [On SDK 5.2.0, an oversized merge leaves devices with different versions](../knowledge/observations/documents-and-limits.md#on-sdk-520-an-oversized-merge-leaves-devices-with-different-versions)). By the same rule, a 5.1.0 device whose hard limit is lower than that of other devices would store larger documents that it receives and could not update them; we did not test different limits. Keep large or growing data out of documents (attachments, separate collections), so that even combined offline additions stay far below the limit.
+> **Note (SDK 5.2.0):** A device on 5.2.0 drops a change that would push a document over its hard limit, so the devices keep different versions of the document, and both list it in `system:sync_degradations` with the reason `documentTooBig` (see [System Virtual Collections](../knowledge/system-reference.md#system-virtual-collections)); no API reports an error. In our testing, updates of that document then reached neither device, while other documents kept syncing, until one device evicted it, and **the evicting device lost its own changes to the document** (see [On SDK 5.2.0, an oversized document stops syncing until one side evicts it](../knowledge/observations/documents-and-limits.md#on-sdk-520-an-oversized-document-stops-syncing-until-one-side-evicts-it)). To recover, evict the document on the device whose changes you can afford to lose, and include `system:sync_degradations` in your diagnostics.
 >
-> **Note (SDK 5.2.0):** A device on 5.2.0 drops a change that would push a document over its hard limit, so the devices keep different versions of the document, and both list it in `system:sync_degradations` with the reason `documentTooBig` (see [System Virtual Collections](../knowledge/system-reference.md#system-virtual-collections)); no API reports an error. In our testing, updates of that document then reached neither device, while other documents kept syncing, until one device evicted it, and **the evicting device lost its own changes to the document** (see [On SDK 5.2.0, an oversized document stops syncing until one side evicts it](../knowledge/observations/documents-and-limits.md#on-sdk-520-an-oversized-document-stops-syncing-until-one-side-evicts-it)). To recover, evict the document on the device whose changes you can afford to lose, and include `system:sync_degradations` in your diagnostics. On both releases, the protection is the same: keep documents far below the limit.
+> **Note (SDK 5.1.0):** The hard limit is checked only when a device writes, not when changes from other devices merge. In our testing, two devices that each added 3 MiB to the same document while offline both stored the 6 MiB document without an error, and from then on **every `UPDATE` of that document failed on every device** until an `UNSET` removed enough data (see [On SDK 5.2.0, an oversized merge leaves devices with different versions](../knowledge/observations/documents-and-limits.md#on-sdk-520-an-oversized-merge-leaves-devices-with-different-versions)). By the same rule, a 5.1.0 device whose hard limit is lower than that of other devices would store larger documents that it receives and could not update them; we did not test different limits.
+
+On both releases, the protection is the same: keep large or growing data out of documents (attachments, separate collections), so that even combined offline additions stay far below the limit.
 
 **Why the limits matter:** Size affects local storage and memory on every device holding the document, serialization time, CRDT merge cost (which scales with document size, not change size), and initial replication. Over Bluetooth LE (roughly 20 KB/s in practice), a 256 KiB document takes more than 10 seconds to replicate the first time (sync traffic is compressed, so content that compresses well goes faster; see [Sync traffic is compressed and carries field-level changes](../knowledge/observations/subscriptions-and-replication.md#sync-traffic-is-compressed-and-carries-field-level-changes)). Later edits sync only the changed fields, but a document that many devices have written stays heavier: in our testing, a field that 300 devices had written cost about 11 times as much on a new device's first sync as a field that one device had written as often, also after the value had been overwritten (see [A document grows with the number of devices that wrote it](../knowledge/observations/documents-and-limits.md#a-document-grows-with-the-number-of-devices-that-wrote-it)). A shared document that every device writes (store settings, a tally that every device increments) grows with the number of devices that ever wrote it, including reinstalled devices, which write as new devices.
 
