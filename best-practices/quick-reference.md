@@ -14,7 +14,7 @@ A condensed summary of the main recommendations. Follow the links for the reason
 
 **Data modeling** ([Data Modeling](data-modeling.md))
 - ✅ Update fields, not whole documents; use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts.
-- ✅ Use maps keyed by ID for items that several devices edit; use `COUNTER` for concurrent tallies, and recalibrate with `RESTART WITH` only while every device that changes the counter is in sync.
+- ✅ Use maps keyed by ID for items that several devices edit; use `COUNTER` for concurrent tallies, leave counter fields out of upserts and re-imports, and recalibrate with `RESTART WITH` only while every device that changes the counter is in sync.
 - ✅ Use UUIDs (or composite IDs with a UUID) for `_id`; put permission scopes in `_id`.
 - ✅ Keep documents well below 256 KiB; store binary data as attachments.
 - ✅ Store timestamps as UTC ISO-8601 strings ending in `Z`, produced by one fixed-precision helper, or as epoch milliseconds.
