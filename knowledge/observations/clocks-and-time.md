@@ -105,4 +105,4 @@ Which documents arrived:
 
 **Not tested:** periods longer than 30 seconds; cancelling a subscription and registering the same text and arguments again (by [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle), which says that re-registering after a cancel fetched only what had changed, it probably does not move the window); whether a write to one document makes the sender evaluate other documents that have entered the window; a new peer with a new persistence directory.
 
-**Used in:** [Date and Time](../dql-functions.md#date-and-time).
+**Used in:** [Subscription Rules](../../best-practices/sync-and-subscriptions.md#subscription-rules), [Date and Time](../dql-functions.md#date-and-time).
