@@ -1,7 +1,7 @@
 # Ditto SDK Best Practices
 
-> **Version**: 4.43
-> **Last Updated**: 2026-11-04
+> **Version**: 4.44
+> **Last Updated**: 2026-11-06
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
 This guide helps you build offline-first applications on the Ditto SDK that stay correct when many devices change the same data without a connection. It concentrates on two kinds of guidance:
@@ -26,18 +26,20 @@ The guide has two parts: these best practices, which say what to do and what to 
 | Reviewing code or preparing a release | [Anti-Pattern Checklist](anti-patterns.md), [Security Checklist](security.md#security-checklist), and [Testing Strategies](testing.md) |
 | Upgrading from SDK 5.1, or running devices that still use 5.1.0 | [Upgrading from SDK 5.1](../knowledge/upgrading.md) |
 | Looking for a condensed summary or copyable code | [Quick Reference](quick-reference.md) |
-| Looking up one API, statement, or error | Search for the exact API name, DQL keyword, system parameter, or error message. Each section is written to be read on its own. |
+| Looking up one API, statement, or error | Search for the exact API name, DQL keyword, system parameter, or error message, and read the section to its next heading of the same level. Each section is written to be read on its own. |
+| Writing or reviewing code with a coding agent | Install the [`ditto` Claude Code plugin](https://github.com/ditto-examples/ditto-cookbook/tree/main/plugins/ditto). Its Skills apply this guide while the agent writes or reviews Ditto code, and its `guide` Skill searches the complete guide. |
 
 **Conventions**:
 
 - **Code examples** use Flutter (Dart) with `import 'package:ditto_live/ditto_live.dart';`. The DQL statements, the data modeling guidance, and the sync behavior apply to every SDK; where the JavaScript, Swift, or Kotlin APIs or behavior differ, the guide says so (see [Platform Differences](../knowledge/platform-differences.md)).
 - **✅ DO / ❌ DON'T**: Each topic lists recommended practices and anti-patterns, followed by examples marked `// ✅ GOOD` and `// ❌ BAD`.
-- **(SDK 5.1+)** / **(SDK 5.2+)**: Marks features introduced in Ditto SDK 5.1 or 5.2 (a few small features, such as `object_size()`, carry the mark because SDK 5.0.3 did not support them in our testing; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)). Everything else is available in 5.0 and later.
+- **(SDK 5.1+)** / **(SDK 5.2+)**: Marks features introduced in Ditto SDK 5.1 or 5.2. Everything else is available in 5.0 and later, apart from a few small features, such as `object_size()`, that carry the mark because SDK 5.0.3 rejected them in our testing (see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)).
 - **(Experimental)** / **(Beta)**: Marks APIs that the SDK itself marks as experimental or beta. Their signatures or behavior may change in a future release.
 - **Note (SDK ...)**: Describes behavior that is easy to miss and can lead to wrong results, lost data, crashes, or hangs, together with the pattern that avoids it. The label names the releases on which we observed it: **Note (SDK 5.1.0 and 5.2.0)** was confirmed on both releases, and **Note (SDK 5.1.0)** was observed on 5.1.0 and has not yet been repeated on 5.2.0 (the 5.2.0 release notes describe no change unless the note says so). Search for "Note (SDK" to list them all, and review them when you upgrade the SDK: a later release may change the behavior. Issues that 5.2.0 fixed are collected in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
+- **Section citations**: The plugin Skills and the checklist cite a section as `§ Heading`. Every heading is unique across both parts of the guide, so a search for its text finds exactly one section.
 - **Placeholders** such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
 
-**How the content was verified**: Statements that say a behavior was observed "in our testing" summarize observations that the knowledge pages describe in full, with the SDK releases, the setup, every number, and what was not tested; [How We Tested](../knowledge/observations/how-we-tested.md) describes the environment they share (mostly the JavaScript SDK on Node.js, with peers on one machine connected over TCP) and the checks that run on every change of the guide, such as running every DQL statement on SDK 5.1.0 and 5.2.0. Each such statement, and each **Note (SDK ...)**, names the releases on which we observed it; one that names only 5.1.0 has not yet been repeated on 5.2.0. These observations describe how those releases behaved, not a documented guarantee. Statements that the 5.2.0 release notes are the only source for say so.
+**How the content was verified**: A statement that a behavior was observed "in our testing" names the releases it was observed on and links to its observation entry, which gives the setup, every number, and what was not tested. It describes how those releases behaved, not a documented guarantee; statements whose only source is the 5.2.0 release notes say so. [How We Tested](../knowledge/observations/how-we-tested.md) describes the environment that the observations share (mostly the JavaScript SDK on Node.js, with peers on one machine connected over TCP) and the checks that run on every change of the guide: every DQL statement runs on SDK 5.1.0 and 5.2.0, and the Dart examples were compiled against `ditto_live` 5.1.0 (examples of APIs added in 5.2 follow the 5.2.0 API reference).
 
 ## The Essentials
 
