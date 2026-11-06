@@ -9,7 +9,7 @@ Ditto uses **query-based sync**: subscriptions tell other peers which documents 
 | `ditto.store.registerObserver(query)` | Local store (live) | ❌ No |
 | `ditto.store.transaction(...)` | Local store | ❌ No |
 
-Showing synced data therefore needs both a long-lived subscription, owned by an app-level or feature-level service (see [Subscription Lifecycle](#subscription-lifecycle)), and a local query or observer on the screen (see [Core Principles](../knowledge/understanding-ditto.md#core-principles) and [Where Queries Run](dql.md#where-queries-run)).
+Showing synced data therefore needs both a long-lived subscription, owned by an app-level or feature-level service (see [Subscription Lifecycle](#subscription-lifecycle)), and a local query or observer on the screen (see [Core Principles](../knowledge/understanding-ditto.md#core-principles) and [Where Queries Run](dql.md#where-queries-run)). When data does not appear on a device, start with [When Data Does Not Sync](#when-data-does-not-sync).
 
 ## Subscription Rules
 
@@ -520,3 +520,29 @@ Future<int?> saveSettings(Ditto ditto, Map<String, dynamic> settings) async {
 ```
 
 **Why:** `system:data_sync_info` is cheap to read, but every callback re-reads the row of every connection, and Ditto's documentation allows these observers to fire every 500 ms. A single small observer per relevant screen is fine; dozens of observers that may rebuild widgets twice per second are not. For connectivity information (which peers are nearby, whether Ditto Server is connected), use the presence API instead (see [Presence](setup-and-lifecycle.md#presence)).
+
+## When Data Does Not Sync
+
+Use this table when documents that exist on one device do not appear on another, stop updating, arrive late, or come back after eviction. Each row names the most common cause and the section that explains it. For a statement that throws, or that returns nothing although the documents are on the device, see [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing).
+
+| Symptom | Common cause | See |
+|---|---|---|
+| No other peer appears, and nothing syncs | A transport is turned off or lacks a runtime permission, or the devices use different Database IDs | [Diagnosing transport problems (SDK 5.1+)](setup-and-lifecycle.md#diagnosing-transport-problems-sdk-51), [DittoConfig](setup-and-lifecycle.md#dittoconfig) |
+| `ditto.sync.start()` throws | No authentication expiration handler (server connections) or no offline license token (small-peers-only) | [Starting and Stopping Sync](setup-and-lifecycle.md#starting-and-stopping-sync) |
+| Nothing syncs after the user logs in again | `ditto.auth.logout()` stopped sync, and `ditto.sync.start()` was not called after the next login | [Authentication](setup-and-lifecycle.md#authentication) |
+| Some clients of a TCP hub get no data and no error | They exceed the hub's connection limit for the transport | [Transport Configuration](setup-and-lifecycle.md#transport-configuration) |
+| A query or observer returns nothing, although another device holds the documents | No subscription on this device matches them; `execute` and observers read only the local store | [Where Queries Run](dql.md#where-queries-run), [Subscription Rules](#subscription-rules) |
+| Documents in which the filtered field is missing or `null` never arrive | The subscription filters with `!=` or `NOT IN` | [Subscription Rules](#subscription-rules) | <!-- lint-ignore -->
+| The documents arrive, but the screen shows none of them | The local query filters them out, for example with `ANY ... SATISFIES` over a parameter | [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing) | <!-- lint-ignore -->
+| After a restart, screens keep showing old data and no new documents arrive | The subscriptions were not registered again after `Ditto.open()` | [Subscription Lifecycle](#subscription-lifecycle) |
+| A document stops updating, and its deletion on another device never arrives | The document no longer matches the subscription (a frozen copy), or the subscription was cancelled | [Multi-hop relay](#multi-hop-relay), [Cancelling subscriptions and local data](#cancelling-subscriptions-and-local-data) |
+| Documents that enter a time window as time passes do not arrive | The subscription uses `clock()`, which the sending device evaluates only when a document is written or a subscription arrives | [Date and Time](../knowledge/dql-functions.md#date-and-time) |
+| Devices that connect only through another device miss data | The relay subscribes to less than they do, or it is not allowed to write the documents (a read-only peer does not relay) | [Multi-hop relay](#multi-hop-relay), [Write authority and peer-to-peer relaying](security.md#write-authority-and-peer-to-peer-relaying) |
+| Only part of a multi-document transaction appears | It arrived through a relay with narrower subscriptions | [Transactions and Sync](transactions.md#transactions-and-sync) |
+| A collection never reaches Ditto Server or other devices | A sync scope on the device that sends it | [Sync Scopes](#sync-scopes) |
+| Some documents never reach a device, although its subscription matches them | The device's read permissions, returned by your authentication webhook, do not include them | [Permissions](security.md#permissions) |
+| Other changes stop syncing for a while right after login | A large initial sync on this device holds up its other sync | [Subscription Lifecycle](#subscription-lifecycle) |
+| A large data set appears only after a long wait, and then all at once | The receiving device shows an initial sync at once, not document by document | [Subscription Lifecycle](#subscription-lifecycle) |
+| Evicted documents come back | A subscription that is still active matches them | [Cancelling subscriptions and local data](#cancelling-subscriptions-and-local-data) |
+| A write made right before `close()` or `sync.stop()` (for example, at logout) never reached another device | Neither waits for unsent changes; the write is sent the next time the device syncs | [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown) |
+| A peer still shows `"Connected"` after it left, or a write stays unconfirmed | `sync_session_status` lags behind disconnections, and a statement that changed nothing is confirmed only with the next sync exchange | [Monitoring Sync Status](#monitoring-sync-status) |

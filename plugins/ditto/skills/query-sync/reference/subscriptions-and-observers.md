@@ -7,6 +7,7 @@ Detailed rules behind the subscription and observer patterns in [SKILL.md](../SK
 - [Subscription Rules](#subscription-rules)
 - [Subscription Scope](#subscription-scope)
 - [Subscription Lifecycle](#subscription-lifecycle)
+- [When Data Does Not Sync](#when-data-does-not-sync)
 - [Observer APIs](#observer-apis)
 - [Observer Lifecycle](#observer-lifecycle)
 - [Backpressure Behavior](#backpressure-behavior)
@@ -36,7 +37,7 @@ Consequences:
 - Subscriptions cannot join. If a child collection must be filtered by a key on its parent (for example `orderItems` by `storeId`), copy the key into the child documents.
 - `WHERE` follows the rules of a local query: `!=` and `NOT IN` drop documents where the field is missing or `null`, so another device never receives them (in testing with SDK 5.1.0 and 5.2.0). Add `OR field IS MISSING` when older documents may lack the field.
 - Do not use `clock()` in a subscription: each sending device evaluates it with its own clock, only when a document is written and when a new subscription arrives, so documents that enter the window as time passes are not sent (in testing with SDK 5.1.0 and 5.2.0, not after a reconnect or a restart either). Pass a boundary as a parameter (`§ Date and Time`).
-- `DQL_RESTRICT_SUBSCRIPTIONS` (default `true`) controls `LIMIT`/`ORDER BY`. Setting it to `false` allows only those two and creates stateful subscriptions that force re-evaluation whenever documents cross the limit boundary. Keep the default; if you must use one, do not filter or sort on mutable fields together with `LIMIT`. In SDK 5.1.0, `LIMIT` bounds only the initial download. Afterwards, every new or changed document that matches the `WHERE` is synced, including documents that never ranked inside the window, and documents already received stay. The setting is checked only on the subscribing device.
+- `DQL_RESTRICT_SUBSCRIPTIONS` (default `true`) controls `LIMIT`/`ORDER BY`. Setting it to `false` allows only those two and creates stateful subscriptions that force re-evaluation whenever documents cross the limit boundary. Keep the default; if you must use one, do not filter or sort on mutable fields together with `LIMIT`. On SDK 5.1.0 and 5.2.0, `LIMIT` bounds only the initial download. Afterwards, every new or changed document that matches the `WHERE` is synced, including documents that never ranked inside the window, and documents already received stay. The setting is checked only on the subscribing device.
 
 ## Subscription Scope
 
@@ -51,7 +52,7 @@ Consequences:
 - A device that subscribes to nothing relays nothing; a second relay for redundancy needs the same subscriptions (updates kept flowing through the remaining relay when one stopped, in testing, although the first update after a relay stopped responding took up to about 4 s in some runs). Carriers work too: a device moving between sites that never connect carries the documents and deletions that match its own subscriptions, whatever the destination subscribes to.
 - A device accepts a limited number of connections per transport; for TCP, 6 by default (`MESH_CHOOSER_MAX_WLAN_CONNECTIONS`). In testing with SDK 5.1.0 and 5.2.0, extra clients of a TCP hub got no data and no error, only a `WARN ... at capacity` log line (on 5.2.0, connections the device opened itself also count when it decides whether to accept one, so a hub that also dials out admits fewer clients; outgoing connections are not limited). On a hub with more clients, raise the limit so that it is in effect before `ditto.sync.start()`: in `DittoConfig.systemParameters` (SDK 5.2+), or on SDK 5.1 with `ALTER SYSTEM SET MESH_CHOOSER_MAX_WLAN_CONNECTIONS = <n>` after every `Ditto.open`. Raised before sync started, it admitted all eight test clients; raised after sync had started, it did not admit already rejected clients within 60 s. Guide: `§ Transport Configuration`.
 - Keep predicates flat (`storeId = :storeId`); deeply nested `AND`/`OR` trees and deep paths add server-side processing, and overly complex subscription queries are a likely cause of `503 Service Unavailable` from Ditto Server.
-- Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below). In SDK 5.1.0, a document that stops matching becomes a **frozen copy**. The device receives the change that made it stop matching, and then no further edits and not even its deletion. Local queries keep showing it, so filter it out locally and evict it when it is no longer needed. When it matches again, it arrives in its latest state.
+- Do not filter subscriptions on fields that change often (`status`, `assignee`) and expect every device to follow each document through all of its states. Soft-delete flags are a special case (below). On SDK 5.1.0 and 5.2.0, a document that stops matching becomes a **frozen copy**. The device receives the change that made it stop matching, and then no further edits and not even its deletion. Local queries keep showing it, so filter it out locally and evict it when it is no longer needed. When it matches again, it arrives in its latest state.
 - Soft delete: keep soft-deleted documents in the subscriptions of devices that relay data, and hide them locally with `coalesce(isDeleted, false) = false`. A device that subscribes only to active documents still receives the flag and a restore for documents it holds (SDK 5.1.0 and 5.2.0), but it cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. Two designs meet this requirement:
   - **Variant A** (whole-collection or whole-partition subscription): simplest; devices cannot `EVICT` old soft-deleted documents because they still match the subscription, so cleanup is a `DELETE` after the retention period, run on the Ditto Server or by another authorized peer, that syncs to every device.
   - **Variant B** (retention-window subscription, `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff`): devices evict documents deleted before the cutoff; the subscription is re-registered when the cutoff moves (at most about once a day). Choose a window longer than the longest expected offline period, so that other devices can still relay the flag.
@@ -97,6 +98,30 @@ Future<List<SyncSubscription>> switchStore(
   ];
 }
 ```
+
+## When Data Does Not Sync
+
+Documents that exist on one device but do not appear on another, stop updating, arrive late, or come back after eviction. Guide: `§ When Data Does Not Sync`; for statements that throw or return nothing on local data, `§ When a Statement Fails or Returns Nothing`.
+
+| Symptom | Common cause | Guide |
+|---|---|---|
+| No peer appears | Transport off or missing permission; different Database IDs | `§ Diagnosing transport problems (SDK 5.1+)`, `§ DittoConfig` |
+| `sync.start()` throws, or nothing syncs after logging in again | No expiration handler or license token; `logout()` stopped sync | `§ Starting and Stopping Sync`, `§ Authentication` |
+| Some clients of a TCP hub get nothing, no error | Hub connection limit for the transport | `§ Transport Configuration` |
+| Query or observer empty, another device holds the data | No subscription on this device matches | `§ Where Queries Run` |
+| Documents with the field missing or `null` never arrive | Subscription filters with `!=` or `NOT IN` | `§ Subscription Rules` | <!-- lint-ignore -->
+| Data arrives, the screen shows none of it | The local query filters it out (`ANY ... SATISFIES` over a parameter) | `§ When a Statement Fails or Returns Nothing` | <!-- lint-ignore -->
+| Old data and no new documents after a restart | Subscriptions not registered again after `Ditto.open()` | `§ Subscription Lifecycle` |
+| A document stops updating; its deletion never arrives | It left the subscription (frozen copy), or the subscription was cancelled | `§ Multi-hop relay`, `§ Cancelling subscriptions and local data` |
+| Documents entering a time window do not arrive | `clock()` in the subscription | `§ Date and Time` |
+| Devices behind another device miss data | The relay subscribes to less, or may not write the documents | `§ Multi-hop relay`, `§ Write authority and peer-to-peer relaying` |
+| Part of a transaction appears | Relay with narrower subscriptions | `§ Transactions and Sync` |
+| A collection never reaches Ditto Server or other devices | Sync scope on the sending device | `§ Sync Scopes` |
+| A matching document never reaches the device | Its read permissions exclude it | `§ Permissions` |
+| Other changes stall right after login | A large initial sync on this device | `§ Subscription Lifecycle` |
+| Evicted documents come back | An active subscription still matches them | `§ Cancelling subscriptions and local data` |
+| A write right before `close()` or `sync.stop()` never arrived | Neither waits for unsent changes | `§ Resource Cleanup and Shutdown` |
+| `"Connected"` after the peer left; a write stays unconfirmed | Status lags behind disconnections; an empty commit is confirmed only with the next exchange | `§ Monitoring Sync Status` |
 
 ## Observer APIs
 

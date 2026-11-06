@@ -30,7 +30,7 @@ Every DQL statement runs against the **local store**. Only `ditto.sync.registerS
 
 Subscriptions are long-lived, scoped by stable partition keys; observers and `execute` calls are short-lived and screen-specific. An empty result may mean nothing has synced yet or no subscription matches.
 
-`§ Where Queries Run`, `§ Sync and Subscriptions`, `§ When a Statement Fails or Returns Nothing`
+`§ Where Queries Run`, `§ When Data Does Not Sync`, `§ When a Statement Fails or Returns Nothing`
 
 A screen that shows synced data:
 
@@ -71,7 +71,7 @@ A comparison with a missing or null field is neither true nor false, so the row 
 
 ### 3. Subscribe with SELECT * and stable partition keys (CRITICAL)
 
-A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. `registerSubscription` rejects the features below with an error, even before sync starts.
+A subscription selects whole documents from one collection: `SELECT * FROM <collection> [WHERE <condition>]`. `registerSubscription` throws for the features below, even before sync starts.
 
 | Rejected in subscriptions | Do instead |
 |---|---|
@@ -80,7 +80,7 @@ A subscription selects whole documents from one collection: `SELECT * FROM <coll
 | `USE IDS` | `WHERE _id IN :ids` |
 | `LIMIT`, `ORDER BY` | Sort and limit in the local query or observer |
 
-Keep `DQL_RESTRICT_SUBSCRIPTIONS` at its default (`true`): `false` allows `LIMIT`/`ORDER BY` as stateful subscriptions that degrade sync, and in SDK 5.1.0 such a `LIMIT` bounds only the initial download (later, every new or changed match syncs). Bound what syncs with `WHERE` (a stable key or a time window), not `LIMIT`.
+Keep `DQL_RESTRICT_SUBSCRIPTIONS` at its default (`true`): `false` allows `LIMIT`/`ORDER BY` as stateful subscriptions that degrade sync, and such a `LIMIT` bounds only the first download (5.1.0 and 5.2.0; later, every new or changed match syncs). Bound what syncs with `WHERE` (a stable key or a time window), not `LIMIT`.
 **✅ DO**: filter by stable partition keys (tenant, store, region, team); use the same subscriptions on peers in the same role; keep predicates flat; give relay devices at least the subscriptions of the devices behind them.
 **❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for a small reference-data collection every device needs); filter subscriptions on fields that change often (`status`, `assignee`).
 

@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 4.47
+> **Version**: 4.48
 > **Last Updated**: 2026-11-06
 > **Applies to**: Ditto SDK 5.2.0 (Flutter `ditto_live` 5.2.0; notes for JavaScript, Swift, and Kotlin where behavior differs). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -26,6 +26,7 @@ The guide has two parts: these best practices, which say what to do and what to 
 | Reviewing code or preparing a release | [Anti-Pattern Checklist](anti-patterns.md), [Security Checklist](security.md#security-checklist), and [Testing Strategies](testing.md) |
 | Upgrading from SDK 5.1, or running devices that still use 5.1.0 | [Upgrading from SDK 5.1](../knowledge/upgrading.md) |
 | Looking for a condensed summary or copyable code | [Quick Reference](quick-reference.md) |
+| Debugging data that does not sync, or a statement that fails or returns nothing | [When Data Does Not Sync](sync-and-subscriptions.md#when-data-does-not-sync), [When a Statement Fails or Returns Nothing](dql.md#when-a-statement-fails-or-returns-nothing), and [Diagnosing transport problems (SDK 5.1+)](setup-and-lifecycle.md#diagnosing-transport-problems-sdk-51) |
 | Looking up one API, statement, or error | Search for the exact API name, DQL keyword, system parameter, or error message, and read the section to its next heading of the same level. Each section is written to be read on its own. |
 | Writing or reviewing code with a coding agent | Install the [`ditto` Claude Code plugin](https://github.com/ditto-examples/ditto-cookbook/tree/main/plugins/ditto). Its Skills apply this guide while the agent writes or reviews Ditto code, and its `guide` Skill searches the complete guide. |
 
@@ -65,7 +66,7 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 | [SDK Setup and Lifecycle](setup-and-lifecycle.md) | Requirements, `DittoConfig` and `Ditto.open`, authentication, applying system parameters, starting and stopping sync, shutdown, transports, presence |
 | [Reading and Writing Data with DQL](dql.md) | Where queries run, parameters and literals, MISSING and NULL, query results, error messages and empty results, `SELECT` (projections, aggregates, `GROUP BY`, `ORDER BY`, `LIMIT`, `USE IDS`, membership, `JOIN`), `INSERT` and `ON ID CONFLICT`, `UPDATE`, `RETURNING`, `DELETE` and `EVICT` |
 | [Data Modeling](data-modeling.md) | Strict mode, arrays and maps, document structure and size, relationships, document IDs, counters, event history, `INITIAL DOCUMENTS`, schema evolution, timestamps |
-| [Sync and Subscriptions](sync-and-subscriptions.md) | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status |
+| [Sync and Subscriptions](sync-and-subscriptions.md) | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
 | [Observing Changes](observers.md) | Choosing an observer API, when observers fire, store observers in Flutter, backpressure, diffing results, partial UI updates |
 | [Transactions](transactions.md) | `store.transaction`, transaction rules, concurrency and duration, sync, other platforms |
 | [Attachments](attachments.md) | Architecture, creating, fetching, immutability, thumbnails, availability, size |

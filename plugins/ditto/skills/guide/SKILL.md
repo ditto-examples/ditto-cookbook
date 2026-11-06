@@ -26,7 +26,7 @@ Best practices, in `reference/best-practices/`:
 | `setup-and-lifecycle.md` | Requirements, DittoConfig, `Ditto.open`, authentication, system parameters (`DittoConfig.systemParameters`, `ALTER SYSTEM`), sync start/stop, shutdown, transports, presence |
 | `dql.md` | Where queries run, parameters and literals, MISSING vs NULL, query results, error messages and empty results (a lookup table); SELECT (projections, DISTINCT, aggregates, GROUP BY, ORDER BY, LIMIT, USE IDS, membership, JOIN); INSERT and ON ID CONFLICT, UPDATE, RETURNING, DELETE and EVICT |
 | `data-modeling.md` | Strict mode, arrays vs maps, document structure and size, relationships, IDs, counters, event history, INITIAL documents, schema evolution, timestamps |
-| `sync-and-subscriptions.md` | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status |
+| `sync-and-subscriptions.md` | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
 | `observers.md` | Choosing an observer API, when observers fire (by query shape), Flutter store observers, backpressure, diffing, partial UI updates |
 | `transactions.md` | `store.transaction`, rules, concurrency, sync, other platforms |
 | `attachments.md` | Architecture, creating, fetching, immutability, thumbnails, availability, size |

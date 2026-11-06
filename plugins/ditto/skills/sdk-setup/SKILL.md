@@ -212,7 +212,7 @@ Pin `ditto_live` in `pubspec.yaml`; request Bluetooth, Wi-Fi, local network, and
 | `TRANSPORTS_DISCOVERED_PEERS` connects nothing | LAN transport disabled; use `connect.tcpServers` |
 | No relay through a middle device | It lacks write permission |
 
-`§ Diagnosing transport problems (SDK 5.1+)` · Details: [reference/transports-and-presence.md](reference/transports-and-presence.md#diagnosing-transport-problems-sdk-51)
+`§ Diagnosing transport problems (SDK 5.1+)`, `§ When Data Does Not Sync` · Details: [reference/transports-and-presence.md](reference/transports-and-presence.md#diagnosing-transport-problems-sdk-51)
 
 ## Checklist
 
