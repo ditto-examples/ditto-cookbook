@@ -193,7 +193,7 @@ The callback received 11 lines, one every 5 seconds from 10.2 seconds:
 
 **Not tested:** Flutter.
 
-**Used in:** [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration), [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](../platform-differences.md).
+**Used in:** [Transactions on Other Platforms](../../best-practices/transactions.md#transactions-on-other-platforms), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Platform Differences](../platform-differences.md).
 
 ### In JavaScript, close() completes pending writes
 
