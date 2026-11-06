@@ -44,7 +44,7 @@ For each hit:
 1. Read the surrounding function and its callers.
 2. Open the rule in the skill the hit names (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`) and check whether the code really breaks it.
 3. For a hit whose message says it applies to SDK 5.1.0 only (fixed in 5.2.0), such as `delete-evict-use-ids` and `composite-index-mixed-direction`, check the version from step 2. If the project uses 5.1.0, or the version is unknown, report it at its severity. If it uses 5.2.0, keep it as a lower-severity note that the code breaks on devices still running 5.1.0 (the code cannot show which releases run in the field), and say so in the finding.
-4. Keep confirmed hits; drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
+4. Keep confirmed hits, and report each at the severity of its item in `§ Anti-Pattern Checklist`, which can be higher than the scanner's: the scanner's severity only orders the triage. Drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
 
 ### Step 5: Manual review
 
