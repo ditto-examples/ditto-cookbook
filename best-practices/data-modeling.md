@@ -641,7 +641,7 @@ Embedding (the order owns its items) is different from copying another entity's 
 
 ## Document IDs
 
-Every document has an `_id` that is unique within its collection. If you omit `_id`, Ditto generates one. Do not depend on the format of generated IDs; generate your own when other code needs to know or construct the ID.
+**Give every document a collision-free `_id` that never needs to change: a UUID, or a composite object of immutable scope fields plus a UUID. Never use sequential numbers or timestamps.** Every document has an `_id` that is unique within its collection. If you omit `_id`, Ditto generates one. Do not depend on the format of generated IDs; generate your own when other code needs to know or construct the ID.
 
 ### Allowed values
 
@@ -824,7 +824,7 @@ Future<void> createOrderWithLabel(
 
 ## Counters
 
-A `COUNTER` field holds an integer that any device can increment or decrement. Increments and decrements from all devices are combined, so concurrent changes add up instead of overwriting each other (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)). Counter operations use the `APPLY` clause, not `SET`:
+**Use a `COUNTER` for an integer that several devices increment or decrement, change it only with `APPLY`, and declare it in every statement.** A `COUNTER` field holds an integer that any device can increment or decrement. Increments and decrements from all devices are combined, so concurrent changes add up instead of overwriting each other (see [With three offline devices, counters and maps keep every change](../knowledge/observations/merge-behavior.md#with-three-offline-devices-counters-and-maps-keep-every-change)). Counter operations use the `APPLY` clause, not `SET`:
 
 | Operation | Statement |
 |---|---|
@@ -910,13 +910,13 @@ A value that a statement writes into a counter, other than with `INCREMENT BY`, 
 
 ### RESTART
 
-`RESTART WITH n` sets the counter to a specific value and `RESTART` sets it to zero. When devices perform `RESTART` operations concurrently, the last write wins.
+**Use `RESTART` only for occasional corrections made by one authority while every device that changes the counter is online and in sync.** `RESTART WITH n` sets the counter to a specific value and `RESTART` sets it to zero. When devices perform `RESTART` operations concurrently, the last write wins.
 
 > **Note (SDK 5.1.0 and 5.2.0):** A `RESTART` discards **every increment that the restarting device had not received when it ran the restart**. That includes increments that other devices make *after* the restart (by the clock) until the restart reaches them. Only increments made after a device has received the restart are added to the new value. In our testing, a counter at 10 restarted with 100 on one peer while another peer, which had not yet received the restart, incremented it by 5, ended at 100 whichever peer wrote first by the clock, and at 105 only when the restart had already synced before the increment (see [The merge table held on SDK 5.1.0 and 5.2.0](../knowledge/observations/merge-behavior.md#the-merge-table-held-on-sdk-510-and-520)).
 
 A typical consequence: a stock recount with `RESTART WITH :counted` silently erases the sales that offline devices record until they receive the recount. Re-importing the stock list with an upsert has the same effect (see [Writing documents that contain counters](#writing-documents-that-contain-counters) and [An upsert that declares a counter restarts it](../knowledge/observations/merge-behavior.md#an-upsert-that-declares-a-counter-restarts-it)).
 
-Use `RESTART` only for occasional corrections made by one authority while no other device is incrementing the same counter unsynced, for example a recount done while every till is online and in sync. If devices keep recording changes offline during a recount, keep the recounts and the changes as separate event documents and derive the stock from them (see [When counters are appropriate](#when-counters-are-appropriate)).
+Run a stock recount, for example, only while every till is online and in sync. If devices keep recording changes offline during a recount, keep the recounts and the changes as separate event documents and derive the stock from them (see [When counters are appropriate](#when-counters-are-appropriate)).
 
 ```dart
 // Run only while every device that increments stockCount is online and in
@@ -948,7 +948,7 @@ Future<void> recordStockCount(Ditto ditto, String itemId, int counted) async {
 - Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
 - Use `RESTART WITH` to recalibrate a counter that other devices keep changing while offline.
 
-**Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together, also between devices that are online (see [Conditions and Arithmetic across Devices](../knowledge/crdt-types.md#conditions-and-arithmetic-across-devices)). Everything else (registers, map entries) keeps one of the concurrent values, so `SET stockLevel = stockLevel - 1` on two devices loses one of the decrements. (A field reference in a `SET` value needs SDK 5.1 or later; in our testing, 5.0.3 rejected it with `Forbidden: Document references in mutation values`; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503) and [Read-modify-write increments lose most concurrent updates](../knowledge/observations/merge-behavior.md#read-modify-write-increments-lose-most-concurrent-updates).)
+**Why:** Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only CRDT types that add concurrent changes together, also between devices that are online (see [Conditions and Arithmetic across Devices](../knowledge/crdt-types.md#conditions-and-arithmetic-across-devices)). Everything else (registers, map entries) keeps one of the concurrent values, so `SET stockLevel = stockLevel - 1` (SDK 5.1+) on two devices loses one of the decrements (see [Read-modify-write increments lose most concurrent updates](../knowledge/observations/merge-behavior.md#read-modify-write-increments-lose-most-concurrent-updates)).
 
 ```dart
 // ❌ BAD: Read-modify-write on a register. Two devices that each sell one item
@@ -975,7 +975,7 @@ Future<void> sellOne(Ditto ditto, String itemId) async {
 
 ## Event History and Audit Logs
 
-When every change matters (status transitions, adjustments, sensor readings), record each change as a new fact instead of overwriting one field. Three patterns cover most needs.
+When every change matters (status transitions, adjustments, sensor readings), record each change as a new fact instead of overwriting one field. Three patterns cover most needs; the table at the end of this section compares them.
 
 ### Pattern 1: Audit-log map inside the document
 
@@ -1151,7 +1151,7 @@ Devices can subscribe to what they need: a live map subscribes only to `vehicles
 
 ## Default Data with INITIAL Documents
 
-`INSERT ... INITIAL DOCUMENTS` inserts default data that every peer can create independently, such as built-in categories or default settings. Ditto's [INSERT documentation](https://docs.ditto.live/dql/insert) describes initial documents as inserted "at the beginning of time" and viewed by all peers as the same insert, so several devices can initialize the same default data without overwriting later edits. Initial documents are regular documents: they sync like any other document that a subscription matches. See [INITIAL DOCUMENTS](dql.md#initial-documents) for the syntax.
+**Create default data that every device seeds (built-in categories, default settings, shared counters) with `INSERT ... INITIAL DOCUMENTS`, fixed `_id` values, and identical content in every app version.** `INSERT ... INITIAL DOCUMENTS` inserts default data that every peer can create independently, such as built-in categories or default settings. Ditto's [INSERT documentation](https://docs.ditto.live/dql/insert) describes initial documents as inserted "at the beginning of time" and viewed by all peers as the same insert, so several devices can initialize the same default data without overwriting later edits. Initial documents are regular documents: they sync like any other document that a subscription matches. See [INITIAL DOCUMENTS](dql.md#initial-documents) for the syntax.
 
 Behavior on a device:
 
@@ -1205,7 +1205,7 @@ INITIAL DOCUMENTS (:item)
 
 ## Schema Evolution
 
-Ditto is schemaless: documents in a collection can have different fields, and sync stores and replicates them without validation. In a mesh, however, devices run different app versions for weeks or months, so a schema change must work while old and new versions read and write the same data.
+**Add fields instead of renaming, retyping, or reusing them; for a breaking change, version the documents and roll it out in stages.** Ditto is schemaless: documents in a collection can have different fields, and sync stores and replicates them without validation. In a mesh, however, devices run different app versions for weeks or months, so a schema change must work while old and new versions read and write the same data.
 
 ### Prefer additive changes
 
@@ -1283,7 +1283,7 @@ Remove old-version documents with `EVICT` (local only, per device) or `DELETE` (
 
 ### Changing CRDT types
 
-Changing how a field is typed (an array or a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). In our testing with SDK 5.0.3, 5.1.0, and 5.2.0, an old app version wrote `SET stock = 9` while a new version concurrently ran `APPLY stock INCREMENT BY -1` as a COUNTER: after sync, the field held both `9` and `-1` (the new counter started at 0), and an undeclared `SELECT` returned whichever had been written later (see [Changing a register to a counter leaves both values](../knowledge/observations/merge-behavior.md#changing-a-register-to-a-counter-leaves-both-values)). Introduce a new field with the new type instead (`stockCount` as a COUNTER next to the old `stock` register) and migrate readers as described above.
+**Introduce a new field with the new type instead of changing the type of an existing one.** Changing how a field is typed (an array or a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). In our testing with SDK 5.0.3, 5.1.0, and 5.2.0, an old app version wrote `SET stock = 9` while a new version concurrently ran `APPLY stock INCREMENT BY -1` as a COUNTER: after sync, the field held both `9` and `-1` (the new counter started at 0), and an undeclared `SELECT` returned whichever had been written later (see [Changing a register to a counter leaves both values](../knowledge/observations/merge-behavior.md#changing-a-register-to-a-counter-leaves-both-values)). For example, add `stockCount` as a COUNTER next to the old `stock` register, and migrate readers as described above.
 
 ## Timestamps
 
@@ -1295,7 +1295,7 @@ Use one of two representations consistently within a field (in JavaScript, never
 
 | Format | Dart | Notes |
 |---|---|---|
-| ISO-8601 string in UTC with a zone designator (recommended) | `utcTimestamp()` below (fixed millisecond precision, for example `2026-10-08T10:30:00.123Z`) for values that are sorted or compared; otherwise `DateTime.now().toUtc().toIso8601String()`, whose precision differs by platform (see below) | Human-readable; compares as text when every value uses the same precision |
+| ISO-8601 string in UTC with a zone designator (recommended) | `utcTimestamp()` below (fixed millisecond precision, for example `2026-10-08T10:30:00.123Z`); `DateTime.now().toUtc().toIso8601String()` alone varies in precision (see below) | Human-readable; compares as text when every value uses the same precision |
 | Epoch milliseconds (integer) | `DateTime.now().millisecondsSinceEpoch` | Compact; DQL date functions accept epoch milliseconds, and `date_add`, `date_sub`, and `date_trunc` return them for numeric input |
 
 > **Note:** In Dart, `DateTime.now().toIso8601String()` returns local time **without** a zone designator (for example, `2026-10-08T19:30:00.123456`). DQL date functions return `MISSING` for such strings (`date_part`, `date_diff`, `date_add`, `date_cast`, and the others), and no error is raised. Always call `toUtc()` first. <!-- lint-ignore -->
