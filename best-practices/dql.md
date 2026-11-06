@@ -11,13 +11,13 @@ DQL (Ditto Query Language) is the SQL-like language you use to read, write, and 
 | `SELECT` | Read documents: projections, aggregates, `GROUP BY`, `ORDER BY`, `LIMIT`, `JOIN` (SDK 5.1+) | [Reading Data with SELECT](#reading-data-with-select) |
 | `INSERT` | Create documents, upsert with `ON ID CONFLICT`, seed defaults with `INITIAL DOCUMENTS` | [INSERT and Conflict Handling](#insert-and-conflict-handling) |
 | `UPDATE` | Change individual fields with `SET` / `UNSET`, counters with `APPLY` | [UPDATE](#update) |
-| `DELETE` / `EVICT` | Delete everywhere (tombstone) / remove from this device only | [Deletion and Storage Management](deletion-and-storage.md) |
+| `DELETE` / `EVICT` | Delete everywhere (tombstone) / remove from this device only | [DELETE and EVICT](#delete-and-evict), [Deletion and Storage Management](deletion-and-storage.md) |
 | `CREATE INDEX` / `DROP INDEX`, `EXPLAIN`, `PROFILE`; `ADVISE` (SDK 5.1+) | Indexing and query diagnostics | [Indexing and Query Performance](indexing-and-performance.md) |
 | `ALTER SYSTEM` / `SHOW` | Runtime system parameters | [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters) |
 
 There is no `CREATE COLLECTION` or `DROP COLLECTION` statement: a collection exists as soon as a document is written to it, and it cannot be removed. <!-- lint-ignore -->
 
-Keep the number of collections small. In our testing with SDK 5.1.0 and 5.2.0, the first write to a new collection slowed down as collections accumulated (about 20 ms with 1,000 collections), each collection took about 15 to 17 KB of disk, and evicting the documents of a collection removed neither (see [Since SDK 5.1, each new collection makes the first write to a collection slower](../knowledge/observations/performance-measurements.md#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)). Do not create a collection per user, tenant, or day; partition one collection with part of `_id` (`{"tenant": ..., "orderId": ...}`) or a field instead.
+Keep the number of collections small: do not create a collection per user, tenant, or day, but partition one collection with part of `_id` (`{"tenant": ..., "orderId": ...}`) or a field. In our testing with SDK 5.1.0 and 5.2.0, the first write to a new collection slowed down as collections accumulated (about 20 ms with 1,000 collections), each collection took about 15 to 17 KB of disk, and evicting the documents of a collection removed neither (see [Since SDK 5.1, each new collection makes the first write to a collection slower](../knowledge/observations/performance-measurements.md#since-sdk-51-each-new-collection-makes-the-first-write-to-a-collection-slower)).
 
 ### Where Queries Run
 
@@ -333,6 +333,51 @@ Every row of a `SELECT` is materialized in the result. To keep results small on 
 - **Let large results go** once you have extracted what you need, and read very large sets in pages. In our testing with the JavaScript SDK, the process's resident memory did not shrink after a large result had been released and garbage-collected; on 5.2.0, the same result used about 20 to 30% less memory than on 5.1.0 while it was held, and about 35% less once it was read, in line with the release notes, which say that query results stay compact until they are read (see [Large query results keep process memory after they are released](../knowledge/observations/performance-measurements.md#large-query-results-keep-process-memory-after-they-are-released)).
 - **Check existence** with `LIMIT 1`.
 
+### When a Statement Fails or Returns Nothing
+
+In Flutter, a statement that Ditto rejects throws a `DittoException` from `execute`, `tx.execute`, or `registerSubscription`, and its message names the cause. Catch it where your app can report the failure (see the example in [Document Size Limits](data-modeling.md#document-size-limits)). Many mistakes raise no error and only return fewer rows than expected: when a query returns nothing, go through the second table before you suspect sync.
+
+Errors, by a part of their message:
+
+| Message contains | Cause | See |
+|---|---|---|
+| `Parameter <name> was not provided` | A placeholder without an argument, or an argument name written with its colon (`':status'`) | [Always pass values as parameters](#always-pass-values-as-parameters) |
+| `Cannot convert to a literal` | Unquoted keys in an inline object in `INSERT` | [Quote every key in inline object literals](#quote-every-key-in-inline-object-literals) |
+| `expected identifier` | A reserved word used as a bare name, such as a collection named `collection` | [Reserved words](#reserved-words) |
+| `unqualified * with other projection elements is not supported` | `SELECT *, expression` without qualifying `*` | [Projections and Aliases](#projections-and-aliases) |
+| `must depend only on group keys or aggregates` | A projection alias in `GROUP BY` or `HAVING`, or a projection that is neither a group key nor an aggregate | [GROUP BY and HAVING](#group-by-and-having) |
+| `using FAIL conflict policy` | `INSERT` of an `_id` that already exists, without `ON ID CONFLICT` | [ON ID CONFLICT](#on-id-conflict) |
+| `Expected unique document identifiers` | Two documents with the same `_id` in one `INSERT` | [INSERT and Conflict Handling](#insert-and-conflict-handling) |
+| `Unsupported DML operation on REGISTER field` | A nested `SET` on a field declared or stored as `REGISTER`, which includes every undeclared object in strict mode | [Strict Mode](data-modeling.md#strict-mode) |
+| `Missing SET and/or UNSET clause` | A type declaration without the `COLLECTION` keyword, such as `UPDATE products (viewCount COUNTER) ...` | [Counters](data-modeling.md#counters) |
+| `to be an integer value` | A fraction written to a `COUNTER` | [When counters are appropriate](data-modeling.md#when-counters-are-appropriate) |
+| `disallowed without appropriate index support` | A `JOIN` whose inner collection has no index on the join key | [Index requirement](#index-requirement) |
+| `Unsupported feature: ...` | A projection, aggregate, `DISTINCT`, `GROUP BY`, `JOIN`, `USE IDS`, `LIMIT`, or `ORDER BY` in `registerSubscription` | [Subscription Rules](sync-and-subscriptions.md#subscription-rules) |
+| `exceeds limit of` | A write that would take a document over the hard size limit | [Document Size Limits](data-modeling.md#document-size-limits) |
+| `recursion limit exceeded` | A condition nested 100 levels deep in parentheses | [Filtering by Membership](#filtering-by-membership) |
+| `while in a transaction scope` | `ditto.store.execute` inside a transaction callback | [Transaction Rules](transactions.md#transaction-rules) |
+| `DittoClosedException` | A call on an instance after `close()` | [Resource Cleanup and Shutdown](setup-and-lifecycle.md#resource-cleanup-and-shutdown) |
+
+No error, but fewer rows or other values than expected:
+
+| Symptom | Common cause | See |
+|---|---|---|
+| A query returns nothing on a device that has not created the data | No subscription has brought the documents yet; queries read only the local store | [Where Queries Run](#where-queries-run) |
+| An `IN` filter matches nothing | `IN (:values)` with an array, a single value instead of a list, or an empty list | [Filtering by Membership](#filtering-by-membership) |
+| Documents without a flag disappear | `flag != true`, `NOT flag`, or `flag = false` on a field that some documents lack | [MISSING and NULL](#missing-and-null) | <!-- lint-ignore -->
+| An existence check also matches missing fields | `IS NOT NULL` instead of `IS NOT MISSING` | [MISSING and NULL](#missing-and-null) | <!-- lint-ignore -->
+| A comparison never matches | Values of different types, such as numbers stored as strings | [MISSING and NULL](#missing-and-null) |
+| `ANY ... SATISFIES` over a parameter array returns no rows | Use `field IN :values` | [Filtering by Membership](#filtering-by-membership) | <!-- lint-ignore -->
+| `USE IDS :ids` returns nothing | An array needs `USE IDS LIST :ids` | [USE IDS](#use-ids) |
+| An inline object in a `SELECT` is `{}` | Unquoted keys | [Quote every key in inline object literals](#quote-every-key-in-inline-object-literals) |
+| An aggregate is absent from the row | `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, and `MID` return MISSING over zero rows | [Aggregates](#aggregates) |
+| A date function returns MISSING | A timestamp without a zone designator, or arguments in the wrong order | [Date and Time](../knowledge/dql-functions.md#date-and-time) |
+| `type(x) = 'number'` matches nothing | `type()` never returns `'number'`; use `is_number(x)` | [Type Checking](../knowledge/dql-functions.md#type-checking) |
+| Map, counter, or attachment fields are invisible | `DQL_STRICT_MODE = true` without declarations | [Strict Mode](data-modeling.md#strict-mode) |
+| A field shows a stale value, or a counter restarts from 0 | Different type declarations for the same field | [Keep type declarations consistent](data-modeling.md#keep-type-declarations-consistent) |
+| Keys left out of `SET obj = {...}` or an upsert are still there | Assigning an object merges it | [Assigning an object merges it](#assigning-an-object-merges-it) |
+| A statement in a transaction was not applied | The callback returned before the `tx.execute` call completed | [Transaction Rules](transactions.md#transaction-rules) |
+
 ## Reading Data with SELECT
 
 ```text
@@ -588,7 +633,7 @@ SELECT * FROM orders USE IDS LIST :ids
 | `USE IDS ('a', 'b')` | ❌ Error: `('a', 'b') is not supported` | <!-- lint-ignore -->
 | `USE IDS :ids` with an array | ❌ Treats the whole array as a single ID: returns nothing, or, above 256 bytes, fails with `SerializedFormOverLimit` |
 
-A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. For long lists, it is slower: the plan checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids`, for reads and writes alike, and 17 to 65 ms with `USE IDS LIST :ids`. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads and `UPDATE`, or split the list into chunks of 1,000. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents); see [Long ID lists are faster with USE IDS LIST than with WHERE _id IN](../knowledge/observations/performance-measurements.md#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in).
+A `WHERE _id = :id` or `WHERE _id IN :ids` filter is also planned as a direct ID lookup, so for most code the `WHERE` form is the simplest choice. Above about 1,000 IDs, use `USE IDS LIST :ids` for reads and `UPDATE`, or split the list into chunks of 1,000: the `WHERE` form checks each found document against the list again, and in our testing with SDK 5.1.0 and 5.2.0, 10,000 IDs took about 0.7 seconds with `WHERE _id IN :ids`, for reads and writes alike, and 17 to 65 ms with `USE IDS LIST :ids`. A subscription by a long ID list also made the initial sync slower than one by a field that selects the same documents (3.3 against 0.9 seconds for 10,000 documents); see [Long ID lists are faster with USE IDS LIST than with WHERE _id IN](../knowledge/observations/performance-measurements.md#long-id-lists-are-faster-with-use-ids-list-than-with-where-_id-in).
 
 For `DELETE` and `EVICT`, prefer the `WHERE` form as long as any device runs SDK 5.1.0, where `USE IDS` without a `WHERE` predicate removes nothing (see [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510) and [On SDK 5.1.0, DELETE and EVICT with USE IDS and no WHERE predicate remove nothing](../knowledge/observations/dql-behavior.md#on-sdk-510-delete-and-evict-with-use-ids-and-no-where-predicate-remove-nothing)); SDK 5.0.3 rejected `USE IDS` in `DELETE` as a syntax error in our testing (see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)).
 

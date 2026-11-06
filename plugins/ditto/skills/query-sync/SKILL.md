@@ -17,7 +17,7 @@ DQL statements, subscriptions, and store observers: what syncs, what a query see
 
 - DQL built with string interpolation instead of parameters
 - Filters that silently drop documents (MISSING vs NULL, `IN (:values)`, `ANY ... SATISFIES` over a parameter)
-- "Synced data does not show": no subscription matches the data
+- "Synced data does not show": no subscription matches it
 - Subscriptions rejected at registration (projections, `JOIN`, `LIMIT`/`ORDER BY`) or re-registered on every filter change
 - Uncancelled subscriptions and observers; `onChange` observers retaining every result
 - Upserts that rewrite unchanged data and wake observers (`DO UPDATE` instead of `DO UPDATE_LOCAL_DIFF`)
@@ -28,9 +28,9 @@ DQL statements, subscriptions, and store observers: what syncs, what a query see
 
 Every DQL statement runs against the **local store**. Only `ditto.sync.registerSubscription` makes data sync from remote peers (while sync is running); `ditto.store.execute` (snapshot), `ditto.store.registerObserver` (live), and `ditto.store.transaction` read local data and never cause sync.
 
-Subscriptions are long-lived, scoped by stable partition keys; observers and `execute` calls are short-lived and screen-specific. An empty local result does not mean "no data exists"; it may not have synced yet, or no subscription matches it.
+Subscriptions are long-lived, scoped by stable partition keys; observers and `execute` calls are short-lived and screen-specific. An empty result may mean nothing has synced yet or no subscription matches.
 
-`§ Where Queries Run`, `§ Sync and Subscriptions`
+`§ Where Queries Run`, `§ Sync and Subscriptions`, `§ When a Statement Fails or Returns Nothing`
 
 A screen that shows synced data:
 
