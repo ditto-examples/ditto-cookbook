@@ -33,7 +33,7 @@ Future<void> markReady(Ditto ditto, String orderId) async {
     arguments: {
       'id': orderId,
       'status': 'ready',
-      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      'updatedAt': utcTimestamp(), // fixed-precision helper (§ Timestamps)
     },
   );
 }

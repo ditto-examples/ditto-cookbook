@@ -146,7 +146,7 @@ Future<void> checkout(
       arguments: {
         'id': orderId,
         'status': 'paid',
-        'paidAt': DateTime.now().toUtc().toIso8601String(),
+        'paidAt': utcTimestamp(),
       },
     );
     await tx.execute(

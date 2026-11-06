@@ -114,7 +114,7 @@ Future<void> recordPositionIncorrectly(
   required double lat,
   required double lon,
 }) async {
-  final recordedAt = DateTime.now().toUtc().toIso8601String();
+  final recordedAt = utcTimestamp();
   await ditto.store.execute(
     'INSERT INTO vehiclePositions DOCUMENTS (:event)',
     arguments: {

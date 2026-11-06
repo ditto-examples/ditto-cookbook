@@ -346,6 +346,9 @@ Errors, by a part of their message:
 | `expected identifier` | A reserved word used as a bare name, such as a collection named `collection` | [Reserved words](#reserved-words) |
 | `unqualified * with other projection elements is not supported` | `SELECT *, expression` without qualifying `*` | [Projections and Aliases](#projections-and-aliases) |
 | `must depend only on group keys or aggregates` | A projection alias in `GROUP BY` or `HAVING`, or a projection that is neither a group key nor an aggregate | [GROUP BY and HAVING](#group-by-and-having) |
+| `cannot be modified` | `SET _id = ...`: a document ID never changes | [UPDATE](#update) |
+| `More than one modification specified for the path` | The same path assigned twice in one statement | [UPDATE](#update) |
+| `Ambiguous reference to field` | An unqualified field that exists in two joined collections | [Result shape](#result-shape) |
 | `using FAIL conflict policy` | `INSERT` of an `_id` that already exists, without `ON ID CONFLICT` | [ON ID CONFLICT](#on-id-conflict) |
 | `Expected unique document identifiers` | Two documents with the same `_id` in one `INSERT` | [INSERT and Conflict Handling](#insert-and-conflict-handling) |
 | `Unsupported DML operation on REGISTER field` | A nested `SET` on a field declared or stored as `REGISTER`, which includes every undeclared object in strict mode | [Strict Mode](data-modeling.md#strict-mode) |
@@ -375,6 +378,8 @@ No error, but fewer rows or other values than expected:
 | `type(x) = 'number'` matches nothing | `type()` never returns `'number'`; use `is_number(x)` | [Type Checking](../knowledge/dql-functions.md#type-checking) |
 | Map, counter, or attachment fields are invisible | `DQL_STRICT_MODE = true` without declarations | [Strict Mode](data-modeling.md#strict-mode) |
 | A field shows a stale value, or a counter restarts from 0 | Different type declarations for the same field | [Keep type declarations consistent](data-modeling.md#keep-type-declarations-consistent) |
+| A value is gone after a nested `SET a.b = ...` | `a` held a string, a number, an array, or `null`, which the nested `SET` replaced with an object | [UPDATE](#update) |
+| An `UPDATE`, `DELETE`, or `EVICT` changed every document | The `WHERE` clause was left out, for example when it was built from optional filters | [DELETE and EVICT](#delete-and-evict) |
 | Keys left out of `SET obj = {...}` or an upsert are still there | Assigning an object merges it | [Assigning an object merges it](#assigning-an-object-merges-it) |
 | A statement in a transaction was not applied | The callback returned before the `tx.execute` call completed | [Transaction Rules](transactions.md#transaction-rules) |
 
@@ -689,7 +694,7 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 
 ### Joining Collections (SDK 5.1+)
 
-`SELECT` can combine documents from several collections with `JOIN`. Joins run on the documents that are already in the local store.
+`SELECT` can combine documents from several collections with `JOIN`. Joins run on the documents that are already in the local store. In our testing, the join types, the index requirement and its error, the result shapes, the restrictions, and observers of joins described below held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 #### Join types
 
@@ -698,8 +703,6 @@ Future<List<Map<String, dynamic>>> tasksTagged(Ditto ditto, String tag) async {
 | `JOIN` / `INNER JOIN` | Only pairs that satisfy `ON` | Row dropped |
 | `LEFT [OUTER] JOIN` | Every left row, matched or not | Right-side fields are MISSING |
 | `RIGHT [OUTER] JOIN` | Every right row, matched or not | Left-side fields are MISSING; allowed only as the first join |
-
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 `FULL OUTER JOIN`, `CROSS JOIN`, comma joins (`FROM a, b`), and joins in `UPDATE` / `DELETE` are not supported.
 
@@ -738,8 +741,6 @@ JOIN customers c ON c.email = o.customerEmail
 ```text
 Query failed: `Joining to "c" disallowed without appropriate index support. Please run ADVISE for recommendations.`
 ```
-
-In our testing on SDK 5.1.0 and 5.2.0, a join without an index failed with this error, while a join on `_id` and a join with `USE INDEX ''` worked without an index (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
 The fix is to index the join key of the inner collection (here `CREATE INDEX IF NOT EXISTS idx_customers_email ON customers (email)`). For example, joining orders by `customerId` needs this index:
 
@@ -787,8 +788,6 @@ Run `ADVISE` on a join query to get the `CREATE INDEX` statements it needs; see 
 | `SELECT _id` | A composite ID per joined row: `{"c": "c1", "o": "o1"}` |
 | `SELECT name` (field exists on both sides) | Error: `Ambiguous reference to field: name` |
 
-In our testing, every row of this table held on SDK 5.1.0 and 5.2.0 (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
-
 Always qualify fields with their alias (`c.name`, `o.total`) and alias projected fields that would otherwise collide (`o._id AS orderId`).
 
 #### Restrictions
@@ -796,12 +795,12 @@ Always qualify fields with their alias (`c.name`, `o.total`) and alias projected
 - **Local data only**: A join reads only documents already in the local store. It never fetches missing documents from peers, so every joined collection needs its own subscription.
 - **Not in subscriptions**: `registerSubscription` rejects joins (`Unsupported feature: Joining`). Subscribe to each collection separately with `SELECT * FROM c WHERE ...`.
 - **Not on Ditto Server**: Joins are a Small Peer feature; Ditto Server queries (including the HTTP API) do not support them.
-- **`RIGHT JOIN` only as the first join**: A later `RIGHT JOIN` fails with `RIGHT OUTER join that isn't the first join is not supported` (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)). Because Ditto rewrites a `RIGHT JOIN` as a `LEFT JOIN` with the sides swapped, the collection written on the left then becomes the inner side and needs the index (or the `_id` join).
+- **`RIGHT JOIN` only as the first join**: A later `RIGHT JOIN` fails with `RIGHT OUTER join that isn't the first join is not supported`. Because Ditto rewrites a `RIGHT JOIN` as a `LEFT JOIN` with the sides swapped, the collection written on the left then becomes the inner side and needs the index (or the `_id` join).
 - **At most 10 joins per statement** by default (directive `#max_joins`; see [Directives](indexing-and-performance.md#directives)). More fail with `Too many joins: the number of joined terms exceeds the maximum permitted.`
 
 #### Joins in observers
 
-`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](../knowledge/observations/dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)). On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
+`registerObserver` accepts joins, and the observer delivers a new result when a change in any of the joined collections changes the joined rows. On SDK 5.1.0, each row delivered to the observer carried a composite `_id` (for example `{"c": "c1", "o": "o1"}`); on 5.2.0 it did not in our testing (see [On SDK 5.2.0, observer rows include _id only when it is projected](../knowledge/observations/observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)), so project the keys that identify a row yourself (for example `o._id AS orderId`) when you diff or key a list. Subscribe to each collection the join reads.
 
 ```dart
 // ✅ GOOD: Subscribe per collection (app or feature scope), join locally
@@ -1028,7 +1027,7 @@ Future<void> completeOrder(Ditto ditto, String orderId) async {
     arguments: {
       'id': orderId,
       'status': 'completed',
-      'completedAt': DateTime.now().toUtc().toIso8601String(),
+      'completedAt': utcTimestamp(), // fixed-precision helper (see Timestamps)
     },
   );
 }
@@ -1161,7 +1160,7 @@ Future<List<Map<String, dynamic>>> markShipped(Ditto ditto, List<String> ids) as
       'ids': ids,
       'status': 'shipped',
       'expected': 'packed',
-      'now': DateTime.now().toUtc().toIso8601String(),
+      'now': utcTimestamp(),
     },
   );
   return result.items.map((item) => item.value).toList();

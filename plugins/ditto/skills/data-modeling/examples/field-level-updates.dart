@@ -12,7 +12,17 @@
 
 import 'package:ditto_live/ditto_live.dart';
 
-String utcNow() => DateTime.now().toUtc().toIso8601String();
+/// ISO-8601 UTC timestamp with exactly millisecond precision, for example
+/// "2026-10-08T10:30:00.123Z". Fixed precision keeps values sortable as text
+/// (native Dart omits zero microseconds, so even one device would otherwise
+/// mix precisions).
+String utcTimestamp([DateTime? time]) {
+  final utc = (time ?? DateTime.now()).toUtc();
+  return DateTime.fromMillisecondsSinceEpoch(
+    utc.millisecondsSinceEpoch,
+    isUtc: true,
+  ).toIso8601String();
+}
 
 // ---------------------------------------------------------------------------
 // Field-level updates
@@ -23,7 +33,7 @@ String utcNow() => DateTime.now().toUtc().toIso8601String();
 Future<void> markOrderReady(Ditto ditto, String orderId) async {
   await ditto.store.execute(
     'UPDATE orders SET status = :status, updatedAt = :updatedAt WHERE _id = :id',
-    arguments: {'id': orderId, 'status': 'ready', 'updatedAt': utcNow()},
+    arguments: {'id': orderId, 'status': 'ready', 'updatedAt': utcTimestamp()},
   );
 }
 

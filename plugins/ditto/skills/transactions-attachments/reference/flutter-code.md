@@ -59,7 +59,7 @@ Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() charg
       arguments: {
         'id': orderId,
         'status': 'paid',
-        'paidAt': DateTime.now().toUtc().toIso8601String(),
+        'paidAt': utcTimestamp(),
       },
     );
     await tx.execute(

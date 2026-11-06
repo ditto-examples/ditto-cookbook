@@ -148,7 +148,7 @@ Future<void> badCheckout(Ditto ditto, String orderId, Future<void> Function() ch
     await ditto.store.transaction((inner) async {
       await inner.execute(
         'UPDATE orders SET paidAt = :paidAt WHERE _id = :id',
-        arguments: {'id': orderId, 'paidAt': DateTime.now().toUtc().toIso8601String()},
+        arguments: {'id': orderId, 'paidAt': utcTimestamp()},
       );
     });
   });
@@ -163,7 +163,7 @@ Future<void> checkout(Ditto ditto, String orderId, Future<void> Function() charg
       arguments: {
         'id': orderId,
         'status': 'paid',
-        'paidAt': DateTime.now().toUtc().toIso8601String(),
+        'paidAt': utcTimestamp(), // fixed-precision helper (see Timestamps)
       },
     );
     await tx.execute(
