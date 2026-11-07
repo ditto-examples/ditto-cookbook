@@ -17,7 +17,7 @@ Keeps Ditto apps responsive and diagnosable: observers and backpressure, narrow 
 
 ## Prevents
 
-- Unbounded memory growth from Flutter observers registered with `onChange` whose `changes` stream is never consumed (SDK 5.1.0)
+- Unbounded memory growth from Flutter observers registered with `onChange` whose `changes` stream is never consumed (SDK 5.1.0 and 5.2.0)
 - Leaked observers (never released, registered in render code, or left to garbage collection)
 - Slow or async work in default observer callbacks without backpressure
 - Observers that stop updating because `signalNext()` is never called
@@ -203,7 +203,7 @@ Collections, sample queries, and diagnostic parameters: [reference/optimization-
 
 ## Checklist
 
-- [ ] Flutter: no `onChange` without consuming `changes` (Note (SDK 5.1.0))
+- [ ] Flutter: no `onChange` without consuming `changes` (SDK 5.1.0 and 5.2.0)
 - [ ] `ORDER BY` on every observer whose order is displayed
 - [ ] Observers registered outside render code, one per region, not per item
 - [ ] Every observer released by its owner (Flutter: `StreamSubscription.cancel()` and `observer.cancel()` in `dispose()`; Kotlin: `close()`, or cancelling the coroutine that collects `observe`)

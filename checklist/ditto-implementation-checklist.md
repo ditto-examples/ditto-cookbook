@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 3.0
+> **Version**: 3.1
 > **Last Updated**: 2026-11-07
 > **Applies to**: Ditto SDK 5.2.0 for Flutter, JavaScript, Kotlin, and Swift
 >

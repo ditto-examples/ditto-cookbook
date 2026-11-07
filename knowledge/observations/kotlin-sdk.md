@@ -465,7 +465,7 @@ The runs in which a read on this device got stuck:
 
 | | |
 |---|---|
-| Observed on | SDK 5.2.0, two runs |
+| Observed on | SDK 5.2.0, two runs; the transports of a new instance and of `DittoTransportConfig()`, and the update that disabled Bluetooth LE, again on SDK 5.1.0 and 5.2.0, three runs each, with the same result (see [A new instance enables the platform's peer-to-peer transports, and an empty configuration enables none](connections-and-presence.md#a-new-instance-enables-the-platforms-peer-to-peer-transports-and-an-empty-configuration-enables-none)) |
 | Setup | We read `ditto.transportConfig` of a new instance and of `DittoTransportConfig()`, and changed a configuration with `updateTransportConfig` |
 
 - A new instance had Bluetooth LE, LAN, and Wi-Fi Aware enabled, no TCP listener, and no TCP servers.

@@ -2472,7 +2472,7 @@ func markReadyBadly(_ ditto: Ditto, orderID: String) async throws {
 
 ## Transports and Presence in Swift
 
-`DittoTransportConfig` is a value type. Change it with `ditto.updateTransportConfig { config in ... }`, which starts from the current configuration; never assign a new `DittoTransportConfig()`, which has every transport disabled (a newly opened instance has Bluetooth LE, LAN, and AWDL enabled). The rules are in [Transport Configuration](../setup-and-lifecycle.md#transport-configuration).
+`DittoTransportConfig` is a value type. Change it with `ditto.updateTransportConfig { config in ... }`, which starts from the current configuration; never assign a new `DittoTransportConfig()`, which has every transport disabled (a newly opened instance has Bluetooth LE, LAN, and AWDL enabled; in our testing with SDK 5.1.0 and 5.2.0 on macOS and the iOS simulator, see [A new instance enables the platform's peer-to-peer transports, and an empty configuration enables none](../../knowledge/observations/connections-and-presence.md#a-new-instance-enables-the-platforms-peer-to-peer-transports-and-an-empty-configuration-enables-none)). The rules are in [Transport Configuration](../setup-and-lifecycle.md#transport-configuration).
 
 ```swift
 import DittoSwift

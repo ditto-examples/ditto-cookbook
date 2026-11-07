@@ -98,9 +98,9 @@ Changing subscriptions makes peers re-evaluate which documents to send; avoid ch
 
 **❌ DON'T**: register in render code (a widget's `build()`, a SwiftUI `body`, a composable, a React render) or on every screen visit; drop a reference without releasing it (do not rely on garbage collection).
 
-`sync.stop()` pauses subscriptions (resumed by `start()`); closing Ditto cancels them. What `sync.subscriptions` returns for the arguments of a listed subscription differs by SDK.
+`sync.stop()` pauses subscriptions (resumed by `start()`); closing Ditto cancels them. What `sync.subscriptions` returns for a subscription's arguments differs by SDK.
 
-> **Note (SDK 5.1.0):** In Flutter, do not read `queryArguments` or `queryArgumentsJsonString` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this can terminate the app. Read only `queryString` and `isCancelled` there, and keep your own references.
+> **Note (SDK 5.1.0 and 5.2.0):** In Flutter, do not read `queryArguments`, `queryArgumentsJsonString`, or `queryArgumentsCborBytes` from `ditto.sync.subscriptions` elements; for subscriptions without arguments this ended the app in testing. Read only `queryString` and `isCancelled`; keep your own references.
 
 `§ Subscription Lifecycle`, `§ Sync stop, close, and inspection` · Examples: `subscription-lifecycle-good` and `subscription-lifecycle-bad` in `examples/<sdk>/`
 

@@ -1,6 +1,6 @@
 # Ditto SDK Best Practices
 
-> **Version**: 5.3
+> **Version**: 5.4
 > **Last Updated**: 2026-11-07
 > **Applies to**: Ditto SDK 5.2.0 for Flutter (`ditto_live`), JavaScript (`@dittolive/ditto`), Kotlin (`com.ditto:ditto-kotlin`), and Swift (`DittoSwift`). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
@@ -39,7 +39,7 @@ The topic pages apply to every SDK: they state the rules, the reasons, and the D
 - **✅ DO / ❌ DON'T**: Each topic lists recommended practices and anti-patterns, followed by examples marked `// ✅ GOOD` and `// ❌ BAD`.
 - **(SDK 5.1+)** / **(SDK 5.2+)**: Marks features introduced in Ditto SDK 5.1 or 5.2. Everything else is available in 5.0 and later, apart from a few small features, such as `object_size()`, that carry the mark because SDK 5.0.3 rejected them in our testing (see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)).
 - **(Experimental)** / **(Beta)**: Marks APIs that the SDK itself marks as experimental or beta. Their signatures or behavior may change in a future release.
-- **Note (SDK ...)**: Describes behavior that is easy to miss and can lead to wrong results, lost data, crashes, or hangs, together with the pattern that avoids it. The label names the releases on which we observed it: **Note (SDK 5.1.0 and 5.2.0)** was confirmed on both releases, and **Note (SDK 5.1.0)** was observed on 5.1.0 and has not yet been repeated on 5.2.0 (the 5.2.0 release notes describe no change unless the note says so). Search for "Note (SDK" to list them all, and review them when you upgrade the SDK: a later release may change the behavior. Issues that 5.2.0 fixed are collected in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
+- **Note (SDK ...)**: Describes behavior that is easy to miss and can lead to wrong results, lost data, crashes, or hangs, together with the pattern that avoids it. The label names the releases on which we observed it: **Note (SDK 5.1.0 and 5.2.0)** was confirmed on both releases; **Note (SDK 5.1.0)** describes behavior of 5.1.0 that 5.2.0 no longer shows, and the note says what 5.2.0 does instead; **Note (SDK 5.2.0)** was observed on 5.2.0, and the note or its observation entry says whether 5.1.0 behaved differently or was not tested; a range such as **Note (SDK 5.0.3 to 5.2.0)** held on each of those releases. Search for "Note (SDK" to list them all, and review them when you upgrade the SDK: a later release may change the behavior. Issues that 5.2.0 fixed are collected in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 - **Section citations**: The plugin Skills and the checklist cite a section as `§ Heading`. Every heading is unique across both parts of the guide, so a search for its text finds exactly one section.
 - **Placeholders** such as `'YOUR_DATABASE_ID'`, `'YOUR_SERVER_URL'`, `'YOUR_PROVIDER_NAME'`, `fetchAuthToken()`, and `showError()` stand for values and code from your own application.
 

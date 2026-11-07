@@ -43,7 +43,7 @@ The helpers and this test for each SDK: [Several peers in one test in Flutter](.
 
 This setup does not cover the following, so keep a few tests on real devices:
 - All peers share one clock. Clock skew between devices is not simulated.
-- Only TCP is exercised. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, and app lifecycle need real devices.
+- Only TCP is exercised. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, and app lifecycle need real devices. Two iOS simulators on one Mac can also sync over AWDL (in testing with SDK 5.1.0 and 5.2.0, they synced with only AWDL enabled and did not with AWDL disabled too); because the simulators share the Mac's network, this checks your app's transport configuration, not AWDL over the air (`§ Two iOS simulators synced over AWDL alone`).
 - A listening peer accepts at most 6 TCP connections by default (in our testing with SDK 5.1.0 and 5.2.0; see [A device accepts six TCP connections by default](../../guide/reference/knowledge/observations/connections-and-presence.md#a-device-accepts-six-tcp-connections-by-default)). On 5.2.0, the connections that a peer opened itself count toward the limit too (see [Transport Configuration](../../guide/reference/best-practices/setup-and-lifecycle.md#transport-configuration)). For a relay test, chain the peers: A listens, B listens and connects to A, and C connects to B.
 
 Scenarios worth covering (with the helpers above, or on real devices):

@@ -4,7 +4,7 @@ Transport configuration, TCP hubs, known peers, transport diagnostics, multicast
 
 ## Transport Configuration
 
-**Change transports by updating the current transport configuration; never replace it with a new, empty one, which disables every transport.** A new Ditto instance enables the peer-to-peer transports that are stable on the current platform (Bluetooth LE, LAN, and AWDL or Wi-Fi Aware). When you connect to Ditto Server, the Server URL is used automatically; you do not need to add it to the transport configuration.
+**Change transports by updating the current transport configuration; never replace it with a new, empty one, which disables every transport.** A new Ditto instance enables the peer-to-peer transports of its platform: in testing with SDK 5.1.0 and 5.2.0, Bluetooth LE, LAN, and AWDL on macOS and iOS (also with the JavaScript SDK on Node.js on macOS), and Bluetooth LE, LAN, and Wi-Fi Aware on Android; Wi-Fi Aware stayed disabled on macOS although Ditto's documentation says that all peer-to-peer transports are enabled (`§ A new instance enables the platform's peer-to-peer transports, and an empty configuration enables none`). When you connect to Ditto Server, the Server URL is used automatically; you do not need to add it to the transport configuration.
 
 The transport configuration has the same structure in every SDK: `peerToPeer` (Bluetooth LE, LAN, AWDL, Wi-Fi Aware), `connect` (TCP servers, WebSocket URLs, and the retry interval; the field names follow each SDK's conventions, for example `webSocketUrls` in Flutter and `websocketURLs` in JavaScript), `listen` (`tcp`, `http`), and `global`. Each SDK offers an update call that starts from the current configuration (`updateTransportConfig`; see [Transports and Presence in Flutter](../../guide/reference/best-practices/platforms/flutter.md#transports-and-presence-in-flutter), [JavaScript](../../guide/reference/best-practices/platforms/javascript.md#transports-and-presence-in-javascript), [Kotlin](../../guide/reference/best-practices/platforms/kotlin.md#transports-and-presence-in-kotlin), and [Swift](../../guide/reference/best-practices/platforms/swift.md#transports-and-presence-in-swift)).
 
@@ -16,7 +16,7 @@ The transport configuration has the same structure in every SDK: `peerToPeer` (B
 - On a hub that more than six devices connect to over TCP, raise the TCP connection limit on the hub so that it is in effect before sync starts (see the note below).
 
 **❌ DON'T:**
-- Build a new transport configuration from scratch and assign it: a new configuration has **every transport disabled**, including the peer-to-peer transports that a default instance enables.
+- Build a new transport configuration from scratch and assign it: a new configuration has **every transport disabled**, including the peer-to-peer transports that a default instance enables (in testing with every SDK on SDK 5.1.0 and 5.2.0).
 - Use `MESH_CHOOSER_AT_CAPACITY_ACTION` to admit more TCP clients than the limit; the hub keeps replacing connections (see the note below).
 - Treat `global.syncGroup` as a security boundary. It is an optimization only: in our testing, devices in different sync groups still synced when they were connected explicitly (see [Relay, rewrite, and subscription behavior held on SDK 5.1.0 and 5.2.0](../../guide/reference/knowledge/observations/subscriptions-and-replication.md#relay-rewrite-and-subscription-behavior-held-on-sdk-510-and-520)).
 

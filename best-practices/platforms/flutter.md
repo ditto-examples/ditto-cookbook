@@ -2460,7 +2460,7 @@ await ditto.store.execute(
 
 ## Transports and Presence in Flutter
 
-`TransportConfig` is immutable. Change it with `ditto.updateTransportConfig()`, which gives you a builder initialized with the current configuration; never assign a new `TransportConfig()`, which has every transport disabled. The rules are in [Transport Configuration](../setup-and-lifecycle.md#transport-configuration).
+`TransportConfig` is immutable. Change it with `ditto.updateTransportConfig()`, which gives you a builder initialized with the current configuration; never assign a new `TransportConfig()`, which has every transport disabled, whereas a newly opened instance on macOS has Bluetooth LE, LAN, and AWDL enabled (in our testing with SDK 5.1.0 and 5.2.0; see [A new instance enables the platform's peer-to-peer transports, and an empty configuration enables none](../../knowledge/observations/connections-and-presence.md#a-new-instance-enables-the-platforms-peer-to-peer-transports-and-an-empty-configuration-enables-none)). The rules are in [Transport Configuration](../setup-and-lifecycle.md#transport-configuration).
 
 ```dart
 // ✅ GOOD: Adjust the current configuration with the builder.

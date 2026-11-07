@@ -1,9 +1,11 @@
 # Connections and Presence
 
-How devices connect to each other and how presence reports them: the TCP connection limit and how each release counts it, meshes and WebSocket hubs, changing and retrying connections, how long a lost or stalled connection takes to notice, the presence graph and peer metadata, and the connection handler and shared keys that decide which peers connect. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections), [Small-Peers-Only Deployments](../../best-practices/security.md#small-peers-only-deployments), and [Key Characteristics](../understanding-ditto.md#key-characteristics).
+How devices connect to each other and how presence reports them: the transports that a new instance enables and sync over AWDL alone, the TCP connection limit and how each release counts it, meshes and WebSocket hubs, changing and retrying connections, how long a lost or stalled connection takes to notice, the presence graph and peer metadata, and the connection handler and shared keys that decide which peers connect. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections), [Small-Peers-Only Deployments](../../best-practices/security.md#small-peers-only-deployments), and [Key Characteristics](../understanding-ditto.md#key-characteristics).
 
 **In brief**
 
+- A new instance enables Bluetooth LE, LAN, and AWDL on macOS (also with JavaScript on Node.js) and iOS, and Bluetooth LE, LAN, and Wi-Fi Aware on Android, while a new, empty transport configuration enables no transport ([A new instance enables the platform's peer-to-peer transports, and an empty configuration enables none](#a-new-instance-enables-the-platforms-peer-to-peer-transports-and-an-empty-configuration-enables-none)).
+- Two iOS simulators on one Mac with only AWDL enabled received each other's documents within 0.6 to 1.5 seconds over a connection that presence reported as `P2PWiFi`, and with AWDL disabled too did not sync; this shows the SDK's AWDL transport at work, not AWDL over the air ([Two iOS simulators synced over AWDL alone](#two-ios-simulators-synced-over-awdl-alone)).
 - A device accepts six TCP connections by default. Further devices get no data and no error, and raising the limit works only before sync starts ([A device accepts six TCP connections by default](#a-device-accepts-six-tcp-connections-by-default), [Raising the TCP limit takes effect only before sync starts](#raising-the-tcp-limit-takes-effect-only-before-sync-starts)).
 - The at-capacity actions 1 and 2 let extra clients in on 5.2.0, but the hub then replaces connections in a 5-second cycle, and at every check, at least one client was not connected ([At-capacity actions 1 and 2 admit extra clients but keep replacing connections](#at-capacity-actions-1-and-2-admit-extra-clients-but-keep-replacing-connections)).
 - On 5.2.0, a device probably counts the connections that it opened itself when it decides whether to accept another one, but the connections it opens are not limited. In a full mesh of seven or more devices, a device keeps 3 to 7 direct connections and receives changes from the other devices through its neighbors ([SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit), [Outgoing TCP connections are not limited](#outgoing-tcp-connections-are-not-limited), [On SDK 5.2.0, devices in a full TCP mesh of seven or more keep 3 to 7 direct connections](#on-sdk-520-devices-in-a-full-tcp-mesh-of-seven-or-more-keep-3-to-7-direct-connections)).
@@ -16,6 +18,48 @@ How devices connect to each other and how presence reports them: the TCP connect
 - Presence and sync worked across a line of 20 devices, and while ten devices kept reconnecting, a stable device got presence callbacks about once per second and its sync was barely delayed ([Presence and sync work across a chain of 20 devices](#presence-and-sync-work-across-a-chain-of-20-devices), [Presence callbacks stay at about one per second while peers come and go](#presence-callbacks-stay-at-about-one-per-second-while-peers-come-and-go)).
 - Peer metadata is replaced, not merged, reaches other peers about once per second, and is sent to every device whenever a device joins or changes it ([Peer metadata is replaced, not merged, and the device name is read when sync starts](#peer-metadata-is-replaced-not-merged-and-the-device-name-is-read-when-sync-starts), [Peer metadata changes reach other peers about once per second](#peer-metadata-changes-reach-other-peers-about-once-per-second), [Presence traffic carries each peer's metadata, and idle traffic grows faster than the number of devices](#presence-traffic-carries-each-peers-metadata-and-idle-traffic-grows-faster-than-the-number-of-devices)).
 - A denied peer retries at its retry interval. Peers connect only when their shared keys match, and traffic without a key is TLS-wrapped but not authenticated ([A denied peer retries at the retry interval](#a-denied-peer-retries-at-the-retry-interval), [Shared keys must match, and traffic is TLS-wrapped without a key](#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key)).
+
+## Default Transports and AWDL
+
+### A new instance enables the platform's peer-to-peer transports, and an empty configuration enables none
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each with each SDK and platform in the table; every run gave the same result |
+| Setup | With each SDK, one instance opened with `DittoConfig` in small-peers-only mode in a new persistence directory, without an offline license token and without starting sync, so that no transport became active. We read its transport configuration, a new transport configuration made with the SDK's constructor (`TransportConfig()` or `DittoTransportConfig()`), and the instance's configuration after an `updateTransportConfig` that only disabled Bluetooth LE. Flutter (`ditto_live`), JavaScript on Node.js 24, and Swift ran on macOS (arm64), Swift also in an iOS 26.5 simulator, and Kotlin on the Android 16 emulator (API 36, arm64) |
+| Documentation | [Customizing Transports](https://docs.ditto.live/sdk/latest/sync/customizing-transport-configurations): "When a new Ditto instance is created, a default transport configuration is supplied that enables all peer-to-peer transports by default", and a custom `DittoTransportConfig` does not enable them. [Mesh Networking](https://docs.ditto.live/key-concepts/mesh-networking) lists AWDL for Apple devices and Wi-Fi Aware for Android |
+
+| SDK and platform | Enabled in a new instance | Enabled in a new, empty configuration |
+|---|---|---|
+| Flutter on macOS | Bluetooth LE, LAN, AWDL | None |
+| JavaScript on Node.js (macOS) | Bluetooth LE, LAN, AWDL | None |
+| Kotlin on the Android emulator | Bluetooth LE, LAN, Wi-Fi Aware | None |
+| Swift on macOS | Bluetooth LE, LAN, AWDL | None |
+| Swift in the iOS simulator | Bluetooth LE, LAN, AWDL | None |
+
+- A new instance did not enable every peer-to-peer transport, as the documentation's "all peer-to-peer transports" suggests: Wi-Fi Aware was disabled in Flutter and JavaScript on macOS (the JavaScript SDK reports it as not supported there; see [In JavaScript on macOS, enabling every peer-to-peer transport makes the transport configuration invalid](javascript-sdk.md#in-javascript-on-macos-enabling-every-peer-to-peer-transport-makes-the-transport-configuration-invalid)). The Swift and Kotlin configurations have no setting for the transport that their platform lacks (Wi-Fi Aware in Swift, AWDL in Kotlin).
+- In every SDK, neither configuration listened for TCP or HTTP or listed TCP servers or WebSocket URLs. The retry interval was 5 seconds in both configurations in Flutter, JavaScript, and Swift (not read in Kotlin).
+- After the update that disabled only Bluetooth LE, the other peer-to-peer transports stayed enabled in every SDK: the update starts from the current configuration, not from an empty one.
+
+**Not tested:** physical devices; Flutter on iOS and Android, JavaScript in browsers and React Native, and Windows and Linux; whether the enabled transports find other devices (sync was not started).
+
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Transports and Presence in Flutter](../../best-practices/platforms/flutter.md#transports-and-presence-in-flutter), [Transports and Presence in JavaScript](../../best-practices/platforms/javascript.md#transports-and-presence-in-javascript), [Transports and Presence in Swift](../../best-practices/platforms/swift.md#transports-and-presence-in-swift).
+
+### Two iOS simulators synced over AWDL alone
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each, each run paired with a control run; every run gave the same result |
+| Setup | Two instances of the Swift SDK, each in its own iOS 26.5 simulator (iPhone 17) on one Mac with Xcode 26.6, with the same Database ID and offline license token. Every transport was disabled except AWDL; the configuration read back from the SDK had only AWDL enabled. Each instance subscribed to the collection, started sync, and wrote one document with 11 fields of different types (strings with Japanese text and emoji, an integer, a float, a boolean, `null`, a nested object, an array of mixed values, and a string of 100,000 characters). It then waited for the other instance's document, compared every field with what the other had written, updated its own document, and waited for the other's update, while it sampled the presence graph. In the control run, the same two instances had AWDL disabled as well and waited 40 seconds. Times are measured from just before each instance started sync; the two apps were launched one after the other |
+| Documentation | [Mesh Networking](https://docs.ditto.live/key-concepts/mesh-networking) lists AWDL as the peer-to-peer Wi-Fi transport of Apple devices |
+
+- With only AWDL enabled, each instance received the other's document after 0.6 to 1.5 seconds on 5.1.0 and 1.0 to 1.5 seconds on 5.2.0, with every field as written, and the other's update after 0.6 to 1.5 seconds and 1.1 to 1.5 seconds. Each saw the other in the presence graph from 0.6 to 1.5 seconds on 5.1.0 and 0.8 to 1.3 seconds on 5.2.0, with the connection type `P2PWiFi`, and with no other connection type.
+- With AWDL disabled too, neither instance received the other's document or saw the other in the presence graph within the 40 seconds, on either release.
+- The simulators share the Mac's network interfaces, so the traffic may not have left the Mac. The result shows that the SDK's AWDL transport carries sync on its own and that presence reports it as `P2PWiFi`; it does not show how AWDL behaves over the air between devices, at a distance, with interference, or next to Bluetooth LE.
+
+**Not tested:** physical devices; macOS peers; more than two devices; deletions, attachments, and concurrent edits of one document; AWDL together with other transports.
+
+**Used in:** [Test Environment](how-we-tested.md#test-environment), [Several peers in one test process](../../best-practices/testing.md#several-peers-in-one-test-process).
 
 ## The TCP Connection Limit
 
