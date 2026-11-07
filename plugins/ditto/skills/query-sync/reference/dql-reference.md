@@ -221,7 +221,7 @@ Restrictions:
 - Rejected by `registerSubscription` (`Unsupported feature: Joining`); not supported on Ditto Server.
 - A later `RIGHT JOIN` fails; a `RIGHT JOIN` is rewritten as a `LEFT JOIN` with sides swapped, so the left collection becomes the inner side and needs the index.
 - At most 10 joins per statement by default (directive `#max_joins`).
-- Observers accept joins and deliver a new result when a change in any joined collection changes the joined rows; on 5.1.0 rows carried a composite `_id`, but on 5.2.0 they did not in testing, so project the row keys yourself (`o._id AS orderId`) when you diff.
+- Observers accept joins and deliver a new result when a change in any joined collection changes the joined rows; on 5.1.0 rows carried a composite `_id`, but on 5.2.0 they did not in testing (except with Flutter's `registerObserver`), so project the row keys yourself (`o._id AS orderId`) when you diff.
 
 Embedding remains the default modeling choice; see `§ Relationships: Embedding, Separate Collections, and JOIN`.
 

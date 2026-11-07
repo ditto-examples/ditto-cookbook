@@ -10,7 +10,7 @@ How store observers behave on one device: when an observer is called, how change
 - An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)).
 - Every SDK's differ, and Kotlin's `DittoDiff`, reported the same diffs on 5.1.0 and 5.2.0: the first result as insertions, a reorder as a move for every shifted item plus an update for the moved one, no move for items that only shifted because of a deletion or an insertion, and nothing for a value that changed and changed back between two results ([Every SDK's differ reports a reorder as a move of each shifted item and compares only two results](#every-sdks-differ-reports-a-reorder-as-a-move-of-each-shifted-item-and-compares-only-two-results)).
 - The differs of Flutter, JavaScript, and Swift accept only the items of Ditto query results: test doubles and plain objects make `diff()` throw in Flutter and JavaScript, and Swift's item type cannot be created outside the SDK. Kotlin apps do not create a differ; the observer passes a `DittoDiff` to its handler ([The differs accept only items from Ditto query results, and Kotlin apps do not create one](#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)).
-- On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stopped every callback in our tests, a threshold that may differ by device ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
+- On SDK 5.2.0, observer rows have no `_id` unless the query projects it, on every SDK except with Flutter's `registerObserver`; on SDK 5.1.0, 60 or more observers stopped every callback in our tests, a threshold that may differ by device ([On SDK 5.2.0, observer rows include _id only when it is projected, except with Flutter's registerObserver](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected-except-with-flutters-registerobserver), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
 - On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection](#on-sdk-510-and-520-an-observer-did-not-re-run-its-query-after-writes-to-another-collection)).
 - What each SDK's observer API does with slow or failing callbacks, result objects, dropped references, and its differ is on the SDK pages: [Flutter SDK Behavior](flutter-sdk.md), [JavaScript SDK Behavior](javascript-sdk.md), [Kotlin SDK Behavior](kotlin-sdk.md), and [Swift SDK Behavior](swift-sdk.md).
 
@@ -184,7 +184,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Not tested:** compiling a test double in Kotlin or Swift; JavaScript in browsers and React Native; Flutter on iOS and Android.
 
-**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Testing Observer Lifecycle](../../best-practices/testing.md#testing-observer-lifecycle), [Diffing results in Flutter](../../best-practices/platforms/flutter.md#diffing-results-in-flutter), [Testing in Flutter](../../best-practices/platforms/flutter.md#testing-in-flutter), [Testing in JavaScript](../../best-practices/platforms/javascript.md#testing-in-javascript), [Diffing results in Swift](../../best-practices/platforms/swift.md#diffing-results-in-swift), [Testing in Swift](../../best-practices/platforms/swift.md#testing-in-swift).
+**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Testing Observer Lifecycle](../../best-practices/testing.md#testing-observer-lifecycle), [Diffing results in Flutter](../../best-practices/platforms/flutter.md#diffing-results-in-flutter), [Testing in Flutter](../../best-practices/platforms/flutter.md#testing-in-flutter), [Testing in JavaScript](../../best-practices/platforms/javascript.md#testing-in-javascript), [Diffing results in Kotlin](../../best-practices/platforms/kotlin.md#diffing-results-in-kotlin), [Diffing results in Swift](../../best-practices/platforms/swift.md#diffing-results-in-swift), [Testing in Swift](../../best-practices/platforms/swift.md#testing-in-swift).
 
 ### Every SDK's differ reports a reorder as a move of each shifted item and compares only two results
 
@@ -237,12 +237,12 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 **Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire).
 
-### On SDK 5.2.0, observer rows include _id only when it is projected
+### On SDK 5.2.0, observer rows include _id only when it is projected, except with Flutter's registerObserver
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each (the join: 5.1.0 and 5.2.0); every run gave the same result |
-| Setup | An observer of `SELECT name FROM items ORDER BY rank`, and an observer of a join, `SELECT o._id AS orderId, o.total, c.name AS customerName FROM orders o JOIN customers c ...`. We compared their rows with the result of `execute()`, and passed the rows to `Differ` after two documents had changed places |
+| Observed on | JavaScript: SDK 5.0.3, 5.1.0, and 5.2.0, three runs each (the join: 5.1.0 and 5.2.0). Flutter, Kotlin, and Swift, and JavaScript's `registerObserverWithSignalNext`: SDK 5.1.0 and 5.2.0, three runs each. Every run gave the same result |
+| Setup | An observer of `SELECT name FROM items ORDER BY rank`, and an observer of a join, `SELECT o._id AS orderId, o.total, c.name AS customerName FROM orders o JOIN customers c ...`. We compared their rows with the result of `execute()`, and passed the rows to `Differ` after two documents had changed places. We then ran both queries, with the join `ON c._id = o.customerId`, with every observer API of Flutter on macOS (`registerObserver` with `onChange` and with `changes`, `registerObserverV2`, and `registerObserverWithSignalNext`), with `registerObserver` of Kotlin on the Android 16 emulator and of Swift on macOS, and with JavaScript's `registerObserverWithSignalNext`, and read the keys of the first row |
 | Documentation | The SDK 5.2.0 release notes say that observers with a projection no longer retain the previous result (#QE-1093), and also that "Observer behavior and query results are unchanged". They do not mention the change below |
 
 | Rows of | 5.0.3 | 5.1.0 | 5.2.0 |
@@ -251,12 +251,21 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 | `execute()` of the same query | No `_id` | No `_id` | No `_id` |
 | The join observer | — | Composite `_id` (`{"c": "c1", "o": "o1"}`) | No `_id` |
 
-- As a result, on 5.2.0, `Differ` reported the reordering of two rows as `updates: [0, 1]` and `moves: []`, while 5.0.3 and 5.1.0 reported two moves. Without `_id`, `Differ` cannot tell the rows apart, so animations and other processing of the differences go wrong.
+| Observer API on 5.2.0 | `SELECT name ...` | The join |
+|---|---|---|
+| JavaScript `registerObserver` and `registerObserverWithSignalNext` | No `_id` | No `_id` |
+| Kotlin `registerObserver` | No `_id` | No `_id` |
+| Swift `registerObserver` | No `_id` | No `_id` |
+| Flutter `registerObserverV2` and `registerObserverWithSignalNext` | No `_id` | No `_id` |
+| Flutter `registerObserver`, with `onChange` and with `changes` | `_id` | Composite `_id` (`{c: c1, o: o1}`) |
+
+- On 5.1.0, every observer API that we ran delivered the `_id`, composite in the join. `execute()` returned no `_id` for either query on every SDK and release.
+- As a result, on 5.2.0, the JavaScript `Differ` reported the reordering of two rows as `updates: [0, 1]` and `moves: []`, while 5.0.3 and 5.1.0 reported two moves. Without `_id`, `Differ` cannot tell the rows apart, so animations and other processing of the differences go wrong.
 - In a join, `SELECT _id ...` returns the composite ID (see [JOIN, RETURNING, document ID, and timestamp statements held on SDK 5.1.0 and 5.2.0](dql-behavior.md#join-returning-document-id-and-timestamp-statements-held-on-sdk-510-and-520)).
 
-**Not tested:** Flutter's `Differ` and observers.
+**Not tested:** the differs of Flutter, Kotlin, and Swift with rows without `_id`; the other observer APIs of Kotlin (`observe`) and Swift; Flutter on iOS and Android.
 
-**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Joins in observers](../../best-practices/dql.md#joins-in-observers).
+**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Joins in observers](../../best-practices/dql.md#joins-in-observers), [Diffing results in Flutter](../../best-practices/platforms/flutter.md#diffing-results-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Diffing results in Kotlin](../../best-practices/platforms/kotlin.md#diffing-results-in-kotlin), [Diffing results in Swift](../../best-practices/platforms/swift.md#diffing-results-in-swift), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
 
 ### On SDK 5.1.0, observers stall beyond about 60
 

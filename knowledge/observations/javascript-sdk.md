@@ -360,7 +360,7 @@ Later runs on SDK 5.1.0 (three runs) and 5.2.0 (four runs), which also read the 
 - Moving the third item to the top reported three moves (`2→0`, `0→1`, `1→2`) and one update for the moved item: every item whose position shifted is a move, not just the one that was moved.
 - A value that changed and changed back between two results was not reported as an update.
 - The first `diff()` reported every item as an insertion.
-- On 5.2.0, rows of a query that did not project `_id` have no `_id`, so `Differ` cannot tell the items apart (see [On SDK 5.2.0, observer rows include _id only when it is projected](observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected)).
+- On 5.2.0, rows of a query that did not project `_id` have no `_id`, so `Differ` cannot tell the items apart (see [On SDK 5.2.0, observer rows include _id only when it is projected, except with Flutter's registerObserver](observer-behavior.md#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected-except-with-flutters-registerobserver)).
 
 **Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Diffing results in JavaScript](../../best-practices/platforms/javascript.md#diffing-results-in-javascript).
 
