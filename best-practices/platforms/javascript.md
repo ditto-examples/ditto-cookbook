@@ -2408,7 +2408,7 @@ test('observer sees a new order and is cancelled cleanly', async () => {
 });
 ```
 
-For component tests of screens that own observers, keep the observer behind your own interface and pass a fake. `Differ` only accepts items produced by Ditto, so code that uses it needs a real store.
+For component tests of screens that own observers, keep the observer behind your own interface and pass a fake. `Differ` only accepts items produced by Ditto, so code that uses it needs a real store: in our testing with SDK 5.1.0 and 5.2.0, plain objects made `diff()` throw `TypeError: item.deref is not a function` (see [The differs accept only items from Ditto query results, and Kotlin apps do not create one](../../knowledge/observations/observer-behavior.md#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)).
 
 `registerSubscription` throws a `DittoError` for a query that subscriptions do not accept:
 

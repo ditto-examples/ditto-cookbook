@@ -8,6 +8,7 @@ How store observers behave on one device: when an observer is called, how change
 - Since SDK 5.1, changes are coalesced into callbacks about 30 ms apart, so an observer skips intermediate values. Changes from another device arrive in a few callbacks, and a transaction in one ([Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart), [A device receives nearly every value of a fast-changing field](#a-device-receives-nearly-every-value-of-a-fast-changing-field), [Remote changes arrive in a few callbacks, and a transaction in one](#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
 - An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0, with new `_id` or `timestamp` values in 16 rows, and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
 - An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)).
+- The differs of Flutter, JavaScript, and Swift accept only the items of Ditto query results: test doubles and plain objects make `diff()` throw in Flutter and JavaScript, and Swift's item type cannot be created outside the SDK. Kotlin apps do not create a differ; the observer passes a `DittoDiff` to its handler ([The differs accept only items from Ditto query results, and Kotlin apps do not create one](#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)).
 - On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stopped every callback in our tests, a threshold that may differ by device ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
 - On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection](#on-sdk-510-and-520-an-observer-did-not-re-run-its-query-after-writes-to-another-collection)).
 - What each SDK's observer API does with slow or failing callbacks, result objects, dropped references, and its differ is on the SDK pages: [Flutter SDK Behavior](flutter-sdk.md), [JavaScript SDK Behavior](javascript-sdk.md), [Kotlin SDK Behavior](kotlin-sdk.md), and [Swift SDK Behavior](swift-sdk.md).
@@ -160,6 +161,29 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 **Not tested:** what the rows contained in each callback; more than one peer; devices that sync changes while the observer runs; longer than 40 seconds.
 
 **Used in:** [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
+
+## Differs
+
+### The differs accept only items from Ditto query results, and Kotlin apps do not create one
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each with JavaScript, Flutter, and Kotlin; every run gave the same result. Swift: the module interface of DittoSwift 5.1.0 and 5.2.0 |
+| Setup | JavaScript on Node.js 24 and Flutter (`ditto_live`) on macOS, each in a store with two documents: we passed to a new differ the items of a query, then items that Ditto did not produce, a list that mixed a real item with one of those, and an empty list. In JavaScript, the other items were plain objects with a `value` property, plain documents, and an object created with the prototype of a real item; in Flutter, a test double that `implements QueryResultItem`. Kotlin on the Android 16 emulator: we read with reflection the constructors of `DittoDiffer` and `DittoQueryResultItem`, and the public methods of `Ditto`, `DittoStore`, and the file class of `DittoDiffer` that return a `DittoDiffer`. Swift: we read the declarations of `DittoDiffer` and `DittoQueryResultItem` in DittoSwift's module interface (`.swiftinterface`) |
+| Documentation | [Reacting to Data Changes](https://docs.ditto.live/sdk/latest/crud/observing-data-changes) (Diffing Results): in Swift, JavaScript, and Flutter, the app creates the differ and passes it the query result items; for Kotlin, "In v5, the differ is owned by the observer — you do not construct one yourself". The page says nothing about other items or test doubles |
+
+| SDK | Items that Ditto did not produce |
+|---|---|
+| Flutter | `diff()` threw `ArgumentError: Invalid argument(s): List must not contain subtypes of QueryResultItem` for the test double, also when the list held a real item as well |
+| JavaScript | `diff()` threw `TypeError: item.deref is not a function` for the plain objects and the plain documents, also when the list held a real item as well, and `Error: Bridging error: QueryResultItem object is not currently registered in this bridge.` for the object with the prototype of a real item |
+| Kotlin | No differ to pass them to. `DittoDiffer` and `DittoQueryResultItem` are final classes whose only constructors take types of the SDK's `com.ditto.internal` package, and the only function that returns a `DittoDiffer`, `toFacade`, takes such a type as well. A diff reaches the app as the `DittoDiff` that the observer passes to a handler with two parameters (see [In Kotlin, DittoDiff reports every shifted row as a move](kotlin-sdk.md#in-kotlin-dittodiff-reports-every-shifted-row-as-a-move)) |
+| Swift | `DittoQueryResultItem` is a `final` class without a public initializer (`@_hasMissingDesignatedInitializers`), and `DittoDiffer.diff(_:)` takes `[DittoQueryResultItem]`, so other values cannot be passed; the compiler rejects them |
+
+- The items of a query gave the expected diff: the first call reported both documents as insertions. An empty list gave an empty diff.
+
+**Not tested:** compiling a test double in Kotlin or Swift; JavaScript in browsers and React Native; Flutter on iOS and Android.
+
+**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Testing Observer Lifecycle](../../best-practices/testing.md#testing-observer-lifecycle), [Diffing results in Flutter](../../best-practices/platforms/flutter.md#diffing-results-in-flutter), [Testing in Flutter](../../best-practices/platforms/flutter.md#testing-in-flutter), [Testing in JavaScript](../../best-practices/platforms/javascript.md#testing-in-javascript), [Diffing results in Swift](../../best-practices/platforms/swift.md#diffing-results-in-swift), [Testing in Swift](../../best-practices/platforms/swift.md#testing-in-swift).
 
 ## Observer Differences between SDK Releases
 

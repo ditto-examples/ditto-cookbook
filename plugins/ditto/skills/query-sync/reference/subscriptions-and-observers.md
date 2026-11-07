@@ -189,11 +189,11 @@ Kotlin has no `signalNext`: the observer waits for the suspending handler, and `
 | Updates | Indexes in the new list of changed items |
 | Moves | Pairs of an old and a new index |
 
-`Differ` in Flutter and JavaScript, `DittoDiffer` in Kotlin and Swift (Kotlin can also pass a `DittoDiff` to the observer handler). An observer delivers the full result every time. A list keyed by `_id` does not need a differ; use it for an animated list or for processing only new items.
+`Differ` in Flutter and JavaScript, `DittoDiffer` in Swift; in Kotlin, the observer owns the differ and passes a `DittoDiff` to a two-parameter handler (apps do not create a `DittoDiffer`). An observer delivers the full result every time. A list keyed by `_id` does not need a differ; use it for an animated list or for processing only new items.
 
 - The first diff reports every item as inserted.
 - Identity is `_id`, so project `_id` in a diffed query: on SDK 5.2.0 (JavaScript, in testing), rows of a query without `_id` had none, and `Differ` reported a reordering as updates. Values are compared deeply, and only two successive results are compared: a value that changed and changed back is not an update, and moving one item to the top of a list reports a move for every item whose position shifted (JavaScript `Differ`, in testing).
 - The differ keeps the previous result and is expensive: bound the query (`LIMIT`) and debounce large or busy results.
 - It does not return old items; keep previous values or IDs yourself.
-- Only items produced by Ditto are accepted (in Flutter, test doubles throw `ArgumentError`; Flutter's `diff()` takes `result.items.toList()`).
+- Only items produced by Ditto are accepted: in testing with SDK 5.1.0 and 5.2.0, Flutter's test doubles threw `ArgumentError` and JavaScript's plain objects `TypeError`, and Swift's `DittoQueryResultItem` has no public initializer (`§ The differs accept only items from Ditto query results, and Kotlin apps do not create one`). Flutter's `diff()` takes `result.items.toList()`.
 - For an animated list, apply removals in descending old-index order and insertions in ascending new-index order; treat moves as removal plus insertion. See `observer-differ` in `../examples/<sdk>/`.

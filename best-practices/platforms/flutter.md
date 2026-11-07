@@ -1662,7 +1662,7 @@ The `onChange` callback of `registerObserverWithSignalNext` receives the `signal
 
 ### Diffing results in Flutter
 
-`Differ().diff()` takes a `List<QueryResultItem>`, so pass `result.items.toList()` (`items` is an `Iterable`). It returns a `Diff` with `insertions`, `deletions`, and `updates` (index sets) and `moves` (`DiffMove(from: oldIndex, to: newIndex)`). `Differ` only accepts items produced by Ditto; passing test doubles throws an `ArgumentError`. The semantics that every SDK shares are in [Diffing Results](../observers.md#diffing-results).
+`Differ().diff()` takes a `List<QueryResultItem>`, so pass `result.items.toList()` (`items` is an `Iterable`). It returns a `Diff` with `insertions`, `deletions`, and `updates` (index sets) and `moves` (`DiffMove(from: oldIndex, to: newIndex)`). `Differ` only accepts items produced by Ditto: a test double that implements `QueryResultItem` makes `diff()` throw `ArgumentError` (`List must not contain subtypes of QueryResultItem`; in our testing with SDK 5.1.0 and 5.2.0, see [The differs accept only items from Ditto query results, and Kotlin apps do not create one](../../knowledge/observations/observer-behavior.md#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)). The semantics that every SDK shares are in [Diffing Results](../observers.md#diffing-results).
 
 ```dart
 // ✅ GOOD: Logging changes between results with Differ.
@@ -2903,7 +2903,7 @@ test('observer sees a new order and is cancelled cleanly', () async {
 });
 ```
 
-For widget tests of screens that own observers, keep the observer behind your own interface and inject a stream you control. `Differ` only accepts items produced by Ditto, so code that uses it needs a real store.
+For widget tests of screens that own observers, keep the observer behind your own interface and inject a stream you control. `Differ` only accepts items produced by Ditto, so code that uses it needs a real store (see [The differs accept only items from Ditto query results, and Kotlin apps do not create one](../../knowledge/observations/observer-behavior.md#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)).
 
 `registerSubscription` throws a `DittoException` for a query that subscriptions do not accept:
 

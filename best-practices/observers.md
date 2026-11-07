@@ -104,7 +104,7 @@ The experimental APIs may change in a future release. Code for each SDK: [Flutte
 
 ## Diffing Results
 
-An observer delivers the complete result every time. When you need to know **what** changed, for list animations or to process only new items, use the SDK's differ (`Differ` in Flutter and JavaScript, `DittoDiffer` in Kotlin and Swift; Kotlin can also pass a `DittoDiff` to the observer handler). It compares successive results by `_id` and reports index sets:
+An observer delivers the complete result every time. When you need to know **what** changed, for list animations or to process only new items, use the SDK's differ: `Differ` in Flutter and JavaScript and `DittoDiffer` in Swift, which you create and pass the items of each result; in Kotlin, the observer owns the differ and passes a `DittoDiff` to a handler with two parameters, and apps do not create a `DittoDiffer` (in our testing with SDK 5.1.0 and 5.2.0; see [The differs accept only items from Ditto query results, and Kotlin apps do not create one](../knowledge/observations/observer-behavior.md#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)). It compares successive results by `_id` and reports index sets:
 
 | Field | Contents |
 |---|---|

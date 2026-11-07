@@ -207,7 +207,7 @@ Select by ID with `WHERE _id = :id` or `WHERE _id IN :ids`: planned as an ID loo
 
 ### 15. Use a differ only for item-level changes (MEDIUM)
 
-The differ (`Differ` in Flutter and JavaScript, `DittoDiffer` in Kotlin and Swift) reports insertions, deletions, updates, and moves by `_id`; project `_id`. It is expensive, so bound diffed queries with `LIMIT`. A list keyed by `_id` does not need it; use it for explicit insert, remove, and move calls such as an animated list.
+The differ (`Differ`; `DittoDiffer` in Swift; Kotlin's observer `DittoDiff`) reports insertions, deletions, updates, and moves by `_id`; project `_id`. It is expensive, so bound diffed queries with `LIMIT`. A list keyed by `_id` does not need it; use it for explicit insert, remove, and move calls such as an animated list.
 
 `§ Diffing Results` · Example: `observer-differ` in `examples/<sdk>/`
 

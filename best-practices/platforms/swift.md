@@ -1704,7 +1704,7 @@ There is no separate experimental observer API in Swift: `handler:` and `handler
 
 ### Diffing results in Swift
 
-`DittoDiffer().diff(_:)` takes `[DittoQueryResultItem]` and returns a `DittoDiff` with `insertions`, `deletions`, and `updates` (`IndexSet`s) and `moves` (`[(from: Int, to: Int)]`). Keep one `DittoDiffer` per observer: it remembers the previous result. `DittoDiffer` only accepts items produced by Ditto. The semantics that every SDK shares are in [Diffing Results](../observers.md#diffing-results).
+`DittoDiffer().diff(_:)` takes `[DittoQueryResultItem]` and returns a `DittoDiff` with `insertions`, `deletions`, and `updates` (`IndexSet`s) and `moves` (`[(from: Int, to: Int)]`). Keep one `DittoDiffer` per observer: it remembers the previous result. `DittoDiffer` only accepts items produced by Ditto: `DittoQueryResultItem` is a `final` class without a public initializer (see [The differs accept only items from Ditto query results, and Kotlin apps do not create one](../../knowledge/observations/observer-behavior.md#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)). The semantics that every SDK shares are in [Diffing Results](../observers.md#diffing-results).
 
 ```swift
 import DittoSwift
@@ -2886,7 +2886,7 @@ import Testing
 }
 ```
 
-For tests of views and models that own observers, keep the observer behind your own protocol and pass a fake that yields the rows you choose. `DittoDiffer` only accepts items produced by Ditto, so code that uses it needs a real store.
+For tests of views and models that own observers, keep the observer behind your own protocol and pass a fake that yields the rows you choose. `DittoDiffer` only accepts items produced by Ditto, so code that uses it needs a real store (see [The differs accept only items from Ditto query results, and Kotlin apps do not create one](../../knowledge/observations/observer-behavior.md#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)).
 
 `registerSubscription` throws a `DittoError` for a query that subscriptions do not accept:
 

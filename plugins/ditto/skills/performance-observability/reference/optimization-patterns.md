@@ -114,7 +114,7 @@ Future<void> exportOpenOrders(
 
 **Guide**: `§ Diffing Results`, `§ Partial UI Updates`; each SDK page's *Diffing results in <SDK>* section
 
-- `Differ` in Flutter and JavaScript, `DittoDiffer` in Kotlin and Swift (Kotlin can also pass a `DittoDiff` to the observer handler). Flutter's `diff()` takes a `List<QueryResultItem>` (pass `result.items.toList()`).
+- `Differ` in Flutter and JavaScript, `DittoDiffer` in Swift; in Kotlin, the observer passes a `DittoDiff` to a two-parameter handler, and apps do not create a `DittoDiffer`. Flutter's `diff()` takes a `List<QueryResultItem>` (pass `result.items.toList()`).
 - The first call reports every item as an insertion.
 - Deletions index the **old** list; insertions and updates index the **new** list.
 - It does not give you the old items; keep previous values yourself.

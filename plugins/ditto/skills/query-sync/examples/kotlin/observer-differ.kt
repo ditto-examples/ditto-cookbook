@@ -11,7 +11,7 @@
 // Facts:
 // - The first result reports every row as an insertion.
 // - Moving one row reports every row whose position shifted as a move.
-// - DittoDiffer cannot be created by apps; the observer owns it.
+// - Apps do not create a DittoDiffer; the observer owns it.
 // - The diff does not return old rows: keep previous values (or IDs) yourself.
 // - Keep diffed queries bounded (WHERE and LIMIT). A ListAdapter with DiffUtil,
 //   or a LazyColumn with keys, does not need DittoDiff.

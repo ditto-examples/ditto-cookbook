@@ -131,7 +131,7 @@ SELECT * FROM orders WHERE status = :status ORDER BY _id
 INSERT INTO orders DOCUMENTS (:order)
 ```
 
-For UI tests of screens that own observers, keep the observer behind your own interface and inject a stream or a fake you control. The differs accept only items produced by Ditto, so code that uses one needs a real store (see [Diffing Results](observers.md#diffing-results)).
+For UI tests of screens that own observers, keep the observer behind your own interface and inject a stream or a fake you control. The differs accept only the items of Ditto query results, so code that uses one needs a real store: in our testing with SDK 5.1.0 and 5.2.0, Flutter's and JavaScript's `Differ` threw an exception for test doubles and plain objects, Swift's `DittoQueryResultItem` cannot be created outside the SDK, and Kotlin apps receive the diff from the observer (see [Diffing Results](observers.md#diffing-results) and [The differs accept only items from Ditto query results, and Kotlin apps do not create one](../knowledge/observations/observer-behavior.md#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)).
 
 ## Testing Subscription Rules
 
