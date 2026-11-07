@@ -37,7 +37,7 @@ Unless an entry says otherwise, every entry used `com.ditto:ditto-kotlin` 5.2.0 
 
 **Not tested:** `observe` with `.conflate()` or `.buffer(...)`; handlers that throw `CancellationException`.
 
-**Used in:** [Backpressure in Kotlin](../../best-practices/platforms/kotlin.md#backpressure-in-kotlin).
+**Used in:** [Backpressure in Kotlin](../../best-practices/platforms/kotlin.md#backpressure-in-kotlin), [Keep observer callbacks fast](../../best-practices/observers.md#keep-observer-callbacks-fast).
 
 ### In Kotlin, observer handlers run on the main thread unless DittoFactory.create gets another scope
 
@@ -96,7 +96,7 @@ Unless an entry says otherwise, every entry used `com.ditto:ditto-kotlin` 5.2.0 
 
 **Not tested:** longer periods than about 2 seconds after the collection; release builds with R8.
 
-**Used in:** [Observer Lifecycle](../../best-practices/observers.md#observer-lifecycle), [Closing Ditto in Kotlin](../../best-practices/platforms/kotlin.md#closing-ditto-in-kotlin), [Observer lifecycle in Kotlin](../../best-practices/platforms/kotlin.md#observer-lifecycle-in-kotlin), [Behavior Specific to the Kotlin SDK](../../best-practices/platforms/kotlin.md#behavior-specific-to-the-kotlin-sdk).
+**Used in:** [Observer Lifecycle](../../best-practices/observers.md#observer-lifecycle), [Closing Ditto in Kotlin](../../best-practices/platforms/kotlin.md#closing-ditto-in-kotlin), [Observer lifecycle in Kotlin](../../best-practices/platforms/kotlin.md#observer-lifecycle-in-kotlin), [Behavior Specific to the Kotlin SDK](../../best-practices/platforms/kotlin.md#behavior-specific-to-the-kotlin-sdk), [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
 ### In Kotlin, DittoDiff reports every shifted row as a move
 

@@ -204,7 +204,7 @@ What we observed when we ran the Swift SDK (DittoSwift) where its API or behavio
 
 **Not tested:** Handlers on a concurrent queue; observers of remote changes.
 
-**Used in:** [Backpressure in Swift](../../best-practices/platforms/swift.md#backpressure-in-swift), [Behavior Specific to the Swift SDK](../../best-practices/platforms/swift.md#behavior-specific-to-the-swift-sdk).
+**Used in:** [Backpressure in Swift](../../best-practices/platforms/swift.md#backpressure-in-swift), [Behavior Specific to the Swift SDK](../../best-practices/platforms/swift.md#behavior-specific-to-the-swift-sdk), [Keep observer callbacks fast](../../best-practices/observers.md#keep-observer-callbacks-fast).
 
 ### In Swift, dropped observer and subscription objects keep running
 
@@ -218,7 +218,7 @@ What we observed when we ran the Swift SDK (DittoSwift) where its API or behavio
 - The objects in `store.observers` are other objects than the one that `registerObserver` returned (`===` is `false`) but equal to it (`==` is `true`). `cancel()` on the listed objects stopped the dropped registrations.
 - The results match the JavaScript SDK ([In JavaScript, garbage-collected subscriptions and observers keep running](javascript-sdk.md#in-javascript-garbage-collected-subscriptions-and-observers-keep-running)).
 
-**Used in:** [Behavior Specific to the Swift SDK](../../best-practices/platforms/swift.md#behavior-specific-to-the-swift-sdk), [Closing Ditto in Swift](../../best-practices/platforms/swift.md#closing-ditto-in-swift), [Observer Lifecycle](../../best-practices/observers.md#observer-lifecycle), [Store Observers in Swift](../../best-practices/platforms/swift.md#store-observers-in-swift).
+**Used in:** [Behavior Specific to the Swift SDK](../../best-practices/platforms/swift.md#behavior-specific-to-the-swift-sdk), [Closing Ditto in Swift](../../best-practices/platforms/swift.md#closing-ditto-in-swift), [Observer Lifecycle](../../best-practices/observers.md#observer-lifecycle), [Store Observers in Swift](../../best-practices/platforms/swift.md#store-observers-in-swift), [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
 ### In Swift, an AsyncStream around an observer cancels it when its task ends
 

@@ -44,7 +44,7 @@ How the Flutter SDK, `ditto_live`, behaves where its API works differently from 
 
 **Not tested:** callbacks of different lengths, results from sync instead of local writes, iOS and Android.
 
-**Used in:** [Backpressure in Flutter](../../best-practices/platforms/flutter.md#backpressure-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Backpressure (SDK 5.1+)](../../best-practices/observers.md#backpressure-sdk-51).
+**Used in:** [Backpressure in Flutter](../../best-practices/platforms/flutter.md#backpressure-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Backpressure (SDK 5.1+)](../../best-practices/observers.md#backpressure-sdk-51), [Keep observer callbacks fast](../../best-practices/observers.md#keep-observer-callbacks-fast).
 
 ### In Flutter, an exception thrown in an observer callback reaches the zone, and the observer keeps running
 
@@ -123,7 +123,7 @@ How the Flutter SDK, `ditto_live`, behaves where its API works differently from 
 
 **Not tested:** iOS and Android, longer runs, whether the native handle of a collected subscription is freed.
 
-**Used in:** [Subscriptions in Flutter](../../best-practices/platforms/flutter.md#subscriptions-in-flutter), [Observer lifecycle in Flutter](../../best-practices/platforms/flutter.md#observer-lifecycle-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Observer Lifecycle](../../best-practices/observers.md#observer-lifecycle).
+**Used in:** [Subscriptions in Flutter](../../best-practices/platforms/flutter.md#subscriptions-in-flutter), [Observer lifecycle in Flutter](../../best-practices/platforms/flutter.md#observer-lifecycle-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Observer Lifecycle](../../best-practices/observers.md#observer-lifecycle), [Subscription Lifecycle](../../best-practices/sync-and-subscriptions.md#subscription-lifecycle).
 
 ## Flutter Statement and Value Behavior
 
