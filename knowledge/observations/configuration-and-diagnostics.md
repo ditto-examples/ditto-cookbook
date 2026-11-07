@@ -9,7 +9,7 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 - An environment variable `DITTO_<NAME>` sets a system parameter at startup on 5.0.3, 5.1.0, and 5.2.0; on 5.1, it is the only way to pass parameters that Ditto reads only at startup ([DITTO_ environment variables set system parameters at startup](#ditto_-environment-variables-set-system-parameters-at-startup)).
 - Ditto reads the value of such a variable as JSON. A value that is not valid JSON, or that has the wrong type, is ignored with one log line, and Ditto starts with the default without any error in the app ([Environment variable values are read as JSON and ignored when invalid](#environment-variable-values-are-read-as-json-and-ignored-when-invalid)).
 - The expiry of the offline license token is checked against the device clock when the token is set: a device whose clock runs past the expiry cannot start sync, while a running device kept syncing for the 10 seconds we watched after its clock passed the expiry ([The offline license token expiry is checked against the device clock](#the-offline-license-token-expiry-is-checked-against-the-device-clock)).
-- The slow-request warning and the request timeout work on 5.1.0 and 5.2.0. With the default qualifiers, 5.2.0 records in `system:request_history` only queries of about 10 seconds or more, not 1 second as documented, and on both releases setting the qualifiers merges them into the current ones, while `RESET` leaves them in effect ([Slow-request warnings and request timeouts work as documented](#slow-request-warnings-and-request-timeouts-work-as-documented), [On SDK 5.2.0, the request history records queries of about 10 seconds or more by default](#on-sdk-520-the-request-history-records-queries-of-about-10-seconds-or-more-by-default), [Setting the request history qualifiers merges them, and RESET leaves them in effect](#setting-the-request-history-qualifiers-merges-them-and-reset-leaves-them-in-effect)).
+- The slow-request warning and the request timeout work on 5.1.0 and 5.2.0. With the default qualifiers, 5.2.0 records in `system:request_history` only queries of about 10 seconds or more, not 1 second as documented, and on both releases setting the qualifiers merges them into the current ones, while `RESET` and `SET ... TO DEFAULT` leave them in effect until Ditto is opened again; the history keeps one entry fewer than `DQL_REQUEST_HISTORY_SIZE` ([Slow-request warnings and request timeouts work as documented](#slow-request-warnings-and-request-timeouts-work-as-documented), [On SDK 5.2.0, the request history records queries of about 10 seconds or more by default](#on-sdk-520-the-request-history-records-queries-of-about-10-seconds-or-more-by-default), [Setting the request history qualifiers merges them, and RESET leaves them in effect](#setting-the-request-history-qualifiers-merges-them-and-reset-leaves-them-in-effect), [DQL_REQUEST_HISTORY_SIZE keeps one entry fewer than its value, and at least seven](#dql_request_history_size-keeps-one-entry-fewer-than-its-value-and-at-least-seven)).
 - The queries of the diagnostics snapshot run on 5.1.0 and 5.2.0, except `system:sync_degradations`, which fails on 5.1.0, and on 5.2.0 a support bundle holds the logs, device metadata, and a configuration snapshot, with a rate limit on requests ([The diagnostics snapshot queries run on both releases, except system:sync_degradations on 5.1.0](#the-diagnostics-snapshot-queries-run-on-both-releases-except-systemsync_degradations-on-510), [A support bundle holds the logs, device metadata, and a configuration snapshot](#a-support-bundle-holds-the-logs-device-metadata-and-a-configuration-snapshot)).
 - Exported logs contain debug lines at every console log level. On 5.2.0, the console log level hardly changed the write rate, but it changed the number of console log lines for 2,000 writes from 6 to about 83,000 ([Exported logs include debug lines regardless of the console level](#exported-logs-include-debug-lines-regardless-of-the-console-level)).
 - Subscription queries and their argument values reach directly connected devices and appear in the on-disk logs of both devices; document values and `execute` statements did not appear ([Subscription queries and arguments appear in other devices' logs](#subscription-queries-and-arguments-appear-in-other-devices-logs)).
@@ -137,8 +137,8 @@ On 5.2.0, every SDK gave the results of the 5.2.0 column: both names were in eff
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result. Earlier runs: one on each release with joins of about 2 and 8 to 11 seconds, and two more on 5.2.0 |
-| Setup | One device without sync, with the default `DQL_REQUEST_HISTORY_QUALIFIERS`. Joins that scan the inner collection (`USE INDEX ''`, `SELECT COUNT(*)`) over pairs of collections of 1,500, 2,600, 2,900, 3,000, 3,100, and 3,300 documents each, run one after another, each after `DELETE FROM system:request_history`. We timed each join and read whether `system:request_history` held it. We also ran a failing statement and a lookup by ID |
+| Observed on | JavaScript: SDK 5.1.0 and 5.2.0, three runs each; earlier runs: one on each release with joins of about 2 and 8 to 11 seconds, and two more on 5.2.0. Swift on macOS and Kotlin on the Android 16 emulator: SDK 5.1.0 and 5.2.0, three runs each (2026-11-07). Every run gave the same result |
+| Setup | One device without sync, with the default `DQL_REQUEST_HISTORY_QUALIFIERS`. Joins that scan the inner collection (`USE INDEX ''`, `SELECT COUNT(*)`) over pairs of collections of 1,500, 2,600, 2,900, 3,000, 3,100, and 3,300 documents each, run one after another, each after `DELETE FROM system:request_history`. We timed each join and read whether `system:request_history` held it. We also ran a failing statement and a lookup by ID. In Swift and Kotlin, five joins of this kind started at 1,500 × 1,500 documents and aimed at about 8, 9.5, 10.5, and 12.5 seconds, each sized from the time of the one before |
 | Documentation | The [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections) (Qualifiers) says that the `threshold` qualifier, "the total execution time in milliseconds", "is set by default to 1000 (1 second) and is always active", that `failed` and `system_delete` are `true` by default, and that `mutation` is `false` by default |
 
 | Join | 5.1.0 | 5.2.0 |
@@ -151,10 +151,11 @@ On 5.2.0, every SDK gave the results of the 5.2.0 column: both names were in eff
 - `DQL_REQUEST_HISTORY_QUALIFIERS` is `{}` by default on both releases.
 - **5.1.0** with the default setting recorded every join, with `~qualifier: "threshold"`, as a threshold of 1 second would.
 - **5.2.0 with the default setting recorded the joins that took 10.1 seconds or more, and none that took 8.5 seconds or less.** In the earlier runs on 5.2.0, joins of 1.9, 2.7, 2.8, 5.7, 7.8, 8, and 9.9 seconds were not recorded, and joins of 10.5 and 12.0 seconds were. The default threshold of 5.2.0 therefore lies between 9.9 and 10.1 seconds, probably 10 seconds, instead of the documented 1 second. The `times.elapsed` that the history recorded for a join (in nanoseconds, with `{'threshold': 0}`) matched the time we measured.
-- With `{'threshold': 1000}` set, 5.2.0 recorded a join of 2.8 seconds, and with `{'threshold': 500}` one of 1.9 seconds (earlier runs).
-- On both releases, the failing statement was recorded with `failed` and the lookup by ID was not recorded. On 5.2.0, `DELETE FROM system:request_history` was recorded with `system_delete` (not checked on 5.1.0).
+- **Swift and Kotlin gave the same result.** On 5.2.0, Swift did not record joins of 2.6 to 9.1 seconds and recorded those of 10.0 to 16.9 seconds; Kotlin did not record joins of 7.1 to 9.7 seconds and recorded those of 10.6 to 12.8 seconds. On 5.1.0, both recorded every join, from 2.7 seconds (Swift) and 6.2 seconds (Kotlin, whose smallest join took longer on the emulator).
+- With `{'threshold': 1000}` set, 5.2.0 recorded a join of 2.8 seconds, and with `{'threshold': 500}` one of 1.9 seconds (earlier runs, JavaScript).
+- On both releases, the failing statement was recorded with `failed` and the lookup by ID was not recorded. On 5.2.0, `DELETE FROM system:request_history` was recorded with `system_delete`; on 5.1.0 it was recorded as well (see [DQL_REQUEST_HISTORY_SIZE keeps one entry fewer than its value, and at least seven](#dql_request_history_size-keeps-one-entry-fewer-than-its-value-and-at-least-seven)).
 
-**Not tested:** a threshold between 1 and 3 seconds on 5.1.0; Ditto Server; SDKs other than JavaScript.
+**Not tested:** a threshold between 1 and 3 seconds on 5.1.0; Ditto Server; the Flutter SDK.
 
 **Used in:** [Request diagnostics](../system-reference.md#request-diagnostics), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
 
@@ -162,8 +163,8 @@ On 5.2.0, every SDK gave the results of the 5.2.0 column: both names were in eff
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each; every run gave the same result |
-| Setup | One device without sync. Starting from the default, we set `DQL_REQUEST_HISTORY_QUALIFIERS` with `ALTER SYSTEM SET` to `{'threshold': 0}`, then `{'mutation': true}`, then `{'failed': false}`, then `{}`. After each step we read `SHOW DQL_REQUEST_HISTORY_QUALIFIERS`, cleared `system:request_history`, and checked which qualifier recorded a lookup by ID, a failing statement, and an `INSERT`. In a new store, we set `{'threshold': 0, 'mutation': true}`, ran `ALTER SYSTEM RESET DQL_REQUEST_HISTORY_QUALIFIERS`, and checked the same |
+| Observed on | JavaScript: SDK 5.1.0 and 5.2.0, three runs each. The same steps, and the further steps below, with JavaScript, Swift on macOS, and Kotlin on the Android 16 emulator: SDK 5.1.0 and 5.2.0, three runs each; the parameters in `DittoConfig`: SDK 5.2.0, three runs with each of the three SDKs (2026-11-07). Every run gave the same result |
+| Setup | One device without sync. Starting from the default, we set `DQL_REQUEST_HISTORY_QUALIFIERS` with `ALTER SYSTEM SET` to `{'threshold': 0}`, then `{'mutation': true}`, then `{'failed': false}`, then `{}`. After each step we read `SHOW DQL_REQUEST_HISTORY_QUALIFIERS`, cleared `system:request_history`, and checked which qualifier recorded a lookup by ID, a failing statement, and an `INSERT`. In a new store, we set `{'threshold': 0, 'mutation': true}`, ran `ALTER SYSTEM RESET DQL_REQUEST_HISTORY_QUALIFIERS`, and checked the same. Each further step used a new store: `SET DQL_REQUEST_HISTORY_QUALIFIERS TO DEFAULT` instead of `RESET`; the same value, then closing Ditto and opening the same directory again; `DQL_STRICT_MODE` set to `true` and reset, read with `SHOW` and by whether `EXPLAIN` of a filter on an indexed field used the index; and, on 5.2.0, `{threshold: 0}` passed in `DittoConfig.systemParameters`, then `ALTER SYSTEM SET ... = {'mutation': true}`, then `RESET` |
 | Documentation | The [virtual collections documentation](https://docs.ditto.live/dql/virtual-collections): "Qualifiers not included in the object are removed (or reset)." The [ALTER SYSTEM documentation](https://docs.ditto.live/dql/alter-system): `RESET` resets a parameter "to its default value" |
 
 | Step | `SHOW` | Lookup by ID | Failing statement | `INSERT` |
@@ -178,8 +179,32 @@ On 5.2.0, every SDK gave the results of the 5.2.0 column: both names were in eff
 - On both releases, `ALTER SYSTEM SET` merged the new qualifiers into the current ones: a qualifier that the new value did not name kept its value, and `{}` changed nothing. This differs from the documentation, which says that qualifiers not in the object are removed or reset.
 - After `ALTER SYSTEM RESET`, `SHOW` reported `{}`, but the qualifiers set before stayed in effect: every statement was still recorded, also 5 seconds and 20 statements later, and after `ALTER SYSTEM RESET ALL` (three more runs on each release). Only a value that names a qualifier changed it.
 - Naming the qualifiers again restored them: after `{'threshold': 0, 'mutation': true}`, setting `{'threshold': 1000, 'mutation': false}` made `SHOW` report those values, and neither the lookup by ID nor the `INSERT` was recorded any longer (three more runs on each release).
+- `SET DQL_REQUEST_HISTORY_QUALIFIERS TO DEFAULT` behaved like `RESET`: `SHOW` reported `{}`, and the lookup by ID and the `INSERT` were still recorded.
+- **Closing Ditto and opening the same directory again restored the defaults**: `SHOW` reported `{}`, and only the failing statement was recorded.
+- `RESET` restored the other parameters that we checked: `DQL_STRICT_MODE` went back to `false` (`SHOW`, and `EXPLAIN` used the index again), and `DQL_REQUEST_HISTORY_SIZE` to its default (see [DQL_REQUEST_HISTORY_SIZE keeps one entry fewer than its value, and at least seven](#dql_request_history_size-keeps-one-entry-fewer-than-its-value-and-at-least-seven)).
+- **Passed in `DittoConfig.systemParameters` (5.2.0)**, `{threshold: 0}` was in effect when Ditto opened, and `SHOW` reported `{"threshold": 0}`. A later `ALTER SYSTEM SET ... = {'mutation': true}` merged into it. `RESET` then made `SHOW` report `{"threshold": 0}`, the value passed at open, not `{}`, while `mutation` stayed in effect. A `DQL_REQUEST_HISTORY_SIZE` of 16 passed in `DittoConfig` was still 16 after `RESET`.
+- JavaScript, Swift, and Kotlin gave the same results.
 
-**Not tested:** the qualifiers passed in `DittoConfig.systemParameters`; whether closing and reopening Ditto restores the defaults (system parameters are not persisted); SDKs other than JavaScript.
+**Not tested:** the Flutter SDK; other parameters than the three above; Ditto Server.
+
+**Used in:** [Request diagnostics](../system-reference.md#request-diagnostics), [System Parameters Reference](../system-reference.md#system-parameters-reference), [Applying System Parameters](../../best-practices/setup-and-lifecycle.md#applying-system-parameters).
+
+### DQL_REQUEST_HISTORY_SIZE keeps one entry fewer than its value, and at least seven
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each with JavaScript, Swift on macOS, and Kotlin on the Android 16 emulator; the size passed in `DittoConfig`: SDK 5.2.0, three runs with each of the three SDKs (2026-11-07). Every run gave the same result |
+| Setup | One device without sync, with the default qualifiers, which record failed statements. After `DELETE FROM system:request_history`, we ran failing statements and counted the rows of `system:request_history`: 200 with the default size, then 40 after each `ALTER SYSTEM SET DQL_REQUEST_HISTORY_SIZE` to 1, 2, 4, 8, 10, 16, and 32, and 40 after `RESET`. On 5.2.0, we also passed a size of 16 in `DittoConfig.systemParameters` |
+
+| Size | 1, 2, 4, or 8 | 10 | 16 | 32 | 128 (5.2.0 default) | 4096 (5.1.0 default) |
+|---|---|---|---|---|---|---|
+| Rows kept | 7 | 9 | 15 | 31 | 127 of 200 | all 200 |
+
+- The history kept one entry fewer than the size, and never fewer than 7. After `RESET`, the default applied again: all 40 statements were kept.
+- A size of 16 passed in `DittoConfig` kept 15 rows, and `RESET` left the size at 16.
+- On both releases, `DELETE FROM system:request_history` was itself recorded when fewer statements than the history holds followed it: Swift and Kotlin counted 201 rows after 200 failing statements on 5.1.0, and 41 after 40 once the size was reset.
+
+**Not tested:** the Flutter SDK; requests recorded by other qualifiers than `failed`.
 
 **Used in:** [Request diagnostics](../system-reference.md#request-diagnostics).
 

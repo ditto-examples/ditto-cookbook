@@ -206,6 +206,8 @@ ALTER SYSTEM SET DQL_REQUEST_HISTORY_SIZE = 512
 ALTER SYSTEM RESET DQL_REQUEST_HISTORY_SIZE
 ```
 
+`RESET` returns a parameter to the value passed in `DittoConfig.systemParameters`, or to the SDK's default if none was passed (SDK 5.2.0, in testing). **Note (SDK 5.1.0 and 5.2.0):** `RESET` restored `DQL_STRICT_MODE` and `DQL_REQUEST_HISTORY_SIZE`, but not `DQL_REQUEST_HISTORY_QUALIFIERS`, whose earlier values stayed in effect until Ditto was opened again (`§ Request diagnostics`).
+
 **SDK 5.1**: `DittoConfig` has no system parameters. Run `ALTER SYSTEM SET ...` every time you open Ditto, after opening and before you start sync, run queries, or register observers (subscriptions may be registered first). Parameters that Ditto reads only at startup cannot be set this way.
 
 To list everything, use `SHOW ALL` (optionally filtered, for example `SHOW ALL LIKE 'dql%'`; the filter needs SDK 5.1+; see [Some features that are not marked SDK 5.1+ fail on 5.0.3](../../guide/reference/knowledge/observations/dql-behavior.md#some-features-that-are-not-marked-sdk-51-fail-on-503)). The parameters most relevant to app developers are listed in [System Parameters Reference](../../guide/reference/knowledge/system-reference.md#system-parameters-reference); others are described in the section that uses them.

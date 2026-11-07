@@ -73,7 +73,7 @@ Consequences:
 - `sync.stop()` pauses all subscriptions; `start()` resumes them. Closing Ditto cancels them; releasing them afterwards is a no-op.
 - `sync.subscriptions` is for debugging: read the query string and whether a subscription is cancelled only; what the SDKs return for its arguments differs.
 
-> **Note (SDK 5.1.0 and 5.2.0):** In Flutter, do not read `queryArguments`, `queryArgumentsJsonString`, or `queryArgumentsCborBytes` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this ended the app in testing, on macOS and iOS (the other SDKs report no arguments instead: `null` or `undefined` in JavaScript, `null` in Kotlin, and `nil` in Swift). Keep your own references when you need the arguments.
+> **Note (SDK 5.1.0 and 5.2.0):** In Flutter, do not read `queryArguments`, `queryArgumentsJsonString`, or `queryArgumentsCborBytes` from the elements of `ditto.sync.subscriptions`; for subscriptions registered without arguments this ended the app in testing on macOS and iOS, and threw `OutOfMemoryError` on Android (the other SDKs report no arguments instead: `null` or `undefined` in JavaScript, `null` in Kotlin, and `nil` in Swift). Keep your own references when you need the arguments.
 
 Switching stores: cancel the old store's subscriptions, evict its documents, then subscribe to the new store (`§ Cancelling subscriptions and local data`; services in `retention-service` and `subscription-lifecycle-good` in the Skills' `examples/<sdk>/`):
 

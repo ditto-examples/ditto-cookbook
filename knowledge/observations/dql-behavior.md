@@ -425,7 +425,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 
 | | |
 |---|---|
-| Observed on | An index created while strict mode was on: SDK 5.1.0 and 5.2.0, four runs each, and 5.0.3, one run. An index created before, ID lookups, `COUNT(*)`, `ADVISE`, and turning strict mode off again: SDK 5.1.0 and 5.2.0, three runs each. Every run gave the same result |
+| Observed on | An index created while strict mode was on: SDK 5.1.0 and 5.2.0, four runs each, and 5.0.3, one run. An index created before, ID lookups, `COUNT(*)`, `ADVISE`, and turning strict mode off again: SDK 5.1.0 and 5.2.0, three runs each. An index created before, with strict mode turned on and then reset, in JavaScript, Swift on macOS, and Kotlin on the Android 16 emulator: SDK 5.1.0 and 5.2.0, three runs each (2026-11-07). Every run gave the same result |
 | Setup | One device without sync, three documents in `orders` and an index on `status`. (1) In one store, `ALTER SYSTEM SET DQL_STRICT_MODE = true` before the documents and the index were written, and in another store the default; then `EXPLAIN SELECT * FROM orders WHERE status = 'open'` in each. (2) In a third store, the index was created first; then we turned strict mode on and off again with `ALTER SYSTEM` and, in each state, ran `EXPLAIN` for the query on `status`, for `WHERE _id = 'a'`, and for `SELECT COUNT(*) FROM orders`, and `ADVISE SELECT * FROM orders WHERE total > 15` |
 
 | Plan or result | Strict mode off | Strict mode on |
@@ -437,7 +437,7 @@ The 11 conditions produced the plans that the table lists, on both releases. Amo
 | `ADVISE SELECT * FROM orders WHERE total > 15` | Suggests ``CREATE INDEX IF NOT EXISTS adv_orders_total ON default:`orders` (`total` ASC)`` | `no advice available for statement` |
 
 - The query on `status` returned the same document in both modes; only the plan changed.
-- The index was used again as soon as strict mode was turned off; it did not have to be created again.
+- The index was used again as soon as strict mode was turned off; it did not have to be created again. `ALTER SYSTEM RESET DQL_STRICT_MODE` turned it off as well, and JavaScript, Swift, and Kotlin showed the same plans (see [Setting the request history qualifiers merges them, and RESET leaves them in effect](configuration-and-diagnostics.md#setting-the-request-history-qualifiers-merges-them-and-reset-leaves-them-in-effect)).
 
 **Not tested:** the time on a large collection; composite indexes; strict mode set at startup with `DittoConfig.systemParameters` or an environment variable instead of `ALTER SYSTEM`; on 5.0.3, anything but the first case.
 

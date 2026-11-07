@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 3.1
+> **Version**: 3.2
 > **Last Updated**: 2026-11-07
 > **Applies to**: Ditto SDK 5.2.0 for Flutter, JavaScript, Kotlin, and Swift
 >
@@ -492,7 +492,7 @@ SELECT * FROM orders WHERE storeId = :storeId ORDER BY createdAt DESC LIMIT 50
 
 ### ☐ Own subscriptions in a long-lived service, not in UI components
 
-**What this means:** Register a subscription when its data becomes relevant, such as at app start, at login, or when the user enters a store, and register it again every time you open Ditto: subscriptions are not persisted. Keep a reference to each subscription in an app-level or feature-level service, and release it (`cancel()`, or `close()` in Kotlin) on logout, when the user leaves the workspace, or when you register a replacement. Never register subscriptions in code that renders the UI or on every screen visit. Use `ditto.sync.subscriptions` only for debugging, and read only each subscription's query string and whether it is cancelled. In Flutter (SDK 5.1.0), reading `queryArguments` of a subscription registered without arguments can terminate the app.
+**What this means:** Register a subscription when its data becomes relevant, such as at app start, at login, or when the user enters a store, and register it again every time you open Ditto: subscriptions are not persisted. Keep a reference to each subscription in an app-level or feature-level service, and release it (`cancel()`, or `close()` in Kotlin) on logout, when the user leaves the workspace, or when you register a replacement. Never register subscriptions in code that renders the UI or on every screen visit. Use `ditto.sync.subscriptions` only for debugging, and read only each subscription's query string and whether it is cancelled. In Flutter (SDK 5.1.0 and 5.2.0), reading the arguments of a listed subscription that was registered without arguments ends the app or throws an error.
 
 **Why this matters:** A subscription registered in code that renders the UI adds a new mesh-wide subscription on every render, because subscriptions stay active until they are released or Ditto is closed. Do not rely on garbage collection to release them. In our testing with SDK 5.1.0 and 5.2.0, a device that opened Ditto again without registering its subscriptions received nothing from other devices, without an error. Each new registration also makes the peer that holds the data read the whole collection again for all of the device's subscriptions, so register the long-lived set together, before sync starts where possible: that cost about a sixth of registering the same subscriptions one at a time.
 
