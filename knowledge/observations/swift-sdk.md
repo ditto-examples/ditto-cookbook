@@ -40,6 +40,7 @@ What we observed when we ran the Swift SDK (DittoSwift) where its API or behavio
 - The weak reference was `nil` at the first check (0 ms) in every run, also while the program held `store`, `sync`, and `presence`: these objects reference `Ditto` weakly and do not keep it alive.
 - The log showed `shutting down Ditto` right after the release. The directory opened again with its data 44 to 60 ms (macOS) and 68 to 73 ms (iOS) after the release.
 - With a transaction open, the release itself (setting the reference to `nil`, which runs `deinit`) blocked its thread until the transaction had finished, and the transaction committed: 904 to 973 ms for a transaction with about 1 second left (both releases), and 15,535 ms and 15,435 ms for one with 15 seconds left, longer than `Ditto.deinitTimeoutSeconds` (`10`). The log showed `Ditto shutdown complete` after the transaction. Setting `Ditto.shouldWaitForCleanupOnClose` to `true` made no difference.
+- With a transaction that slept for 60 seconds, the release had not returned 15 seconds after it started (SDK 5.1.0 and 5.2.0, three runs each, 2026-11-07): the release waits as long as the transaction runs, not `Ditto.deinitTimeoutSeconds`.
 - `Ditto.shouldWaitForCleanupOnClose` is `false` and `Ditto.deinitTimeoutSeconds` is `10` by default (both releases).
 
 **Not tested:** What `deinitTimeoutSeconds` and `shouldWaitForCleanupOnClose` change; a release on the main thread while observers deliver on it; real devices.

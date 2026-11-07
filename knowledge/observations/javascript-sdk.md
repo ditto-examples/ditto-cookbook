@@ -501,13 +501,13 @@ Later runs on SDK 5.1.0 (three runs) and 5.2.0 (four runs), which also read the 
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each |
-| Setup | While a read-write transaction was paused at an `await` inside its callback, we called `ditto.close()`, and then let the transaction continue |
+| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, one run each; the longer wait: SDK 5.1.0 and 5.2.0, three runs each (2026-11-07) |
+| Setup | While a read-write transaction was paused at an `await` inside its callback, we called `ditto.close()`, and then let the transaction continue. In the later runs, the transaction waited for a promise that the test resolved only after `close()` had been pending for 15 seconds |
 | Documentation | The description of `Store.transaction()` in the JavaScript SDK's type definitions says: "When a Ditto instance goes out of scope, it will drive all pending transactions to completion before being shut down." |
 
 - `close()` had not completed after 3 seconds. When the transaction continued, its next `tx.execute` succeeded, the transaction ended, and then `close()` completed.
 - The SDK's code matches: in the JavaScript SDK 5.2.0, `Ditto.close()` sets `isClosed`, stops sync, and then waits with `Promise.allSettled` until all pending operations have finished.
-- A transaction that never ends, such as a deadlocked one, therefore probably keeps `close()` from completing as well.
+- `close()` waits as long as the transaction does: with the transaction still waiting, `close()` had not completed after 15 seconds; once the transaction ended, `close()` completed. A transaction that never ends, such as a deadlocked one, therefore keeps `close()` from completing.
 
 **Not tested:** Flutter.
 

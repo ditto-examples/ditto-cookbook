@@ -410,7 +410,7 @@ The runs in which a read on this device got stuck:
 - An `INSERT` through `ditto.store.execute` never returned, and neither did the transaction: after 10 seconds, nothing had been thrown. A `SELECT` from outside afterwards returned no documents: the transaction's insert was not committed.
 - `ditto.close()` afterwards did not return either; the lab ended the test at its time limit (30, 45, or 180 seconds). In the 5.2.0 run that lasted 180 seconds, the SDK logged `Transaction <id> (hint: n/a) has been running for 20s` at the info level, from 35 seconds at the warning level and from 60 seconds at the error level, every 5 seconds, together with `Waiting for write transaction ... blocked_by=User`.
 
-**Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules), [Transactions in Kotlin](../../best-practices/platforms/kotlin.md#transactions-in-kotlin), [Behavior Specific to the Kotlin SDK](../../best-practices/platforms/kotlin.md#behavior-specific-to-the-kotlin-sdk).
+**Used in:** [Transaction Rules](../../best-practices/transactions.md#transaction-rules), [Transactions in Kotlin](../../best-practices/platforms/kotlin.md#transactions-in-kotlin), [Behavior Specific to the Kotlin SDK](../../best-practices/platforms/kotlin.md#behavior-specific-to-the-kotlin-sdk), [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration).
 
 ### In Kotlin, a read-write transaction inside a read-write transaction deadlocks
 
