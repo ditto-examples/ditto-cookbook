@@ -86,7 +86,7 @@ With the default scope, keep handlers short or move their work off the main thre
 | `persistenceDirectory` | `String?` | `null` | `null` uses a directory named `ditto-<databaseId>` in the app's storage |
 | `experimental` | `DittoConfig.Experimental` | defaults | |
 | `encryptionKey` (SDK 5.2+) | `DittoEncryptionKey?` | `null` | `DittoEncryptionKey.raw(bytes)` with exactly 32 bytes |
-| `systemParameters` (SDK 5.2+) | `Map<String, Any>` | empty | An unknown name or a wrong type makes `DittoFactory.create` throw `DittoException.ValidationException` |
+| `systemParameters` (SDK 5.2+) | `Map<String, Any>` | empty | An unknown name or a wrong type makes `DittoFactory.create` throw `DittoException.ValidationException` (in our testing; see [System parameters passed in DittoConfig take effect when Ditto.open returns](../../knowledge/observations/configuration-and-diagnostics.md#system-parameters-passed-in-dittoconfig-take-effect-when-dittoopen-returns)) |
 
 The errors that `DittoFactory.create` throws for configuration and encryption problems (see [In Kotlin, an invalid configuration or a wrong encryption key makes create() throw](../../knowledge/observations/kotlin-sdk.md#in-kotlin-an-invalid-configuration-or-a-wrong-encryption-key-makes-create-throw)):
 

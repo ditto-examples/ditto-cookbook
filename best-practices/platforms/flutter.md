@@ -67,7 +67,7 @@ Future<Ditto> openWithoutAwaitingOpen() async {
 | `databaseID` | `String?` | All-zero UUID | |
 | `connect` | `DittoConfigConnect` | `DittoConfigConnectSmallPeersOnly()` | `DittoConfigConnectServer(url: ...)` or `DittoConfigConnectSmallPeersOnly(privateKey: ...)` |
 | `persistenceDirectory` | `String?` | `null` | `null` uses `ditto-<databaseID>` inside `Ditto.defaultRootDirectory`. A relative path is resolved against the application support directory (`getApplicationSupportDirectory()`). |
-| `systemParameters` (SDK 5.2+) | `Map<String, Object>` | `{}` | An unknown name or a wrong type makes `Ditto.open()` fail with a `DittoException`, and a value that Dart cannot represent with an `ArgumentError` |
+| `systemParameters` (SDK 5.2+) | `Map<String, Object>` | `{}` | An unknown name or a wrong type makes `Ditto.open()` fail with a `DittoException`, and a value that Dart cannot represent, such as a `DateTime`, with an `ArgumentError` (in our testing; see [System parameters passed in DittoConfig take effect when Ditto.open returns](../../knowledge/observations/configuration-and-diagnostics.md#system-parameters-passed-in-dittoconfig-take-effect-when-dittoopen-returns)) |
 
 The Flutter SDK has no encryption at rest (see [Data at Rest](../security.md#data-at-rest)).
 

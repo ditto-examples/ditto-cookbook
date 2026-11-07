@@ -84,7 +84,7 @@ func openFromSynchronousCode() throws -> Ditto {
 | `connect` | `DittoConfigConnect` | `.smallPeersOnly(privateKey: nil)` | `.server(url: URL)` (a `URL`, not a string) or `.smallPeersOnly(privateKey: String?)` |
 | `persistenceDirectory` | `URL?` | `nil` | `nil` uses a directory inside `Ditto.defaultRootDirectory`; `ditto.absolutePersistenceDirectory` returns the directory in use |
 | `encryptionKey` (SDK 5.2+) | `DittoEncryptionKey?` | `nil` | `try DittoEncryptionKey.raw(keyBytes)` with exactly 32 bytes |
-| `systemParameters` (SDK 5.2+) | `[String: DittoSystemParameterValue]` | `[:]` | Literals work: `["DQL_STRICT_MODE": false]`. An unknown name makes `Ditto.open` throw `DittoError.validationError(reason: .invalidDittoConfig(...))` |
+| `systemParameters` (SDK 5.2+) | `[String: DittoSystemParameterValue]` | `[:]` | Literals work: `["DQL_STRICT_MODE": false]`. An unknown name or a wrong type makes `Ditto.open` throw `DittoError.validationError(reason: .invalidDittoConfig(...))` (in our testing; see [System parameters passed in DittoConfig take effect when Ditto.open returns](../../knowledge/observations/configuration-and-diagnostics.md#system-parameters-passed-in-dittoconfig-take-effect-when-dittoopen-returns)) |
 | `experimental` | `DittoConfigExperimental` | | Holds only the deprecated `passphrase` |
 
 ```swift

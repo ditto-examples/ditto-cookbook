@@ -39,8 +39,8 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 
 | | |
 |---|---|
-| Observed on | SDK 5.2.0, two runs; SDK 5.1.0, two runs, for comparison. The `ALTER SYSTEM` case: 5.1.0 and 5.2.0, two runs each |
-| Setup | We opened Ditto with `DittoConfig.systemParameters` and read the parameters with `SHOW` right after `Ditto.open()` returned: `DQL_STRICT_MODE` set to `true`, the same with the lowercase name `dql_strict_mode`, an unknown name, a value of the wrong type, and `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED`, which Ditto reads only at startup. We also set that parameter with `ALTER SYSTEM` after `Ditto.open()`, and opened a second and a third instance in the same process without it |
+| Observed on | JavaScript: SDK 5.2.0, two runs; SDK 5.1.0, two runs, for comparison. The `ALTER SYSTEM` case: 5.1.0 and 5.2.0, two runs each. Every case except `ALTER SYSTEM` again with Flutter, JavaScript, Kotlin, and Swift on SDK 5.2.0, three runs each; every run gave the same result |
+| Setup | We opened Ditto with `DittoConfig.systemParameters` and read the parameters with `SHOW` right after `Ditto.open()` returned: `DQL_STRICT_MODE` set to `true`, the same with the lowercase name `dql_strict_mode`, an unknown name, a value of the wrong type, and `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED`, which Ditto reads only at startup. We also set that parameter with `ALTER SYSTEM` after `Ditto.open()`, and opened a second and a third instance in the same process without it. We repeated the cases, each in a new store, with Flutter (`ditto_live`) and Swift on macOS, Kotlin on the Android 16 emulator, and JavaScript on Node.js 24, with the store without parameters opened before the one with the metrics parameter. In Flutter, we also passed a `DateTime` as a value |
 | Documentation | The SDK 5.2.0 release notes ("Apply System Parameters Before Ditto Starts") describe passing system parameters in `DittoConfig`, applied before Ditto starts, and `Ditto.open()` failing on an unknown name or a wrong type |
 
 | Case | 5.2.0 | 5.1.0 |
@@ -52,9 +52,18 @@ How Ditto's configuration behaves and what its diagnostics show: the defaults an
 | `METRICS_EXPORTER_VIRTUAL_COLLECTION_ENABLED: true` in the configuration | `system:metrics` was enabled (52 rows) | Still disabled |
 | The same parameter set with `ALTER SYSTEM` after `Ditto.open()` | `system:metrics` stayed disabled | Stayed disabled |
 
+On 5.2.0, every SDK gave the results of the 5.2.0 column: both names were in effect when the store opened, `system:metrics` had 52 rows with the metrics parameter and one row with `"status": "disabled"` without it, and an unknown name and a wrong type made opening fail with the messages above. Each SDK reported the failure with its own type:
+
+| SDK | Unknown name or wrong type |
+|---|---|
+| Flutter | `Ditto.open()` threw `DittoException`; a `DateTime` value threw `ArgumentError: Invalid argument(s): Unsupported system parameter value type DateTime` |
+| JavaScript | `Ditto.open()` rejected with `DittoError` |
+| Kotlin | `DittoFactory.create` threw `DittoException.ValidationException` (`The provided DittoConfig is invalid: ...`) |
+| Swift | `Ditto.open` threw `DittoError.validationError(reason: .invalidDittoConfig(message: ...))` |
+
 - After one instance had enabled `system:metrics` through its configuration, a second instance opened in the same process without the parameter, and a third one opened after the first had closed, also had `system:metrics` enabled (57 rows each, 5.2.0). Once enabled at startup, the collection stays enabled for the rest of the process.
 
-**Used in:** [Applying System Parameters](../../best-practices/setup-and-lifecycle.md#applying-system-parameters), [System Virtual Collections](../system-reference.md#system-virtual-collections).
+**Used in:** [Applying System Parameters](../../best-practices/setup-and-lifecycle.md#applying-system-parameters), [System Virtual Collections](../system-reference.md#system-virtual-collections), [DittoConfig in Flutter](../../best-practices/platforms/flutter.md#dittoconfig-in-flutter), [DittoConfig in JavaScript](../../best-practices/platforms/javascript.md#dittoconfig-in-javascript), [DittoConfig in Kotlin](../../best-practices/platforms/kotlin.md#dittoconfig-in-kotlin), [DittoConfig in Swift](../../best-practices/platforms/swift.md#dittoconfig-in-swift).
 
 ## System Parameters from Environment Variables
 
