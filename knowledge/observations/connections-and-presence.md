@@ -17,6 +17,7 @@ How devices connect to each other and how presence reports them: the transports 
 - The presence graph shows each peer's `dittoSdkVersion`, also across SDK releases, which identifies the devices that still run an older release ([Presence shows each peer's SDK version](#presence-shows-each-peers-sdk-version)).
 - Presence and sync worked across a line of 20 devices, and while ten devices kept reconnecting, a stable device got presence callbacks about once per second and its sync was barely delayed ([Presence and sync work across a chain of 20 devices](#presence-and-sync-work-across-a-chain-of-20-devices), [Presence callbacks stay at about one per second while peers come and go](#presence-callbacks-stay-at-about-one-per-second-while-peers-come-and-go)).
 - Peer metadata is replaced, not merged, reaches other peers about once per second, and is sent to every device whenever a device joins or changes it ([Peer metadata is replaced, not merged, and the device name is read when sync starts](#peer-metadata-is-replaced-not-merged-and-the-device-name-is-read-when-sync-starts), [Peer metadata changes reach other peers about once per second](#peer-metadata-changes-reach-other-peers-about-once-per-second), [Presence traffic carries each peer's metadata, and idle traffic grows faster than the number of devices](#presence-traffic-carries-each-peers-metadata-and-idle-traffic-grows-faster-than-the-number-of-devices)).
+- Ditto waits 10 seconds for a connection request handler and then rejects the peer. A handler that throws is denied at once in Flutter, treated like one that never answers in JavaScript, and ends the app in Kotlin, where a handler that does not answer also keeps blocking Ditto ([A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK](#a-connection-request-handler-that-does-not-answer-within-10-seconds-rejects-the-peer-and-one-that-throws-differs-by-sdk)).
 - A denied peer retries at its retry interval. Peers connect only when their shared keys match, and traffic without a key is TLS-wrapped but not authenticated ([A denied peer retries at the retry interval](#a-denied-peer-retries-at-the-retry-interval), [Shared keys must match, and traffic is TLS-wrapped without a key](#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key)).
 
 ## Default Transports and AWDL
@@ -534,9 +535,35 @@ What the observing device received:
 - `deny` returned by the device that opened the connection also prevented the connection; the handler ran twice in 8 seconds.
 - With a handler that throws, the client had not connected after 15 seconds.
 
-**Not tested:** how long it takes until a handler that throws denies the connection.
+**Not tested:** how long it takes until a handler that throws denies the connection; see [A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK](#a-connection-request-handler-that-does-not-answer-within-10-seconds-rejects-the-peer-and-one-that-throws-differs-by-sdk).
 
 **Used in:** [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections).
+
+### A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each with every SDK; apart from the two runs noted below, every run gave the same result. JavaScript also two earlier runs on 5.2.0. In Kotlin, the handler that throws ended the case that included it (three runs on each release); the other handlers then ran in two cases without it, three runs each on each release: one in which the handler that never answers came second, after `deny`, and the case stopped there, and one in which it came last |
+| Setup | One hub that listened on `127.0.0.1` and had a connection request handler. For each kind of handler, a new client in the same process connected to it, with `connect.retryInterval` set to 1 second, after the previous client had stopped sync. For 25 seconds, we recorded when the hub's handler was called, in seconds after the client started, and whether the hub's document reached the client. The handlers returned `deny`; threw; returned an asynchronous result that failed (Flutter and JavaScript); never answered; or returned `allow` after 4, 8, or 12 seconds. Flutter (`ditto_live`), JavaScript (Node.js 24), and Swift ran on macOS, Kotlin on the Android 16 emulator. The Swift handler type cannot throw, so Swift ran only the other kinds, with a handler that waited 60 seconds as the one that never answers |
+| Documentation | The JavaScript API reference of `Presence` describes the response timeout as currently 10 seconds and subject to change. The [Flutter release notes](https://docs.ditto.live/sdk/latest/release-notes/flutter) of SDK 5.1.0: "When `Presence.connectionRequestHandler` throws or its returned `Future` rejects, the connection is now denied immediately instead of after a ~10-second wait." [Limiting Connections](https://docs.ditto.live/sdk/latest/sync/handling-connection-requests) says that handlers must always choose, "otherwise, potential issues like request deadlocks and connection timeouts may result" |
+
+| Handler | Flutter | JavaScript | Kotlin | Swift |
+|---|---|---|---|---|
+| Returns `deny` | Called again at every retry, about once a second | The same | The same | The same |
+| Returns `allow` after 4 or 8 seconds | Connected | Connected | Connected | Connected |
+| Returns `allow` after 12 seconds | Not connected; called every 10 seconds | Not connected; called every 10 seconds | Not connected; called every 12 seconds | Not connected; called every 10 seconds |
+| Never answers | Not connected; called every 10 seconds | Not connected; called every 10 seconds | Called once in 25 seconds; afterwards, the case could not finish | Not connected; called every 10 seconds |
+| Throws | **Denied at once**: called at every retry | Not connected; called every 10 seconds, like a handler that never answers | **The app ended** (`SIGABRT`) | The handler cannot throw |
+| Its asynchronous result fails | **Denied at once** | Not connected; called every 10 seconds | — | — |
+
+- Ditto waits 10 seconds for an answer. JavaScript, Kotlin, and Swift logged `ERROR ... onConnecting callback timed out, defaulting to reject transport=2 timeout_s=10` at each timeout (we did not capture Flutter's log). A handler that answers after the timeout does not let the peer in, and the peer's next attempt starts once the timeout has passed rather than after its retry interval.
+- In Kotlin, a handler that has not answered when the timeout passes keeps running: Ditto also logged `ERROR ... DANGER: onConnecting callback task blocked for longer than timeout and can't be cancelled. This will likely cause stability/resource exhaustion issues, please fix immediately.`, and the next attempt waited until the handler returned (12 seconds). After a handler that never answered, the case did not finish in any of the 12 runs: where more steps followed, the log had no line at all after the third `DANGER` line, and where the handler came last, the case recorded its result but did not end; the lab stopped each run at its time limit.
+- In Kotlin, the handler that threw ended the app process with `SIGABRT` right after `java.lang.IllegalStateException: handler failed` in its log, about 0.1 seconds after the client started, on both releases in all six runs. Ditto logged `onConnecting callback channel failed, defaulting to reject` just before.
+- In Flutter, the first request of every client after the first one came 1.2 seconds after it started, one retry later. In one run each of JavaScript and Swift on 5.2.0, the first request of one client came only after 21.1 and 17.8 seconds, so that its `allow` after 4 or 8 seconds fell outside the 25 seconds.
+
+**Not tested:** physical devices and other transports than TCP; Flutter on iOS and Android; a Kotlin scope with a `CoroutineExceptionHandler`; whether a Kotlin handler that never answers also stops sync with peers that were already connected.
+
+**Used in:** [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections), [Transports and Presence in Flutter](../../best-practices/platforms/flutter.md#transports-and-presence-in-flutter), [Transports and Presence in JavaScript](../../best-practices/platforms/javascript.md#transports-and-presence-in-javascript), [Transports and Presence in Kotlin](../../best-practices/platforms/kotlin.md#transports-and-presence-in-kotlin), [Behavior Specific to the Kotlin SDK](../../best-practices/platforms/kotlin.md#behavior-specific-to-the-kotlin-sdk), [Transports and Presence in Swift](../../best-practices/platforms/swift.md#transports-and-presence-in-swift).
 
 ### Shared keys must match, and traffic is TLS-wrapped without a key
 

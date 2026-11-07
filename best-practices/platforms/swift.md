@@ -2614,7 +2614,7 @@ struct PeerList: View {
 }
 ```
 
-**Incoming connections**: `ditto.presence.connectionRequestHandler` is an `async` closure that receives each `DittoConnectionRequest` and returns `.allow` or `.deny`; set it to `nil` to remove it (see [Controlling Incoming Connections](../security.md#controlling-incoming-connections)).
+**Incoming connections**: `ditto.presence.connectionRequestHandler` is an `async` closure that receives each `DittoConnectionRequest` and returns `.allow` or `.deny`; set it to `nil` to remove it (see [Controlling Incoming Connections](../security.md#controlling-incoming-connections)). A handler that has not answered after 10 seconds is rejected, also when it answers `.allow` later (in our testing with SDK 5.1.0 and 5.2.0; see [A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK](../../knowledge/observations/connections-and-presence.md#a-connection-request-handler-that-does-not-answer-within-10-seconds-rejects-the-peer-and-one-that-throws-differs-by-sdk)).
 
 ```swift
 import DittoSwift

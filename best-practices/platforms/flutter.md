@@ -2598,7 +2598,7 @@ class _PeerListState extends State<PeerList> {
 }
 ```
 
-**Incoming connections**: `ditto.presence.connectionRequestHandler` receives each connection request and returns `ConnectionRequestAuthorization.allow` or `deny`; set it to `null` to remove it (see [Controlling Incoming Connections](../security.md#controlling-incoming-connections)).
+**Incoming connections**: `ditto.presence.connectionRequestHandler` receives each connection request and returns `ConnectionRequestAuthorization.allow` or `deny`; set it to `null` to remove it (see [Controlling Incoming Connections](../security.md#controlling-incoming-connections)). A handler that throws, or whose `Future` fails, denies at once, and one that has not answered after 10 seconds is rejected (in our testing with SDK 5.1.0 and 5.2.0; see [A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK](../../knowledge/observations/connections-and-presence.md#a-connection-request-handler-that-does-not-answer-within-10-seconds-rejects-the-peer-and-one-that-throws-differs-by-sdk)).
 
 ```dart
 // ✅ GOOD: Accept only peers whose signed metadata belongs to this store.
@@ -2612,7 +2612,7 @@ void restrictConnectionsToStore(Ditto ditto, String storeId) {
           ? ConnectionRequestAuthorization.allow
           : ConnectionRequestAuthorization.deny;
     } catch (_) {
-      return ConnectionRequestAuthorization.deny; // decide now, not after the timeout
+      return ConnectionRequestAuthorization.deny; // deny explicitly on any error
     }
   };
 }

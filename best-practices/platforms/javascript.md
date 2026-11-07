@@ -2144,7 +2144,7 @@ export function PeerList({ ditto }) {
 }
 ```
 
-**Incoming connections**: `ditto.presence.connectionRequestHandler` receives each connection request and resolves to `'allow'` or `'deny'`; a handler that throws, or takes longer than 10 seconds, denies. Set it to `null` to remove it (see [Controlling Incoming Connections](../security.md#controlling-incoming-connections)).
+**Incoming connections**: `ditto.presence.connectionRequestHandler` receives each connection request and resolves to `'allow'` or `'deny'`; a handler that throws, rejects, or takes longer than 10 seconds is rejected after those 10 seconds (in our testing with SDK 5.1.0 and 5.2.0; see [A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK](../../knowledge/observations/connections-and-presence.md#a-connection-request-handler-that-does-not-answer-within-10-seconds-rejects-the-peer-and-one-that-throws-differs-by-sdk)). Set it to `null` to remove it (see [Controlling Incoming Connections](../security.md#controlling-incoming-connections)).
 
 ```javascript
 // ✅ GOOD: Accept only peers whose signed metadata belongs to this store.
