@@ -284,14 +284,15 @@ Later runs on SDK 5.1.0 (three runs) and 5.2.0 (four runs), which also read the 
 
 | | |
 |---|---|
-| Observed on | SDK 5.2.0 and 5.1.0, three runs each; every run gave the same result |
-| Setup | One device without sync. The observers that `presence.observe()`, `observeTransportConditions()`, and `auth.observeStatus()` return: `isStopped` before and after `stop()`, and of another presence observer after `close()` |
+| Observed on | SDK 5.2.0 and 5.1.0, three runs each; the callbacks after `stop()`: three more runs on each release (2026-11-07). Every run gave the same result |
+| Setup | One device without sync. The observers that `presence.observe()`, `observeTransportConditions()`, and `auth.observeStatus()` return: `isStopped` before and after `stop()`, and of another presence observer after `close()`. Then two presence observers on one device, one of them stopped, while a second device connected over TCP on `127.0.0.1` and later stopped sync; we counted each observer's callbacks |
 | Documentation | The type definitions say that `isStopped` "returns `true` if the observer has been explicitly stopped via the `stop()` method". The SDK 5.0.3, 5.1.0, and 5.2.0 sources return `token !== undefined && observerManager.hasObserver(token)`, which is true while the observer is registered |
 
 - Before `stop()`, `isStopped` was `true` for all three observers; after `stop()`, it was `false`.
 - A presence observer that had not been stopped still returned `true` after `close()`.
+- `stop()` itself worked: after it, the stopped presence observer was not called again, while the other one was called once when the second device connected and three times by the time it had left.
 
-**Not tested:** whether `stop()` stops the callbacks (the observers' callbacks were not counted).
+**Not tested:** whether `stop()` stops the callbacks of the transport-conditions and auth-status observers.
 
 **Used in:** [Closing Ditto in JavaScript](../../best-practices/platforms/javascript.md#closing-ditto-in-javascript), [Behavior Specific to the JavaScript SDK](../../best-practices/platforms/javascript.md#behavior-specific-to-the-javascript-sdk).
 

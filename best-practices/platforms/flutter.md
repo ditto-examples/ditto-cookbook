@@ -71,7 +71,27 @@ Future<Ditto> openWithoutAwaitingOpen() async {
 
 The Flutter SDK has no encryption at rest (see [Data at Rest](../security.md#data-at-rest)).
 
-**Default location (SDK 5.2+)**: `Ditto.defaultRootDirectory` now resolves to the application support directory instead of the documents directory; the release notes describe the move for desktop platforms. With `persistenceDirectory: null`, Ditto still finds a database in the previous default location after the upgrade. That fallback applies only to `null`. If your app passes a relative path, check on every platform you ship that an upgraded installation still opens its existing data before you release 5.2.
+**Default location (SDK 5.2+)**: `Ditto.defaultRootDirectory` now resolves to the application support directory instead of the documents directory. The release notes describe the move for desktop platforms; in our testing it applied on Android and iOS as well (see [In Flutter 5.2.0, a relative persistenceDirectory resolves under application support, and 5.1.0 data stays behind](../../knowledge/observations/flutter-sdk.md#in-flutter-520-a-relative-persistencedirectory-resolves-under-application-support-and-510-data-stays-behind)). With `persistenceDirectory: null`, Ditto still finds a database in the previous default location after the upgrade and opens it there. That fallback applies only to `null`.
+
+**Note (SDK 5.2.0):** a relative `persistenceDirectory` now resolves under the application support directory too, and Ditto does not look for it in the documents directory, where 5.1 put it. In our testing on Android and iOS, an app that had written to `'lab-rel'` opened an empty store after the upgrade, while its data stayed in the documents directory (see [In Flutter 5.2.0, a relative persistenceDirectory resolves under application support, and 5.1.0 data stays behind](../../knowledge/observations/flutter-sdk.md#in-flutter-520-a-relative-persistencedirectory-resolves-under-application-support-and-510-data-stays-behind)). If your app passes a relative path, pass the absolute path of the 5.1 location before you release 5.2:
+
+```dart
+import 'package:ditto_live/ditto_live.dart';
+import 'package:path_provider/path_provider.dart';
+
+// ✅ GOOD (an app that passed persistenceDirectory: 'my-store' on SDK 5.1):
+// keep the store where 5.1 resolved the relative path. SDK 5.2 would resolve
+// 'my-store' under the application support directory and open an empty store.
+Future<Ditto> openKeepingTheStoreOf51() async {
+  final documents = await getApplicationDocumentsDirectory();
+  return Ditto.open(DittoConfig(
+    databaseID: 'YOUR_DATABASE_ID',
+    persistenceDirectory: '${documents.path}/my-store',
+  ));
+}
+```
+
+A small-peers-only deployment opens Ditto with its shared key and sets the offline license token before sync:
 
 ```dart
 // ✅ GOOD: Small-peers-only deployment. The shared key and the offline license
@@ -3276,6 +3296,7 @@ The behavior below is specific to `ditto_live` and was observed on the releases 
 - **Note (SDK 5.1.0 and 5.2.0):** Code that a transaction callback starts, such as a timer or an observer listener, keeps the callback's zone, and its calls of `ditto.store.execute` throw `Transaction is no longer valid` even after the commit ([Transactions in Flutter](#transactions-in-flutter)). See [In Flutter, code started inside a transaction callback cannot call store.execute after the commit](../../knowledge/observations/flutter-sdk.md#in-flutter-code-started-inside-a-transaction-callback-cannot-call-storeexecute-after-the-commit).
 - **Note (SDK 5.1.0 and 5.2.0):** A read-write transaction started inside another waits for the outer one, so an outer transaction that awaits it never ends; other combinations of read-only and read-write transactions do not wait ([Transactions in Flutter](#transactions-in-flutter)). See [In Flutter, a read-write transaction started inside another waits for the outer one](../../knowledge/observations/flutter-sdk.md#in-flutter-a-read-write-transaction-started-inside-another-waits-for-the-outer-one).
 - **Note (SDK 5.1.0 and 5.2.0):** `ditto.store.execute` inside a transaction callback throws a `DittoException`; outside the callback, reads return at once and writes wait until the transaction ends ([Transactions in Flutter](#transactions-in-flutter)). See [In Flutter, store.execute inside a transaction callback throws, and outside it only writes wait](../../knowledge/observations/flutter-sdk.md#in-flutter-storeexecute-inside-a-transaction-callback-throws-and-outside-it-only-writes-wait).
+- **Note (SDK 5.2.0):** A relative `persistenceDirectory` resolves under the application support directory instead of the documents directory, on Android and iOS as well, and the data that 5.1 stored at that path is not found; pass the absolute 5.1 path instead ([DittoConfig in Flutter](#dittoconfig-in-flutter)). See [In Flutter 5.2.0, a relative persistenceDirectory resolves under application support, and 5.1.0 data stays behind](../../knowledge/observations/flutter-sdk.md#in-flutter-520-a-relative-persistencedirectory-resolves-under-application-support-and-510-data-stays-behind).
 - **Note (SDK 5.1.0):** `Ditto.open()` on a persistence directory that is already open may never complete. On 5.2.0 it fails after about a second with `File already locked`, and `Ditto.openSync()` fails in the same way on both releases ([One shared instance in Flutter](#one-shared-instance-in-flutter)). See [In Flutter, opening an open directory again fails within a second on SDK 5.2.0 and never completes on 5.1.0](../../knowledge/observations/flutter-sdk.md#in-flutter-opening-an-open-directory-again-fails-within-a-second-on-sdk-520-and-never-completes-on-510).
 - **Note (SDK 5.1.0 and 5.2.0):** A `registerObserver` callback does not hold back the next result: `async` listeners overlap, and `await for` over `changes` processes every queued result. Use `registerObserverV2` or `registerObserverWithSignalNext` for slow work ([Backpressure in Flutter](#backpressure-in-flutter)). See [In Flutter, a slow async observer callback does not hold back the next result](../../knowledge/observations/flutter-sdk.md#in-flutter-a-slow-async-observer-callback-does-not-hold-back-the-next-result).
 - **Note (SDK 5.1.0 and 5.2.0):** An exception in an observer callback goes to the zone's error handler and the observer keeps running, but a throwing `onChange` keeps its result out of `changes`, and a throw before `signalNext()` stops the observer ([Observer lifecycle in Flutter](#observer-lifecycle-in-flutter)). See [In Flutter, an exception thrown in an observer callback reaches the zone, and the observer keeps running](../../knowledge/observations/flutter-sdk.md#in-flutter-an-exception-thrown-in-an-observer-callback-reaches-the-zone-and-the-observer-keeps-running).

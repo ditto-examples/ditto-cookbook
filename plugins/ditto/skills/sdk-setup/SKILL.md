@@ -184,7 +184,7 @@ Only Swift and Kotlin can encrypt the local store at rest (SDK 5.2+): a 32-byte 
 
 ### 14. Plan for platform requirements and Web limits (MEDIUM)
 
-Pin the exact SDK version (`pubspec.yaml`, `package.json`, Gradle, Swift Package Manager); request Bluetooth, Wi-Fi, local network, and nearby-device permissions before sync. Android, SDK 5.2+: multicast permissions are requested separately from the required permissions. Flutter, since 5.2: the default root is application support; with a relative `persistenceDirectory`, check that upgraded installs open their data. Flutter Web and the JavaScript SDK in browsers: in-memory store, no indexes; Flutter Web syncs only over WebSocket with Ditto Server.
+Pin the exact SDK version (`pubspec.yaml`, `package.json`, Gradle, Swift Package Manager); request Bluetooth, Wi-Fi, local network, and nearby-device permissions before sync. Android, SDK 5.2+: multicast permissions are requested separately from the required permissions. Flutter 5.2: the root is application support, also for a relative `persistenceDirectory`, so pass the absolute 5.1 path or 5.1 data is not found. Flutter Web and the JavaScript SDK in browsers: in-memory store, no indexes; Flutter Web syncs only over WebSocket with Ditto Server.
 
 `§ Requirements`, `§ DittoConfig`, `§ Upgrading from SDK 5.1` · Code: *Installing the <SDK> SDK* · Details: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#requirements)
 

@@ -13,6 +13,7 @@ How the Flutter SDK, `ditto_live`, behaves where its API works differently from 
 - A subscription registered without arguments reports `{}` as its arguments, but reading the arguments of its element in `ditto.sync.subscriptions` ends the app on macOS and iOS and throws `OutOfMemoryError` on Android, on 5.2.0 as on 5.1.0 ([In Flutter, the subscriptions and observers that registration returns report their arguments](#in-flutter-the-subscriptions-and-observers-that-registration-returns-report-their-arguments), [In Flutter, reading the arguments of a listed subscription without arguments ends the app or throws](#in-flutter-reading-the-arguments-of-a-listed-subscription-without-arguments-ends-the-app-or-throws)).
 - On a device connected to a peer in another process, every read of `system:data_sync_info` completed on both releases ([In Flutter, reads of system:data_sync_info kept responding with a peer in another process](#in-flutter-reads-of-systemdata_sync_info-kept-responding-with-a-peer-in-another-process)).
 - `ditto.store.execute` inside a transaction callback throws, and so does code that the callback started, such as a timer or an observer listener, after the commit. A read-write transaction started inside another waits for it ([In Flutter, store.execute inside a transaction callback throws, and outside it only writes wait](#in-flutter-storeexecute-inside-a-transaction-callback-throws-and-outside-it-only-writes-wait), [In Flutter, code started inside a transaction callback cannot call store.execute after the commit](#in-flutter-code-started-inside-a-transaction-callback-cannot-call-storeexecute-after-the-commit), [In Flutter, a read-write transaction started inside another waits for the outer one](#in-flutter-a-read-write-transaction-started-inside-another-waits-for-the-outer-one)).
+- On 5.2.0, a relative `persistenceDirectory` resolves under the application support directory instead of the documents directory, also on Android and iOS, and the data that 5.1.0 wrote at that path is not found; with `null`, the previous default directory is opened in place ([In Flutter 5.2.0, a relative persistenceDirectory resolves under application support, and 5.1.0 data stays behind](#in-flutter-520-a-relative-persistencedirectory-resolves-under-application-support-and-510-data-stays-behind)).
 - On 5.2.0, opening a directory that is already open fails after about a second; on 5.1.0, `Ditto.open` never completes ([In Flutter, opening an open directory again fails within a second on SDK 5.2.0 and never completes on 5.1.0](#in-flutter-opening-an-open-directory-again-fails-within-a-second-on-sdk-520-and-never-completes-on-510)).
 - On 5.2.0, `SyncSubscription` and `Transaction` objects that are garbage-collected after their instance was closed can stop the next `Ditto.open` or `close()` in the same process ([In Flutter 5.2.0, dropped subscription and transaction objects of a closed instance stop the next open or close](#in-flutter-520-dropped-subscription-and-transaction-objects-of-a-closed-instance-stop-the-next-open-or-close)).
 - `close()` while a transaction is open stops the isolate; `close()` with pending writes fails their `Future`s although it stores them; afterwards, calls throw `DittoClosedException`, and `DittoLogger.customLogCallback` is cleared ([In Flutter, close() while a transaction is open stops the app's isolate](#in-flutter-close-while-a-transaction-is-open-stops-the-apps-isolate), [In Flutter, close() fails pending execute calls, also writes that it stores](#in-flutter-close-fails-pending-execute-calls-also-writes-that-it-stores), [In Flutter, calls after close() throw DittoClosedException](#in-flutter-calls-after-close-throw-dittoclosedexception), [In Flutter, close() clears DittoLogger.customLogCallback](#in-flutter-close-clears-dittologgercustomlogcallback)).
@@ -297,6 +298,31 @@ How the Flutter SDK, `ditto_live`, behaves where its API works differently from 
 **Used in:** [Transactions in Flutter](../../best-practices/platforms/flutter.md#transactions-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Transaction Rules](../../best-practices/transactions.md#transaction-rules).
 
 ## Flutter Open and Close Behavior
+
+### In Flutter 5.2.0, a relative persistenceDirectory resolves under application support, and 5.1.0 data stays behind
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0 on the Android 16 emulator and the iOS 26.5 simulator: where the directories resolve, one run each; the upgrade, SDK 5.2.0, three runs on each device (2026-11-07). Every run gave the same result |
+| Setup | (1) On each release, `Ditto.open` with `persistenceDirectory: 'lab-rel'` and with `null`; we read `ditto.absolutePersistenceDirectory`, `Ditto.defaultRootDirectory`, and the documents and application support directories of `path_provider`. (2) The test runner uninstalls the app after every run, so one run on 5.2.0 recreated the layout of an app that ran 5.1.0: it opened the absolute path that 5.1.0 uses for each setting (`<documents>/lab-rel`, `<documents>/ditto-<database ID>`), wrote one document, and closed; then it opened `'lab-rel'` and `null`, as the upgraded app would, and counted the documents. Not run on macOS, where the test app is not sandboxed and the 5.1.0 location would be the user's own Documents folder |
+| Documentation | The [5.2.0 release notes](https://docs.ditto.live/sdk/latest/release-notes-hub/flutter): "On desktop platforms, `Ditto.defaultRootDirectory` now resolves to the application support directory (`getApplicationSupportDirectory()`) instead of the documents directory. When `DittoConfig.persistenceDirectory` is `null`, existing databases in the previous default location are still found on upgrade (#SDKS-3900)." |
+
+| Directory | Android | iOS |
+|---|---|---|
+| Root on 5.1.0 (documents) | `app_flutter` | `Documents` |
+| Root on 5.2.0 (application support) | `files` | `Library/Application Support` |
+| `'lab-rel'` on 5.1.0 | `app_flutter/lab-rel` | `Documents/lab-rel` |
+| `'lab-rel'` on 5.2.0 | `files/lab-rel` | `Library/Application Support/lab-rel` |
+| `null` on 5.2.0, after 5.1.0 had written its default directory | `app_flutter/ditto-<database ID>`, the previous one | `Documents/ditto-<database ID>`, the previous one |
+
+- The move is not limited to desktop platforms: on Android and iOS, 5.2.0 resolved both settings under the application support directory.
+- **With a relative path, the upgraded app found none of its data**: 5.2.0 opened `files/lab-rel` (Android) or `Library/Application Support/lab-rel` (iOS), which held no documents, while the document stayed in the 5.1.0 directory, which still existed and still opened with its absolute path.
+- With `null`, 5.2.0 opened the previous default directory in place, without moving it, and found the document.
+- In the 5.2.0 source, a relative path is joined to the application support directory (`makePersistenceDirectoryPath`), and the previous location is looked up only when `persistence_directory` is `null` (`resolveLegacyPersistenceDirectory` in `ditto.dart`).
+
+**Not tested:** an installation upgraded in place from a 5.1.0 build (the lab's runner reinstalls the app); data written by 5.1.0 itself rather than by 5.2.0 at the 5.1.0 path; macOS, Windows, and Linux; physical devices.
+
+**Used in:** [DittoConfig in Flutter](../../best-practices/platforms/flutter.md#dittoconfig-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Changes in SDK 5.2.0](../upgrading.md#changes-in-sdk-520).
 
 ### In Flutter, opening an open directory again fails within a second on SDK 5.2.0 and never completes on 5.1.0
 
