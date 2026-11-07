@@ -43,7 +43,7 @@ How devices connect to each other and how presence reports them: the transports 
 
 **Not tested:** physical devices; Flutter on iOS and Android, JavaScript in browsers and React Native, and Windows and Linux; whether the enabled transports find other devices (sync was not started).
 
-**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Transports and Presence in Flutter](../../best-practices/platforms/flutter.md#transports-and-presence-in-flutter), [Transports and Presence in JavaScript](../../best-practices/platforms/javascript.md#transports-and-presence-in-javascript), [Transports and Presence in Swift](../../best-practices/platforms/swift.md#transports-and-presence-in-swift).
+**Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Transports and Presence in Flutter](../../best-practices/platforms/flutter.md#transports-and-presence-in-flutter), [Transports and Presence in JavaScript](../../best-practices/platforms/javascript.md#transports-and-presence-in-javascript), [Transports and Presence in Kotlin](../../best-practices/platforms/kotlin.md#transports-and-presence-in-kotlin), [Transports and Presence in Swift](../../best-practices/platforms/swift.md#transports-and-presence-in-swift).
 
 ### Two iOS simulators synced over AWDL alone
 

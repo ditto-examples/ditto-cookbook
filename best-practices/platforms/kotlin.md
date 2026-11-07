@@ -2048,7 +2048,7 @@ suspend fun markReadyLocalTime(ditto: Ditto, orderId: String) {
 
 ## Transports and Presence in Kotlin
 
-`DittoTransportConfig` is immutable. Change it with `ditto.updateTransportConfig { config -> ... }`, which gives you a builder initialized with the current configuration. Never assign a new `DittoTransportConfig()`: it has every transport disabled, whereas a new instance starts with Bluetooth LE, LAN, and Wi-Fi Aware enabled (see [In Kotlin, an empty DittoTransportConfig turns every transport off](../../knowledge/observations/kotlin-sdk.md#in-kotlin-an-empty-dittotransportconfig-turns-every-transport-off)). The rules are in [Transport Configuration](../setup-and-lifecycle.md#transport-configuration).
+`DittoTransportConfig` is immutable. Change it with `ditto.updateTransportConfig { config -> ... }`, which gives you a builder initialized with the current configuration. Never assign a new `DittoTransportConfig()`: it has every transport disabled, whereas a new instance starts with Bluetooth LE, LAN, and Wi-Fi Aware enabled (see [In Kotlin, an empty DittoTransportConfig turns every transport off](../../knowledge/observations/kotlin-sdk.md#in-kotlin-an-empty-dittotransportconfig-turns-every-transport-off) and, for the other SDKs, [A new instance enables the platform's peer-to-peer transports, and an empty configuration enables none](../../knowledge/observations/connections-and-presence.md#a-new-instance-enables-the-platforms-peer-to-peer-transports-and-an-empty-configuration-enables-none)). The rules are in [Transport Configuration](../setup-and-lifecycle.md#transport-configuration).
 
 ```kotlin
 // ✅ GOOD: Adjust the current configuration with the builder.
