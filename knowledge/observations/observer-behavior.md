@@ -8,6 +8,7 @@ How store observers behave on one device: when an observer is called, how change
 - Since SDK 5.1, changes are coalesced into callbacks about 30 ms apart, so an observer skips intermediate values. Changes from another device arrive in a few callbacks, and a transaction in one ([Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart), [A device receives nearly every value of a fast-changing field](#a-device-receives-nearly-every-value-of-a-fast-changing-field), [Remote changes arrive in a few callbacks, and a transaction in one](#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
 - An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0, with new `_id` or `timestamp` values in 16 rows, and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
 - An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)).
+- Every SDK's differ, and Kotlin's `DittoDiff`, reported the same diffs on 5.1.0 and 5.2.0: the first result as insertions, a reorder as a move for every shifted item plus an update for the moved one, no move for items that only shifted because of a deletion or an insertion, and nothing for a value that changed and changed back between two results ([Every SDK's differ reports a reorder as a move of each shifted item and compares only two results](#every-sdks-differ-reports-a-reorder-as-a-move-of-each-shifted-item-and-compares-only-two-results)).
 - The differs of Flutter, JavaScript, and Swift accept only the items of Ditto query results: test doubles and plain objects make `diff()` throw in Flutter and JavaScript, and Swift's item type cannot be created outside the SDK. Kotlin apps do not create a differ; the observer passes a `DittoDiff` to its handler ([The differs accept only items from Ditto query results, and Kotlin apps do not create one](#the-differs-accept-only-items-from-ditto-query-results-and-kotlin-apps-do-not-create-one)).
 - On SDK 5.2.0, observer rows have no `_id` unless the query projects it; on SDK 5.1.0, 60 or more observers stopped every callback in our tests, a threshold that may differ by device ([On SDK 5.2.0, observer rows include _id only when it is projected](#on-sdk-520-observer-rows-include-_id-only-when-it-is-projected), [On SDK 5.1.0, observers stall beyond about 60](#on-sdk-510-observers-stall-beyond-about-60)).
 - On SDK 5.0.3, an observer ran its query again after writes to other collections, which cost CPU time; on 5.1.0 and 5.2.0, it did not, although the 5.2.0 release notes list this as a fix ([On SDK 5.1.0 and 5.2.0, an observer did not re-run its query after writes to another collection](#on-sdk-510-and-520-an-observer-did-not-re-run-its-query-after-writes-to-another-collection)).
@@ -184,6 +185,31 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 **Not tested:** compiling a test double in Kotlin or Swift; JavaScript in browsers and React Native; Flutter on iOS and Android.
 
 **Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results), [Testing Observer Lifecycle](../../best-practices/testing.md#testing-observer-lifecycle), [Diffing results in Flutter](../../best-practices/platforms/flutter.md#diffing-results-in-flutter), [Testing in Flutter](../../best-practices/platforms/flutter.md#testing-in-flutter), [Testing in JavaScript](../../best-practices/platforms/javascript.md#testing-in-javascript), [Diffing results in Swift](../../best-practices/platforms/swift.md#diffing-results-in-swift), [Testing in Swift](../../best-practices/platforms/swift.md#testing-in-swift).
+
+### Every SDK's differ reports a reorder as a move of each shifted item and compares only two results
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each with Flutter, JavaScript, and Kotlin, and with Swift on macOS and in the iOS simulator; every run gave the same result, on every SDK |
+| Setup | Three documents `a`, `b`, and `c` with `rank` 1 to 3, read with `SELECT * FROM items ORDER BY rank`. In Flutter (macOS), JavaScript (Node.js 24 on macOS), and Swift, one differ received the items of the query after each step; in Kotlin (Android 16 emulator), which has no differ that apps create, we recorded the `DittoDiff` that an observer of the same query passed to its handler after each step. The steps: the first result; the same result again (not in Kotlin); `c` moved to the top (`rank = 0`); a field of `a` changed and changed back before the next diff (two statements, in Kotlin one transaction); a field of `b` changed; `a` deleted; and a document `d` inserted at the top |
+
+| Step | Result order | Diff on every SDK |
+|---|---|---|
+| First result | `a b c` | insertions 0, 1, 2 |
+| Same result again | `a b c` | empty |
+| `c` moved to the top | `c a b` | updates 0; moves 2→0, 0→1, 1→2 |
+| A value changed and changed back | `c a b` | empty |
+| A value of `b` changed | `c a b` | updates 2 |
+| `a` deleted | `c b` | deletions 1, no moves |
+| `d` inserted at the top | `d c b` | insertions 0, no moves |
+
+- A reorder reported a move for every item whose position shifted, not only the item that moved, and an update for the moved item, whose `rank` changed.
+- An item that only shifted because another item was deleted or inserted was not reported as a move.
+- A value that changed and changed back before the next diff was not reported. In Kotlin, the transaction that did so still produced one callback, with an empty diff.
+
+**Not tested:** larger lists and several reorders at once; Flutter on iOS and Android; JavaScript in browsers.
+
+**Used in:** [Diffing Results](../../best-practices/observers.md#diffing-results).
 
 ## Observer Differences between SDK Releases
 
