@@ -75,8 +75,8 @@ How transactions behave on one device: what other reads, writes, and incoming ch
 
 | | |
 |---|---|
-| Observed on | SDK 5.0.3, 5.1.0, and 5.2.0, three runs each; the same pattern on all three releases |
-| Setup | One device, in JavaScript. We started 500 operations at once with `Promise.all`, and compared them with awaiting one at a time: `INSERT` statements; `UPDATE c SET n = n + 1`; and a read-then-write sequence in the app (`SELECT`, add 1 to the value read, `UPDATE`). We also started the same sequence 100 times at once, each in its own `ditto.store.transaction` |
+| Observed on | JavaScript: SDK 5.0.3, 5.1.0, and 5.2.0, three runs each. Flutter on macOS, Kotlin on the Android 16 emulator, and Swift on macOS: SDK 5.1.0 and 5.2.0, three runs each (2026-11-07). The same pattern on every release and SDK |
+| Setup | One device, in JavaScript. We started 500 operations at once with `Promise.all`, and compared them with awaiting one at a time: `INSERT` statements; `UPDATE c SET n = n + 1`; and a read-then-write sequence in the app (`SELECT`, add 1 to the value read, `UPDATE`). We also started the same sequence 100 times at once, each in its own `ditto.store.transaction`. In the other SDKs, the `UPDATE`, the read-then-write sequence, and the transactions were started at once in the same numbers: with `Future.wait` in Flutter, as coroutines on `Dispatchers.IO` in Kotlin (the transactions also on a dispatcher of 4 threads), and as tasks of a task group in Swift |
 
 | Case | Result |
 |---|---|
@@ -85,6 +85,15 @@ How transactions behave on one device: what other reads, writes, and incoming ch
 | 500 read-then-write sequences started at once | `n` ended at 2 to 3: 497 to 498 updates were lost, and none of them raised an error |
 | 100 read-then-write sequences started at once, each in a transaction | The transactions ran one after another, and `n` was exactly 100 (about 43 to 55 ms). Transactions that had to wait did not fail |
 
+- **The other SDKs showed the same pattern**:
+
+  | SDK | 500 `UPDATE c SET n = n + 1` | 500 read-then-write sequences | 100 sequences, each in a transaction |
+  |---|---|---|---|
+  | Flutter | `n` = 500 | `n` = 1 | `n` = 100, in 91 to 152 ms |
+  | Kotlin | `n` = 500 | `n` = 8 to 9 | `n` = 100, in 613 to 779 ms on `Dispatchers.IO` and 308 to 399 ms on 4 threads |
+  | Swift | `n` = 500 | `n` = 36 to 37 | `n` = 100, in 46 to 87 ms |
+
+- In Kotlin and Swift, transactions that waited for each other did not stop the process, unlike `store.execute` writes that wait behind an open transaction ([In Kotlin, writes that wait behind a transaction each hold a thread](kotlin-sdk.md#in-kotlin-writes-that-wait-behind-a-transaction-each-hold-a-thread), [In Swift, 14 concurrent writes during an open transaction stop the process](swift-sdk.md#in-swift-14-concurrent-writes-during-an-open-transaction-stop-the-process)).
 - Running statements in parallel is not an error.
 - This applies within one device. When other devices write at the same time, both `n = n + 1` and a transaction are resolved by last-writer-wins (see [Conditional updates on two offline devices both succeed](merge-behavior.md#conditional-updates-on-two-offline-devices-both-succeed)). To add up numbers across devices, use a `COUNTER`.
 

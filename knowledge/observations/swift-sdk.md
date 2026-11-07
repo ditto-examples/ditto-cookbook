@@ -44,7 +44,7 @@ What we observed when we ran the Swift SDK (DittoSwift) where its API or behavio
 
 **Not tested:** What `deinitTimeoutSeconds` and `shouldWaitForCleanupOnClose` change; a release on the main thread while observers deliver on it; real devices.
 
-**Used in:** [Behavior Specific to the Swift SDK](../../best-practices/platforms/swift.md#behavior-specific-to-the-swift-sdk), [Closing Ditto in Swift](../../best-practices/platforms/swift.md#closing-ditto-in-swift), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown).
+**Used in:** [Behavior Specific to the Swift SDK](../../best-practices/platforms/swift.md#behavior-specific-to-the-swift-sdk), [Closing Ditto in Swift](../../best-practices/platforms/swift.md#closing-ditto-in-swift), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration).
 
 ### In Swift, calls after the instance is released throw or end the process
 

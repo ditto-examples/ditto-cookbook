@@ -379,7 +379,7 @@ How the Flutter SDK, `ditto_live`, behaves where its API works differently from 
 
 **Not tested:** Android, a transaction that awaits only `tx.execute` calls, how long the isolate would stay stopped, what is on disk afterwards.
 
-**Used in:** [Closing Ditto in Flutter](../../best-practices/platforms/flutter.md#closing-ditto-in-flutter), [Transactions in Flutter](../../best-practices/platforms/flutter.md#transactions-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown).
+**Used in:** [Closing Ditto in Flutter](../../best-practices/platforms/flutter.md#closing-ditto-in-flutter), [Transactions in Flutter](../../best-practices/platforms/flutter.md#transactions-in-flutter), [Behavior Specific to the Flutter SDK](../../best-practices/platforms/flutter.md#behavior-specific-to-the-flutter-sdk), [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration).
 
 ### In Flutter, close() fails pending execute calls, also writes that it stores
 

@@ -368,7 +368,7 @@ The runs in which a read on this device got stuck:
 
 **Not tested:** a transaction that suspends for longer than a few seconds.
 
-**Used in:** [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Closing Ditto in Kotlin](../../best-practices/platforms/kotlin.md#closing-ditto-in-kotlin), [Behavior Specific to the Kotlin SDK](../../best-practices/platforms/kotlin.md#behavior-specific-to-the-kotlin-sdk).
+**Used in:** [Resource Cleanup and Shutdown](../../best-practices/setup-and-lifecycle.md#resource-cleanup-and-shutdown), [Closing Ditto in Kotlin](../../best-practices/platforms/kotlin.md#closing-ditto-in-kotlin), [Behavior Specific to the Kotlin SDK](../../best-practices/platforms/kotlin.md#behavior-specific-to-the-kotlin-sdk), [Concurrency and Duration](../../best-practices/transactions.md#concurrency-and-duration).
 
 ### In Kotlin, writes in flight when close() runs are stored even when the call throws
 

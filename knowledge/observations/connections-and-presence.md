@@ -235,7 +235,7 @@ Direct connections per device (TCP connections in parentheses):
 - A long outage did not slow reconnection down: with the hub reopened 3, 30, or 70 seconds after it closed, clients with the default `retryInterval` reconnected in 0.3 to 2.0 seconds, on all three releases.
 - `SHOW ALL` lists `transports_connection_failure_threshold` (3), `transports_connection_failure_window_secs` (60), and `mesh_chooser_peer_block_time_ms` (1,800,000). Still, a peer listed in `connect.tcpServers` that could not be reached for 70 seconds (14 retries) was not blocked for 30 minutes.
 
-**Not tested:** what these three parameters apply to (for example, whether they apply to peers found over Bluetooth LE or LAN); the default `retryInterval` of the SDKs other than JavaScript.
+**Not tested:** what these three parameters apply to (for example, whether they apply to peers found over Bluetooth LE or LAN); reconnection after a lost connection in the SDKs other than JavaScript, whose default retry interval is also 5 seconds ([A denied peer retries at the retry interval](#a-denied-peer-retries-at-the-retry-interval)).
 
 **Used in:** [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
@@ -527,17 +527,18 @@ What the observing device received:
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 and 5.2.0, three runs each; both releases gave the same results |
+| Observed on | JavaScript: SDK 5.1.0 and 5.2.0, three runs each. The default retry interval, with a hub that returned `deny`: Swift on macOS and Kotlin on the Android 16 emulator, SDK 5.1.0 and 5.2.0, three runs each; its value in Flutter on macOS, three runs each (2026-11-07). Both releases gave the same results |
 | Setup | A hub whose connection request handler (`connectionRequestHandler`) returned `deny`, was set back to `null`, or threw, and a client that connected to it. In another case, the device that opened the connection returned `deny` |
 
 - When the hub returned `deny`, the client did not connect. The hub's handler ran 0.15, 5.26, and 10.37 seconds after the client opened (the same in all three runs whose times were recorded). In JavaScript, `connect.retryInterval` defaults to 5,000 ms on 5.0.3, 5.1.0, and 5.2.0, and it sets the interval of the retries.
+- The other SDKs have the same default and the same timing. Swift reported `connect.retryInterval` 5.0 (seconds) and Kotlin `retryIntervalMs` 5000, for a new `DittoTransportConfig` and for the configuration of a new instance, and Flutter reported `retryIntervalMs` 5000. With the default, the hub's handler ran at 0.10 to 0.22, 5.22 to 5.34, 10.33 to 10.46, and 15.45 to 15.59 seconds after the client connected, in Swift and Kotlin alike.
 - Setting the handler back to `null` let the client connect, and switching it to `deny` again kept the existing connection.
 - `deny` returned by the device that opened the connection also prevented the connection; the handler ran twice in 8 seconds.
 - With a handler that throws, the client had not connected after 15 seconds.
 
 **Not tested:** how long it takes until a handler that throws denies the connection; see [A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK](#a-connection-request-handler-that-does-not-answer-within-10-seconds-rejects-the-peer-and-one-that-throws-differs-by-sdk).
 
-**Used in:** [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections).
+**Used in:** [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections), [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
 
 ### A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK
 
