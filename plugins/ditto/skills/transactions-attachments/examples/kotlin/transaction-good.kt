@@ -32,7 +32,11 @@ fun utcTimestamp(time: Instant = Instant.now()): String = utcMillis.format(time)
 fun DittoCborSerializable.numberOrNull(): Double? =
     doubleOrNull ?: floatOrNull?.toDouble() ?: longOrNull?.toDouble()
 
-/** ✅ GOOD: Close an order and create its invoice atomically. */
+/**
+ * ✅ GOOD: Close an order and create its invoice atomically.
+ * Safe only where one device closes a given order: on two devices
+ * that have not synced, both commit and two invoices remain.
+ */
 suspend fun closeOrderWithInvoice(ditto: Ditto, orderId: String, invoiceId: String) {
     ditto.store.transaction(hint = "closeOrderWithInvoice") { tx -> // The hint appears in logs.
         val total = tx.execute("SELECT * FROM orders WHERE _id = :id", mapOf("id" to orderId)) { result ->

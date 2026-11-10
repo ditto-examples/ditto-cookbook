@@ -55,6 +55,8 @@ enum TransactionCompletionAction { commit, rollback }
 
 ```dart
 // ✅ GOOD: Explicit rollback, typed result.
+// Safe only where one device ships a given order: the check
+// holds on this device only (see Checks and Claims across Devices).
 final action = await ditto.store.transaction(hint: 'shipOrder', (tx) async {
   final result = await tx.execute(
     'SELECT * FROM orders WHERE _id = :id AND status = :status',
@@ -141,6 +143,8 @@ transaction<T = TransactionCompletionAction>(
 
 ```js
 // ✅ GOOD: Explicit rollback, options as the second argument.
+// Safe only where one device ships a given order: the check
+// holds on this device only (see Checks and Claims across Devices).
 const action = await ditto.store.transaction(
   async (tx) => {
     const result = await tx.execute(
@@ -229,6 +233,8 @@ enum DittoTransactionCompletionAction { case commit, rollback }
 
 ```swift
 // ✅ GOOD: Explicit rollback.
+// Safe only where one device ships a given order: the check
+// holds on this device only (see Checks and Claims across Devices).
 let action = try await ditto.store.transaction(hint: "shipOrder") { tx in
   let result = try await tx.execute(
     query: "SELECT * FROM orders WHERE _id = :id AND status = :status",
@@ -302,6 +308,8 @@ suspend fun <T> transaction(
 
 ```kotlin
 // ✅ GOOD: Explicit rollback.
+// Safe only where one device ships a given order: the check
+// holds on this device only (see Checks and Claims across Devices).
 val outcome = ditto.store.transaction(hint = "shipOrder") { tx ->
     val isPaid = tx.execute(
         "SELECT * FROM orders WHERE _id = :id AND status = :status",

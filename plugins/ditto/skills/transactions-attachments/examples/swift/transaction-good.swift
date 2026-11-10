@@ -31,6 +31,8 @@ struct OrderNotFound: Error { let id: String }
 // PATTERN 1: Atomic multi-document change
 
 /// ✅ GOOD: Close an order and create its invoice atomically.
+/// Safe only where one device closes a given order: on two devices
+/// that have not synced, both commit and two invoices remain.
 func closeOrderWithInvoice(_ ditto: Ditto, orderID: String, invoiceID: String) async throws {
     try await ditto.store.transaction(hint: "closeOrderWithInvoice") { tx in // the hint appears in logs
         let result = try await tx.execute(query: "SELECT * FROM orders WHERE _id = :id", arguments: ["id": orderID])

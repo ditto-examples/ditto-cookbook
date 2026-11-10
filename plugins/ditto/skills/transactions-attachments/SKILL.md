@@ -136,7 +136,8 @@ The fetcher's `stop()` cancels an in-flight fetch (not needed after completion);
 
 ```sql
 -- The statements of a shipOrder transaction: return the rollback value when
--- the first returns no row; otherwise update and commit
+-- the first returns no row; otherwise update and commit. The check holds on
+-- this device only (`§ Checks and Claims across Devices`)
 -- Arguments: {"id": "order-1", "status": "paid"}
 SELECT * FROM orders WHERE _id = :id AND status = :status
 

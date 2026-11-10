@@ -31,6 +31,8 @@ export const utcTimestamp = (time = new Date()) => time.toISOString();
 
 // ✅ GOOD: Close an order and create its invoice atomically. Throwing inside
 // the callback rolls back every change and rejects transaction().
+// Safe only where one device closes a given order: on two devices
+// that have not synced, both commit and two invoices remain.
 export async function closeOrderWithInvoice(ditto, orderId, invoiceId) {
   await ditto.store.transaction(
     async (tx) => {

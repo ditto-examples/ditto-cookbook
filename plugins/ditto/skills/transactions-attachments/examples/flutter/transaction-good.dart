@@ -33,6 +33,9 @@ String utcTimestamp([DateTime? time]) {
 ///
 /// Throwing inside the callback rolls back every change and rethrows the
 /// error to the caller of `transaction()`.
+///
+/// Safe only where one device closes a given order: on two devices
+/// that have not synced, both commit and two invoices remain.
 Future<void> closeOrderWithInvoice(
   Ditto ditto,
   String orderId,
