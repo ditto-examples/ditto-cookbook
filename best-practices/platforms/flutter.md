@@ -1924,6 +1924,8 @@ Future<void> closeOrderWithInvoice(Ditto ditto, String orderId, String invoiceId
 
 ```dart
 // ✅ GOOD: Explicit rollback without throwing, and a typed return value.
+// Safe only where one device ships a given order:
+// the check holds on this device only (see Checks and Claims across Devices).
 Future<bool> shipOrder(Ditto ditto, String orderId) async {
   final action = await ditto.store.transaction(
     hint: 'shipOrder',

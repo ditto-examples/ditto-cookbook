@@ -26,7 +26,7 @@ Best practices, in `reference/best-practices/`:
 | `README.md` | How to use the guide (audience, conventions such as (SDK 5.1+)/(SDK 5.2+), Experimental/Beta, and the Note (SDK ...) labels, how the content was verified), the ten essential rules, the disclaimer |
 | `setup-and-lifecycle.md` | Requirements, DittoConfig, one shared instance, startup order, authentication, switching users, system parameters (in `DittoConfig`, `ALTER SYSTEM`), sync start/stop, shutdown, transports, presence |
 | `dql.md` | Where queries run, parameters and literals, MISSING vs NULL, query results, error messages and empty results (a lookup table); SELECT (projections, DISTINCT, aggregates, GROUP BY, ORDER BY, LIMIT, USE IDS, membership, JOIN); INSERT and ON ID CONFLICT, UPDATE, RETURNING, DELETE and EVICT |
-| `data-modeling.md` | Strict mode, arrays vs maps, document structure and size, relationships, IDs, counters, event history, INITIAL documents, schema evolution, timestamps |
+| `data-modeling.md` | Strict mode, arrays vs maps, document structure and size, relationships, IDs, counters, checks and claims across devices (locks, uniqueness, sequence numbers, invariants), event history, INITIAL documents, schema evolution, timestamps |
 | `sync-and-subscriptions.md` | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
 | `observers.md` | The observer APIs of each SDK, when observers fire (by query shape), observer lifecycle, backpressure and choosing an observer API, diffing, partial UI updates |
 | `transactions.md` | `store.transaction` in each SDK, rules, concurrency, sync |
@@ -36,7 +36,7 @@ Best practices, in `reference/best-practices/`:
 | `logging-and-observability.md` | Logging, support bundles, remote diagnostics |
 | `security.md` | Authentication in production, small-peers-only keys, permissions, revocation, incoming connections, data at rest (encryption on Swift and Kotlin), webhooks, security checklist |
 | `testing.md` | What a local-store test helper does; merge, deletion, observer, subscription, and DQL tests as statements and expected results; multi-peer tests |
-| `anti-patterns.md` | Severity-ranked review list (Critical, High, Medium), with a list per SDK |
+| `anti-patterns.md` | Questions to ask of every collection (assumptions that fail across devices), then a severity-ranked review list (Critical, High, Medium), with a list per SDK |
 | `quick-reference.md` | Condensed DO list, where to look when something goes wrong, common DQL shapes and the SDK sections with code |
 | `platforms/flutter.md`, `platforms/javascript.md`, `platforms/kotlin.md`, `platforms/swift.md` | One page per SDK, with the same sections: installing, opening and `DittoConfig`, one shared instance, app startup, authentication, switching users, sync and the app lifecycle, closing, executing DQL, argument and value types, query results, subscriptions, store observers (lifecycle, backpressure, diffing, partial UI updates), transactions, attachments, IDs and timestamps, transports and presence, logging, testing, and the behavior specific to the SDK |
 

@@ -28,7 +28,7 @@ DQL statements, subscriptions, and store observers: what syncs, what a query see
 
 Every DQL statement runs against the **local store**. Only `ditto.sync.registerSubscription` makes data sync from remote peers (while sync is running); `ditto.store.execute` (snapshot), `ditto.store.registerObserver` (live), and `ditto.store.transaction` read local data and never cause sync.
 
-Subscriptions are long-lived, scoped by stable partition keys; observers and `execute` calls are short-lived and screen-specific. An empty result may mean nothing has synced yet or no subscription matches.
+Subscriptions are long-lived, scoped by stable partition keys; observers and `execute` calls are short-lived and screen-specific. A result describes this device only: empty may mean nothing has synced yet or no subscription matches, not that data is absent (no defaults or uniqueness checks from it). Read synced data with an observer, not one `execute` after subscribing; subscribe to all a query, total, or `JOIN` reads. A returned write is known to be local only (`§ Monitoring Sync Status`).
 
 `§ Where Queries Run`, `§ When Data Does Not Sync`, `§ When a Statement Fails or Returns Nothing`
 
@@ -82,7 +82,7 @@ A subscription selects whole documents from one collection: `SELECT * FROM <coll
 
 Keep `DQL_RESTRICT_SUBSCRIPTIONS` at its default (`true`): `false` allows `LIMIT`/`ORDER BY` as stateful subscriptions that degrade sync, and such a `LIMIT` bounds only the first download (5.1.0 and 5.2.0; later, every new or changed match syncs). Bound what syncs with `WHERE` (a stable key or a time window), not `LIMIT`.
 **✅ DO**: filter by stable partition keys (tenant, store, region, team); use the same subscriptions on peers in the same role; keep predicates flat; give relay devices at least the subscriptions of the devices behind them.
-**❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for a small reference-data collection every device needs); filter subscriptions on fields that change often (`status`, `assignee`).
+**❌ DON'T**: subscribe to entire large collections "just in case" (acceptable only for a small reference-data collection every device needs); filter subscriptions on fields that change often (`status`, `assignee`): a document that stops matching stays as a stale copy that local queries return, without later edits or its deletion.
 
 Soft delete: relaying devices keep flagged documents in their subscriptions to pass the flag on; hide them locally with `coalesce(isDeleted, false) = false` (variants: `storage-lifecycle`).
 
@@ -90,7 +90,7 @@ Soft delete: relaying devices keep flagged documents in their subscriptions to p
 
 ### 4. Own subscriptions in a long-lived service and cancel them (CRITICAL)
 
-Changing subscriptions makes peers re-evaluate which documents to send; avoid changing them more often than about every 15 minutes (documents already held are not downloaded again).
+Changing subscriptions makes peers re-evaluate which documents to send; avoid changing them more often than about every 15 minutes.
 **✅ DO**:
 - Register at app start (every time Ditto opens; not persisted), after login, or on entering a workspace, in an app- or feature-level service; keep every subscription and release it (`cancel()`, `close()` in Kotlin) on logout or workspace change
 - Change the **observer**, not the subscription, when the user changes a filter, search term, tab, or sort order
@@ -106,7 +106,7 @@ Changing subscriptions makes peers re-evaluate which documents to send; avoid ch
 
 ### 5. Register each observer once per owner and release it (CRITICAL)
 
-An observer runs its query and holds memory until released. Give it one owner (a screen, view model, or service), register it when the owner starts, and release it when the owner goes away; copy plain values out of each result.
+An observer runs its query and holds memory until released. Give it one owner (a screen, view model, or service), register it when the owner starts, and release it when the owner goes away.
 
 | SDK | Recommended pattern | Pitfalls |
 |---|---|---|
@@ -131,7 +131,7 @@ An observer runs its query and holds memory until released. Give it one owner (a
 | Array field contains a value | `:tag IN tags` or `array_contains(tags, :tag)` (no index) |
 | ❌ Array parameter in parentheses | `status IN (:statuses)` matches nothing |
 
-> **Note (SDK 5.1.0 and 5.2.0):** `ANY ... SATISFIES ... END` in `WHERE` over a parameter or literal array returns no rows (5.0.3 returned matches). Use `status IN :statuses` or `array_contains(:statuses, status)`. Only local queries and observers are affected; a subscription with the same predicate syncs the documents, so the data arrives but the list shows empty.
+> **Note (SDK 5.1.0 and 5.2.0):** `ANY ... SATISFIES ... END` in `WHERE` over a parameter or literal array returns no rows. Use `status IN :statuses` or `array_contains(:statuses, status)`. A subscription with it still syncs the documents; only the list is empty.
 
 `§ Filtering by Membership`
 
@@ -144,14 +144,14 @@ An observer runs its query and holds memory until released. Give it one owner (a
 | `DO UPDATE` | Supplied fields merged in, even if identical (mutation recorded, observers can fire again) |
 | `DO UPDATE_LOCAL_DIFF` | Only differing fields written; nothing written if nothing changed |
 
-**✅ DO**: `INSERT INTO products DOCUMENTS (:item) ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports; change only changed fields with `UPDATE ... SET`; remove fields with `UNSET`; replace an object with `UNSET obj` then `SET obj = :value` in one transaction (two statements on the transaction object).
-**❌ DON'T**: read-modify-write whole documents with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (a stale in-memory value differs from the stored one and is written back); expect `DO UPDATE` or `SET obj = {...}` to remove keys (with the default `DQL_STRICT_MODE = false`, objects merge; merge semantics: `data-modeling`).
+**✅ DO**: `INSERT INTO products DOCUMENTS (:item) ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports; change only changed fields with `UPDATE ... SET`; remove fields with `UNSET`; replace an object with `UNSET obj` then `SET obj = :value` in one transaction.
+**❌ DON'T**: read-modify-write whole documents with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (a stale in-memory value differs from the stored one and is written back); expect `DO UPDATE` or `SET obj = {...}` to remove keys (by default, objects merge; see `data-modeling`).
 
 `§ INSERT and Conflict Handling`, `§ UPDATE` · Example: [dql-writes.sql](examples/dql-writes.sql)
 
 ### 8. Index the inner collection of a JOIN (SDK 5.1+) (HIGH)
 
-Joins (`INNER`, `LEFT`, `RIGHT` as first join only) run on local data. The inner collection's join key needs an index, or the join must be on its `_id`; otherwise the query fails with `Joining to "c" disallowed without appropriate index support`.
+Joins (`INNER`, `LEFT`, `RIGHT` as first join only) run on local data. The inner collection's join key needs an index, or the join must be on its `_id`; otherwise the query fails (`disallowed without appropriate index support`).
 **✅ DO**: `CREATE INDEX IF NOT EXISTS idx_orders_customerId ON orders (customerId)` for `... JOIN orders o ON o.customerId = c._id`; qualify every field with its alias and alias colliding fields; subscribe to each joined collection separately; filter the outer collection selectively.
 **❌ DON'T**: use `JOIN` in subscriptions or on Ditto Server; use `USE INDEX ''` on large collections to silence the index error.
 
@@ -165,7 +165,7 @@ Without `ORDER BY` (observers included) order is not guaranteed. Add a unique ti
 
 ### 10. Copy values out of query results right away (HIGH)
 
-A result's rows (`items`) and their values reference native memory. Whether reading a row again decodes it again or returns the same object differs by SDK; in Kotlin, a result is a resource that you `close()` (or read inside the mapping function of `execute`).
+A result's rows (`items`) and their values reference native memory. In Kotlin, a result is a resource that you `close()` (or read inside the mapping function of `execute`).
 **✅ DO**: read the rows once and convert them to plain values or models; project only the fields you need; read the mutated document IDs once; track a commit ID only when the result lists mutated document IDs.
 **❌ DON'T**: store result or row objects in state, caches, or across observer callbacks; change a row's value to edit the document (write with `UPDATE`).
 
@@ -195,7 +195,7 @@ Select by ID with `WHERE _id = :id` or `WHERE _id IN :ids`: planned as an ID loo
 
 ### 13. Use RETURNING instead of write-then-read (SDK 5.1+) (MEDIUM)
 
-`RETURNING` on `INSERT`, `UPDATE`, `DELETE`, or `EVICT` returns the affected documents in `items` (after the update; before removal), e.g. `... WHERE _id IN :ids RETURNING _id, status`. Project `_id` when you need the IDs.
+`RETURNING` on `INSERT`, `UPDATE`, `DELETE`, or `EVICT` returns the affected documents in `items` (after the update; before removal). Project `_id` when you need the IDs.
 
 `§ RETURNING (SDK 5.1+)` · Details: [reference/dql-reference.md](reference/dql-reference.md#returning-sdk-51)
 

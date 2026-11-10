@@ -173,7 +173,7 @@ EVICT FROM orders WHERE createdAt < :cutoff
 SELECT * FROM orders WHERE createdAt >= :cutoff
 ```
 
-**Flag-based eviction**: when a central component (typically the Ditto Server, which can make sure documents have synced first) sets `evictionFlag = true`, devices subscribe with `coalesce(evictionFlag, false) = false` and evict `evictionFlag = true`. The subscription never matches flagged documents, so it does not need to be cancelled before each eviction.
+**Flag-based eviction**: when a central component (typically the Ditto Server, which can make sure documents have synced first) sets `evictionFlag = true`, devices subscribe with `coalesce(evictionFlag, false) = false` and evict `evictionFlag = true`. The subscription never matches flagged documents, so it need not be cancelled before each eviction. Not on relays whose peers can miss the flag: they send the unflagged version back.
 
 `§ EVICT`, `§ Time-based eviction`, `§ Flag-based eviction`, `§ Cancelling subscriptions and local data` · Examples: `retention-service` in `examples/<sdk>/` (the service), [ttl-eviction-small-peer.sql](examples/ttl-eviction-small-peer.sql), [evict-subscription-management-good.sql](examples/evict-subscription-management-good.sql), [-bad.sql](examples/evict-subscription-management-bad.sql), [flag-based-eviction.sql](examples/flag-based-eviction.sql), [ttl-eviction-ditto-server.sql](examples/ttl-eviction-ditto-server.sql)
 

@@ -43,7 +43,7 @@ The [Glossary](glossary.md) defines these and the other terms that the guide use
 
 ### 1. Queries read the local store only
 
-`ditto.store.execute()` and store observers never contact other peers. They return whatever is in the local store at that moment, so they work offline and return quickly, but they only see data that has already synced to the device.
+`ditto.store.execute()` and store observers never contact other peers. They return whatever is in the local store at that moment, so they work offline and return quickly, but they only see data that has already synced to the device. An empty result therefore means that the device does not hold the data, not that it does not exist (see [Where Queries Run](../best-practices/dql.md#where-queries-run)).
 
 ### 2. Subscriptions decide what data syncs to a device
 
@@ -79,6 +79,7 @@ Multiple devices will modify the same documents while disconnected. Ditto always
 
 **❌ DON'T:**
 - Assume a single writer for shared data.
+- Use a local query, a conditional `UPDATE`, or a transaction as a lock or a uniqueness check: it holds only on the device that runs it (see [Checks and Claims across Devices](../best-practices/data-modeling.md#checks-and-claims-across-devices)).
 - Replace entire documents or arrays when only one part changed.
 
 **Why:** Each field type has defined merge semantics (for example, with the default `DQL_STRICT_MODE = false`, objects merge per field, while scalars and arrays use last-writer-wins). Choosing the right type for each field is what prevents lost updates. See [CRDT Types and Merge Behavior](crdt-types.md) and [Data Modeling](../best-practices/data-modeling.md).

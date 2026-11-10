@@ -1376,6 +1376,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print_rules()
         return 0
 
+    # A path that does not exist yields no findings, which would read as a clean scan.
+    for path in args.paths:
+        if not os.path.exists(path):
+            print(f"warning: {path} does not exist and was not scanned", file=sys.stderr)
+
     limit = SEVERITIES.index(args.min_severity)
     findings = [f for f in scan(args.paths) if SEVERITIES.index(f.severity) <= limit]
 
@@ -1386,7 +1391,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if not findings:
         print("No candidate anti-patterns found. This does not mean the code is correct; "
-              "continue with the manual review checklist.")
+              "continue with the inventory, the cross-device review, and the manual review.")
         return 0
     for f in findings:
         print(f"{f.path}:{f.line}: {f.severity} {f.rule}: {f.message} "

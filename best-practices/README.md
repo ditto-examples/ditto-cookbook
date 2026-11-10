@@ -1,7 +1,7 @@
 # Ditto SDK Best Practices
 
-> **Version**: 5.17
-> **Last Updated**: 2026-11-07
+> **Version**: 5.18
+> **Last Updated**: 2026-11-11
 > **Applies to**: Ditto SDK 5.2.0 for Flutter (`ditto_live`), JavaScript (`@dittolive/ditto`), Kotlin (`com.ditto:ditto-kotlin`), and Swift (`DittoSwift`). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
 This guide helps you build offline-first applications on the Ditto SDK that stay correct when many devices change the same data without a connection. It concentrates on two kinds of guidance:
@@ -51,7 +51,7 @@ If you take only ten things from this guide, take these. Each one links to the s
 
 1. **Subscriptions decide what syncs; queries read only the local store.** Register long-lived subscriptions, scoped by stable keys such as tenant, store, or user, in an app-level service, and register them again after every `Ditto.open()`. Filter screens with local queries and observers instead of re-registering subscriptions. See [Core Principles](../knowledge/understanding-ditto.md#core-principles) and [Subscription Lifecycle](sync-and-subscriptions.md#subscription-lifecycle).
 2. **Write only what changed.** Update individual fields with `UPDATE ... SET` instead of rewriting whole documents. Assigning an object, or upserting a document, merges keys into what is stored and never removes any; remove keys with `UNSET`. See [Prefer field-level updates over whole-document rewrites](dql.md#prefer-field-level-updates-over-whole-document-rewrites) and [Assigning an object merges it](dql.md#assigning-an-object-merges-it).
-3. **Model every shared field for the merge you want.** Use maps keyed by ID for lists that several devices edit (an array is replaced as a whole), `COUNTER` for tallies, and values computed at read time instead of stored totals. See [What Concurrent Edits Produce](../knowledge/crdt-types.md#what-concurrent-edits-produce).
+3. **Model every shared field for the merge you want.** Use maps keyed by ID for lists that several devices edit (an array is replaced as a whole), `COUNTER` for tallies, and values computed at read time instead of stored totals. A check before a write holds only on the device that makes it, so a local query, a conditional `UPDATE`, or a transaction is not a lock or a uniqueness check across devices. See [What Concurrent Edits Produce](../knowledge/crdt-types.md#what-concurrent-edits-produce) and [Checks and Claims across Devices](data-modeling.md#checks-and-claims-across-devices).
 4. **Generate collision-free IDs.** Use UUIDs, or composite `_id` objects that contain a UUID, and never sequential numbers. Put the attributes that permissions depend on into `_id`, because `_id` cannot change. See [Document IDs](data-modeling.md#document-ids).
 5. **Choose a deletion strategy per collection.** Prefer a soft delete for shared records that several devices edit, and wherever devices can stay offline longer than the tombstone TTL (7 days by default); `DELETE` is safe only when neither applies. To free storage on one device, use `EVICT` on documents that no active subscription matches. See [Choosing DELETE, Soft Delete, or EVICT](deletion-and-storage.md#choosing-delete-soft-delete-or-evict).
 6. **Pass system parameters in `DittoConfig` every time you open Ditto.** System parameters are not persisted. The system parameters of `DittoConfig` (SDK 5.2+) are applied before Ditto starts, and opening Ditto fails on an unknown name or a wrong type; use `ALTER SYSTEM` only to change a value while the app runs. See [Applying System Parameters](setup-and-lifecycle.md#applying-system-parameters).
@@ -68,7 +68,7 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 |---|---|
 | [SDK Setup and Lifecycle](setup-and-lifecycle.md) | Requirements, `DittoConfig` and one shared instance, authentication and switching users on a shared device, applying system parameters, starting and stopping sync, shutdown, transports, presence |
 | [Reading and Writing Data with DQL](dql.md) | Where queries run, parameters and literals, MISSING and NULL, query results, error messages and empty results, `SELECT` (projections, aggregates, `GROUP BY`, `ORDER BY`, `LIMIT`, `USE IDS`, membership, `JOIN`), `INSERT` and `ON ID CONFLICT`, `UPDATE`, `RETURNING`, `DELETE` and `EVICT` |
-| [Data Modeling](data-modeling.md) | Strict mode, arrays and maps, document structure and size, relationships, document IDs, counters, event history, `INITIAL DOCUMENTS`, schema evolution, timestamps |
+| [Data Modeling](data-modeling.md) | Strict mode, arrays and maps, document structure and size, relationships, document IDs, counters, checks and claims across devices, event history, `INITIAL DOCUMENTS`, schema evolution, timestamps |
 | [Sync and Subscriptions](sync-and-subscriptions.md) | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
 | [Observing Changes](observers.md) | The observer APIs of each SDK, when observers fire, observer lifecycle, backpressure and choosing an observer API, diffing results, partial UI updates |
 | [Transactions](transactions.md) | `store.transaction` in each SDK, transaction rules, concurrency and duration, sync |
@@ -78,7 +78,7 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 | [Logging and Observability](logging-and-observability.md) | The logger of each SDK, log levels, on-disk logs, support bundles, remote diagnostics |
 | [Security](security.md) | Security model, production authentication, small-peers-only deployments, permissions, certificate revocation, incoming connections, input validation, data at rest, webhooks, the security checklist |
 | [Testing Strategies](testing.md) | What a local-store test helper does, tests for merge-sensitive writes, deletion, observers, subscriptions, and DQL, tests on several devices |
-| [Anti-Pattern Checklist](anti-patterns.md) | A review list ranked by severity: mistakes possible in every SDK, then those specific to Flutter, JavaScript, Kotlin, or Swift |
+| [Anti-Pattern Checklist](anti-patterns.md) | Questions to ask of every collection, which find the assumptions that fail across devices, and a review list ranked by severity: mistakes possible in every SDK, then those specific to Flutter, JavaScript, Kotlin, or Swift |
 | [Quick Reference](quick-reference.md) | A condensed DO list, where to look when something goes wrong, and common code shapes |
 
 The SDK pages have the same sections: installing the SDK, opening Ditto and `DittoConfig`, authentication, sync and the app lifecycle, closing, executing DQL and value types, subscriptions, store observers (lifecycle, backpressure, diffing, partial UI updates), transactions, attachments, IDs and timestamps, transports and presence, logging, testing, and the behavior specific to the SDK.

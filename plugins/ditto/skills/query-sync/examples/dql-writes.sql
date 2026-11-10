@@ -27,7 +27,9 @@
 -- Arguments: {"products": [{"_id": "p1", "name": "Pen", "priceCents": 250}, {"_id": "p2", "name": "Ink", "priceCents": 900}]}
 INSERT INTO products DOCUMENTS (:products) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 
--- ✅ GOOD: "Create if absent" leaves an existing document unchanged.
+-- ✅ GOOD: "Create if absent" leaves an existing document unchanged. It sees
+-- only this device's copy; for a fixed _id that several devices create, use
+-- INITIAL DOCUMENTS (below).
 -- Arguments: {"draft": {"_id": "draft-1", "createdAt": "2026-10-08T10:30:00.123Z"}}
 INSERT INTO drafts DOCUMENTS (:draft) ON ID CONFLICT DO NOTHING
 

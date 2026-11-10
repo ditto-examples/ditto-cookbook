@@ -7,6 +7,8 @@
 - Read-check-write sequences on the local store, where the write depends on what you just read and one statement cannot express it. Without a transaction, such sequences lose updates even on one device, without an error: in our testing with every SDK, 500 read-then-write increments started at once left the value between 1 and 37, while the same sequence in transactions, and `UPDATE ... SET n = n + 1` statements (SDK 5.1+), which read and write as one unit, kept every update (see [Parallel writes are safe, but parallel read-modify-write loses updates](../knowledge/observations/transaction-behavior.md#parallel-writes-are-safe-but-parallel-read-modify-write-loses-updates)). Between devices, neither helps, because concurrent writes to one field are resolved by last-writer-wins; use a `COUNTER` (see [Counters](data-modeling.md#counters))
 - Several reads that must see one consistent snapshot (read-only transaction)
 
+**What a transaction does not do:** it does not make a check hold on other devices. Two devices that have not synced with each other can both run the same read-check-write transaction and both commit: each field that both wrote keeps one value, and documents that both inserted under different IDs both remain (two invoices for one order). The example below, and the examples on the SDK pages, are safe only where one device closes or ships a given order. For claims, uniqueness, and rules such as "never below zero", see [Checks and Claims across Devices](data-modeling.md#checks-and-claims-across-devices).
+
 **When not to use one:** A single `INSERT`, `UPDATE`, or `DELETE` statement is already atomic. Wrapping it in a transaction adds nothing.
 
 ## Using store.transaction

@@ -77,6 +77,8 @@ Future<void> closeOrderWithInvoice(
 ///
 /// Returning `TransactionCompletionAction.rollback` discards all changes made
 /// in the callback. Returning `commit` (or any other value) commits.
+/// Safe only where one device ships a given order:
+/// the check holds on this device only (see Checks and Claims across Devices).
 Future<bool> shipOrder(Ditto ditto, String orderId) async {
   final action = await ditto.store.transaction(
     hint: 'shipOrder',

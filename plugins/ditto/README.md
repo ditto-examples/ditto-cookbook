@@ -32,7 +32,7 @@ When you work inside this repository, you do not need to install the plugin: `.c
 | `performance-observability` | Observer performance and backpressure, narrow UI updates, redundant writes, indexes and query plans, logging |
 | `sdk-setup` | `DittoConfig` and `Ditto.open`, authentication, system parameters, sync start and stop, shutdown, transports, presence, production security |
 | `testing` | Local-store test helper, tests for DQL, filters, merge-sensitive writes, observers, and subscriptions, multi-peer tests in one process |
-| `audit` | A review workflow: a bundled scanner for known anti-patterns, triage, a manual checklist, and a severity-ranked report |
+| `audit` | A review workflow: a bundled scanner for known anti-patterns, triage, a cross-device review of each collection (checks used as locks, results taken as complete, queries wider than their subscriptions), a manual checklist, and a severity-ranked report |
 | `guide` | Search the complete best practices guide for APIs, DQL functions, system parameters, error messages, and the reasoning behind a rule |
 
 ## How the Skills Are Built for Agents

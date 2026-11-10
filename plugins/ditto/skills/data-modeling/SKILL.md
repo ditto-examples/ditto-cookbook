@@ -68,8 +68,8 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 
 **✅ DO**:
 - Update individual fields (`UPDATE ... SET obj.field = :value`), only the ones the user changed.
-- Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports of data another system owns (it skips equal fields; nothing is written when nothing changed).
-- Remove keys with `UNSET`. To replace an object, run `UNSET` then `SET` in one transaction, or declare it `REGISTER` (Rule 3). Only `REGISTER` guarantees concurrent edits never mix: after `UNSET` and `SET` the field is still a map, so another device's concurrent nested edit can merge into the new object.
+- Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports of data another system owns (it skips equal fields).
+- Remove keys with `UNSET`. To replace an object, run `UNSET` then `SET` in one transaction, or declare it `REGISTER` (Rule 3). Only `REGISTER` keeps concurrent edits from mixing: after `UNSET` and `SET` the field is still a map.
 
 **❌ DON'T**:
 - Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out, or clear a map with `SET obj = {}` or by assigning a scalar.
@@ -99,13 +99,13 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 - Move an entry by writing only its `position`, between its new neighbors; renumbering all entries loses a concurrent reorder.
 - Convert an array to a map as soon as more than one device writes it, into a **new field** (`lineItems` next to the old `items`).
 
-**❌ DON'T**: splice unchecked input into a query; write a map under the array's field name (it changes the CRDT type, so the old array and the new map coexist under the same key).
+**❌ DON'T**: splice unchecked input into a query; write a map under the array's field name (the old array and the new map then coexist under one key).
 
 `§ Arrays and Maps` · Example: [examples/array-to-map.sql](examples/array-to-map.sql)
 
 ### 3. Keep the default strict mode and declare types consistently (CRITICAL)
 
-**The default is `DQL_STRICT_MODE = false`.** Keep it for new apps.
+**The default is `DQL_STRICT_MODE = false`.**
 
 | Behavior | `false` (default) | `true` |
 |---|---|---|
@@ -115,9 +115,9 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 | `SELECT` / `WHERE` on undeclared MAP / COUNTER / ATTACHMENT fields | Visible | **Invisible** |
 | Secondary index use | Used | Not used (see the note) |
 
-**Note (SDK 5.1.0 and 5.2.0)**: with `DQL_STRICT_MODE = true` the planner does not use secondary indexes (`EXPLAIN` shows a collection scan); ID lookups and full-collection `COUNT(*)` are not affected. Keep the default if you rely on indexes.
+**Note (SDK 5.1.0 and 5.2.0)**: with `DQL_STRICT_MODE = true` the planner does not use secondary indexes (`EXPLAIN` shows a collection scan); ID lookups and full-collection `COUNT(*)` are not affected.
 
-Choose `true` only when nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. Set it on every open in `DittoConfig.systemParameters` (SDK 5.2+; on 5.1, `ALTER SYSTEM` after `Ditto.open`, before sync, queries, and observers), with the same value on every peer (each peer interprets synced data with its own setting).
+Choose `true` only if nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. Set it on every open in `DittoConfig.systemParameters` (SDK 5.2+; on 5.1, `ALTER SYSTEM` after `Ditto.open`, before sync, queries, and observers), with the same value on every peer (each peer interprets synced data with its own setting).
 
 **✅ DO**: for a few replace-as-a-whole objects, keep the default and declare `REGISTER` **in every statement** on the field, reads included: `UPDATE COLLECTION customers (shippingAddress REGISTER) SET shippingAddress = :address WHERE _id = :id` and `SELECT * FROM COLLECTION customers (shippingAddress REGISTER) WHERE _id = :id`.
 
@@ -135,10 +135,12 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 - `SET stock = stock - 1` (two devices both write 9 from 10; one decrement is lost).
 - Initialize with an undeclared `INSERT` (stored as a REGISTER; the first `INCREMENT` starts a new counter at 0), or overwrite with `SET` (use `RESTART WITH`).
 - Write a counter value while devices hold unsynced increments: `RESTART WITH`, an upsert (even `DO UPDATE_LOCAL_DIFF`), or a plain `INSERT` of another device's document discards them, even later ones (**Note (SDK 5.1.0 and 5.2.0)**). Recount only while every device is in sync, or derive the value from events.
-- Use counters for unique sequence numbers, balances that must stay valid, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents).
-- Mix `COUNTER` and the legacy `PN_INCREMENT` operator on one field.
+- Use counters for unique sequence numbers, values a `COUNT(*)` can derive, or fractional amounts (integer-only; count in cents). A counter adds every change but enforces no rule ("never below zero").
+- Mix `COUNTER` and `PN_INCREMENT` on one field.
 
-`§ Counters` · Example: [examples/counter-patterns.sql](examples/counter-patterns.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (Pattern 5)
+**A check before a write holds on this device only.** A conditional `UPDATE`, a query before an `INSERT`, `COUNT(*) + 1`, or a transaction is not a lock, uniqueness check, or sequence across devices: both devices pass, and one claim is lost without an error. Record claims per device; a value is `_id` only for one shared entity.
+
+`§ Counters`, `§ Checks and Claims across Devices` · Example: [examples/counter-patterns.sql](examples/counter-patterns.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (Pattern 5)
 
 ### 5. Generate collision-free document IDs (CRITICAL)
 
@@ -172,23 +174,21 @@ Embed sub-entities as maps keyed by ID. `JOIN` **(SDK 5.1+)** removes the main r
 
 Concurrent edits alone are **not** a reason to split: map entries merge.
 
-**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions (`Unsupported feature: Joining`) or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key, or join on its `_id`. Without a usable index the JOIN fails with `Joining to "<alias>" disallowed without appropriate index support`.
+**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions (`Unsupported feature: Joining`) or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key, or join on its `_id`. Without one the JOIN fails (`disallowed without appropriate index support`).
 
 **✅ DO**:
-- Subscribe to every joined collection (app or feature scope); copy the filter key (`storeId`) into children, since subscriptions filter only on their own fields.
+- Subscribe to every joined collection; copy the filter key (`storeId`) into children, since subscriptions filter only on their own fields.
 - Treat a missing joined document as normal (not synced yet); use `LEFT JOIN` when the parent must appear without children.
 - Write a parent and children created together in one transaction; check plans with `EXPLAIN` and `ADVISE`.
 - Copy a value only when it is a snapshot (price at time of sale) or a subscription filter key; otherwise reference by ID and JOIN at read time.
 
-**❌ DON'T**:
-- Silence the index error with `USE INDEX ''` on a large collection.
-- Split a small, bounded, single-owner sub-entity only because JOIN exists.
+**❌ DON'T**: silence the index error with `USE INDEX ''` on a large collection; split a small sub-entity only because JOIN exists.
 
-`§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)` · Examples: [examples/embedded-relationship.sql](examples/embedded-relationship.sql), [examples/foreign-key-join.sql](examples/foreign-key-join.sql) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (JOIN queries, index error, subscriptions)
+`§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)` · Examples: [examples/embedded-relationship.sql](examples/embedded-relationship.sql), [examples/foreign-key-join.sql](examples/foreign-key-join.sql) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (JOIN queries, index error)
 
 ### 7. Do not store derived values (HIGH)
 
-A stored total is a separate register that devices recompute from partial views; after the merge it can match neither. Compute it at read time, in app code or DQL (`SELECT COUNT(*) AS openOrders FROM orders WHERE status = 'open'`).
+A stored total is a separate register that devices recompute from partial views; after the merge it can match neither. Compute it at read time, in app code or DQL.
 
 **✅ DO**: copy snapshot values, which are facts, not derivations (`unitPriceCents` into the line item when it is added); initialize flags you filter on (`isDeleted: false`) or filter with `coalesce(isDeleted, false) = false`.
 
@@ -205,7 +205,7 @@ A stored total is a separate register that devices recompute from partial views;
 
 **Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data. On 5.2.0, receivers drop them; copies diverge until one is evicted, losing its changes (see the reference).
 
-**✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate, so leave headroom; to shrink an oversized document, move large values out and `UNSET` them.
+**✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate, so leave headroom.
 
 `§ Document Size Limits` · Example: [examples/document-size.sql](examples/document-size.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (causes of growth, system parameters)
 
@@ -228,6 +228,7 @@ ISO strings sort as text only at one precision; some formatters vary it even on 
 - [ ] JOINs: inner join key indexed (or `_id`), each joined collection subscribed, no JOIN in subscriptions
 - [ ] No stored derived values; snapshot values copied deliberately
 - [ ] Concurrent tallies use `COUNTER` with `APPLY`; `RESTART WITH` only while every device is in sync
+- [ ] No lock, uniqueness check, or sequence number resting on a local check
 - [ ] UUID (or composite / natural) IDs; display numbers separate from `_id`
 - [ ] Shared defaults seeded with `INITIAL DOCUMENTS` (not `INSERT` or `DO UPDATE`), identical in every app version
 - [ ] Documents well under 256 KiB; binaries as attachments

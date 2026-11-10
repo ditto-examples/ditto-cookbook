@@ -42,8 +42,10 @@
 -- Arguments: {"products": [{"_id": "p1", "name": "Pen", "priceCents": 250}]}
 INSERT INTO products DOCUMENTS (:products) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
 
--- ✅ GOOD: "Create if absent" without touching existing documents.
--- Arguments: {"settings": {"_id": "user-7", "theme": "system", "notifications": true}}
+-- ✅ GOOD: "Create if absent" without touching existing documents, for a
+-- document that only this device creates. It sees only this device's copy:
+-- for a fixed _id that several devices create, use INITIAL DOCUMENTS instead.
+-- Arguments: {"settings": {"_id": "device-3f0c9a8e", "theme": "system", "notifications": true}}
 INSERT INTO settings DOCUMENTS (:settings) ON ID CONFLICT DO NOTHING
 
 -- ============================================================================

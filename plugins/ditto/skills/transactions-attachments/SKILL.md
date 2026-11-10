@@ -44,7 +44,7 @@ Signatures and short examples for each SDK: [reference/sdk-apis.md](reference/sd
 
 ## Rules
 
-A transaction runs several DQL statements against the local store atomically. It does not lock anything on other peers. A single `INSERT`, `UPDATE`, or `DELETE` is already atomic, so do not wrap it in a transaction. `§ Using store.transaction`
+A transaction runs several DQL statements against the local store atomically. It does not lock anything on other peers: two devices can both pass the same read-check-write, so it is no lock, uniqueness check, or guard for a rule across devices (`§ Checks and Claims across Devices`), and fields written together still merge field by field with other devices' edits (keep such values in one `REGISTER` object). A single `INSERT`, `UPDATE`, or `DELETE` is already atomic, so do not wrap it in a transaction. `§ Using store.transaction`
 
 ### 1. Use only the transaction's execute inside a transaction, and never nest (CRITICAL)
 

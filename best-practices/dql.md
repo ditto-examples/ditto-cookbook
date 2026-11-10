@@ -36,14 +36,25 @@ Queries never fetch data from other peers: a `SELECT` sees only documents that w
 
 ```sql
 -- ✅ GOOD: A long-lived subscription (owned by an app-level service) brings
--- matching documents to this device
--- Arguments: {"status": "open"}
-SELECT * FROM orders WHERE status = :status
+-- the store's orders to this device. It filters by a key that never changes.
+-- Arguments: {"storeId": "store-1"}
+SELECT * FROM orders WHERE storeId = :storeId
 
--- execute reads whatever has arrived so far
--- Arguments: {"status": "open"}
-SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC
+-- execute reads whatever has arrived so far, and narrows it for the screen
+-- Arguments: {"storeId": "store-1", "status": "open"}
+SELECT * FROM orders WHERE storeId = :storeId AND status = :status ORDER BY createdAt DESC
 ```
+
+**A result describes this device, not the whole system.** An empty result, or a count of 0, means only that the device holds no matching document. The data may exist on another device and not have arrived yet (on first launch, right after a subscription is registered or sync starts, or while the device is offline), or no subscription of this device may match it. In the same way, an aggregate such as `COUNT` or `SUM`, or a `JOIN`, covers only the documents on this device: those it created and those that its subscriptions have brought, including stale copies of documents that no longer match.
+
+**✅ DO:**
+- Read synced data through a store observer, which delivers a new result when the data arrives, instead of one `execute` right after you register a subscription or start sync.
+- Give every local query and observer subscriptions that cover all the documents it reads: put the query next to the subscriptions of its collections, and compare their `WHERE` clauses and where their arguments come from.
+- Where a total is acted on as final (a closing report, a stock count), say on the screen that it covers the data on this device, or compute it where every change has arrived.
+
+**❌ DON'T:**
+- Treat an empty result as proof that a document or a value does not exist anywhere, and then create defaults, start onboarding, or accept a "unique" name. Create default data with `INITIAL DOCUMENTS` (see [Default Data with INITIAL Documents](data-modeling.md#default-data-with-initial-documents)), and see [Checks and Claims across Devices](data-modeling.md#checks-and-claims-across-devices) for uniqueness.
+- Tell the user, or another system, that a write has arrived somewhere because `execute` returned. The write is known to be in the local store only; a peer's confirmation shows that it has arrived (see [Monitoring Sync Status](sync-and-subscriptions.md#monitoring-sync-status)).
 
 ### Parameters and Literals
 
@@ -723,7 +734,7 @@ In our testing on one device with SDK 5.1.0 and 5.2.0, the four policies behaved
 
 **✅ DO:**
 - Use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts and re-imports (for example when refreshing reference data from your backend).
-- Use `DO NOTHING` for "create if absent" logic.
+- Use `DO NOTHING` for "create if absent" logic on this device. It protects only against a copy that the device already holds: for a document with a fixed `_id` that several devices create, such as default data, use `INITIAL DOCUMENTS` (see [Default Data with INITIAL Documents](data-modeling.md#default-data-with-initial-documents)).
 - Use `UNSET` (see [UPDATE](#update)) to remove fields. No `INSERT` policy deletes fields.
 
 **❌ DON'T:**

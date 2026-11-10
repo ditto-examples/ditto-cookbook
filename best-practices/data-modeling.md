@@ -2,7 +2,7 @@
 
 Ditto is a schemaless document database, but every value you write is stored as a CRDT (conflict-free replicated data type). The CRDT type of a field decides what happens when two devices change it while they are disconnected and then sync. Data modeling in Ditto is therefore mostly about one question: **when concurrent edits meet, does the merge produce the result your business needs?**
 
-How each CRDT type merges is described in [CRDT Types and Merge Behavior](../knowledge/crdt-types.md); read it before this page. This page covers strict mode, the choice between arrays and maps, document structure and size, relationships (including JOIN, SDK 5.1+), document IDs, counters, event history, default data, schema evolution, and timestamps.
+How each CRDT type merges is described in [CRDT Types and Merge Behavior](../knowledge/crdt-types.md); read it before this page. This page covers strict mode, the choice between arrays and maps, document structure and size, relationships (including JOIN, SDK 5.1+), document IDs, counters, checks and claims across devices, event history, default data, schema evolution, and timestamps.
 
 **Design checklist:**
 
@@ -11,6 +11,7 @@ How each CRDT type merges is described in [CRDT Types and Merge Behavior](../kno
 - Use maps keyed by ID (not arrays) for collections of items that several devices edit.
 - Keep documents well under 256 KiB and store binary data as attachments.
 - Use UUIDs or other collision-free IDs, never sequential numbers.
+- A check before a write holds only on the device that makes it. Do not use a local query, a conditional `UPDATE`, or a transaction as a lock or a uniqueness check across devices.
 - Store timestamps in UTC with a zone designator, and produce every timestamp that is sorted or compared with one fixed-precision helper.
 
 ## Strict Mode
@@ -781,6 +782,45 @@ UPDATE COLLECTION inventory (stockCount COUNTER)
 APPLY stockCount INCREMENT BY -1
 WHERE _id = :id
 ```
+
+## Checks and Claims across Devices
+
+**A check that a device makes before it writes holds only for the documents on that device at that moment. Do not use a local query, a conditional `UPDATE`, or a transaction as a lock, as a uniqueness check, or to guard a rule that must hold on every device.** Statements run against the local store (see [Where Queries Run](dql.md#where-queries-run)), devices sync the documents that a statement changed and not the statement, and a transaction locks nothing on other devices (see [Transactions](transactions.md)). Two devices that have not received each other's changes can therefore both pass the same check, and the merge then keeps what the field types say, without an error on either device. [Conditions and Arithmetic across Devices](../knowledge/crdt-types.md#conditions-and-arithmetic-across-devices) describes what remains after the merge.
+
+Each statement in such code is valid, and a test on one device passes. Look for the pattern instead: a read, a condition on what it returned, and a write that is correct only if the condition still holds everywhere.
+
+| Habit from a single database | What happens across devices | Do this instead |
+|---|---|---|
+| A claim or state change with a condition, such as `UPDATE tasks SET status = 'assigned', assignee = :me WHERE _id = :id AND status = 'open'`, and code that acts on whether a document was changed | Each device changes its own copy and concludes that it won. After sync, one claim remains, and the other device is not told | Write each device's claim under its own key (`claims.<deviceId>`) or as its own document, and let every device pick the winner by the same rule. A rule such as the smallest device ID needs no clock; a rule based on the time of the claim favors the device whose clock is behind (see [Clock drift](#clock-drift)), so use one only where that is acceptable. Write a claim only while no claim is visible on the device: the rule settles only claims that were made without seeing each other, and a claim written later must not take over a settled one. |
+| "No document has this value, so insert one": a login name, a table number, one open shift per till | Both devices find nothing and insert. After sync, there are two documents with the value | Where both devices mean the same entity (the settings of one store, a SKU), make the value the `_id`, so that both inserts become one document whose fields merge (see [Generation strategies](#generation-strategies)), and create it with `INITIAL DOCUMENTS` when every device creates it (see [Default Data with INITIAL Documents](#default-data-with-initial-documents)). Where they mean different entities (two people who choose the same login name), keep a UUID as `_id`, accept that duplicates can appear, and resolve them by one rule when you read, or let one device or service assign the value. Do not use the `_id` again for a later entity, such as the next shift (see [DELETE and Tombstones](deletion-and-storage.md#delete-and-tombstones)) |
+| The next number from `COUNT(*) + 1`, `MAX(number) + 1`, or a counter | Two devices produce the same number | A UUID as `_id`, and a display label with a device or terminal prefix (see [Human-readable display IDs](#human-readable-display-ids)) |
+| Read a value, check a rule, and write the new value, also inside a transaction: "stock never below zero", one booking per seat, a budget | Each device passes its own check, and the merged result breaks the rule. A value written back, such as `SET stock = :newStock`, also loses one of two concurrent changes, exactly as `SET stock = stock - 1` does | Record each change as its own document or as a counter increment, and detect the broken rule when you derive the value (see [When counters are appropriate](#when-counters-are-appropriate)). A `COUNTER` adds the changes of every device, but it does not enforce the rule |
+| One `status` field that several devices overwrite, in a workflow that must not go backwards | A device that has not received a newer state writes an older one later, and that write wins | Record transitions in a log and derive the most advanced state when you read (see [Pattern 1: Audit-log map inside the document](#pattern-1-audit-log-map-inside-the-document)) |
+| A bulk `UPDATE ... WHERE` as a closing job or a migration, run on a device | It changes only the documents that the device holds at that moment; a matching document that another device adds or still holds unsynced stays as it was | Run the job where every change has arrived, or evaluate the condition when you read |
+
+```sql
+-- ❌ BAD: Used as a lock. On two devices that have not synced with each other,
+-- both statements change one document, and both devices show the task as theirs.
+-- Arguments: {"id": "task-1", "me": "device-a"}
+UPDATE tasks SET status = 'assigned', assignee = :me WHERE _id = :id AND status = 'open'
+
+-- ✅ GOOD: Each device records its own claim under its own key. Both claims
+-- survive the merge, and every device derives the same assignee from them
+-- by one rule (here, the smallest device ID among the claims). A device writes
+-- a claim only while it sees none, so a later claim cannot take over.
+-- Arguments: {"patch": {"_id": "task-1", "claims": {"device-a": "2026-01-15T10:30:00.000Z"}}}
+INSERT INTO tasks DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
+```
+
+**✅ DO:**
+- Decide, for every rule that spans devices, how the app detects and shows that it was broken, because no write fails when it is.
+- Write a claim only while no claim is visible on the device, and treat its outcome as able to change at any time: derive the winner in an observer, and let the screen change when a different winner arrives. A device cannot know that it holds every other device's claim.
+- Where the outcome must be final before the user acts (taking a payment), or a rule must never be broken, let one device or service make the decision, and let the other devices write requests as documents and observe the answer.
+
+**❌ DON'T:**
+- Act on the number of documents that a conditional `UPDATE` changed as if no other device could have changed the same document.
+- Treat an empty result as proof that a value is unused (see [Where Queries Run](dql.md#where-queries-run)).
+- Expect a transaction to keep a rule across devices. It makes a read-check-write sequence safe on one device only.
 
 ## Event History and Audit Logs
 

@@ -16,12 +16,14 @@ A condensed summary of the main recommendations. Follow the links for the reason
 - ✅ Update fields, not whole documents; use `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` for upserts.
 - ✅ Use maps keyed by ID for items that several devices edit; use `COUNTER` for concurrent tallies, leave counter fields out of upserts and re-imports, and recalibrate with `RESTART WITH` only while every device that changes the counter is in sync.
 - ✅ Use UUIDs (or composite IDs with a UUID) for `_id`; put permission scopes in `_id`.
+- ✅ Treat a check before a write as valid on this device only: no locks, uniqueness checks, or sequence numbers from a local query, a conditional `UPDATE`, or a transaction (see [Checks and Claims across Devices](data-modeling.md#checks-and-claims-across-devices)).
 - ✅ Keep documents well below 256 KiB; store binary data as attachments.
 - ✅ Store timestamps as UTC ISO-8601 strings ending in `Z`, produced by one fixed-precision helper, or as epoch milliseconds.
 - ✅ Keep the default `DQL_STRICT_MODE = false` unless you have a specific reason.
 
 **Queries** ([DQL Fundamentals](dql.md#dql-fundamentals))
 - ✅ Pass every value as a parameter (`:name`); use `IN :values` for membership.
+- ✅ Read an empty result as "not on this device", and read synced data through an observer.
 - ✅ Filter optional flags with `coalesce(flag, false) = false`; test whether a field is absent with `IS MISSING` (present: `IS NOT MISSING`).
 - ✅ Project only the fields you need, and add `ORDER BY` (with a tie-breaker) to observer queries.
 - ✅ Create indexes at startup with `CREATE INDEX IF NOT EXISTS`; check plans with `EXPLAIN` and `ADVISE` (SDK 5.1+).

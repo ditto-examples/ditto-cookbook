@@ -208,17 +208,19 @@ class OrderTile extends StatelessWidget {
 // ============================================================================
 
 /// ✅ GOOD: Subscriptions live longer than screens. Observers never sync data;
-/// the subscription decides what reaches this device.
+/// the subscription decides what reaches this device. It filters by a key
+/// that never changes; screens filter by status locally.
 class OrdersFeature {
-  OrdersFeature(this._ditto);
+  OrdersFeature(this._ditto, this._storeId);
 
   final Ditto _ditto;
+  final String _storeId;
   SyncSubscription? _subscription;
 
   void start() {
     _subscription ??= _ditto.sync.registerSubscription(
-      'SELECT * FROM orders WHERE status = :status',
-      arguments: {'status': 'open'},
+      'SELECT * FROM orders WHERE storeId = :storeId',
+      arguments: {'storeId': _storeId},
     );
   }
 

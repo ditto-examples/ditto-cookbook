@@ -1938,6 +1938,8 @@ func closeOrderWithInvoice(_ ditto: Ditto, orderID: String, invoiceID: String) a
 import DittoSwift
 
 // ✅ GOOD: Explicit rollback without throwing.
+// Safe only where one device ships a given order:
+// the check holds on this device only (see Checks and Claims across Devices).
 func shipOrder(_ ditto: Ditto, orderID: String) async throws -> Bool {
     let action = try await ditto.store.transaction(hint: "shipOrder") { tx in
         let result = try await tx.execute(

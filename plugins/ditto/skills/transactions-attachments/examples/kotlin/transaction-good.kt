@@ -50,7 +50,11 @@ suspend fun closeOrderWithInvoice(ditto: Ditto, orderId: String, invoiceId: Stri
     }
 }
 
-/** ✅ GOOD: Returns true when the order was shipped; rolls back without throwing otherwise. */
+/**
+ * ✅ GOOD: Returns true when the order was shipped; rolls back without throwing otherwise.
+ * Safe only where one device ships a given order:
+ * the check holds on this device only (see Checks and Claims across Devices).
+ */
 suspend fun shipOrder(ditto: Ditto, orderId: String): Boolean {
     val result = ditto.store.transaction(hint = "shipOrder") { tx ->
         val paid = tx.execute(

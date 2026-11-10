@@ -53,6 +53,8 @@ func closeOrderWithInvoice(_ ditto: Ditto, orderID: String, invoiceID: String) a
 // PATTERN 2: Explicit rollback
 
 /// ✅ GOOD: Returns true when the order was shipped.
+/// Safe only where one device ships a given order:
+/// the check holds on this device only (see Checks and Claims across Devices).
 func shipOrder(_ ditto: Ditto, orderID: String) async throws -> Bool {
     let action = try await ditto.store.transaction(hint: "shipOrder") { tx in
         let paid = try await tx.execute(

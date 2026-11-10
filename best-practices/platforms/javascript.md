@@ -1611,6 +1611,8 @@ export async function closeOrderWithInvoice(ditto, orderId, invoiceId) {
 
 ```javascript
 // ✅ GOOD: Explicit rollback without throwing, and a typed return value.
+// Safe only where one device ships a given order:
+// the check holds on this device only (see Checks and Claims across Devices).
 export async function shipOrder(ditto, orderId) {
   const action = await ditto.store.transaction(
     async (tx) => {

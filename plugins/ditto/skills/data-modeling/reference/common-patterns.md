@@ -19,7 +19,7 @@ Write only what changed. A field-level `UPDATE` touches only the named fields, s
 | Conflict policy | When the `_id` exists locally |
 |---|---|
 | `FAIL` (default) | The statement fails |
-| `DO NOTHING` | Existing document unchanged; use for "create if absent" |
+| `DO NOTHING` | Existing document unchanged; "create if absent" on this device only (a fixed `_id` that several devices create: `INITIAL DOCUMENTS`) |
 | `DO UPDATE` | Supplied fields are written and merged, **even identical values**: the document is reported as mutated, observers can fire again, and a rewritten value wins over an earlier concurrent edit of that field on another device |
 | `DO UPDATE_LOCAL_DIFF` | Same merge, but only differing fields are written; nothing is written when nothing changed. Use it for upserts and re-imports; it does not protect a stale in-memory copy |
 
@@ -170,4 +170,4 @@ A value written into a counter other than with `INCREMENT BY` works like `RESTAR
 **❌ DON'T:**
 - Upsert a whole document with a counter. Undeclared, the number is stored as a separate REGISTER next to the counter, and reads then depend on the declaration (`§ Keep type declarations consistent`).
 
-Across devices, conditions and arithmetic do not coordinate (**Note (SDK 5.1.0 and 5.2.0)**, in testing; `§ Conditions and Arithmetic across Devices`): a conditional `UPDATE ... WHERE status = 'open'` on two offline devices succeeded on both and only one claim survived, so record claims in a map keyed by device and pick the winner by one rule; a bulk `UPDATE ... WHERE` missed a matching document that another device inserted meanwhile; and `SET n = n + 1` on six connected devices kept 101 to 129 of 600 increments, while a `COUNTER` kept all.
+Across devices, conditions and arithmetic do not coordinate (**Note (SDK 5.1.0 and 5.2.0)**, in testing; `§ Conditions and Arithmetic across Devices`; the rules and what to do instead for claims, uniqueness checks, sequence numbers, and rules such as "never below zero" are in `§ Checks and Claims across Devices`): a conditional `UPDATE ... WHERE status = 'open'` on two offline devices succeeded on both and only one claim survived, so record claims in a map keyed by device and pick the winner by one rule; a bulk `UPDATE ... WHERE` missed a matching document that another device inserted meanwhile; and `SET n = n + 1` on six connected devices kept 101 to 129 of 600 increments, while a `COUNTER` kept all.

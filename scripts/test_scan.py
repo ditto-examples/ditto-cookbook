@@ -5,7 +5,9 @@ Run with: python3 -m unittest discover -s scripts
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import re
 import sys
 import tempfile
@@ -1010,6 +1012,32 @@ class RuleListTest(unittest.TestCase):
         listed = {rule.rule for rule in scan.LINE_RULES} | {rule[0] for rule in scan.CONTEXT_RULES}
         self.assertTrue(reported, "no Finding calls found")
         self.assertEqual(reported - listed, set(), "rules missing from CONTEXT_RULES")
+
+
+class MissingPathTest(unittest.TestCase):
+    def run_main(self, arguments: list[str]) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = scan.main(arguments)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_missing_path_is_reported_and_other_paths_are_scanned(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "Example.dart"
+            source.write_text("final q = 'SELECT * FROM t WHERE s IN (:values)';\n",
+                              encoding="utf-8")
+            missing = str(Path(directory) / "test")
+            code, out, err = self.run_main([str(source), missing])
+        self.assertEqual(code, 0)
+        self.assertIn("in-parenthesized-parameter", out)
+        self.assertIn(missing, err)
+        self.assertIn("does not exist", err)
+
+    def test_existing_paths_report_nothing_on_stderr(self):
+        with tempfile.TemporaryDirectory() as directory:
+            code, out, err = self.run_main([directory])
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
 
 
 if __name__ == "__main__":
