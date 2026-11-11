@@ -1048,16 +1048,12 @@ Remove old-version documents with `EVICT` (local only, per device) or `DELETE` (
 
 #### A field that replaces another
 
-When a new field in the same documents replaces an old one (`weightKg` for `weight` in pounds, `lineItems` for the `items` array), every write must reach the field that each running version reads:
+When a new field in the same documents replaces an old one (`weightKg` for `weight` in pounds, `lineItems` for the `items` array), plan the releases so that these conditions hold at every point of the rollout. They follow from the merge rules (each field merges on its own, and a version sees only the field it reads); we have not tested a rollout sequence, so try yours with a device on the previous version that writes while offline.
 
-1. **Bridge version**: writes both fields and reads the old one, which every running version still writes. The first time it writes the new field in a document, it fills the new field from the old one (for an array, every element into the map, under a key derived from the element), so that the new field is complete. This is a write of a document the app changes anyway, not a backfill of every document.
-2. **Wait** until the bridge version runs on every device, and until those devices have synced what they wrote before they were updated.
-3. **Reader version**: writes both fields, reads the new one, and falls back to the old one where the new one is `MISSING`. Bridge devices that remain still see its writes in the old field.
-4. **Wait** until the reader version runs on every device, then stop writing the old field.
-
-A version that writes only the new field while older versions run hides its edits from them, and one that reads the new field while older versions write only the old one misses theirs. This follows from the merge rules (each field merges on its own, and a version sees only the field it reads); we have not tested the sequence on devices.
-
-A counter that replaces a register (`stockCount` for `stock`) does not fit these stages, because a new counter starts at 0 and increments made on the bridge give only the change since then. Set its starting value from one device with `RESTART WITH` while every device is online and in sync (see [RESTART](#restart)), or derive the value from event documents instead.
+- While any deployed version reads only the old field, every version keeps writing it.
+- While any deployed version writes only the old field, every version keeps reading it.
+- A value that exists only in the old field, such as an array element or an edit synced late from an offline device, is carried into the new field or read from the old one as a fallback.
+- A counter that replaces a register starts at 0. Give it its starting value from one device with `RESTART WITH` while every device is online and in sync (see [RESTART](#restart)), or derive the value from event documents.
 
 ### Changing CRDT types
 
