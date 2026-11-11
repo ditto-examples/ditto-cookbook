@@ -69,7 +69,7 @@ Add a `Schema` line to every finding whose problem or fix changes stored data:
 Also: src/stock/StockItem.ts:30 (the new model reads only quantity)
 Scenario: Scanner A runs 2.3 and is offline; scanner B runs 2.4. A counts bin 7 and sets qty = 5. After sync, B's migration had already copied the old qty, so B shows the old count, and A keeps writing qty, which B no longer reads.
 Impact: Stock counts differ between devices without an error until every device runs 2.4. Counts made on 2.3 after a one-time migration never reach 2.4, and a count made before it, depending on the order, is gone on every device.
-Fix: Remove the migration and keep qty as the stored field; rename only the property in the model (quantity: doc.qty). A new stored name needs the rollout in § Rolling out a breaking change.
+Fix: Remove the migration and keep qty as the stored field; rename only the property in the model (quantity: doc.qty). A new stored field next to qty needs § A field that replaces another.
 Schema: breaking (rename of a field that 2.3 writes)
 Reference: data-modeling / § Breaking and additive changes
 ```
