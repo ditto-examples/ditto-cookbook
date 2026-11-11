@@ -15,7 +15,7 @@ Behavior tests for the `ditto` plugin, run with [`claude plugin eval`](https://c
 | `server-startup` | sdk-setup | Expiration handler before `sync.start()`, no throwing, no `await` on `start()` |
 | `audit-fixture` | audit | Finds four planted anti-patterns in a scaffolded `lib/` |
 | `audit-cross-device` | audit | Finds four planted defects that no single statement shows: a conditional `UPDATE` used as a lock, an order number from `COUNT(*) + 1`, a total wider than its subscription, and "received" after a local write |
-| `audit-schema-change` | audit | A pull request to a released app: a field renamed in place and a new `status` value reported as breaking, an optional field as additive, and the map fix for a new array as free to change before release |
+| `audit-schema-change` | audit | A pull request to a released app: a field renamed in place reported as breaking, a new `status` value as breaking or conditional on how 1.4 reads it, an optional field as additive, and the map fix for a new array as free to change before release |
 | `audit-schema-demo` | audit | A field rename in a workshop demo is not held to the versioning and rollout of a released app |
 | `no-trigger-postgres` | none | No Ditto skill for a PostgreSQL question |
 

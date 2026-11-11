@@ -262,7 +262,7 @@ An index on an array field matches only the complete array value, so element loo
 
 ### Incremental adoption
 
-You do not have to convert every array at once. Start with the simple shape, and convert an array to a map as soon as you know that more than one device writes it. Keep the collection name and `_id` structure unchanged so that documents stay compatible, but write the map to a **new field** (for example, `lineItems` next to the old `items` array). In a deployed app, the new field replaces the old one, so roll it out in stages: a bridge version reads both and keeps writing the array, and a later version writes only the map (see [Breaking and additive changes](#breaking-and-additive-changes)). Writing a map under the array's field name changes its CRDT type: the old array and the new map then coexist under the same key, and app versions that still write the array make the field switch back and forth (see [Changing CRDT types](#changing-crdt-types)).
+You do not have to convert every array at once. Start with the simple shape, and convert an array to a map as soon as you know that more than one device writes it. Keep the collection name and `_id` structure unchanged so that documents stay compatible, but write the map to a **new field** (for example, `lineItems` next to the old `items` array). In a deployed app, the new field replaces the old one, so roll it out in stages (see [A field that replaces another](#a-field-that-replaces-another)). Writing a map under the array's field name changes its CRDT type: the old array and the new map then coexist under the same key, and app versions that still write the array make the field switch back and forth (see [Changing CRDT types](#changing-crdt-types)).
 
 ## Document Structure
 
@@ -971,7 +971,7 @@ INITIAL DOCUMENTS (:item)
 | Change | Kind | What a device on an older app version does |
 |---|---|---|
 | Add an optional top-level field, or a key in a map, that holds new data older versions do not need, does not change which documents are valid, visible, or counted, and that readers default when it is `MISSING` | Additive, if older versions accept unknown keys and never replace the object | Ignores the field, unless its model rejects unknown keys. With the default `DQL_STRICT_MODE`, its own writes keep it: `SET obj = {...}` and `ON ID CONFLICT DO UPDATE` merge and do not remove keys they leave out (see [Assigning an object merges it](dql.md#assigning-an-object-merges-it)); an `UNSET` followed by a `SET` of the object removes it |
-| Add a field or collection that replaces an old one (`mileageKm` for `mileage`, `lineItems` for `items`, `stockCount` for `stock`) | Breaking, even when the new version reads both | Reads and writes only the old one, so what the new version writes only to the new one never reaches it. Roll it out in stages: a bridge version reads both and keeps writing the old one (it may write both); a later version stops writing the old one |
+| Add a field or collection that replaces an old one (`mileageKm` for `mileage`, `lineItems` for `items`, `stockCount` for `stock`) | Breaking, even when the new version reads both | Reads and writes only the old one, so what the new version writes only to the new one never reaches it. Roll it out in stages (see [A field that replaces another](#a-field-that-replaces-another)) |
 | Add a flag or field that changes which documents are valid, visible, or counted (voided, hidden, archived) | Breaking | Ignores it, so it shows, counts, and edits documents that newer versions exclude |
 | Add a collection that holds only new data that older versions do not need | Additive | Does not subscribe to it |
 | Add a key inside an object declared `REGISTER`, an object written in strict mode, or an array element | Breaking | Writes the whole value without the key, which removes it or loses the newer version's edit of it, because the value is one register |
@@ -987,11 +987,11 @@ INITIAL DOCUMENTS (:item)
 
 Not schema changes: indexes, which each device creates for itself, and queries, observers, and screens that read and write the same fields with the same meaning.
 
-**Count the fixes as well.** Several fixes in this guide change what is stored: an array to a map, a register to a counter, one `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format. In an app that is already deployed, do not change the stored data in place. A new field or collection next to the old one (see [Incremental adoption](#incremental-adoption)) avoids the losses of a change in place, but it replaces the old one, so it is breaking too and needs the staged rollout: a bridge version reads both and keeps writing the old one. A soft-delete flag is breaking, because older versions do not filter it. Only new documents with a new kind of `_id`, where older versions treat `_id` as opaque, are additive.
+**Count the fixes as well.** Several fixes in this guide change what is stored: an array to a map, a register to a counter, one `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format. In an app that is already deployed, do not change the stored data in place. A new field or collection next to the old one (see [Incremental adoption](#incremental-adoption)) avoids the losses of a change in place, but it replaces the old one, so it is breaking too and needs the staged rollout in [A field that replaces another](#a-field-that-replaces-another). A soft-delete flag is breaking, because older versions do not filter it. Only new documents with a new kind of `_id`, where older versions treat `_id` as opaque, are additive.
 
 A field, value, or collection that no released version has written yet can still change shape freely, in the same change or before the release.
 
-**A breaking change needs no rollout only where no peer that holds data runs an older version**: an app that has not been released, or a sample or demo app whose stores are discarded, and that shares its database with no released app. After the change, start every peer from an empty store, including the Ditto Server (a new database, or its data cleared), because a peer that still holds the old documents syncs them to the others. A sample in the same database as a released app is deployed for this purpose.
+**A breaking change needs no rollout only where no peer that holds data runs an older version**: an app that has not been released, or a sample or demo app whose stores are discarded, either of which shares its database with no released app. After the change, start every peer from an empty store, including the Ditto Server (a new database, or its data cleared), because a peer that still holds the old documents syncs them to the others. A sample in the same database as a released app is deployed for this purpose.
 
 **✅ DO:**
 - From the first release, read enumerated fields so that a value the app does not know does not stop it from reading the document: map the value to an "unknown" state that the app shows but does not change. A later version can then add a value as an additive change, if the value does not change which documents older versions should show or count.
@@ -1006,13 +1006,13 @@ Adding a field that holds new data older versions do not need (see [Breaking and
 
 ✅ Read a new field with a default for older documents: a model type that the app maps each row into treats `mileageKm` as optional (it was added in app version 2 and is absent in older documents). The code for such a model: [Flutter](platforms/flutter.md#query-results-in-flutter) · [JavaScript](platforms/javascript.md#query-results-in-javascript) · [Kotlin](platforms/kotlin.md#query-results-in-kotlin) · [Swift](platforms/swift.md#query-results-in-swift).
 
-Instead of changing the meaning or unit of a field (`mileage` from miles to kilometers), **add a new field** (`mileageKm`) and let each version read the field it understands. Because the new field replaces the old one, this is still a breaking change, but one without the losses of a change in place: roll it out with a bridge version that reads both and keeps writing the old field, so that older versions see current values (see [Rolling out a breaking change](#rolling-out-a-breaking-change)).
+Instead of changing the meaning or unit of a field (`mileage` from miles to kilometers), **add a new field** (`mileageKm`) and let each version read the field it understands. Because the new field replaces the old one, this is still a breaking change, but one without the losses of a change in place: roll it out in stages, so that every version sees current values (see [A field that replaces another](#a-field-that-replaces-another)).
 
 **❌ DON'T:**
 
 - Change a field's type, remove it, or rename it without a versioning pattern. Old peers may crash or show wrong data. A change of CRDT type (for example, from a REGISTER to a MAP) leaves both values under the key, so app versions that declare the field differently read different values (see [Keep type declarations consistent](#keep-type-declarations-consistent)); according to Ditto's documentation, an index on such a field can also return wrong results (see [Strict mode and data types](indexing-and-performance.md#strict-mode-and-data-types)).
 
-> **Note (SDK 5.1.0 and 5.2.0):** Renaming a field in place silently loses what old app versions write. In our testing, a new version renamed `qty` to `quantity` with `UPDATE orders SET quantity = qty UNSET qty` while an old version, offline, set `qty = 5`: depending on the order, the 5 was gone, or it came back in the old field that the new version did not read, and an old version that had already received the rename kept writing `qty` (see [Renaming a field in place hides older versions' edits](../knowledge/observations/merge-behavior.md#renaming-a-field-in-place-hides-older-versions-edits)). Reading both fields (`coalesce(quantity, qty)`) cannot recover the first case. Add the new field, keep writing the old one while older versions run, and let each version read the field it understands (see [Prefer additive changes](#prefer-additive-changes)), or version the documents ([Pattern 1](#pattern-1-schema-version-in-a-composite-_id)).
+> **Note (SDK 5.1.0 and 5.2.0):** Renaming a field in place silently loses what old app versions write. In our testing, a new version renamed `qty` to `quantity` with `UPDATE orders SET quantity = qty UNSET qty` while an old version, offline, set `qty = 5`: depending on the order, the 5 was gone, or it came back in the old field that the new version did not read, and an old version that had already received the rename kept writing `qty` (see [Renaming a field in place hides older versions' edits](../knowledge/observations/merge-behavior.md#renaming-a-field-in-place-hides-older-versions-edits)). Reading both fields (`coalesce(quantity, qty)`) cannot recover the first case. Add the new field and roll it out in stages (see [A field that replaces another](#a-field-that-replaces-another)), or version the documents ([Pattern 1](#pattern-1-schema-version-in-a-composite-_id)).
 
 ### Pattern 1: Schema version in a composite `_id`
 
@@ -1045,6 +1045,17 @@ Write the new schema to a new collection (`cars` to `carsV2`). Subscriptions are
 4. **Retire v1**: once old documents have been removed from the mesh, drop the v1 subscription and model.
 
 Remove old-version documents with `EVICT` (local only, per device) or `DELETE` (propagates as a tombstone); see [Deletion and Storage Management](deletion-and-storage.md). **Do not backfill** (reading every v1 document and writing a v2 copy): devices that are offline during the backfill reintroduce v1 documents when they reconnect, so you need the cleanup anyway.
+
+#### A field that replaces another
+
+When a new field in the same documents replaces an old one (`mileageKm` for `mileage`, `lineItems` for `items`, `stockCount` for `stock`), every write must reach the field that each running version reads:
+
+1. **Bridge version**: writes both fields and reads the old one, which every running version still writes.
+2. **Wait** until the bridge version runs on every device.
+3. **Reader version**: writes both fields and reads the new one. Bridge devices that remain still see its writes in the old field.
+4. **Wait** until the reader version runs on every device, then stop writing the old field.
+
+A version that writes only the new field while older versions run hides its edits from them, and one that reads the new field while older versions write only the old one misses theirs. This follows from the merge rules (each field merges on its own, and a version sees only the field it reads); we have not tested the sequence on devices.
 
 ### Changing CRDT types
 
