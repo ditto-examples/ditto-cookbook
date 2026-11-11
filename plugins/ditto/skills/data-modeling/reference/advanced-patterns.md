@@ -78,11 +78,11 @@ Devices run different app versions for weeks or months, so a schema change must 
 
 | Additive (works with every deployed version) | Breaking (needs a versioning pattern and a staged rollout) |
 |---|---|
-| A new optional field that readers default when it is `MISSING`; older versions' `SET` and `DO UPDATE` keep it, because they merge | A renamed, removed, or reused field; a new type, unit, or meaning |
-| A new collection that older versions do not need | A new CRDT type or declaration (array or register to map, number to `COUNTER`), or a new `DQL_STRICT_MODE` |
-| A new value of an enumerated field, only if every deployed version maps unknown values to an "unknown" state | A new enumerated value that older versions fail to read; a field the new version requires; a new `_id` shape or collection name; a new deletion strategy; new seed content |
+| A new optional top-level field, or a key in a map, that readers default when it is `MISSING`; with the default strict mode, older versions' `SET` and `DO UPDATE` keep it, because they merge | A renamed, removed, or reused field; a new type, unit, or meaning; a new key inside a `REGISTER` object or an array element |
+| A new collection that older versions do not need; new documents with a new kind of `_id` where older versions treat `_id` as opaque | A new CRDT type or a declaration that differs from how the field is stored (array or register to map, number to `COUNTER`), or a new `DQL_STRICT_MODE` |
+| A new value of an enumerated field, only if every deployed version maps unknown values to an "unknown" state | A new enumerated value that older versions fail to read; a new `_id` shape that older versions filter or subscribe on; a new collection name; a new deletion strategy; new seed content |
 
-Indexes, queries, and observers that read the same fields are not schema changes. A field that no released version has written can still change shape freely. An app that has not been released, or a sample or demo, can change in place, with every device starting from an empty store.
+Indexes, queries, and observers that read the same fields are not schema changes. A field that no released version has written can still change shape freely. A field that the new version requires is read with a default until every device writes it. An app that has not been released, or a sample or demo that shares its database with no released app, can change in place, with every peer, including a Ditto Server, starting from an empty store.
 
 **✅ Prefer additive changes.** Old versions ignore unknown fields; new versions must tolerate documents without the field (`MISSING`). Instead of changing a field's meaning or unit (`mileage` from miles to kilometers), add a new field (`mileageKm`).
 

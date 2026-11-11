@@ -93,9 +93,9 @@ The complete severity-ranked list is the guide's `§ Anti-Pattern Checklist`, wi
 
 Devices on older app versions keep reading and writing the same documents, so a change to what is stored is a release decision. Read [reference/schema-changes.md](reference/schema-changes.md) and follow it:
 
-- Decide from evidence (README, directory, the user) whether the app is deployed, unreleased, or a sample or demo; if unknown, assume deployed and say so. In a sample, a breaking change is not a defect: note that every device needs an empty store.
+- Decide from evidence (the README, the user; not a directory name alone) whether the app is deployed, unreleased, or a sample or demo that shares its database with no released app; if unknown, assume deployed and say so. In a sample, a breaking change is not a defect: note that every peer, including a Ditto Server, needs an empty store.
 - For a diff, pull request, or branch, find every change to collection names, `_id` shape, field names, types, units, meaning, CRDT types and declarations, enumerated values, deletion strategy, and seed content, and classify each with `§ Breaking and additive changes`. A breaking change in a deployed app without a versioning pattern is CRITICAL.
-- Classify the fixes too: a fix that turns an array into a map, a register into a counter, `status` into a log, or `DELETE` into soft delete changes stored data. In a deployed app, write it as an additive change (a new field or collection next to the old one) or name the rollout in `§ Rolling out a breaking change`; never as a conversion in place.
+- Classify the fixes too: a fix that, for example, turns an array into a map, a register into a counter, `status` into a log, or `DELETE` into soft delete changes stored data. In a deployed app, write it as an additive change (a new field or collection next to the old one) or name the rollout in `§ Rolling out a breaking change`; never as a conversion in place.
 
 ### Step 9: Report
 
@@ -116,7 +116,7 @@ End with: the SDK version and platforms reviewed, whether the app was taken as d
 ## Scanner Limits
 
 - Line-based: a statement split across lines, or built in another function, can be missed.
-- Not detectable: everything in steps 5 and 6 (checks used as locks, values written back after a read in app code, results taken as complete, queries wider than their subscriptions), nested transactions through helper methods, observers or subscriptions registered in render code, subscription scope design, array-vs-map decisions, eviction that overlaps an active subscription, missing indexes.
+- Not detectable: everything in steps 5, 6, and 8 (checks used as locks, values written back after a read in app code, results taken as complete, queries wider than their subscriptions), nested transactions through helper methods, observers or subscriptions registered in render code, subscription scope design, array-vs-map decisions, eviction that overlaps an active subscription, missing indexes.
 - Example and test code that demonstrates anti-patterns on purpose produces hits; treat them as such.
 
 ## More

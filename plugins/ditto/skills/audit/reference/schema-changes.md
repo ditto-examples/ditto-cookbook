@@ -14,7 +14,7 @@ Devices that run different app versions read and write the same documents, often
 
 Decide this first, from evidence, and state it in the report:
 
-- **Sample, demo, workshop, or prototype**: the README, the directory (`examples/`, `samples/`, `demo/`), or the user says so, and nothing says it is released. A breaking change needs no rollout there. Do not report it as a defect; mention it in one line under the summary with the step it still needs: start every device from an empty store (reinstall or clear the store), because a device that still holds old documents syncs them to the others.
+- **Sample, demo, or workshop app**: the README or the user says so, nothing says it is released, and it does not share its database (the database ID, or a Ditto Server) with a released app. A directory name such as `examples/` or `demo/` alone is not enough: a monorepo can ship what it holds. A breaking change needs no rollout there. Do not report it as a defect; mention it in one line under the summary with the step it still needs: start every peer from an empty store, including the Ditto Server if there is one, because a peer that still holds old documents syncs them to the others. If devices may run builds from before and after the change at the same time (attendees on different commits), say that those devices will show each other's documents with missing fields.
 - **Not yet released**: the same as a sample, if the user or the project says that no version has shipped.
 - **Released, or unknown**: treat the app as deployed. If nothing tells you, say "assumed deployed" in the report; do not guess that it is a demo.
 
@@ -27,7 +27,7 @@ In a diff, a pull request, or a branch, look at every changed line that touches 
 | Collection names | `FROM`, `INTO`, `UPDATE`, `COLLECTION` in DQL strings; subscriptions |
 | `_id` shape or how it is made | `INSERT` arguments; ID helpers; composite `_id` objects; `_id.<field>` filters |
 | Field names, types, units, meaning | `INSERT` and `UPDATE` arguments; model classes and their decoding (`fromJson`, `Codable`, `@Serializable`, `fromDocument`); `UNSET`; startup migrations |
-| CRDT types and declarations | `COLLECTION t (field MAP/REGISTER/COUNTER/ATTACHMENT)`; `APPLY ... INCREMENT`; a field that changes from an array or a plain value to a map; `DQL_STRICT_MODE` |
+| CRDT types and declarations | A declaration (`COLLECTION t (field MAP/REGISTER/COUNTER/ATTACHMENT)`) or an `APPLY ... INCREMENT` that differs from how the field is already stored; a field that changes from an array or a plain value to a map; a new key inside a `REGISTER` object or an array element; `DQL_STRICT_MODE` |
 | Values of enumerated fields | Enums and their decoding; string literals written to `status`, `type`, `kind`, `role` |
 | Deletion strategy | A new soft-delete flag; `DELETE` replaced by a flag, or the reverse; `EVICT` |
 | Seed content | `INITIAL DOCUMENTS` arguments |
@@ -38,19 +38,21 @@ When you review a whole codebase instead of a change, look at the same places fo
 
 Use the table in `§ Breaking and additive changes`:
 
-- **Additive**: a new optional field that every reader defaults when it is `MISSING`; a new collection that older versions do not need. Not a finding. List it in the report.
-- **Breaking**: a rename, a removal, a new type, unit, or meaning; a new CRDT type or declaration; a new enumerated value that older versions cannot read (check how the previous version decodes the field: `values.byName`, `valueOf`, a non-optional `Codable` enum, or a `switch` without a default fails on an unknown value); a new `_id` shape or collection name; a new deletion strategy; a field the new version requires; changed seed content. In a deployed app, report it at CRITICAL (`§ Anti-Pattern Checklist`) unless the change follows a versioning pattern and the rollout.
+- **Additive**: a new optional top-level field, or a new key in a map, that every reader defaults when it is `MISSING`; a new collection that older versions do not need; new documents with a new kind of `_id` where older versions treat `_id` as opaque. Not a finding. List it in the report.
+- **Breaking**: a rename, a removal, a new type, unit, or meaning; a new CRDT type or a declaration that differs from how the field is stored; a new key inside a `REGISTER` object or an array element; a new enumerated value that older versions cannot read (check how the previous version decodes the field: `values.byName`, `valueOf`, a non-optional `Codable` enum, or a `switch` without a default fails on an unknown value); a new `_id` shape that older versions filter, subscribe, or check permissions on; a new collection name; a new deletion strategy; changed seed content. In a deployed app, report it at CRITICAL (`§ Anti-Pattern Checklist`) unless the change follows a versioning pattern and the rollout.
+- **A field that the new version requires** (reads without a default, or filters on): older versions keep creating documents without it. The fix is to read it with a default, not a rollout; rank it by what the missing documents cause (a crash or a hidden document is CRITICAL).
 - **Not a schema change**: indexes, and queries, observers, and screens that read and write the same fields with the same meaning.
 
-For each breaking change, write the scenario with a device on the previous version, as in step 6: what it writes while offline, and what the new version reads after sync. A startup migration (`UPDATE ... SET new = old UNSET old`) is part of the same finding: it runs on every device over the documents each holds, and it does not change what older versions write.
+For each breaking change, write the scenario with a device on the previous version, as in step 6: what it writes while offline, and what the new version reads after sync. A startup migration (`UPDATE ... SET new = old UNSET old`) is part of the same finding: it runs on every device over the documents each holds, and it does not change what older versions write. If it runs at every launch, it also copies what older versions wrote later (including a `null` that the `UNSET` left) over newer edits of the new field; this follows from the merge rules and was not tested.
 
 - **Not released yet**: a field, value, or collection that the change under review introduces has not been written by any released version. Changing its shape within the same change, or before the release, is free; say so when you recommend it (for example, a map instead of the array that the change adds).
+- **The previous version's code**: the removed and context lines of the diff show it for the files they cover. If an older read that is in view filters out the new value (`WHERE status = 'open'`), the break depends on reads that are not in view.
 - **The previous version is not in view**: whether a new enumerated value or a removed field breaks older versions depends on how they read it. If their code is not available, report the finding as conditional, state the condition ("if 1.4 reads refunded orders anywhere"), and list the check under what was not checked.
 - **Problems in unchanged code**: in a diff review, report what the change introduces as findings; list problems that the unchanged code already had separately, briefly, unless the change makes them worse.
 
 ## Classify the Fixes You Recommend
 
-Several fixes in the guide change what is stored: an array to a map, a register to a counter, a `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format, claims under `claims.<deviceId>`. For each finding whose fix does that, in a deployed app:
+Several fixes in the guide change what is stored, for example an array to a map, a register to a counter, a `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format, claims under `claims.<deviceId>`. For each finding whose fix does that, in a deployed app:
 
 - Write the fix as an additive change: a new field or collection next to the old one (for an array, a map in a new field; `§ Incremental adoption`), with readers that tolerate both, or name the rollout in `§ Rolling out a breaking change`.
 - Do not write a fix that converts the stored data in place.
@@ -65,7 +67,7 @@ Add a `Schema` line to every finding whose problem or fix changes stored data:
 [CRITICAL] src/stock/migrate.ts:12 - migrateStock() renames qty to quantity in place
 Also: src/stock/StockItem.ts:30 (the new model reads only quantity)
 Scenario: Scanner A runs 2.3 and is offline; scanner B runs 2.4. A counts bin 7 and sets qty = 5. After sync, B's migration had already copied the old qty, so B shows the old count, and A keeps writing qty, which B no longer reads.
-Impact: Stock counts differ between devices without an error until every device runs 2.4, and the counts made on 2.3 in the meantime never reach 2.4.
+Impact: Stock counts differ between devices without an error until every device runs 2.4. Counts made on 2.3 after a one-time migration never reach 2.4, and a count made before it, depending on the order, is gone on every device.
 Fix: Remove the migration and keep qty as the stored field; rename only the property in the model (quantity: doc.qty). A new stored name needs the rollout in § Rolling out a breaking change.
 Schema: breaking (rename of a field that 2.3 writes)
 Reference: data-modeling / § Breaking and additive changes
