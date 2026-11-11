@@ -979,7 +979,7 @@ INITIAL DOCUMENTS (:item)
 | Rename, remove, or reuse a field; change its type, unit, or meaning | Breaking | Keeps writing the old field, which the new version does not read, and reads a missing or wrong value. A rename in place loses its edits (see the note below) |
 | Change a CRDT type: an array or a register to a map, a number to a `COUNTER`, or a declaration that differs from how the field is stored | Breaking | Writes the old type; both values then remain under the key, and versions read different values (see [Changing CRDT types](#changing-crdt-types)) |
 | Change `DQL_STRICT_MODE` | Breaking | Interprets the same documents with its own setting: objects that one side writes as registers or maps behave differently on the other, and a nested `SET` can fail (see [Peers with different settings](#peers-with-different-settings)) |
-| A new value of an enumerated field, such as a new `status` | Breaking, unless every deployed version shows values it does not know without changing them | Depends on its code: a model that maps the field to a fixed set of values can fail to read the document, and code written for the old values can treat the document as one of them or overwrite the new value |
+| A new value of an enumerated field, such as a new `status` | Breaking, unless every deployed version shows values it does not know without changing them, and the value does not change which documents older versions should show or count (a `voided` status that older totals include is breaking) | Depends on its code: a model that maps the field to a fixed set of values can fail to read the document, and code written for the old values can treat the document as one of them or overwrite the new value |
 | A new collection name, or documents split into or merged from other collections | Breaking | Subscribes to and queries the old collection, so documents in the new one never reach it |
 | A new shape of `_id` | Breaking where older versions filter, subscribe, check permissions, or parse by `_id` fields | Its subscriptions and queries on `_id.<field>` miss documents of the new shape, and permissions based on `_id` fields stop matching. Where older versions treat `_id` as an opaque value, new documents with a new kind of ID (UUIDs instead of sequential numbers) are additive. Existing IDs cannot change in place (see [IDs are immutable](#ids-are-immutable)) |
 | A new deletion strategy, such as a soft-delete flag where documents were deleted | Breaking | Does not filter the flag, so it shows and edits documents that newer versions treat as removed (see [Soft Delete](deletion-and-storage.md#soft-delete)) |
@@ -994,7 +994,7 @@ A field, value, or collection that no released version has written yet can still
 **A breaking change needs no rollout only where no peer that holds data runs an older version**: an app that has not been released, or a sample or demo app whose stores are discarded, and that shares its database with no released app. After the change, start every peer from an empty store, including the Ditto Server (a new database, or its data cleared), because a peer that still holds the old documents syncs them to the others. A sample in the same database as a released app is deployed for this purpose.
 
 **✅ DO:**
-- From the first release, read enumerated fields so that a value the app does not know does not stop it from reading the document: map the value to an "unknown" state that the app shows but does not change. A later version can then add a value as an additive change.
+- From the first release, read enumerated fields so that a value the app does not know does not stop it from reading the document: map the value to an "unknown" state that the app shows but does not change. A later version can then add a value as an additive change, if the value does not change which documents older versions should show or count.
 - Say in a change's description which changes to stored data it makes, and whether each is additive or breaking.
 
 **❌ DON'T:**
@@ -1002,11 +1002,11 @@ A field, value, or collection that no released version has written yet can still
 
 ### Prefer additive changes
 
-Adding a field needs no special pattern. Old app versions ignore fields they do not know; new versions must tolerate documents that do not have the field yet (`MISSING`).
+Adding a field that holds new data older versions do not need (see [Breaking and additive changes](#breaking-and-additive-changes)) needs no special pattern. Old app versions ignore fields they do not know; new versions must tolerate documents that do not have the field yet (`MISSING`).
 
 ✅ Read a new field with a default for older documents: a model type that the app maps each row into treats `mileageKm` as optional (it was added in app version 2 and is absent in older documents). The code for such a model: [Flutter](platforms/flutter.md#query-results-in-flutter) · [JavaScript](platforms/javascript.md#query-results-in-javascript) · [Kotlin](platforms/kotlin.md#query-results-in-kotlin) · [Swift](platforms/swift.md#query-results-in-swift).
 
-Instead of changing the meaning or unit of a field (`mileage` from miles to kilometers), **add a new field** (`mileageKm`) and let each version read the field it understands; while older versions run, keep writing the old field as well, so that they see current values (see [Rolling out a breaking change](#rolling-out-a-breaking-change)).
+Instead of changing the meaning or unit of a field (`mileage` from miles to kilometers), **add a new field** (`mileageKm`) and let each version read the field it understands. Because the new field replaces the old one, this is still a breaking change, but one without the losses of a change in place: roll it out with a bridge version that reads both and keeps writing the old field, so that older versions see current values (see [Rolling out a breaking change](#rolling-out-a-breaking-change)).
 
 **❌ DON'T:**
 
