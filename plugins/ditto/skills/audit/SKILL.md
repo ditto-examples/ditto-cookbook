@@ -95,7 +95,7 @@ Devices on older app versions keep reading and writing the same documents, so a 
 
 - Decide from evidence (the README, the user; not a directory name alone) whether the app is deployed, or unreleased or a sample or demo that shares its database with no released app; if unknown, assume deployed and say so. In a sample, a breaking change is not a defect: note that every peer, including a Ditto Server, needs an empty store.
 - For a diff, pull request, or branch, find every change to collection names, `_id` shape, field names, types, units, meaning, CRDT types and declarations, enumerated values, deletion strategy, and seed content, and classify each with `§ Breaking and additive changes`. A breaking change in a deployed app that skips the staged rollout (`§ Rolling out a breaking change`, `§ A field that replaces another`) is CRITICAL (a field the new version requires: see the reference).
-- Classify the fixes too: a fix that, for example, turns an array into a map, a register into a counter, `status` into a log, or `DELETE` into soft delete changes stored data. In a deployed app, write it as a new field or collection next to the old one, marked breaking with the stages in `§ A field that replaces another`; never as a conversion in place.
+- Classify the fixes too: a fix that, for example, turns an array into a map, a register into a counter, `status` into a log, or `DELETE` into soft delete changes stored data. In a deployed app, write it as a new field or collection next to the old one, marked breaking with the stages in `§ A field that replaces another` (a collection: `§ Rolling out a breaking change`); never as a conversion in place.
 
 ### Step 9: Report
 

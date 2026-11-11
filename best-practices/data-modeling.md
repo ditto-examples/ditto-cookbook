@@ -971,7 +971,7 @@ INITIAL DOCUMENTS (:item)
 | Change | Kind | What a device on an older app version does |
 |---|---|---|
 | Add an optional top-level field, or a key in a map, that holds new data older versions do not need, does not change which documents are valid, visible, or counted, and that readers default when it is `MISSING` | Additive, if older versions accept unknown keys and never replace the object | Ignores the field, unless its model rejects unknown keys. With the default `DQL_STRICT_MODE`, its own writes keep it: `SET obj = {...}` and `ON ID CONFLICT DO UPDATE` merge and do not remove keys they leave out (see [Assigning an object merges it](dql.md#assigning-an-object-merges-it)); an `UNSET` followed by a `SET` of the object removes it |
-| Add a field or collection that replaces an old one (`mileageKm` for `mileage`, `lineItems` for `items`, `stockCount` for `stock`) | Breaking, even when the new version reads both | Reads and writes only the old one, so what the new version writes only to the new one never reaches it. Roll it out in stages (see [A field that replaces another](#a-field-that-replaces-another)) |
+| Add a field that replaces an old one (`weightKg` for `weight` in pounds, `lineItems` for `items`), or a collection that replaces an old one | Breaking, even when the new version reads both | Reads and writes only the old one, so what the new version writes only to the new one never reaches it. Roll out a field in stages (see [A field that replaces another](#a-field-that-replaces-another)), and a collection as in [Rolling out a breaking change](#rolling-out-a-breaking-change) |
 | Add a flag or field that changes which documents are valid, visible, or counted (voided, hidden, archived) | Breaking | Ignores it, so it shows, counts, and edits documents that newer versions exclude |
 | Add a collection that holds only new data that older versions do not need | Additive | Does not subscribe to it |
 | Add a key inside an object declared `REGISTER`, an object written in strict mode, or an array element | Breaking | Writes the whole value without the key, which removes it or loses the newer version's edit of it, because the value is one register |
@@ -987,7 +987,7 @@ INITIAL DOCUMENTS (:item)
 
 Not schema changes: indexes, which each device creates for itself, and queries, observers, and screens that read and write the same fields with the same meaning.
 
-**Count the fixes as well.** Several fixes in this guide change what is stored: an array to a map, a register to a counter, one `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format. In an app that is already deployed, do not change the stored data in place. A new field or collection next to the old one (see [Incremental adoption](#incremental-adoption)) avoids the losses of a change in place, but it replaces the old one, so it is breaking too and needs the staged rollout in [A field that replaces another](#a-field-that-replaces-another). A soft-delete flag is breaking, because older versions do not filter it. Only new documents with a new kind of `_id`, where older versions treat `_id` as opaque, are additive.
+**Count the fixes as well.** Several fixes in this guide change what is stored: an array to a map, a register to a counter, one `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format. In an app that is already deployed, do not change the stored data in place. A new field or collection next to the old one (see [Incremental adoption](#incremental-adoption)) avoids the losses of a change in place, but it replaces the old one, so it is breaking too and needs a staged rollout: [A field that replaces another](#a-field-that-replaces-another) for a field, [Rolling out a breaking change](#rolling-out-a-breaking-change) for a collection. A soft-delete flag is breaking, because older versions do not filter it. Only new documents with a new kind of `_id`, where older versions treat `_id` as opaque, are additive.
 
 A field, value, or collection that no released version has written yet can still change shape freely, in the same change or before the release.
 
@@ -1006,7 +1006,7 @@ Adding a field that holds new data older versions do not need (see [Breaking and
 
 ✅ Read a new field with a default for older documents: a model type that the app maps each row into treats `mileageKm` as optional (it was added in app version 2 and is absent in older documents). The code for such a model: [Flutter](platforms/flutter.md#query-results-in-flutter) · [JavaScript](platforms/javascript.md#query-results-in-javascript) · [Kotlin](platforms/kotlin.md#query-results-in-kotlin) · [Swift](platforms/swift.md#query-results-in-swift).
 
-Instead of changing the meaning or unit of a field (`mileage` from miles to kilometers), **add a new field** (`mileageKm`) and let each version read the field it understands. Because the new field replaces the old one, this is still a breaking change, but one without the losses of a change in place: roll it out in stages, so that every version sees current values (see [A field that replaces another](#a-field-that-replaces-another)).
+Instead of changing the meaning or unit of a field (`weight` from pounds to kilograms), **add a new field** (`weightKg`) and let each version read the field it understands. Because the new field replaces the old one, this is still a breaking change, but one without the losses of a change in place: roll it out in stages, so that every version sees current values (see [A field that replaces another](#a-field-that-replaces-another)).
 
 **❌ DON'T:**
 
@@ -1048,18 +1048,20 @@ Remove old-version documents with `EVICT` (local only, per device) or `DELETE` (
 
 #### A field that replaces another
 
-When a new field in the same documents replaces an old one (`mileageKm` for `mileage`, `lineItems` for `items`, `stockCount` for `stock`), every write must reach the field that each running version reads:
+When a new field in the same documents replaces an old one (`weightKg` for `weight` in pounds, `lineItems` for the `items` array), every write must reach the field that each running version reads:
 
-1. **Bridge version**: writes both fields and reads the old one, which every running version still writes.
-2. **Wait** until the bridge version runs on every device.
-3. **Reader version**: writes both fields and reads the new one. Bridge devices that remain still see its writes in the old field.
+1. **Bridge version**: writes both fields and reads the old one, which every running version still writes. The first time it writes the new field in a document, it fills the new field from the old one (for an array, every element into the map, under a key derived from the element), so that the new field is complete. This is a write of a document the app changes anyway, not a backfill of every document.
+2. **Wait** until the bridge version runs on every device, and until those devices have synced what they wrote before they were updated.
+3. **Reader version**: writes both fields, reads the new one, and falls back to the old one where the new one is `MISSING`. Bridge devices that remain still see its writes in the old field.
 4. **Wait** until the reader version runs on every device, then stop writing the old field.
 
 A version that writes only the new field while older versions run hides its edits from them, and one that reads the new field while older versions write only the old one misses theirs. This follows from the merge rules (each field merges on its own, and a version sees only the field it reads); we have not tested the sequence on devices.
 
+A counter that replaces a register (`stockCount` for `stock`) does not fit these stages, because a new counter starts at 0 and increments made on the bridge give only the change since then. Set its starting value from one device with `RESTART WITH` while every device is online and in sync (see [RESTART](#restart)), or derive the value from event documents instead.
+
 ### Changing CRDT types
 
-**Introduce a new field with the new type instead of changing the type of an existing one.** Changing how a field is typed (an array or a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). In our testing with SDK 5.0.3, 5.1.0, and 5.2.0, an old app version wrote `SET stock = 9` while a new version concurrently ran `APPLY stock INCREMENT BY -1` as a COUNTER: after sync, the field held both `9` and `-1` (the new counter started at 0), and an undeclared `SELECT` returned whichever had been written later (see [Changing a register to a counter leaves both values](../knowledge/observations/merge-behavior.md#changing-a-register-to-a-counter-leaves-both-values)). For example, add `stockCount` as a COUNTER next to the old `stock` register, and move to it with the staged rollout described above.
+**Introduce a new field with the new type instead of changing the type of an existing one.** Changing how a field is typed (an array or a REGISTER object to a MAP, or a number to a COUNTER) is a breaking change too: the old and new values coexist under the same key and statements see different values depending on their declarations (see [Keep type declarations consistent](#keep-type-declarations-consistent)). In our testing with SDK 5.0.3, 5.1.0, and 5.2.0, an old app version wrote `SET stock = 9` while a new version concurrently ran `APPLY stock INCREMENT BY -1` as a COUNTER: after sync, the field held both `9` and `-1` (the new counter started at 0), and an undeclared `SELECT` returned whichever had been written later (see [Changing a register to a counter leaves both values](../knowledge/observations/merge-behavior.md#changing-a-register-to-a-counter-leaves-both-values)). For example, add `stockCount` as a COUNTER next to the old `stock` register, and give it its starting value as described in [A field that replaces another](#a-field-that-replaces-another).
 
 ## Timestamps
 
