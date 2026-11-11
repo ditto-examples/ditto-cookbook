@@ -29,7 +29,7 @@ In a diff, a pull request, or a branch, look at every changed line that touches 
 | Field names, types, units, meaning | `INSERT` and `UPDATE` arguments; model classes and their decoding (`fromJson`, `Codable`, `@Serializable`, `fromDocument`); `UNSET`; startup migrations |
 | CRDT types and declarations | A declaration (`COLLECTION t (field MAP/REGISTER/COUNTER/ATTACHMENT)`) or an `APPLY ... INCREMENT` that differs from how the field is already stored; a field that changes from an array or a plain value to a map; a new key inside a `REGISTER` object or an array element; `DQL_STRICT_MODE` |
 | Values of enumerated fields | Enums and their decoding; string literals written to `status`, `type`, `kind`, `role` |
-| Deletion strategy | A new soft-delete flag; `DELETE` replaced by a flag, or the reverse; `EVICT` |
+| Deletion strategy | A new soft-delete flag; `DELETE` replaced by a flag, or the reverse (a new local `EVICT` or retention job is not a schema change) |
 | Seed content | `INITIAL DOCUMENTS` arguments |
 
 When you review a whole codebase instead of a change, look at the same places for signs of earlier changes: a startup `UPDATE ... UNSET`, code that reads two names for one value, or a model that fails on documents without a field.
@@ -38,8 +38,8 @@ When you review a whole codebase instead of a change, look at the same places fo
 
 Use the table in `§ Breaking and additive changes`:
 
-- **Additive**: a new optional top-level field, or a new key in a map, that every reader defaults when it is `MISSING`; a new collection that older versions do not need; new documents with a new kind of `_id` where older versions treat `_id` as opaque. Not a finding. List it in the report.
-- **Breaking**: a rename, a removal, a new type, unit, or meaning; a new CRDT type or a declaration that differs from how the field is stored; a new key inside a `REGISTER` object or an array element; a new enumerated value that older versions cannot read (check how the previous version decodes the field: `values.byName`, `valueOf`, a non-optional `Codable` enum, or a `switch` without a default fails on an unknown value); a new `_id` shape that older versions filter, subscribe, or check permissions on; a new collection name; a new deletion strategy; changed seed content. In a deployed app, report it at CRITICAL (`§ Anti-Pattern Checklist`) unless the change follows a versioning pattern and the rollout.
+- **Additive**: a new optional top-level field, or a new key in a map (default `DQL_STRICT_MODE`), that every reader defaults when it is `MISSING`, where the previous version's model accepts unknown keys (kotlinx.serialization's default `Json` rejects them) and its code never replaces the object with `UNSET` and `SET`; a new collection that older versions do not need; new documents with a new kind of `_id` where older versions treat `_id` as opaque. Not a finding. List it in the report.
+- **Breaking**: a rename, a removal, a new type, unit, or meaning; a new CRDT type or a declaration that differs from how the field is stored; a new key inside a `REGISTER` object, an object written in strict mode, or an array element; a new `DQL_STRICT_MODE`; a new enumerated value that older versions cannot read, map to a known value, or overwrite (check how the previous version decodes the field: `values.byName`, `valueOf`, a non-optional `Codable` enum, or a `switch` without a default fails on an unknown value; a fallback such as `orElse: () => OrderStatus.open`, or a write-back of the whole model, also breaks); a new `_id` shape that older versions filter, subscribe, or check permissions on; a new collection name; a new deletion strategy; changed seed content. In a deployed app, report it at CRITICAL (`§ Anti-Pattern Checklist`) unless the change follows a versioning pattern and the rollout.
 - **A field that the new version requires** (reads without a default, or filters on): older versions keep creating documents without it. The fix is to read it with a default, not a rollout; rank it by what the missing documents cause (a crash or a hidden document is CRITICAL).
 - **Not a schema change**: indexes, and queries, observers, and screens that read and write the same fields with the same meaning.
 
@@ -54,7 +54,7 @@ For each breaking change, write the scenario with a device on the previous versi
 
 Several fixes in the guide change what is stored, for example an array to a map, a register to a counter, a `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format, claims under `claims.<deviceId>`. For each finding whose fix does that, in a deployed app:
 
-- Write the fix as an additive change: a new field or collection next to the old one (for an array, a map in a new field; `§ Incremental adoption`), with readers that tolerate both, or name the rollout in `§ Rolling out a breaking change`.
+- Write the fix as an additive change where one exists: a new field or collection next to the old one (for an array, a map in a new field; `§ Incremental adoption`) that the new version reads together with the old one, merging both or falling back to the old one, until no device writes the old one. Without that, a new field is a rename. A soft-delete flag is always breaking (older versions do not filter it). Otherwise name the rollout in `§ Rolling out a breaking change`.
 - Do not write a fix that converts the stored data in place.
 
 When the user asks you to apply fixes, apply the ones that do not change stored data, and those whose change is additive. Before a breaking one, stop and ask, with the rollout it needs; in a sample or demo, apply it and say that every device needs an empty store.
@@ -73,5 +73,5 @@ Schema: breaking (rename of a field that 2.3 writes)
 Reference: data-modeling / § Breaking and additive changes
 ```
 
-- `Schema: additive (...)` for a fix that adds a field or collection; `Schema: breaking (...)` with the rollout for one that cannot be additive. Omit the line when neither the problem nor the fix changes stored data.
+- `Schema: additive (...)` for a fix that adds a field or collection which the new version reads together with the old one; `Schema: breaking (...)` with the rollout for one that cannot be additive. Omit the line when neither the problem nor the fix changes stored data.
 - At the end of the report, list the changes to stored data that the change under review makes, each marked additive or breaking, and say whether the app was taken as deployed, unreleased, or a sample, and why.

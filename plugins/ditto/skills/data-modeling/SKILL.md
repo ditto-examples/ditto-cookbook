@@ -12,7 +12,7 @@ How to shape Ditto documents so concurrent offline edits merge correctly. Target
 - Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *IDs and Timestamps in Swift*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
-- **Is the app deployed?** Older app versions keep writing your documents. Mark each change to stored data, fixes included, as additive or breaking (`§ Breaking and additive changes`). In a deployed app, add a field next to the old one or follow `§ Rolling out a breaking change`; only a sample or demo that shares no database with a released app changes in place, from empty stores.
+- **Is the app deployed?** Older app versions keep writing your documents. Mark each change to stored data, fixes included, as additive or breaking (`§ Breaking and additive changes`). In a deployed app, add a field read together with the old one, or follow `§ Rolling out a breaking change`; only an unreleased app, or a demo sharing no database with a released app, changes in place.
 
 ## Prevents
 
@@ -95,7 +95,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 - Remove an entry with ``UNSET items.`<key>` `` only after validating the key against a strict pattern (for example, a UUID).
 - Mark entries removed (`removed = true`) when concurrent edits are likely; readers skip entries whose required fields are missing or `null`. **Note (SDK 5.1.0 and 5.2.0)**: a removal does not win over a concurrent edit; the entry stays with only the edited fields (removal first) or with them `null` (removal later).
 - Move an entry by writing only its `position`, between its new neighbors; renumbering all entries loses a concurrent reorder.
-- Convert an array to a map as soon as more than one device writes it, into a **new field** (`lineItems` next to the old `items`).
+- Convert an array to a map as soon as more than one device writes it, into a **new field** (`lineItems` next to `items`, which you keep reading).
 
 **❌ DON'T**: splice unchecked input into a query; write the map under the array's name (both then share one key).
 
