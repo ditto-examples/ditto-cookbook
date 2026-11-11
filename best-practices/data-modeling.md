@@ -964,6 +964,34 @@ INITIAL DOCUMENTS (:item)
 
 **Add fields instead of renaming, retyping, or reusing them; for a breaking change, version the documents and roll it out in stages.** Ditto is schemaless: documents in a collection can have different fields, and sync stores and replicates them without validation. In a mesh, however, devices run different app versions for weeks or months, so a schema change must work while old and new versions read and write the same data.
 
+### Breaking and additive changes
+
+**Before you ship a change, decide whether it changes what is stored, and if it does, whether it is additive or breaking.** A schema change is any change to the collection names, the shape of `_id`, a field's name, type, unit, or meaning, a CRDT type or declaration, the values that an enumerated field takes, the deletion strategy, or seed content. An **additive** change works with every app version that is deployed; a **breaking** change needs a versioning pattern and a staged rollout (see [Rolling out a breaking change](#rolling-out-a-breaking-change)), because devices that still run an older version keep reading and writing the same documents and nothing in Ditto rejects their writes.
+
+| Change | Kind | What a device on an older app version does |
+|---|---|---|
+| Add an optional field that readers default when it is `MISSING` | Additive | Ignores the field. Its own writes keep it: `SET obj = {...}` and `ON ID CONFLICT DO UPDATE` merge and do not remove keys they leave out (see [Assigning an object merges it](dql.md#assigning-an-object-merges-it)) |
+| Add a field that the new version requires: reads without a default, or filters, sorts, or subscribes on | Breaking for the new version | Keeps creating documents without the field, which the new version's queries miss and its model may fail to read. Read the field with a default, and filter on it only once every device writes it |
+| Rename, remove, or reuse a field; change its type, unit, or meaning | Breaking | Keeps writing the old field, which the new version does not read, and reads a missing or wrong value. A rename in place loses its edits (see the note below) |
+| Change a CRDT type: an array or a register to a map, a number to a `COUNTER`, a declaration, or `DQL_STRICT_MODE` | Breaking | Writes the old type; both values then remain under the key, and versions read different values (see [Changing CRDT types](#changing-crdt-types) and [Peers with different settings](#peers-with-different-settings)) |
+| A new value of an enumerated field, such as a new `status` | Breaking, unless every deployed version handles values it does not know | Depends on its code: a model that maps the field to a fixed set of values can fail to read the document, and code written for the old values can treat the document as one of them or overwrite the new value |
+| A new shape of `_id`, a new collection name, or documents split into or merged from other collections | Breaking | Queries, subscribes, and references by the old IDs or collection, so documents of the new shape never reach it; permissions based on `_id` fields stop matching. IDs cannot change in place (see [IDs are immutable](#ids-are-immutable)) |
+| A new deletion strategy, such as a soft-delete flag where documents were deleted | Breaking | Does not filter the flag, so it shows and edits documents that newer versions treat as removed (see [Soft Delete](deletion-and-storage.md#soft-delete)) |
+| Different seed content for the same `_id` | Breaking | Brings back the keys that the new seed removed (see [Default Data with INITIAL Documents](#default-data-with-initial-documents)) |
+
+Not schema changes: indexes, which each device creates for itself, and queries, observers, and screens that read and write the same fields with the same meaning.
+
+**Count the fixes as well.** Several fixes in this guide change what is stored: an array to a map, a register to a counter, one `status` field to a status log, sequential IDs to UUIDs, `DELETE` to soft delete, a timestamp format. In an app that is already deployed, apply them as an additive change, with a new field or collection next to the old one (see [Incremental adoption](#incremental-adoption)), or roll them out in stages; do not change the stored data in place.
+
+**A breaking change needs no rollout only where no device that holds data runs an older version**: an app that has not been released, or a sample or demo app whose stores are discarded. Start every device from an empty store after the change, because a device that still holds the old documents syncs them to the others.
+
+**✅ DO:**
+- From the first release, read enumerated fields so that a value the app does not know does not stop it from reading the document: map the value to an "unknown" state that the app shows but does not change. A later version can then add a value as an additive change.
+- Say in a change's description which changes to stored data it makes, and whether each is additive or breaking.
+
+**❌ DON'T:**
+- Ship a breaking change to a deployed app because the new version works on its own: test it with a device on the previous version that writes while offline.
+
 ### Prefer additive changes
 
 Adding a field needs no special pattern. Old app versions ignore fields they do not know; new versions must tolerate documents that do not have the field yet (`MISSING`).

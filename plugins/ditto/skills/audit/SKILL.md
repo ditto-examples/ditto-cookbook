@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Reviews code that uses the Ditto SDK against the Ditto best practices guide: scans for known anti-patterns, triages each hit, checks per collection the assumptions that fail across devices (locks, uniqueness, empty results, subscription coverage), and reports findings by severity with fixes. Use when asked to review, audit, or check Ditto code, before a release, or when unexplained sync, merge, deletion, or memory problems need a systematic look.
+description: Reviews Ditto SDK code, or a change to it, against the best practices guide: scans for known anti-patterns, checks per collection the assumptions that fail across devices (locks, uniqueness, empty results, subscription coverage), marks schema changes additive or breaking, and reports findings by severity with fixes. Use to review or audit Ditto code or a pull request, before a release, or when sync, merge, or deletion problems need a close look.
 ---
 
 # Ditto Code Audit
@@ -11,8 +11,8 @@ A repeatable review of an app that uses the Ditto SDK in Flutter, JavaScript, Ko
 
 - Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). The rules target 5.2.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks 5.1.0 behavior that 5.2.0 no longer shows, and **Note (SDK 5.2.0)** behavior observed on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. If the version cannot be found, apply the 5.2.0 rules, say so in the report, and mark findings that rest on a **Note (SDK ...)** as version-specific. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
 - In that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), read the *Behavior Specific to the <SDK> SDK* section at its end, not the whole page (Grep the heading for its line): it lists what only that SDK does. `§ Specific to One SDK` in the guide's Anti-Pattern Checklist lists the mistakes to look for in that SDK. Open the topic skills' `examples/<sdk>/` only when you write a fix.
-- `§ <Heading>` cites a section of the full guide: Grep the heading text in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`.
-- Review only; do not change code unless the user asks for fixes.
+- `§ <Heading>` cites a section of the full guide: Grep the heading text in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`. Both are symbolic links: search those two paths, or use `grep -R`; a search of `../guide/reference/` alone that does not follow links finds nothing.
+- Review only; do not change code unless the user asks for fixes. When asked, apply fixes that leave stored data unchanged or change it additively, and ask before a breaking one (step 8).
 
 ## Workflow
 
@@ -21,16 +21,17 @@ Copy this checklist and work through it:
 ```
 Ditto audit progress:
 - [ ] 1. Scope: list files that use Ditto (imports of ditto_live, @dittolive/ditto, DittoSwift, com.ditto)
-- [ ] 2. Context: SDK version, platforms, connection mode (Ditto Server or small peers only)
+- [ ] 2. Context: SDK version, platforms, connection mode (Ditto Server or small peers only), and whether the app is deployed or a sample
 - [ ] 3. Scan: run scripts/scan.py on the source directories
 - [ ] 4. Triage: confirm or discard every scanner hit by reading the code around it
 - [ ] 5. Inventory: per collection, its subscriptions, reads, writes, and removals, with file:line
 - [ ] 6. Cross-device review: ask the eight questions of every collection in the inventory
 - [ ] 7. Manual review: walk the table below for the areas the app uses
-- [ ] 8. Report: findings by severity, then what was checked and what was not
+- [ ] 8. Schema changes: classify each change to stored data, in the code under review and in each fix, as additive or breaking
+- [ ] 9. Report: findings by severity, then what was checked and what was not
 ```
 
-Do not stop after step 4: a clean scan does not cover steps 5 to 7.
+Do not stop after step 4: a clean scan does not cover steps 5 to 8.
 
 ### Step 3: Scan
 
@@ -48,7 +49,7 @@ For each hit:
 1. Read the surrounding function and its callers.
 2. Check whether the code really breaks the rule: Grep the `§` heading that the hit names in the guide and read that section, or the rule of the same name in the skill the hit names (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`).
 3. For a hit whose message says it applies to SDK 5.1.0 only (fixed in 5.2.0), such as `delete-evict-use-ids` and `composite-index-mixed-direction`, check the version from step 2. If the project uses 5.1.0, or the version is unknown, report it at its severity. If it uses 5.2.0, keep it as a lower-severity note that the code breaks on devices still running 5.1.0 (the code cannot show which releases run in the field), and say so in the finding.
-4. Keep confirmed hits, and report each at the severity of its item in `§ Anti-Pattern Checklist`, which can be higher than the scanner's: the scanner's severity only orders the triage. The same holds for findings from steps 6 and 7, and where a topic skill ranks a rule differently: the severity section that lists the item decides, even when that section's heading describes a different kind of problem, and where one place matches items of different severity, the higher one. For a finding with no checklist item, use the definitions in step 8 and say that you ranked it yourself. Drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
+4. Keep confirmed hits, and report each at the severity of its item in `§ Anti-Pattern Checklist`, which can be higher than the scanner's: the scanner's severity only orders the triage. The same holds for findings from steps 6 and 7, and where a topic skill ranks a rule differently: the severity section that lists the item decides, even when that section's heading describes a different kind of problem, and where one place matches items of different severity, the higher one. For a finding with no checklist item, use the definitions in step 9 and say that you ranked it yourself. Drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
 
 ### Steps 5 and 6: Inventory and cross-device review
 
@@ -88,20 +89,29 @@ The remaining design and lifecycle problems, by area. Walk the rows for the area
 
 The complete severity-ranked list is the guide's `§ Anti-Pattern Checklist`, with the mistakes of each SDK in `§ Specific to One SDK`; the security-specific list is `§ Security Checklist`.
 
-### Step 8: Report
+### Step 8: Schema changes
+
+Devices on older app versions keep reading and writing the same documents, so a change to what is stored is a release decision. Read [reference/schema-changes.md](reference/schema-changes.md) and follow it:
+
+- Decide from evidence (README, directory, the user) whether the app is deployed, unreleased, or a sample or demo; if unknown, assume deployed and say so. In a sample, a breaking change is not a defect: note that every device needs an empty store.
+- For a diff, pull request, or branch, find every change to collection names, `_id` shape, field names, types, units, meaning, CRDT types and declarations, enumerated values, deletion strategy, and seed content, and classify each with `§ Breaking and additive changes`. A breaking change in a deployed app without a versioning pattern is CRITICAL.
+- Classify the fixes too: a fix that turns an array into a map, a register into a counter, `status` into a log, or `DELETE` into soft delete changes stored data. In a deployed app, write it as an additive change (a new field or collection next to the old one) or name the rollout in `§ Rolling out a breaking change`; never as a conversion in place.
+
+### Step 9: Report
 
 Order findings by severity (CRITICAL: data loss, wrong results, crashes, security; HIGH: sync cost, memory, performance; MEDIUM: maintainability). For each finding:
 
 ```
 [SEVERITY] file:line - <one-line problem>
 Also: <other places of the same root cause, file:line each; omit if none>
-Scenario: <for a finding that needs two devices: the shortest sequence of events that produces it; omit otherwise>
+Scenario: <for a finding that needs two devices or two app versions: the shortest sequence of events that produces it; omit otherwise>
 Impact: <what goes wrong at runtime, and when>
 Fix: <the concrete change, with a short code or DQL snippet if useful>
+Schema: <additive or breaking, and why, when the problem or the fix changes stored data; omit otherwise>
 Reference: <skill name> / § <guide heading>
 ```
 
-End with: the SDK version and platforms reviewed, the inventory in compact form (per collection: subscriptions, reads, writes, removals), the areas checked with no findings, and anything not checked (for example code that was not available, which devices write a collection, how long devices stay offline, or behavior that needs a multi-device test). When a fact that the code cannot show, such as the platforms or the connection mode in step 2, is unknown, say so there instead of guessing. Mark findings that depend on a **Note (SDK ...)** behavior or on `§ Known Issues in SDK 5.1.0` as version-specific, and name the releases they apply to.
+End with: the SDK version and platforms reviewed, whether the app was taken as deployed or a sample and why, the changes to stored data in the code under review (each additive or breaking), the inventory in compact form (per collection: subscriptions, reads, writes, removals), the areas checked with no findings, and anything not checked (for example code that was not available, which devices write a collection, how long devices stay offline, or behavior that needs a multi-device test). When a fact that the code cannot show, such as the platforms or the connection mode in step 2, is unknown, say so there instead of guessing. Mark findings that depend on a **Note (SDK ...)** behavior or on `§ Known Issues in SDK 5.1.0` as version-specific, and name the releases they apply to.
 
 ## Scanner Limits
 
@@ -112,6 +122,7 @@ End with: the SDK version and platforms reviewed, the inventory in compact form 
 ## More
 
 - The inventory, the eight questions with what to look for in code, when a question does not apply, and how to report: [reference/cross-device-review.md](reference/cross-device-review.md)
+- Deployed or sample, finding and classifying changes to stored data, fixes, and the `Schema` line: [reference/schema-changes.md](reference/schema-changes.md)
 - Scanner rules, patterns, and the guide section behind each: [reference/scanner-rules.md](reference/scanner-rules.md)
 - Scanner source: [scripts/scan.py](scripts/scan.py)
 - Full guide search: the `guide` skill

@@ -1,12 +1,12 @@
 # Ditto SDK Best Practices
 
-> **Version**: 5.18
+> **Version**: 5.19
 > **Last Updated**: 2026-11-11
 > **Applies to**: Ditto SDK 5.2.0 for Flutter (`ditto_live`), JavaScript (`@dittolive/ditto`), Kotlin (`com.ditto:ditto-kotlin`), and Swift (`DittoSwift`). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
 This guide helps you build offline-first applications on the Ditto SDK that stay correct when many devices change the same data without a connection. It concentrates on two kinds of guidance:
 
-- **Decisions that are hard to change later**: the data model, document IDs, subscription scope, deletion strategy, and security model. Mistakes here tend to surface only after release, when devices in the field already hold data that you cannot easily migrate.
+- **Decisions that are hard to change later**: the data model, document IDs, subscription scope, deletion strategy, and security model. Mistakes here tend to surface only after release, when devices in the field already hold data that you cannot easily migrate, and a later change to what is stored must keep working with the app versions those devices still run (see [Breaking and additive changes](data-modeling.md#breaking-and-additive-changes)).
 - **Mistakes that fail silently**: patterns that raise no error but lose concurrent edits, hide documents from queries, let memory grow, or cause unnecessary sync traffic.
 
 The guide complements the [Ditto documentation](https://docs.ditto.live), which remains the reference for every API. It describes SDK 5.x behavior only; if you are upgrading an application from SDK v4, follow the [migration guides](https://docs.ditto.live/sdk/latest/v5-whats-new) first.

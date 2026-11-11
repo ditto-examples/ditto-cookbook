@@ -15,6 +15,8 @@ Behavior tests for the `ditto` plugin, run with [`claude plugin eval`](https://c
 | `server-startup` | sdk-setup | Expiration handler before `sync.start()`, no throwing, no `await` on `start()` |
 | `audit-fixture` | audit | Finds four planted anti-patterns in a scaffolded `lib/` |
 | `audit-cross-device` | audit | Finds four planted defects that no single statement shows: a conditional `UPDATE` used as a lock, an order number from `COUNT(*) + 1`, a total wider than its subscription, and "received" after a local write |
+| `audit-schema-change` | audit | A pull request to a released app: a field renamed in place and a new `status` value reported as breaking, an optional field as additive, and the map fix for a new array as free to change before release |
+| `audit-schema-demo` | audit | A field rename in a workshop demo is not held to the versioning and rollout of a released app |
 | `no-trigger-postgres` | none | No Ditto skill for a PostgreSQL question |
 
 Run from `plugins/ditto/`. Runs use your Claude credentials and count against your usage.
@@ -27,4 +29,4 @@ claude plugin eval . --runs 1 --ablation none --scaffold --allow-tools "Bash(pyt
 claude plugin eval . --scaffold --allow-tools "Bash(python3 *)" --max-cost-usd 20
 ```
 
-`--scaffold` runs the `scaffold.sh` of `audit-fixture` and `audit-cross-device`, each of which only copies its fixture into the run's workspace; `Bash(python3 *)` lets the audit skill run its scanner. Results are written to `evals/results/`, which is ignored by git. Add a case whenever a skill change fixes a behavior that an eval did not catch.
+`--scaffold` runs the `scaffold.sh` of the `audit-*` cases, each of which only copies its fixture into the run's workspace; `Bash(python3 *)` lets the audit skill run its scanner. Results are written to `evals/results/`, which is ignored by git. Add a case whenever a skill change fixes a behavior that an eval did not catch.

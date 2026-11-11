@@ -74,6 +74,16 @@ Guide: `§ Default Data with INITIAL Documents`. Example: [initial-documents.sql
 
 Devices run different app versions for weeks or months, so a schema change must work while old and new versions read and write the same data.
 
+**Classify every change to stored data, fixes included, before a release** (`§ Breaking and additive changes`):
+
+| Additive (works with every deployed version) | Breaking (needs a versioning pattern and a staged rollout) |
+|---|---|
+| A new optional field that readers default when it is `MISSING`; older versions' `SET` and `DO UPDATE` keep it, because they merge | A renamed, removed, or reused field; a new type, unit, or meaning |
+| A new collection that older versions do not need | A new CRDT type or declaration (array or register to map, number to `COUNTER`), or a new `DQL_STRICT_MODE` |
+| A new value of an enumerated field, only if every deployed version maps unknown values to an "unknown" state | A new enumerated value that older versions fail to read; a field the new version requires; a new `_id` shape or collection name; a new deletion strategy; new seed content |
+
+Indexes, queries, and observers that read the same fields are not schema changes. A field that no released version has written can still change shape freely. An app that has not been released, or a sample or demo, can change in place, with every device starting from an empty store.
+
 **✅ Prefer additive changes.** Old versions ignore unknown fields; new versions must tolerate documents without the field (`MISSING`). Instead of changing a field's meaning or unit (`mileage` from miles to kilometers), add a new field (`mileageKm`).
 
 **❌ DON'T** change a field's type, remove it, or rename it without a versioning pattern. A change of CRDT type (for example, from a REGISTER to a MAP) leaves both values under the key, and statements with different declarations read different values: in testing with SDK 5.1.0 and 5.2.0, after an `UPDATE COLLECTION t (price MAP) SET price.amount = 25` of a REGISTER `price`, a `SELECT` that declared `price REGISTER` kept returning the old amount, also on another device. According to Ditto's documentation, an index on such a field can also return wrong results.

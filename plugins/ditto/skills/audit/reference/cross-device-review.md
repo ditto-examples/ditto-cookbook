@@ -137,5 +137,5 @@ Reference: data-modeling / § Checks and Claims across Devices
 
 - **One finding per root cause.** A cross-device defect usually spans files (a subscription here, a read there). Report it once, at the line where the fix goes, and list the other places under `Also:`. Do not report the cause and each of its consequences as separate findings; name the consequences in `Impact`. A line that two different causes produce (a count that is both a sequence number and wider than its subscription) belongs to each finding: report it under one and list it under `Also:` of the other.
 - **Severity**: the severity of the matching item in `§ Anti-Pattern Checklist`. When one place matches items of different severity, use the higher one.
-- **Defects that need no second device**, found on the way (a statement that can never match, a value that is never updated): report them as ordinary findings without a `Scenario`, ranked by the definitions in step 8.
+- **Defects that need no second device**, found on the way (a statement that can never match, a value that is never updated): report them as ordinary findings without a `Scenario`, ranked by the definitions in step 9.
 - What these defects do cannot be reproduced with one Ditto instance, so list "confirm with a test on two devices" (the `testing` skill) under what was not checked.

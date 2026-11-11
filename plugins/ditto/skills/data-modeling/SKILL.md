@@ -12,6 +12,7 @@ How to shape Ditto documents so concurrent offline edits merge correctly. Target
 - Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
 - Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *IDs and Timestamps in Swift*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
+- **Is the app deployed?** Older app versions keep writing the documents you change. Mark each change to stored data (names, `_id`, types, units, CRDT types, enum values), fixes included, as additive or breaking (`§ Breaking and additive changes`). In a deployed app, add a field next to the old one or follow `§ Rolling out a breaking change`; a sample or demo can change in place, each device starting from an empty store.
 
 ## Prevents
 
@@ -19,7 +20,6 @@ How to shape Ditto documents so concurrent offline edits merge correctly. Target
 - Keys that never go away because `SET obj = {...}` and `DO UPDATE` merge into maps
 - Values that seem to vanish when type declarations differ between statements
 - Lost increments from read-modify-write instead of the `COUNTER` type
-- JOIN errors and empty results
 - Derived totals that diverge from the merged data
 - ID collisions from sequential or timestamp-only IDs
 - Documents over the 256 KiB soft limit or the 5 MiB hard limit
@@ -61,9 +61,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 | `SET obj.a = 10` | `{"a": 10, "b": 2}` |
 | `SET obj = {'c': 3}` | `{"a": 1, "b": 2, "c": 3}`: assigning an object **merges** |
 | `SET obj = {}` | `{"a": 1, "b": 2}`: clears nothing |
-| `SET obj = 5`, later `SET obj = {'w': 1}` | `{"a": 1, "b": 2, "w": 1}`: a scalar does not clear the map |
 | `UNSET obj.b` | `{"a": 1}`: `UNSET` is the only way to remove a key |
-| `UNSET obj`, then `SET obj = {'w': 1}`, in one transaction | `{"w": 1}`: clearing first replaces the object |
 | `ON ID CONFLICT DO UPDATE` with `{"obj": {"c": 3}}` | `{"a": 1, "b": 2, "c": 3}`: upserts merge too |
 
 **✅ DO**:
@@ -72,8 +70,8 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 - Remove keys with `UNSET`. To replace an object, run `UNSET` then `SET` in one transaction, or declare it `REGISTER` (Rule 3). Only `REGISTER` keeps concurrent edits from mixing: after `UNSET` and `SET` the field is still a map.
 
 **❌ DON'T**:
-- Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out, or clear a map with `SET obj = {}` or by assigning a scalar.
-- Write back a stale in-memory copy with `DO UPDATE` (every supplied field) or `DO UPDATE_LOCAL_DIFF` (every field that differs locally, including old values): either overrides a concurrent change.
+- Assume `SET obj = {...}` or `DO UPDATE` removes keys you left out, or clear a map with `SET obj = {}` or a scalar (`SET obj = 5`).
+- Write back a stale in-memory copy with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (it writes every field that differs locally, old values included): either overrides a concurrent change.
 
 `§ CRDT Types and Merge Behavior`, `§ Local Write Semantics You Must Know`, `§ Document Structure` · Example: [examples/field-level-updates.sql](examples/field-level-updates.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, replacing an object, `UNSET` metadata)
 
@@ -99,7 +97,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 - Move an entry by writing only its `position`, between its new neighbors; renumbering all entries loses a concurrent reorder.
 - Convert an array to a map as soon as more than one device writes it, into a **new field** (`lineItems` next to the old `items`).
 
-**❌ DON'T**: splice unchecked input into a query; write a map under the array's field name (the old array and the new map then coexist under one key).
+**❌ DON'T**: splice unchecked input into a query; write the map under the array's name.
 
 `§ Arrays and Maps` · Example: [examples/array-to-map.sql](examples/array-to-map.sql)
 
@@ -117,7 +115,7 @@ Local write semantics on an existing object `{"a": 1, "b": 2}`:
 
 **Note (SDK 5.1.0 and 5.2.0)**: with `DQL_STRICT_MODE = true` the planner does not use secondary indexes (`EXPLAIN` shows a collection scan); ID lookups and full-collection `COUNT(*)` are not affected.
 
-Choose `true` only if nearly every object needs replacement semantics and you will declare every MAP, COUNTER, and ATTACHMENT field everywhere. Set it on every open in `DittoConfig.systemParameters` (SDK 5.2+; on 5.1, `ALTER SYSTEM` after `Ditto.open`, before sync, queries, and observers), with the same value on every peer (each peer interprets synced data with its own setting).
+Choose `true` only if nearly every object needs replacement and you will declare every MAP, COUNTER, and ATTACHMENT field. Set it on every open in `DittoConfig.systemParameters` (SDK 5.2+; on 5.1, `ALTER SYSTEM` after `Ditto.open`, before sync, queries, and observers), with the same value on every peer (each peer interprets synced data with its own setting).
 
 **✅ DO**: for a few replace-as-a-whole objects, keep the default and declare `REGISTER` **in every statement** on the field, reads included: `UPDATE COLLECTION customers (shippingAddress REGISTER) SET shippingAddress = :address WHERE _id = :id` and `SELECT * FROM COLLECTION customers (shippingAddress REGISTER) WHERE _id = :id`.
 
@@ -153,7 +151,6 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 | Generated by Ditto (omit `_id`) | Nothing needs the ID before insert; read the result's mutated document IDs |
 
 - **Never** use sequential or timestamp-only IDs: two offline devices produce the same ID, and the documents merge into one.
-- Strings and objects are recommended; floats and `null` are rejected. Do not depend on the format of generated IDs.
 - `_id` is immutable: copy to a new `_id` and remove the old document in one transaction, declaring `COUNTER`, `ATTACHMENT`, and `REGISTER` fields in both the `SELECT` and the `INSERT` (see the reference).
 - Put only immutable attributes into a composite `_id`; filter and index its subfields (`_id.storeId`).
 - Keep human-readable numbers (`#A-0042`) in a separate field: labels, not keys.
@@ -170,7 +167,6 @@ Embed sub-entities as maps keyed by ID. `JOIN` **(SDK 5.1+)** removes the main r
 | Owned by exactly one parent | Shared by many parents (products in many orders) |
 | Small and bounded (tens of entries) | Unbounded (events, readings, messages) |
 | Covered by the parent's permissions | Governed by different permissions |
-| Edited by the same writers | Written by different writers or systems |
 
 Concurrent edits alone are **not** a reason to split: map entries merge.
 
@@ -205,7 +201,7 @@ A stored total is a separate register that devices recompute from partial views;
 
 **Note (SDK 5.1.0)**: merges are not checked against the hard limit; concurrent offline additions can produce a larger document everywhere, after which every `UPDATE` fails until `UNSET` removes data. On 5.2.0, receivers drop them; copies diverge until one is evicted, losing its changes (see the reference).
 
-**✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate, so leave headroom.
+**✅ DO**: stay well below 256 KiB per stored document; store binaries as attachments; move unbounded data (history, readings, comments) to its own collection; keep the default limits. `object_size()` is approximate.
 
 `§ Document Size Limits` · Example: [examples/document-size.sql](examples/document-size.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (causes of growth, system parameters)
 
@@ -219,6 +215,7 @@ ISO strings sort as text only at one precision; some formatters vary it even on 
 
 ## Checklist
 
+- [ ] Each change to stored data marked additive or breaking; breaking ones versioned and rolled out in stages (deployed apps)
 - [ ] Items edited by several devices live in maps keyed by stable IDs, not arrays
 - [ ] No reliance on `SET obj = {...}` / `DO UPDATE` to remove keys; `UNSET` used
 - [ ] User edits are field-level `UPDATE`s; upserts and re-imports use `DO UPDATE_LOCAL_DIFF`

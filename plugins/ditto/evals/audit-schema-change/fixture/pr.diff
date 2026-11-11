@@ -1,0 +1,125 @@
+diff --git a/lib/models/order.dart b/lib/models/order.dart
+index 8fdd038..7f99535 100644
+--- a/lib/models/order.dart
++++ b/lib/models/order.dart
+@@ -1,22 +1,28 @@
+-enum OrderStatus { open, paid }
++enum OrderStatus { open, paid, refunded }
+ 
+ class Order {
+   Order({
+     required this.id,
+     required this.storeId,
+-    required this.tableNo,
++    required this.tableNumber,
+     required this.status,
++    required this.items,
++    required this.note,
+   });
+ 
+   final String id;
+   final String storeId;
+-  final int tableNo;
++  final int tableNumber;
+   final OrderStatus status;
++  final List<Map<String, dynamic>> items;
++  final String note;
+ 
+   factory Order.fromDocument(Map<String, dynamic> doc) => Order(
+         id: doc['_id'] as String,
+         storeId: doc['storeId'] as String,
+-        tableNo: doc['tableNo'] as int,
++        tableNumber: doc['tableNumber'] as int,
+         status: OrderStatus.values.byName(doc['status'] as String),
++        items: ((doc['items'] as List?) ?? const []).cast<Map<String, dynamic>>(),
++        note: doc['note'] as String? ?? '',
+       );
+ }
+diff --git a/lib/order_repository.dart b/lib/order_repository.dart
+index 95f911c..ff09e54 100644
+--- a/lib/order_repository.dart
++++ b/lib/order_repository.dart
+@@ -14,13 +14,22 @@ class OrderRepository {
+   StreamSubscription<QueryResult>? _changes;
+ 
+   Future<void> start() async {
++    await ditto.store.execute(
++      'CREATE INDEX IF NOT EXISTS idx_orders_store ON orders (storeId)',
++    );
++    // "tableNumber" replaces "tableNo" from 1.5 on.
++    await ditto.store.execute(
++      'UPDATE orders SET tableNumber = tableNo UNSET tableNo '
++      'WHERE storeId = :storeId AND tableNo IS NOT MISSING',
++      arguments: {'storeId': storeId},
++    );
+     _subscription = ditto.sync.registerSubscription(
+       'SELECT * FROM orders WHERE storeId = :storeId',
+       arguments: {'storeId': storeId},
+     );
+   }
+ 
+-  Future<String> createOrder(int tableNo) async {
++  Future<String> createOrder(int tableNumber) async {
+     final id = const Uuid().v4();
+     await ditto.store.execute(
+       'INSERT INTO orders DOCUMENTS (:order)',
+@@ -28,18 +37,41 @@ class OrderRepository {
+         'order': {
+           '_id': id,
+           'storeId': storeId,
+-          'tableNo': tableNo,
++          'tableNumber': tableNumber,
+           'status': 'open',
++          'items': <Map<String, dynamic>>[],
+         },
+       },
+     );
+     return id;
+   }
+ 
+-  Future<void> moveTable(String orderId, int tableNo) async {
++  Future<void> moveTable(String orderId, int tableNumber) async {
+     await ditto.store.execute(
+-      'UPDATE orders SET tableNo = :tableNo WHERE _id = :id',
+-      arguments: {'id': orderId, 'tableNo': tableNo},
++      'UPDATE orders SET tableNumber = :tableNumber WHERE _id = :id',
++      arguments: {'id': orderId, 'tableNumber': tableNumber},
++    );
++  }
++
++  /// Any till at the table can add an item to the order.
++  Future<void> addItem(String orderId, String productId, int quantity) async {
++    final result = await ditto.store.execute(
++      'SELECT items FROM orders WHERE _id = :id',
++      arguments: {'id': orderId},
++    );
++    final items = List<Map<String, dynamic>>.from(
++        (result.items.first.value['items'] as List?) ?? const []);
++    items.add({'productId': productId, 'quantity': quantity});
++    await ditto.store.execute(
++      'UPDATE orders SET items = :items WHERE _id = :id',
++      arguments: {'id': orderId, 'items': items},
++    );
++  }
++
++  Future<void> setNote(String orderId, String note) async {
++    await ditto.store.execute(
++      'UPDATE orders SET note = :note WHERE _id = :id',
++      arguments: {'id': orderId, 'note': note},
+     );
+   }
+ 
+@@ -50,6 +82,13 @@ class OrderRepository {
+     );
+   }
+ 
++  Future<void> refund(String orderId) async {
++    await ditto.store.execute(
++      "UPDATE orders SET status = 'refunded' WHERE _id = :id",
++      arguments: {'id': orderId},
++    );
++  }
++
+   void watchOpenOrders(void Function(List<Order>) onOrders) {
+     final observer = ditto.store.registerObserver(
+       "SELECT * FROM orders WHERE storeId = :storeId AND status = 'open'",

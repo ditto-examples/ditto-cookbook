@@ -1,0 +1,36 @@
+diff --git a/lib/task_repository.dart b/lib/task_repository.dart
+index 6cf3593..2be4b72 100644
+--- a/lib/task_repository.dart
++++ b/lib/task_repository.dart
+@@ -14,24 +14,25 @@ class TaskRepository {
+     _subscription = ditto.sync.registerSubscription('SELECT * FROM tasks');
+   }
+ 
+-  Future<void> addTask(String title) async {
++  Future<void> addTask(String name) async {
+     await ditto.store.execute(
+       'INSERT INTO tasks DOCUMENTS (:task)',
+       arguments: {
+-        'task': {'_id': const Uuid().v4(), 'title': title, 'done': false},
++        'task': {'_id': const Uuid().v4(), 'name': name, 'status': 'todo'},
+       },
+     );
+   }
+ 
+-  Future<void> setDone(String id, bool done) async {
++  /// status is 'todo', 'doing', or 'done'.
++  Future<void> setStatus(String id, String status) async {
+     await ditto.store.execute(
+-      'UPDATE tasks SET done = :done WHERE _id = :id',
+-      arguments: {'id': id, 'done': done},
++      'UPDATE tasks SET status = :status WHERE _id = :id',
++      arguments: {'id': id, 'status': status},
+     );
+   }
+ 
+   void watchTasks(void Function(List<Map<String, dynamic>>) onTasks) {
+-    final observer = ditto.store.registerObserver('SELECT * FROM tasks ORDER BY title');
++    final observer = ditto.store.registerObserver('SELECT * FROM tasks ORDER BY name');
+     _observer = observer;
+     _changes = observer.changes.listen((result) {
+       onTasks(result.items.map((i) => i.value).toList());
