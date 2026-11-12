@@ -85,13 +85,13 @@ An observer runs until it is released: `cancel()` in Flutter, JavaScript, and Sw
 
 Without backpressure, Ditto does not wait for your code before delivering the next result: in Flutter, pausing `changes` of a `StoreObserver` only queues results; in JavaScript, `async` handlers overlap and an older result can finish last.
 
-**Detection**: an `async` callback that `await`s network, file, or database work; a callback that writes to its own collection without a guard.
+**Detection**: an `async` callback that `await`s network, file, or database work; a callback that writes or acts on each change.
 
-**✅ DO**: keep the callback synchronous and short (copy values, map to models, update UI state); move expensive computation off the UI thread on copied plain values; throttle UI updates for very busy collections; use the backpressure APIs (rule 4) for slow or asynchronous work per update.
+**✅ DO**: keep the callback synchronous and short (copy values, map to models, update UI state); move heavy computation off the UI thread on copied values; throttle UI updates for very busy collections; use backpressure (rule 4) for slow or async work per update.
 
-**❌ DON'T**: wait for slow work inside a default callback; write to the same collection from inside its observer without a guard (each write triggers the observer again).
+**❌ DON'T**: wait for slow work inside a default callback; write from a callback unless the write is a no-op once applied and every device computes the same value (else devices loop).
 
-`§ Keep observer callbacks fast` · Example: `observer-performance` in `examples/<sdk>/`
+`§ Keep observer callbacks fast`, `§ Writing from Observers` · Example: `observer-performance` in `examples/<sdk>/`
 
 ### 4. Use backpressure for slow or async work (HIGH)
 

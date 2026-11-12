@@ -58,7 +58,7 @@ An observation goes on the page of the part of Ditto that it concerns, as listed
 | [The Persistence Directory](observations/persistence-directory.md) | Copies of a directory, Database IDs, deleting parts of a directory, locks |
 | [DQL Behavior](observations/dql-behavior.md) | Statements that held, writes and arguments, `USE IDS`, comparison and ordering, numbers and strings, IDs and field names, indexes and query plans, long conditions and `ANY`, differences on SDK 5.0.3 |
 | [Transaction Behavior](observations/transaction-behavior.md) | Concurrency and reads, long transactions, deadlocked transactions |
-| [Observer Behavior](observations/observer-behavior.md) | When observers fire, how changes are batched, observers of `system:` collections, differences between releases |
+| [Observer Behavior](observations/observer-behavior.md) | When observers fire, how changes are batched, observers that write on several devices, observers of `system:` collections, differences between releases |
 | [Attachment Behavior](observations/attachment-behavior.md) | Relaying and fetching attachments, slow links, garbage collection of blobs |
 | [Performance Measurements](observations/performance-measurements.md) | Statements and write rates, many fields and collections, queries and indexes, memory, hub load |
 | [Configuration and Diagnostics](observations/configuration-and-diagnostics.md) | Parameter defaults, environment variables, the offline license token, request diagnostics, logs |

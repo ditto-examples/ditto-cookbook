@@ -28,7 +28,7 @@ Best practices, in `reference/best-practices/`:
 | `dql.md` | Where queries run, parameters and literals, MISSING vs NULL, query results, error messages and empty results (a lookup table); SELECT (projections, DISTINCT, aggregates, GROUP BY, ORDER BY, LIMIT, USE IDS, membership, JOIN); INSERT and ON ID CONFLICT, UPDATE, RETURNING, DELETE and EVICT |
 | `data-modeling.md` | Strict mode, arrays vs maps, document structure and size, relationships, IDs, counters, checks and claims across devices (locks, uniqueness, sequence numbers, invariants), event history, INITIAL documents, schema evolution, timestamps |
 | `sync-and-subscriptions.md` | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
-| `observers.md` | The observer APIs of each SDK, when observers fire (by query shape), observer lifecycle, backpressure and choosing an observer API, diffing, partial UI updates |
+| `observers.md` | The observer APIs of each SDK, when observers fire (by query shape), observer lifecycle, writing from observers on several devices, backpressure and choosing an observer API, diffing, partial UI updates |
 | `transactions.md` | `store.transaction` in each SDK, rules, concurrency, sync |
 | `attachments.md` | Architecture, creating, fetching, immutability, thumbnails, availability, size |
 | `deletion-and-storage.md` | DELETE and tombstones, soft delete, EVICT, choosing a strategy, monitoring storage |
@@ -67,7 +67,7 @@ Observations from our testing, in `reference/knowledge/observations/`, one entry
 | `observations/dql-behavior.md` | Statements that held, writes and arguments, `USE IDS`, comparison and ordering, IDs and field names, indexes and query plans (SDK 5.1.0 issues, migration), long conditions and `ANY`, SDK 5.0.3 differences |
 | `observations/performance-measurements.md` | Statements and write rates, many fields and collections, queries and indexes, memory, hub load |
 | `observations/transaction-behavior.md` | Concurrency and reads, long transactions, deadlocked transactions |
-| `observations/observer-behavior.md` | When observers fire, batching of changes, observers of `system:` collections, release differences |
+| `observations/observer-behavior.md` | When observers fire, batching of changes, observers that write on several devices, observers of `system:` collections, release differences |
 | `observations/attachment-behavior.md` | Relaying and fetching attachments, slow links, garbage collection of blobs |
 | `observations/flutter-sdk.md`, `observations/javascript-sdk.md`, `observations/kotlin-sdk.md`, `observations/swift-sdk.md` | What one SDK's API does: opening and shutting down, errors, login, callbacks and handles, values of the language, calls after shutdown, transactions and their threads, logging |
 | `observations/configuration-and-diagnostics.md` | Parameter defaults, environment variables, the offline license token, request diagnostics, logs |

@@ -1,7 +1,7 @@
 # Ditto SDK Best Practices
 
-> **Version**: 5.19
-> **Last Updated**: 2026-11-11
+> **Version**: 5.20
+> **Last Updated**: 2026-11-13
 > **Applies to**: Ditto SDK 5.2.0 for Flutter (`ditto_live`), JavaScript (`@dittolive/ditto`), Kotlin (`com.ditto:ditto-kotlin`), and Swift (`DittoSwift`). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
 This guide helps you build offline-first applications on the Ditto SDK that stay correct when many devices change the same data without a connection. It concentrates on two kinds of guidance:
@@ -70,7 +70,7 @@ Before release, check your code against the [Anti-Pattern Checklist](anti-patter
 | [Reading and Writing Data with DQL](dql.md) | Where queries run, parameters and literals, MISSING and NULL, query results, error messages and empty results, `SELECT` (projections, aggregates, `GROUP BY`, `ORDER BY`, `LIMIT`, `USE IDS`, membership, `JOIN`), `INSERT` and `ON ID CONFLICT`, `UPDATE`, `RETURNING`, `DELETE` and `EVICT` |
 | [Data Modeling](data-modeling.md) | Strict mode, arrays and maps, document structure and size, relationships, document IDs, counters, checks and claims across devices, event history, `INITIAL DOCUMENTS`, schema evolution, timestamps |
 | [Sync and Subscriptions](sync-and-subscriptions.md) | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
-| [Observing Changes](observers.md) | The observer APIs of each SDK, when observers fire, observer lifecycle, backpressure and choosing an observer API, diffing results, partial UI updates |
+| [Observing Changes](observers.md) | The observer APIs of each SDK, when observers fire, observer lifecycle, writing from observers on several devices, backpressure and choosing an observer API, diffing results, partial UI updates |
 | [Transactions](transactions.md) | `store.transaction` in each SDK, transaction rules, concurrency and duration, sync |
 | [Attachments](attachments.md) | Architecture, creating, fetching, immutability, thumbnails, availability, size |
 | [Deletion and Storage Management](deletion-and-storage.md) | `DELETE` and tombstones, soft delete, `EVICT`, choosing a strategy, monitoring storage |

@@ -80,7 +80,53 @@ Unless you use a backpressure API (see [Backpressure (SDK 5.1+)](#backpressure-s
 
 **❌ DON'T:**
 - Wait for network calls, file I/O, or database writes in a default observer callback. What a slow callback does depends on the SDK: in our testing, `async` callbacks of JavaScript's and Flutter's `registerObserver` overlapped, so that a slow callback for an older result could finish last and leave the screen in an older state, while Kotlin's suspending handlers, and Swift handlers that did their work before returning, ran one at a time and held back the next result, which delays every update; a Swift handler that started a `Task` for each result returned at once, and its tasks overlapped (see [In JavaScript, registerObserver does not await async callbacks](../knowledge/observations/javascript-sdk.md#in-javascript-registerobserver-does-not-await-async-callbacks), [In Flutter, a slow async observer callback does not hold back the next result](../knowledge/observations/flutter-sdk.md#in-flutter-a-slow-async-observer-callback-does-not-hold-back-the-next-result), [In Kotlin, observer handlers run one at a time, and intermediate results are skipped](../knowledge/observations/kotlin-sdk.md#in-kotlin-observer-handlers-run-one-at-a-time-and-intermediate-results-are-skipped), and [In Swift, a store observer's handler waits for the previous one](../knowledge/observations/swift-sdk.md#in-swift-a-store-observers-handler-waits-for-the-previous-one)).
-- Write to the same collection from inside its observer without a guard; each write triggers the observer again. In our testing, a `SELECT *` observer that wrote the same value to its own document was called again about every 35 ms without end; comparing the value before writing, or `DO UPDATE_LOCAL_DIFF`, stopped it (see [Writing the same value from an observer keeps it firing](../knowledge/observations/observer-behavior.md#writing-the-same-value-from-an-observer-keeps-it-firing)).
+- Write to the same collection from inside its observer without a guard; each write triggers the observer again. In our testing, a `SELECT *` observer that wrote the same value to its own document was called again about every 35 ms without end; comparing the value before writing, or `DO UPDATE_LOCAL_DIFF`, stopped it on one device (see [Writing the same value from an observer keeps it firing](../knowledge/observations/observer-behavior.md#writing-the-same-value-from-an-observer-keeps-it-firing)). When the same code runs on several devices, these guards are not enough; see [Writing from Observers](#writing-from-observers).
+
+## Writing from Observers
+
+An observer is called for changes from sync as well as for the device's own writes, and its result does not say which device made the change. A callback that writes therefore also reacts to the writes of the same callback on other devices: its write syncs, calls their observers, and their writes call it again. Nothing fails, and nothing reports such a loop. **Write from an observer only when both of these hold:**
+
+1. **The write does nothing once the document is in the state that it produces.** Compare with the stored value before you write, or write with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`, which skips fields whose values are equal (see [Prefer field-level updates over whole-document rewrites](dql.md#prefer-field-level-updates-over-whole-document-rewrites)).
+2. **Every device computes the same state from the same synced documents.** A value that depends on the device, such as its ID, the signed-in user, a local setting, the current time, or the rules of one app version, differs between devices, so the guard of item 1 never skips it.
+
+In our testing with SDK 5.1.0 and 5.2.0, two devices whose observers each wrote their own value to one field kept writing to each other about 14 times a second per device, although each compared with the stored value first; `DO UPDATE_LOCAL_DIFF` did not stop it either, and an observer that projected only that field stopped in only 2 of 7 runs, by chance, leaving one device's value in place and the other device's rule unmet. With only one of the two observers, it wrote once. When both devices wrote the same value, or a total derived from the synced document, each wrote once or twice and stopped (see [Observers on two devices that each write their own value keep writing](../knowledge/observations/observer-behavior.md#observers-on-two-devices-that-each-write-their-own-value-keep-writing) and [Observers on two devices that write the same value, or one derived from synced data, stop after one or two writes](../knowledge/observations/observer-behavior.md#observers-on-two-devices-that-write-the-same-value-or-one-derived-from-synced-data-stop-after-one-or-two-writes)). A loop on one device also reaches the others: its writes sync even when no value changes, and in our testing they called the `SELECT *` observer on the other device about 28 times a second (see [A loop on one device calls the observers of the devices that sync the document](../knowledge/observations/observer-behavior.md#a-loop-on-one-device-calls-the-observers-of-the-devices-that-sync-the-document)).
+
+A write or a side effect that is not idempotent runs once on each device that reacts, even without a loop. In our testing, two devices that took each of 20 events with `UPDATE ... WHERE _id = :id AND handled = false` both changed every event before the other's flag arrived, and incremented a counter to 40 and inserted 40 log documents; with a log `_id` derived from the event, 20 log documents remained, but the counter stayed at 40 (see [Two devices that react to the same change both run its side effects](../knowledge/observations/merge-behavior.md#two-devices-that-react-to-the-same-change-both-run-its-side-effects) and [Checks and Claims across Devices](data-modeling.md#checks-and-claims-across-devices)).
+
+| Reaction in an observer that runs on every device | Result | Do this instead |
+|---|---|---|
+| Writes the same value without a check, from a `SELECT *` observer | Loops on each device, and calls the observers of every device that syncs the document | Compare first, or use `DO UPDATE_LOCAL_DIFF` |
+| Writes a value that depends on the device, the user, a setting, the time, or the app version, also with a check | The devices overwrite each other without end | Write each device's value under its own key (`seenBy.<deviceId>`) or in its own document, and derive one value when you read |
+| Writes the same value on every device, or a value derived only from synced documents, with a check | Stops after one write per device | Acceptable; computing the value when you read avoids the write (see [Do not store derived values that can diverge](data-modeling.md#do-not-store-derived-values-that-can-diverge)) |
+| A counter increment, an `INSERT` with a new ID, a notification, a print job, or a call to a server, per change | Runs once on each device that reacts | Let one device or service react; give documents an `_id` derived from the change and insert them with `ON ID CONFLICT DO NOTHING` |
+
+```sql
+-- ❌ BAD: Run from an observer on every device. Each device writes its own ID,
+-- so each write changes the field for the other devices, and they keep
+-- overwriting each other, also with a check that the value differs.
+-- Arguments: {"id": "order-1", "deviceId": "till-1"}
+UPDATE orders SET lastSeenBy = :deviceId WHERE _id = :id
+
+-- ✅ GOOD: Each device writes under its own key, and writes nothing when its
+-- entry is already there. The screen derives the value it needs from the map.
+-- Arguments: {"patch": {"_id": "order-1", "seenBy": {"till-1": true}}}
+INSERT INTO orders DOCUMENTS (:patch) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
+
+-- ✅ GOOD: A record of one handled event has an _id derived from the event, so
+-- the records of several devices merge into one document.
+-- Arguments: {"log": {"_id": "printed-order-1", "orderId": "order-1"}}
+INSERT INTO print_log DOCUMENTS (:log) ON ID CONFLICT DO NOTHING
+```
+
+**✅ DO:**
+- Before a callback writes, ask what happens when the same code runs on every device at once and receives the other devices' writes.
+- Decide which device acts on a change, such as the device that created the document, a device with a given role, or a service, when an action must happen once.
+- Project only the fields that the reaction needs, so that writes to other fields do not call the callback (see [When Observers Fire](#when-observers-fire)).
+
+**❌ DON'T:**
+- Write the time, the device ID, or the user into a document from an observer that every device runs, for example to mark it as seen or processed.
+- Rely on a conditional `UPDATE` in the callback to make a reaction run once; each device changes its own copy (see [Checks and Claims across Devices](data-modeling.md#checks-and-claims-across-devices)).
+- Count, log, or notify per callback; observers skip intermediate states and can be called without a change (see [When Observers Fire](#when-observers-fire)).
 
 ## Backpressure (SDK 5.1+)
 

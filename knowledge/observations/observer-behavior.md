@@ -1,11 +1,12 @@
 # Observer Behavior
 
-How store observers behave on one device: when an observer is called, how changes are batched into callbacks, how often observers of `system:` collections fire, and how observers differ between SDK releases. How each SDK's observer API calls your code is on the page of that SDK: [Flutter](flutter-sdk.md), [JavaScript](javascript-sdk.md), [Kotlin](kotlin-sdk.md), or [Swift](swift-sdk.md). How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Observing Changes](../../best-practices/observers.md), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Platform Differences](../platform-differences.md).
+How store observers behave: when an observer is called, how changes are batched into callbacks, what happens when observers on several devices write in reaction to each other's changes, how often observers of `system:` collections fire, and how observers differ between SDK releases. How each SDK's observer API calls your code is on the page of that SDK: [Flutter](flutter-sdk.md), [JavaScript](javascript-sdk.md), [Kotlin](kotlin-sdk.md), or [Swift](swift-sdk.md). How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Observing Changes](../../best-practices/observers.md), [Monitoring Storage](../../best-practices/deletion-and-storage.md#monitoring-storage), and [Platform Differences](../platform-differences.md).
 
 **In brief**
 
 - A `SELECT *` observer is called on every write to a document in its result, even of the same value; an observer that projects fields, only when a projected value changes; and on 5.1.0 and 5.2.0, an aggregate observer, on every write to the collection ([When an observer fires depends on its query](#when-an-observer-fires-depends-on-its-query), [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing)).
 - Since SDK 5.1, changes are coalesced into callbacks about 30 ms apart, so an observer skips intermediate values. Changes from another device arrive in a few callbacks, and a transaction in one ([Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart), [A device receives nearly every value of a fast-changing field](#a-device-receives-nearly-every-value-of-a-fast-changing-field), [Remote changes arrive in a few callbacks, and a transaction in one](#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
+- Observers on two devices that write in reaction to a change kept writing to each other when each device wanted its own value, also when each compared before writing and also with `DO UPDATE_LOCAL_DIFF`; they stopped after one or two writes each when both wanted the same value, or one derived from synced data only. A loop on one device calls the `SELECT *` observers of the devices that sync the document as often as its own ([Observers on two devices that each write their own value keep writing](#observers-on-two-devices-that-each-write-their-own-value-keep-writing), [Observers on two devices that write the same value, or one derived from synced data, stop after one or two writes](#observers-on-two-devices-that-write-the-same-value-or-one-derived-from-synced-data-stop-after-one-or-two-writes), [A loop on one device calls the observers of the devices that sync the document](#a-loop-on-one-device-calls-the-observers-of-the-devices-that-sync-the-document)).
 - An observer of `system:system_info` keeps firing while nothing changes: every 500 ms on 5.1.0, with new `_id` or `timestamp` values in 16 rows, and twice about every second on 5.2.0, mostly with identical results ([Observers of system:system_info keep firing while nothing changes](#observers-of-systemsystem_info-keep-firing-while-nothing-changes)).
 - An observer of `system:data_sync_info` with an idle peer was not called every 500 ms, but 3 or 4 times in 40 seconds ([An observer of system:data_sync_info was called 3 or 4 times in 40 seconds with an idle peer](#an-observer-of-systemdata_sync_info-was-called-3-or-4-times-in-40-seconds-with-an-idle-peer)).
 - Every SDK's differ, and Kotlin's `DittoDiff`, reported the same diffs on 5.1.0 and 5.2.0: the first result as insertions, a reorder as a move for every shifted item plus an update for the moved one, no move for items that only shifted because of a deletion or an insertion, and nothing for a value that changed and changed back between two results ([Every SDK's differ reports a reorder as a move of each shifted item and compares only two results](#every-sdks-differ-reports-a-reorder-as-a-move-of-each-shifted-item-and-compares-only-two-results)).
@@ -162,6 +163,67 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 **Not tested:** what the rows contained in each callback; more than one peer; devices that sync changes while the observer runs; longer than 40 seconds.
 
 **Used in:** [Monitoring Sync Status](../../best-practices/sync-and-subscriptions.md#monitoring-sync-status).
+
+## Observers That Write on Several Devices
+
+### Observers on two devices that each write their own value keep writing
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs) |
+| Setup | Two peers in one process, A and B, both subscribed to the collection. A inserted a document with `owner: 'none'`. On each device, an observer of that document wrote the device's own name to `owner` with `UPDATE`, only when the stored value was not already that name. We counted each device's writes in 6 seconds, and those in the last 2 seconds, with three kinds of observer: `SELECT _id, owner`, `SELECT *`, and `SELECT *` whose callback wrote with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` on every call. A control run had only A's observer |
+| Documentation | In the JavaScript SDK's type definitions, the `QueryResult` that an observer receives holds the items, the mutated document IDs (described as always empty for an observer), and the commit ID; none of them names the device that made the change |
+
+| Observer | Writes per device in 6 seconds | In the last 2 seconds |
+|---|---|---|
+| `SELECT _id, owner`, compared before writing | 85 to 87 in 5 of 7 runs; in the other 2 runs (one on each release), 41 after 2.8 seconds and 4 to 5 after 0.25 seconds, then none | 28 to 29 in 5 of 7 runs; 0 in the other 2 |
+| `SELECT *`, compared before writing | 85 to 87 in every run | 28 to 29 |
+| `SELECT *`, `DO UPDATE_LOCAL_DIFF` on every call | 169 to 173 statements in every run | 56 to 58 |
+| Control: only A's observer | 1 in every run | 0 |
+
+- Each write changed the value that the other device wanted, so it called the other device's observer, whose write called the first one's again. Comparing before writing and `DO UPDATE_LOCAL_DIFF` skip only a write of the value already stored, which was never the case here. Except in the two runs below, the writes stopped only when the observers were cancelled, after which both devices held the same document.
+- In the two runs that stopped, one device's name remained, and that device's observer was not called again, so the other device's rule stayed unmet without an error. We think that a write arrived while the device's own write was being coalesced, so that the projected value looked unchanged to its observer (see [Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart)); we did not confirm this.
+- About 14 writes a second per device is the round trip of this setup: two peers over loopback TCP, with callbacks about 30 ms apart. Over real networks, each round trip takes longer, so we expect fewer writes a second; we did not test that.
+- The commit ID of the result in every observer callback was `null`, so the callback could not tell its own device's writes from the other device's.
+- The results were the same on both releases.
+
+**Not tested:** three or more devices; a loop through two collections; devices in separate processes, on real networks, or with different clocks; observers of the Flutter, Kotlin, and Swift SDKs, whose callbacks wait differently (see [Keep observer callbacks fast](../../best-practices/observers.md#keep-observer-callbacks-fast)).
+
+**Used in:** [Checks and Claims across Devices](../../best-practices/data-modeling.md#checks-and-claims-across-devices), [Writing from Observers](../../best-practices/observers.md#writing-from-observers).
+
+### Observers on two devices that write the same value, or one derived from synced data, stop after one or two writes
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs) |
+| Setup | The two peers of [Observers on two devices that each write their own value keep writing](#observers-on-two-devices-that-each-write-their-own-value-keep-writing), with a `SELECT *` observer of one document on each device. Same value: A inserted `status: 'new'`, and each observer wrote `status = 'done'`, either only when the stored value differed, or with `DO UPDATE_LOCAL_DIFF` on every call. Derived value: A inserted `items: {a: 2, b: 3}` and `total: 0`; each observer wrote the sum of `items` to `total` when it differed, and after 2 seconds B added `items.c = 4`. We counted each device's writes in 6 seconds |
+
+| Reaction on both devices | Writes per device | Last write |
+|---|---|---|
+| The same value, compared before writing | 1 | Within 9 ms of the insert |
+| The same value, `DO UPDATE_LOCAL_DIFF` on every call | 1 to 2 statements | Within 43 ms |
+| A total derived from `items`, compared before writing | 1 to 2: one after the insert, one after B's change | Within 12 ms of each change; both devices held `total: 9` |
+
+- Once a device held the value that its rule produces, its next call wrote nothing, so the other device's observer was not called again. Both devices wrote the same value concurrently, which merged without a conflict.
+- The results were the same on both releases.
+
+**Not tested:** a derived value that depends on documents that only some devices hold; the same with concurrent edits of the inputs while the devices are offline.
+
+**Used in:** [Writing from Observers](../../best-practices/observers.md#writing-from-observers).
+
+### A loop on one device calls the observers of the devices that sync the document
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs) |
+| Setup | The two peers above. On B, a `SELECT *` observer of one document wrote the value that the document already had on every call, the loop of [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing). A had a `SELECT *` observer of the same document that did not write. We counted the calls in 6 seconds |
+
+- B wrote 168 to 172 times in 6 seconds, and A's observer was called 169 to 174 times, about 28 times a second, until B's observer was cancelled. Every write synced, although no value changed.
+- The results were the same on both releases.
+
+**Not tested:** an observer on A that projects fields (it would not be called for these writes; see [When an observer fires depends on its query](#when-an-observer-fires-depends-on-its-query)); the traffic and battery cost of the loop.
+
+**Used in:** [Writing from Observers](../../best-practices/observers.md#writing-from-observers).
 
 ## Differs
 

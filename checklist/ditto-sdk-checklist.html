@@ -743,8 +743,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
         </div>
       </div>
       <div class="metadata">
-        <span data-i18n="versionLabel">Version</span> 3.4 |
-        <span data-i18n="lastUpdatedLabel">Last Updated:</span> 2026-11-11 |
+        <span data-i18n="versionLabel">Version</span> 3.5 |
+        <span data-i18n="lastUpdatedLabel">Last Updated:</span> 2026-11-13 |
         <span data-i18n="appliesToLabel">Applies to:</span> Ditto SDK 5.2.0 for Flutter, JavaScript, Kotlin, and Swift
       </div>
       <p class="intro" data-i18n-html="intro"></p>
@@ -2103,6 +2103,28 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 
         <article class="item" data-item-index="46">
           <div class="item-header">
+            <input type="checkbox" class="item-checkbox" id="item-write-from-an-observer-only-what-every-device-would-write">
+            <label class="item-title" for="item-write-from-an-observer-only-what-every-device-would-write">Write from an observer only what every device would write</label>
+          </div>
+          <div class="item-details">
+            <div class="detail-section">
+              <div class="detail-heading what-heading">What this means</div>
+              <div class="detail-content what-content">
+<p>Before an observer callback writes, assume that the same callback runs on every device and also receives the other devices' writes. Write only when the write does nothing once the document is in the state it produces, and when every device computes the same value from synced documents. Store values that depend on the device, the user, the time, or the app version under a key per device, or in a document per device, and derive one value when you read. Let one device or service handle a side effect that must happen once, such as a counter increment, a notification, or a call to a server. Give documents that record a change an <code>_id</code> derived from that change, and insert them with <code>ON ID CONFLICT DO NOTHING</code>.</p>
+              </div>
+            </div>
+            <div class="detail-section">
+              <div class="detail-heading why-heading">Why this matters</div>
+              <div class="detail-content why-content">
+<p>An observer is called for changes from sync too, and its result does not say which device made the change. In our testing with SDK 5.1.0 and 5.2.0, observers on two devices that each wrote their own value to one field kept overwriting each other about 14 times a second per device. Comparing with the stored value first, <code>DO UPDATE_LOCAL_DIFF</code>, and projecting the field did not reliably stop it. When both devices wrote the same value, each wrote once or twice and stopped. Side effects ran once on each device that reacted: two devices that handled 20 events with <code>UPDATE ... WHERE handled = false</code> both handled every event, and a counter reached 40.</p>
+              </div>
+            </div>
+            <p class="guide-reference"><span class="guide-label">Best-practices guide:</span> Writing from Observers, Checks and Claims across Devices</p>
+          </div>
+        </article>
+
+        <article class="item" data-item-index="47">
+          <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-give-each-screen-region-its-own-small-observer">
             <label class="item-title" for="item-give-each-screen-region-its-own-small-observer">Give each screen region its own small observer</label>
           </div>
@@ -2135,7 +2157,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       </h2>
       <div class="section-content" id="section-7-content">
 
-        <article class="item" data-item-index="47">
+        <article class="item" data-item-index="48">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-use-transactions-for-multi-document-changes-that-must-be-atomic">
             <label class="item-title" for="item-use-transactions-for-multi-document-changes-that-must-be-atomic">Use transactions for multi-document changes that must be atomic</label>
@@ -2177,7 +2199,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="48">
+        <article class="item" data-item-index="49">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-use-only-the-transaction-s-own-execute-inside-a-transaction-and-never-nest-read-write-transactions">
             <label class="item-title" for="item-use-only-the-transaction-s-own-execute-inside-a-transaction-and-never-nest-read-write-transactions">Use only the transaction's own execute inside a transaction, and never nest read-write transactions</label>
@@ -2199,7 +2221,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="49">
+        <article class="item" data-item-index="50">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-keep-transactions-short-and-do-i-o-outside-them">
             <label class="item-title" for="item-keep-transactions-short-and-do-i-o-outside-them">Keep transactions short and do I/O outside them</label>
@@ -2249,7 +2271,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       </h2>
       <div class="section-content" id="section-8-content">
 
-        <article class="item" data-item-index="50">
+        <article class="item" data-item-index="51">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-choose-between-delete-soft-delete-and-evict-deliberately">
             <label class="item-title" for="item-choose-between-delete-soft-delete-and-evict-deliberately">Choose between DELETE, soft delete, and EVICT deliberately</label>
@@ -2277,7 +2299,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="51">
+        <article class="item" data-item-index="52">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-filter-soft-deleted-documents-with-coalesce-isdeleted-false-false">
             <label class="item-title" for="item-filter-soft-deleted-documents-with-coalesce-isdeleted-false-false">Filter soft-deleted documents with coalesce(isDeleted, false) = false</label>
@@ -2318,7 +2340,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="52">
+        <article class="item" data-item-index="53">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-keep-soft-deleted-documents-in-the-subscriptions-of-devices-that-relay-data">
             <label class="item-title" for="item-keep-soft-deleted-documents-in-the-subscriptions-of-devices-that-relay-data">Keep soft-deleted documents in the subscriptions of devices that relay data</label>
@@ -2345,7 +2367,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="53">
+        <article class="item" data-item-index="54">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-avoid-delete-for-concurrently-edited-data-and-long-offline-periods">
             <label class="item-title" for="item-avoid-delete-for-concurrently-edited-data-and-long-offline-periods">Avoid DELETE for concurrently edited data and long offline periods</label>
@@ -2367,7 +2389,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="54">
+        <article class="item" data-item-index="55">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-target-deletions-and-evictions-with-where-id-in-ids">
             <label class="item-title" for="item-target-deletions-and-evictions-with-where-id-in-ids">Target deletions and evictions with WHERE _id IN :ids</label>
@@ -2405,7 +2427,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="55">
+        <article class="item" data-item-index="56">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-cancel-or-narrow-subscriptions-before-evict">
             <label class="item-title" for="item-cancel-or-narrow-subscriptions-before-evict">Cancel or narrow subscriptions before EVICT</label>
@@ -2445,7 +2467,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="56">
+        <article class="item" data-item-index="57">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-evict-on-a-schedule-at-most-about-once-per-day">
             <label class="item-title" for="item-evict-on-a-schedule-at-most-about-once-per-day">Evict on a schedule, at most about once per day</label>
@@ -2467,7 +2489,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="57">
+        <article class="item" data-item-index="58">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-monitor-storage-with-on-demand-queries">
             <label class="item-title" for="item-monitor-storage-with-on-demand-queries">Monitor storage with on-demand queries</label>
@@ -2501,7 +2523,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       </h2>
       <div class="section-content" id="section-9-content">
 
-        <article class="item" data-item-index="58">
+        <article class="item" data-item-index="59">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-create-indexes-at-startup-with-create-index-if-not-exists">
             <label class="item-title" for="item-create-indexes-at-startup-with-create-index-if-not-exists">Create indexes at startup with CREATE INDEX IF NOT EXISTS</label>
@@ -2538,7 +2560,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="59">
+        <article class="item" data-item-index="60">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-index-the-join-key-of-every-inner-join-collection">
             <label class="item-title" for="item-index-the-join-key-of-every-inner-join-collection">Index the join key of every inner JOIN collection</label>
@@ -2577,7 +2599,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="60">
+        <article class="item" data-item-index="61">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-write-predicates-that-the-planner-can-serve-from-an-index">
             <label class="item-title" for="item-write-predicates-that-the-planner-can-serve-from-an-index">Write predicates that the planner can serve from an index</label>
@@ -2606,7 +2628,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="61">
+        <article class="item" data-item-index="62">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-check-query-plans-with-advise-and-explain-during-development">
             <label class="item-title" for="item-check-query-plans-with-advise-and-explain-during-development">Check query plans with ADVISE and EXPLAIN during development</label>
@@ -2642,7 +2664,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="62">
+        <article class="item" data-item-index="63">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-keep-local-queries-lean">
             <label class="item-title" for="item-keep-local-queries-lean">Keep local queries lean</label>
@@ -2686,7 +2708,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="63">
+        <article class="item" data-item-index="64">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-surface-slow-dql-requests-sdk-5-1">
             <label class="item-title" for="item-surface-slow-dql-requests-sdk-5-1">Surface slow DQL requests (SDK 5.1+)</label>
@@ -2720,7 +2742,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       </h2>
       <div class="section-content" id="section-10-content">
 
-        <article class="item" data-item-index="64">
+        <article class="item" data-item-index="65">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-store-binary-data-as-attachments-with-a-declared-attachment-field">
             <label class="item-title" for="item-store-binary-data-as-attachments-with-a-declared-attachment-field">Store binary data as attachments with a declared ATTACHMENT field</label>
@@ -2756,7 +2778,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="65">
+        <article class="item" data-item-index="66">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-fetch-attachments-on-demand-and-stop-fetchers-you-no-longer-need">
             <label class="item-title" for="item-fetch-attachments-on-demand-and-stop-fetchers-you-no-longer-need">Fetch attachments on demand and stop fetchers you no longer need</label>
@@ -2778,7 +2800,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="66">
+        <article class="item" data-item-index="67">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-plan-for-attachments-that-cannot-be-fetched-yet">
             <label class="item-title" for="item-plan-for-attachments-that-cannot-be-fetched-yet">Plan for attachments that cannot be fetched yet</label>
@@ -2800,7 +2822,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="67">
+        <article class="item" data-item-index="68">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-replace-attachments-instead-of-editing-them">
             <label class="item-title" for="item-replace-attachments-instead-of-editing-them">Replace attachments instead of editing them</label>
@@ -2839,7 +2861,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       </h2>
       <div class="section-content" id="section-11-content">
 
-        <article class="item" data-item-index="68">
+        <article class="item" data-item-index="69">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-authenticate-production-apps-through-a-webhook-provider">
             <label class="item-title" for="item-authenticate-production-apps-through-a-webhook-provider">Authenticate production apps through a webhook provider</label>
@@ -2861,7 +2883,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="69">
+        <article class="item" data-item-index="70">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-provision-a-private-key-for-small-peers-only-deployments">
             <label class="item-title" for="item-provision-a-private-key-for-small-peers-only-deployments">Provision a private key for small-peers-only deployments</label>
@@ -2883,7 +2905,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="70">
+        <article class="item" data-item-index="71">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-encode-permission-scopes-in-an-immutable-id">
             <label class="item-title" for="item-encode-permission-scopes-in-an-immutable-id">Encode permission scopes in an immutable _id</label>
@@ -2905,7 +2927,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="71">
+        <article class="item" data-item-index="72">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-validate-input-and-treat-synced-data-as-untrusted">
             <label class="item-title" for="item-validate-input-and-treat-synced-data-as-untrusted">Validate input and treat synced data as untrusted</label>
@@ -2940,7 +2962,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="72">
+        <article class="item" data-item-index="73">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-protect-sensitive-data-at-rest-and-keep-it-out-of-metadata">
             <label class="item-title" for="item-protect-sensitive-data-at-rest-and-keep-it-out-of-metadata">Protect sensitive data at rest and keep it out of metadata</label>
@@ -2967,7 +2989,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="73">
+        <article class="item" data-item-index="74">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-sign-users-out-of-shared-devices-in-a-fixed-order">
             <label class="item-title" for="item-sign-users-out-of-shared-devices-in-a-fixed-order">Sign users out of shared devices in a fixed order</label>
@@ -2996,7 +3018,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="74">
+        <article class="item" data-item-index="75">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-reject-identities-in-the-webhook-before-revoking-certificates-sdk-5-1">
             <label class="item-title" for="item-reject-identities-in-the-webhook-before-revoking-certificates-sdk-5-1">Reject identities in the webhook before revoking certificates (SDK 5.1+)</label>
@@ -3030,7 +3052,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       </h2>
       <div class="section-content" id="section-12-content">
 
-        <article class="item" data-item-index="75">
+        <article class="item" data-item-index="76">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-configure-logging-before-opening-ditto">
             <label class="item-title" for="item-configure-logging-before-opening-ditto">Configure logging before opening Ditto</label>
@@ -3052,7 +3074,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="76">
+        <article class="item" data-item-index="77">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-use-presence-and-transport-conditions-for-connectivity-diagnostics">
             <label class="item-title" for="item-use-presence-and-transport-conditions-for-connectivity-diagnostics">Use presence and transport conditions for connectivity diagnostics</label>
@@ -3074,7 +3096,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="77">
+        <article class="item" data-item-index="78">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-test-your-dql-statements-against-a-real-local-store">
             <label class="item-title" for="item-test-your-dql-statements-against-a-real-local-store">Test your DQL statements against a real local store</label>
@@ -3112,7 +3134,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
           </div>
         </article>
 
-        <article class="item" data-item-index="78">
+        <article class="item" data-item-index="79">
           <div class="item-header">
             <input type="checkbox" class="item-checkbox" id="item-test-the-behaviors-that-fail-silently">
             <label class="item-title" for="item-test-the-behaviors-that-fail-silently">Test the behaviors that fail silently</label>
@@ -3234,6 +3256,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "Register each observer once per owner, and release it when the owner goes away",
       "Add ORDER BY with a tie-breaker to observer queries",
       "Keep observer callbacks fast, and use backpressure for slow work",
+      "Write from an observer only what every device would write",
       "Give each screen region its own small observer",
       "Use transactions for multi-document changes that must be atomic",
       "Use only the transaction's own execute inside a transaction, and never nest read-write transactions",
@@ -3315,6 +3338,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>Give each observer one owner whose lifetime matches the results it shows, such as a screen, a view model, or a service. Register the observer once when its owner starts, never in code that runs on every render, and release it (<code>cancel()</code>, or <code>close()</code> in Kotlin) when the owner goes away. Your SDK's page of the guide shows where to do this in its UI code. In Flutter, register <code>registerObserver</code> without <code>onChange</code>, listen to <code>observer.changes</code> with a single <code>StreamSubscription</code> (or hand the stream to one <code>StreamBuilder</code>), and cancel both the stream subscription and the observer in <code>dispose()</code>.</p>",
       "<p>Whenever the order of results matters, add <code>ORDER BY</code> with a unique tie-breaker such as <code>_id</code>, for example <code>ORDER BY createdAt DESC, _id</code>. Identify each list row by <code>_id</code>.</p>",
       "<p>Keep default observer callbacks short and synchronous: copy the values, map them to models, and hand them to your UI state. When an update starts slow work such as an upload, an export, or heavy aggregation, use your SDK's backpressure API (SDK 5.1+):</p>\n<ul>\n<li>Flutter: <code>registerObserverV2</code> with <code>await for</code>, or <code>registerObserverWithSignalNext</code> with <code>signalNext()</code> called in a <code>finally</code> block (both Experimental)</li>\n<li>JavaScript: <code>registerObserverWithSignalNext</code>, with <code>signalNext()</code> called in a <code>finally</code> block</li>\n<li>Kotlin: a suspending handler, or <code>collect</code></li>\n<li>Swift: <code>handlerWithSignalNext:</code>, with <code>deliverOn:</code> a background queue</li>\n</ul>\n<p>Never write to the observed collection from its own observer without a guard.</p>",
+      "<p>Before an observer callback writes, assume that the same callback runs on every device and also receives the other devices' writes. Write only when the write does nothing once the document is in the state it produces, and when every device computes the same value from synced documents. Store values that depend on the device, the user, the time, or the app version under a key per device, or in a document per device, and derive one value when you read. Let one device or service handle a side effect that must happen once, such as a counter increment, a notification, or a call to a server. Give documents that record a change an <code>_id</code> derived from that change, and insert them with <code>ON ID CONFLICT DO NOTHING</code>.</p>",
       "<p>Instead of observing a whole collection at the root of the screen, observe only what each region needs: a <code>COUNT(*)</code> query for a badge, and <code>WHERE</code> and <code>LIMIT</code> for a lazy list that identifies each row by <code>_id</code>. With a state-management library, let one store, provider, or view model own each observer and release it when that owner is disposed. Use the SDK's differ when you need to know which items changed.</p>",
       "<p>Use <code>ditto.store.transaction</code> for changes that span several documents, such as closing an order and creating its invoice, for read-check-write sequences, and for consistent reads across several queries (<code>isReadOnly</code>). Give every transaction a <code>hint</code>. To roll back, throw or return the SDK's rollback value: <code>TransactionCompletionAction.rollback</code> in Flutter, <code>'rollback'</code> in JavaScript, <code>DittoTransaction.Result.Rollback</code> in Kotlin, or <code>.rollback</code> in Swift. In Kotlin, the callback must return <code>DittoTransaction.Result.Commit(value)</code> to commit. Catching a statement error inside the callback does not roll the transaction back.</p>",
       "<p>Inside the callback, run every statement through the transaction object passed in (its <code>execute</code>), and await each one before the callback returns: in our testing with the JavaScript SDK, a statement that was not awaited was not applied. Never call <code>ditto.store.execute</code> there, never start a read-write transaction inside another one, and never keep the transaction object after the callback returns.</p>",
@@ -3396,6 +3420,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>An observer runs its query and holds memory until you release it, and garbage collection does not release it: in our testing with all four SDKs on SDK 5.1.0 and 5.2.0, observers whose objects the app had dropped kept running, also after garbage collection. In Flutter, an observer registered with <code>onChange</code> also queues every result in its <code>changes</code> stream. If nothing listens to that stream, memory grows with every update (SDK 5.1.0 and 5.2.0). <code>changes</code> is a single-subscription stream, and cancelling the stream subscription does not cancel a <code>StoreObserver</code>. <code>registerObserverV2</code> (Experimental, SDK 5.1+) starts observing as soon as it is registered, with or without <code>onChange</code>, so listen to its <code>changes</code> stream right after registering it.</p>",
       "<p>Without <code>ORDER BY</code>, observer results have no guaranteed order, so rows can change position on every update. Sorting by a timestamp is reliable only when every value is written with the same fixed-precision helper. Rows with equal sort keys came back in ascending <code>_id</code> order on SDK 5.1.0 and 5.2.0 in our testing, but that is not documented, and SDK 5.0 used another order. With <code>DESC</code>, documents without the sort field, then those with <code>null</code>, come first.</p>",
       "<p>Without a backpressure API, Ditto does not wait for the work that a result starts before it delivers the next result: Flutter's default <code>registerObserver</code> has no backpressure, and a JavaScript <code>async</code> handler is not awaited, so work overlaps and queues up. In our testing with the JavaScript SDK, overlapping async callbacks finished out of order and left the screen showing an older result. With backpressure, Ditto holds back updates while your code is busy and then delivers the latest state. An observer that waits for <code>signalNext()</code> stops delivering updates if it is never called. A callback that writes the same value back to the document it observes keeps triggering itself: in our testing with SDK 5.1.0 and 5.2.0, about every 35 ms without end.</p>",
+      "<p>An observer is called for changes from sync too, and its result does not say which device made the change. In our testing with SDK 5.1.0 and 5.2.0, observers on two devices that each wrote their own value to one field kept overwriting each other about 14 times a second per device. Comparing with the stored value first, <code>DO UPDATE_LOCAL_DIFF</code>, and projecting the field did not reliably stop it. When both devices wrote the same value, each wrote once or twice and stopped. Side effects ran once on each device that reacted: two devices that handled 20 events with <code>UPDATE ... WHERE handled = false</code> both handled every event, and a counter reached 40.</p>",
       "<p>A whole-collection observer at the top of a screen renders everything again on every change, which causes dropped frames and lost scroll position or input focus. An observer delivers its full result for any change that affects its query. In our testing with SDK 5.1.0 and 5.2.0, a <code>SELECT *</code> observer fired even for writes that changed no value, while an observer that projected fields fired only when a projected value changed, and an observer of 200 documents under constant updates grew the process's memory on every callback.</p>",
       "<p>If you catch an error and continue, the remaining changes are committed unless you roll back. The <code>hint</code> appears in log messages about long-running transactions, so you can tell which code started them. A single statement is already atomic, so wrapping it in a transaction adds nothing. Other devices receive a transaction at once only when every device on the path subscribes to all of its documents: in our testing with SDK 5.1.0 and 5.2.0, a receiver whose faster path was a relay that subscribed only to the orders showed orders without their items for up to about 0.7 seconds. Changes written in separate statements arrived in the order written, but that order is not documented.</p>",
       "<p>Calling <code>ditto.store.execute</code> inside a transaction never works, and what happens differs by SDK: Flutter throws a <code>DittoException</code>, and in our testing with the JavaScript, Kotlin, and Swift SDKs (5.1.0 and 5.2.0, and JavaScript also 5.0.3), a write through it never completed, without an error. Only one read-write transaction runs at a time, so a nested one waits forever for the outer one to finish.</p>",
@@ -3537,6 +3562,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "オブザーバーは管理するオブジェクトごとに1回だけ登録し、そのオブジェクトがなくなったら解放する",
       "オブザーバーのクエリには、_id などで順序が一意に決まる ORDER BY を付ける",
       "オブザーバーのコールバックは短時間で終わらせ、重い処理にはバックプレッシャーを使う",
+      "オブザーバーからは、どの端末でも同じになる値だけを書く",
       "画面の領域ごとに小さなオブザーバーを用意する",
       "複数ドキュメントをアトミックに変更する場合はトランザクションを使う",
       "トランザクション内ではトランザクション自身の execute だけを使い、読み書きトランザクションをネストしない",
@@ -3618,6 +3644,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>各オブザーバーには、表示する結果と寿命が一致する管理役（画面、ビューモデル、サービスなど）を1つ決めます。オブザーバーは管理役が始まるときに一度だけ登録し、描画のたびに実行されるコードの中では登録しません。管理役がなくなったら解放します（<code>cancel()</code>、Kotlinでは <code>close()</code>）。UIのコードのどこでこれを行うかは、ガイドの各SDKのページにあります。Flutterでは、<code>registerObserver</code> を <code>onChange</code> なしで呼び出し、<code>observer.changes</code> を1つの <code>StreamSubscription</code> でlistenするか、1つの <code>StreamBuilder</code> にストリームを渡します。<code>dispose()</code> では、ストリームのサブスクリプションとオブザーバーの両方をキャンセルします。</p>",
       "<p>結果の順序が重要な場合は、<code>ORDER BY createdAt DESC, _id</code> のように、<code>_id</code> などの一意なキーを最後に加えた <code>ORDER BY</code> を指定します。値が同じ行の順序は、このキーで決まります。リストの各行は <code>_id</code> で識別します。</p>",
       "<p>デフォルトのオブザーバーのコールバックは短い同期処理にとどめ、値をコピーしてモデルに変換し、UIの状態に渡すだけにします。更新のたびにアップロード、エクスポート、重い集計などを行う場合は、SDKのバックプレッシャー用のAPI（SDK 5.1+）を使います。</p>\n<ul>\n<li>Flutter: <code>registerObserverV2</code> を <code>await for</code> で使うか、<code>registerObserverWithSignalNext</code> を使って <code>finally</code> ブロックで <code>signalNext()</code> を呼ぶ（どちらもExperimental）</li>\n<li>JavaScript: <code>registerObserverWithSignalNext</code> を使い、<code>finally</code> ブロックで <code>signalNext()</code> を呼ぶ</li>\n<li>Kotlin: suspendするハンドラーか、<code>collect</code> を使う</li>\n<li>Swift: <code>handlerWithSignalNext:</code> を使い、<code>deliverOn:</code> にバックグラウンドのキューを指定する</li>\n</ul>\n<p>オブザーバーから自身の監視対象のコレクションに書き込む場合は、必ずガードを設けます。</p>",
+      "<p>オブザーバーのコールバックで書き込む前に、同じコールバックがすべての端末で動き、ほかの端末の書き込みも受け取ると考えます。書き込むのは、書いた後の状態ならもう何も書かない処理で、どの端末でも同期されたドキュメントから同じ値を計算する場合だけにします。端末、ユーザー、時刻、アプリのバージョンによって変わる値は、端末ごとのキーか端末ごとのドキュメントに保存し、読むときに1つの値を導きます。カウンターの加算、通知、サーバーの呼び出しなど、1回だけ行なうべき副作用は、1台の端末かサービスに任せます。変更を記録するドキュメントには、その変更から決まる <code>_id</code> を付け、<code>ON ID CONFLICT DO NOTHING</code> で挿入します。</p>",
       "<p>画面の最上位でコレクション全体を監視するのではなく、各領域が必要とするデータだけを監視します。バッジには <code>COUNT(*)</code> クエリを使い、リストには <code>WHERE</code> と <code>LIMIT</code> を使って、各行を <code>_id</code> で識別する遅延描画のリストで表示します。状態管理ライブラリを使う場合は、オブザーバーごとに1つのストア、プロバイダー、ビューモデルに管理させ、その管理役が破棄されるときに解放します。どの項目が変わったかを知りたい場合は、SDKのdifferを使います。</p>",
       "<p>複数のドキュメントにまたがる変更（注文を締めて請求書を作成するなど）、読み取り・確認・書き込みを続けて行う処理、複数のクエリにわたる一貫した読み取り（<code>isReadOnly</code>）には <code>ditto.store.transaction</code> を使います。すべてのトランザクションに <code>hint</code> を付けます。ロールバックするには、例外を投げるか、SDKのロールバック用の値を返します。Flutterでは <code>TransactionCompletionAction.rollback</code>、JavaScriptでは <code>'rollback'</code>、Kotlinでは <code>DittoTransaction.Result.Rollback</code>、Swiftでは <code>.rollback</code> です。Kotlinでコミットするには、コールバックが <code>DittoTransaction.Result.Commit(value)</code> を返す必要があります。コールバック内でステートメントのエラーをキャッチしても、トランザクションはロールバックされません。</p>",
       "<p>コールバック内のステートメントは、すべて引数で渡されたトランザクションのオブジェクト（その <code>execute</code>）で実行し、コールバックが戻る前にそれぞれを <code>await</code> します。JavaScript SDKでのテストでは、<code>await</code> しなかったステートメントは適用されませんでした。コールバック内で <code>ditto.store.execute</code> を呼ぶこと、読み書きトランザクションの中で別の読み書きトランザクションを開始すること、コールバックが戻った後もトランザクションのオブジェクトを保持することは、いずれも避けます。</p>",
@@ -3699,6 +3726,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
       "<p>オブザーバーは、解放するまでクエリを実行し続け、メモリを保持します。ガベージコレクションでは解放されません。4つのSDKでのテスト（SDK 5.1.0と5.2.0）では、アプリが参照を手放したオブザーバーは、ガベージコレクションの後も動き続けました。Flutterでは、<code>onChange</code> 付きで登録したオブザーバーは、すべての結果を <code>changes</code> ストリームにも溜めていきます。誰もlistenしていないと、更新のたびにメモリが増え続けます（SDK 5.1.0と5.2.0）。<code>changes</code> はシングルサブスクリプションのストリームです。また、ストリームのサブスクリプションをキャンセルしても、<code>StoreObserver</code> 自体はキャンセルされません。<code>registerObserverV2</code>（Experimental、SDK 5.1+）は <code>onChange</code> の有無にかかわらず登録した時点で監視を始めるため、登録したらすぐに <code>changes</code> ストリームをlistenします。</p>",
       "<p><code>ORDER BY</code> がないとオブザーバーの結果の順序は保証されず、更新のたびに行の位置が入れ替わることがあります。タイムスタンプで正しく並べ替えられるのは、すべての値を同じ固定精度のヘルパーで書き込んでいる場合だけです。並べ替えのキーが同じ行は、SDK 5.1.0と5.2.0でのテストでは <code>_id</code> の昇順で返りましたが、これは文書化されておらず、SDK 5.0では別の順序でした。<code>DESC</code> では、並べ替えのフィールドがないドキュメント、続いて <code>null</code> のドキュメントが先頭に来ます。</p>",
       "<p>バックプレッシャー用のAPIを使わないと、Dittoは、ある結果で始まった処理の完了を待たずに次の結果を届けます。Flutterのデフォルトの <code>registerObserver</code> にはバックプレッシャーがなく、JavaScriptの <code>async</code> ハンドラーはawaitされないため、処理が重なって溜まっていきます。JavaScript SDKでのテストでは、重なって走った非同期のコールバックが順番どおりに終わらず、古い結果が画面に残りました。バックプレッシャーを使うと、コードが処理している間はDittoが更新を保留し、処理が終わると最新の状態を届けます。<code>signalNext()</code> を待つオブザーバーは、それが呼ばれないと以降の更新を届けません。監視しているドキュメントに同じ値を書き戻すコールバックは、自分自身を呼び出し続けます。SDK 5.1.0と5.2.0でのテストでは、約35ミリ秒ごとに終わりなく呼ばれました。</p>",
+      "<p>オブザーバーは同期で届いた変更でも呼ばれ、その結果からはどの端末が変更したかが分かりません。SDK 5.1.0と5.2.0でのテストでは、2台の端末のオブザーバーがそれぞれ自分の値を1つのフィールドに書くと、1台あたり毎秒約14回、互いに上書きし続けました。保存された値と先に比べることも、<code>DO UPDATE_LOCAL_DIFF</code> も、そのフィールドだけを射影することも、確実には止めませんでした。両方の端末が同じ値を書く場合は、それぞれ1〜2回書いて止まりました。副作用は、反応した端末ごとに1回ずつ実行されました。<code>UPDATE ... WHERE handled = false</code> で20件のイベントを処理した2台の端末は、どちらもすべてのイベントを処理し、カウンターは40になりました。</p>",
       "<p>画面の最上位でコレクション全体を監視すると、変更のたびに画面全体が描画し直され、フレーム落ちや、スクロール位置・入力フォーカスの喪失を招きます。オブザーバーは、クエリに影響する変更があるたびに結果全体を届けるからです。SDK 5.1.0と5.2.0でのテストでは、<code>SELECT *</code> のオブザーバーは値の変わらない書き込みでも呼ばれ、フィールドを射影したオブザーバーは射影した値が変わったときだけ呼ばれました。また、更新が続く200件のドキュメントを監視するオブザーバーは、呼ばれるたびにプロセスのメモリを増やしました。</p>",
       "<p>エラーをキャッチしてそのまま処理を続けると、ロールバックしない限り残りの変更はコミットされます。<code>hint</code> は長時間実行中のトランザクションに関するログメッセージに表示されるため、どのコードが開始したトランザクションかを特定できます。単一のステートメントはもともとアトミックなので、トランザクションで囲んでも意味はありません。他のデバイスにトランザクションがまとめて届くのは、経路上のすべてのデバイスがそのドキュメントをすべて購読している場合だけです。SDK 5.1.0と5.2.0でのテストでは、注文だけを購読する中継が速い経路になった受信側で、明細のない注文が最大約0.7秒見えました。別々のステートメントで書いた変更は書いた順に届きましたが、この順序は文書化されていません。</p>",
       "<p>トランザクション内で <code>ditto.store.execute</code> を呼んでも正しく動くことはなく、どうなるかはSDKによって異なります。Flutterでは <code>DittoException</code> が発生します。JavaScript、Kotlin、SwiftのSDKでのテスト（5.1.0と5.2.0、JavaScriptは5.0.3も）では、そこで書き込むとエラーも出さずにいつまでも完了しませんでした。読み書きトランザクションは同時に1つしか実行されないため、ネストした内側のトランザクションは外側の完了をいつまでも待ち続けます。</p>",

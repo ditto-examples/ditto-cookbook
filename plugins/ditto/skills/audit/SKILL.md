@@ -63,7 +63,7 @@ Read [reference/cross-device-review.md](reference/cross-device-review.md) and fo
 | 4 | Which subscription brings every document that this query reads? | A query, total, or `JOIN` wider than the subscriptions; a subscription on a field that changes, with stale copies |
 | 5 | What does the code assume once a write has returned? | "Sent" after a local write; close or sign-out before the write is confirmed; presence as proof |
 | 6 | What if one device removes the document while another edits it, or was offline for weeks? | Husks, data that comes back, a soft-delete filter missing from one query, an `_id` used again |
-| 7 | What happens when this code runs on every device at once? | Defaults without `INITIAL DOCUMENTS`; cleanup, closing jobs, and migrations on every device |
+| 7 | What happens when this code runs on every device at once? | Defaults without `INITIAL DOCUMENTS`; cleanup, closing jobs, and migrations on every device; an observer that writes a per-device value or runs a side effect per change |
 | 8 | What does the screen show while related documents are on their way? | A forced unwrap of a referenced document; a parent without children; an attachment not yet fetched |
 
 For each candidate, write the shortest sequence of events on two devices that produces the defect. If you cannot, it is not a finding; if the code does not show who writes or how long devices stay offline, report it with that condition stated. Report one finding per root cause, at the line where the fix goes, with the other places it touches under `Also:`.

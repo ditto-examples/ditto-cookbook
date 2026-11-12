@@ -102,8 +102,9 @@ Startup code, timers, and "on first launch" code run once per device, each over 
 - Default data created with a plain `INSERT`, an upsert, or a check for existence instead of `INITIAL DOCUMENTS`.
 - A cleanup `DELETE`, a closing job (`UPDATE ... WHERE` at the end of the day), or a migration that rewrites documents, run by every device instead of in one place.
 - A recount that restarts a counter while other devices hold increments that have not synced.
+- An observer that writes in reaction to a change. It also reacts to the same observer's writes on the other devices. A value that depends on the device, the user, the time, or the app version (`lastSeenBy`, `processedAt`) makes the devices overwrite each other without end, also with a check that the value differs or `DO UPDATE_LOCAL_DIFF`. A side effect per change (a counter increment, an `INSERT` with a new ID, a notification, a call to a server) runs once per reacting device, also after a conditional `UPDATE ... WHERE handled = false`. Scenario: A and B both receive the change, both write, and each write calls the other's observer.
 
-`§ Default Data with INITIAL Documents`, `§ Conditions and Arithmetic across Devices`, `§ Soft delete, subscriptions, and cleanup`, `§ RESTART`, `§ Rolling out a breaking change` · Skills: `data-modeling`, `storage-lifecycle`
+`§ Default Data with INITIAL Documents`, `§ Conditions and Arithmetic across Devices`, `§ Soft delete, subscriptions, and cleanup`, `§ RESTART`, `§ Rolling out a breaking change`, `§ Writing from Observers` · Skills: `data-modeling`, `storage-lifecycle`, `performance-observability`
 
 ### 8. What does the screen show while related documents are on their way?
 
