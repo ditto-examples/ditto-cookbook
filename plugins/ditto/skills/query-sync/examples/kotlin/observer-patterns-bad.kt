@@ -60,6 +60,8 @@ fun uploadOnEveryChange(ditto: Ditto, scope: CoroutineScope, upload: suspend (In
 /**
  * ❌ BAD: Writing to the observed collection from its own handler without a
  * guard. Each write runs the observer again.
+ * Comparing with the stored time does not help: each device writes its own, so devices that
+ * run this observer keep overwriting each other (guide: Writing from Observers).
  */
 fun touchOnEveryChange(ditto: Ditto): DittoStoreObserver =
     ditto.store.registerObserver("SELECT * FROM orders") { _ ->

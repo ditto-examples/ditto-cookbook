@@ -105,6 +105,8 @@ final class RowObserverModel: ObservableObject {
 
 /// ❌ BAD: Each write triggers the observer again. This UPDATE has no guard, so
 /// the handler and the write call each other without end.
+/// Comparing with the stored time does not help: each device writes its own, so devices that
+/// run this observer keep overwriting each other (guide: Writing from Observers).
 func selfTriggeringObserver(_ ditto: Ditto) throws -> DittoStoreObserver {
     try ditto.store.registerObserver(query: "SELECT * FROM orders WHERE status = 'open'") { _ in
         Task {

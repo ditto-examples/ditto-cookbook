@@ -96,6 +96,8 @@ func uploadOnEveryChange(_ ditto: Ditto, upload: @escaping @Sendable ([[String: 
 
 /// ❌ BAD: Writing to the observed collection from its own observer without a
 /// guard. Each write triggers the observer again.
+/// Comparing with the stored time does not help: each device writes its own, so devices that
+/// run this observer keep overwriting each other (guide: Writing from Observers).
 func touchOnEveryChange(_ ditto: Ditto) throws -> DittoStoreObserver {
     try ditto.store.registerObserver(query: "SELECT * FROM orders WHERE status = 'open'") { _ in
         Task {

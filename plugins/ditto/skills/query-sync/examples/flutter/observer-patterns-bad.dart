@@ -139,6 +139,8 @@ StreamSubscription<QueryResult> uploadOnEveryChange(
 
 /// ❌ BAD: Writing to the observed collection from its own observer without a
 /// guard. Each write triggers the observer again.
+/// Comparing with the stored time does not help: each device writes its own, so devices that
+/// run this observer keep overwriting each other (guide: Writing from Observers).
 StreamSubscription<QueryResult> touchOnEveryChange(
   Ditto ditto,
   StoreObserver ordersObserver,

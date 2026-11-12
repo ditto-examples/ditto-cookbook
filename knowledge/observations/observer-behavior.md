@@ -170,19 +170,20 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs) |
-| Setup | Two peers in one process, A and B, both subscribed to the collection. A inserted a document with `owner: 'none'`. On each device, an observer of that document wrote the device's own name to `owner` with `UPDATE`, only when the stored value was not already that name. We counted each device's writes in 6 seconds, and those in the last 2 seconds, with three kinds of observer: `SELECT _id, owner`, `SELECT *`, and `SELECT *` whose callback wrote with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` on every call. A control run had only A's observer |
+| Observed on | SDK 5.1.0 (six runs) and 5.2.0 (seven runs); the per-device key: three runs each |
+| Setup | Two peers in one process, A and B, both subscribed to the collection. A inserted a document with `owner: 'none'`. On each device, an observer of that document wrote the device's own name to `owner` with `UPDATE`, only when the stored value was not already that name. We counted each device's writes in 6 seconds, and those in the last 2 seconds, with three kinds of observer: `SELECT _id, owner`, `SELECT *`, and `SELECT *` whose callback wrote with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF` on every call. A control run had only A's observer. As a fix, each device's `SELECT *` observer wrote `{seenBy: {<its name>: true}}` with `DO UPDATE_LOCAL_DIFF` on every call |
 | Documentation | In the JavaScript SDK's type definitions, the `QueryResult` that an observer receives holds the items, the mutated document IDs (described as always empty for an observer), and the commit ID; none of them names the device that made the change |
 
 | Observer | Writes per device in 6 seconds | In the last 2 seconds |
 |---|---|---|
-| `SELECT _id, owner`, compared before writing | 85 to 87 in 5 of 7 runs; in the other 2 runs (one on each release), 41 after 2.8 seconds and 4 to 5 after 0.25 seconds, then none | 28 to 29 in 5 of 7 runs; 0 in the other 2 |
+| `SELECT _id, owner`, compared before writing | 85 to 87 in 10 of 13 runs; in the other 3 runs (two on 5.2.0, one on 5.1.0), 41 within 2.8 seconds, 9 to 10 within 0.6 seconds, and 4 to 5 within 0.25 seconds, then none | 28 to 29 in 10 of 13 runs; 0 in the other 3 |
 | `SELECT *`, compared before writing | 85 to 87 in every run | 28 to 29 |
 | `SELECT *`, `DO UPDATE_LOCAL_DIFF` on every call | 169 to 173 statements in every run | 56 to 58 |
 | Control: only A's observer | 1 in every run | 0 |
+| Fix: `SELECT *`, each device writes its own key of `seenBy` with `DO UPDATE_LOCAL_DIFF` | 2 statements in every run, the last within 43 ms; both keys remained | 0 |
 
-- Each write changed the value that the other device wanted, so it called the other device's observer, whose write called the first one's again. Comparing before writing and `DO UPDATE_LOCAL_DIFF` skip only a write of the value already stored, which was never the case here. Except in the two runs below, the writes stopped only when the observers were cancelled, after which both devices held the same document.
-- In the two runs that stopped, one device's name remained, and that device's observer was not called again, so the other device's rule stayed unmet without an error. We think that a write arrived while the device's own write was being coalesced, so that the projected value looked unchanged to its observer (see [Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart)); we did not confirm this.
+- Each write changed the value that the other device wanted, so it called the other device's observer, whose write called the first one's again. Comparing before writing and `DO UPDATE_LOCAL_DIFF` skip only a write of the value already stored, which was never the case here. Except in the three runs below, the writes stopped only when the observers were cancelled, after which both devices held the same document.
+- In the three runs that stopped, one device's name remained, and that device's observer was not called again, so the other device's rule stayed unmet without an error. We think that a write arrived while the device's own write was being coalesced, so that the projected value looked unchanged to its observer (see [Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart](#since-sdk-51-local-writes-are-coalesced-into-callbacks-about-30-ms-apart)); we did not confirm this.
 - About 14 writes a second per device is the round trip of this setup: two peers over loopback TCP, with callbacks about 30 ms apart. Over real networks, each round trip takes longer, so we expect fewer writes a second; we did not test that.
 - The commit ID of the result in every observer callback was `null`, so the callback could not tell its own device's writes from the other device's.
 - The results were the same on both releases.
@@ -195,7 +196,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs) |
+| Observed on | SDK 5.1.0 (six runs) and 5.2.0 (seven runs) |
 | Setup | The two peers of [Observers on two devices that each write their own value keep writing](#observers-on-two-devices-that-each-write-their-own-value-keep-writing), with a `SELECT *` observer of one document on each device. Same value: A inserted `status: 'new'`, and each observer wrote `status = 'done'`, either only when the stored value differed, or with `DO UPDATE_LOCAL_DIFF` on every call. Derived value: A inserted `items: {a: 2, b: 3}` and `total: 0`; each observer wrote the sum of `items` to `total` when it differed, and after 2 seconds B added `items.c = 4`. We counted each device's writes in 6 seconds |
 
 | Reaction on both devices | Writes per device | Last write |
@@ -215,7 +216,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 
 | | |
 |---|---|
-| Observed on | SDK 5.1.0 (three runs) and 5.2.0 (four runs) |
+| Observed on | SDK 5.1.0 (six runs) and 5.2.0 (seven runs) |
 | Setup | The two peers above. On B, a `SELECT *` observer of one document wrote the value that the document already had on every call, the loop of [Writing the same value from an observer keeps it firing](#writing-the-same-value-from-an-observer-keeps-it-firing). A had a `SELECT *` observer of the same document that did not write. We counted the calls in 6 seconds |
 
 - B wrote 168 to 172 times in 6 seconds, and A's observer was called 169 to 174 times, about 28 times a second, until B's observer was cancelled. Every write synced, although no value changed.

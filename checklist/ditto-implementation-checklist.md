@@ -576,7 +576,7 @@ SELECT * FROM tasks WHERE done = false ORDER BY createdAt DESC, _id
 - Kotlin: a suspending handler, or `collect`
 - Swift: `handlerWithSignalNext:`, with `deliverOn:` a background queue
 
-Never write to the observed collection from its own observer without a guard.
+Never write to the observed collection from its own observer without a guard. Where the observer runs on several devices, also follow the next item.
 
 **Why this matters:** Without a backpressure API, Ditto does not wait for the work that a result starts before it delivers the next result: Flutter's default `registerObserver` has no backpressure, and a JavaScript `async` handler is not awaited, so work overlaps and queues up. In our testing with the JavaScript SDK, overlapping async callbacks finished out of order and left the screen showing an older result. With backpressure, Ditto holds back updates while your code is busy and then delivers the latest state. An observer that waits for `signalNext()` stops delivering updates if it is never called. A callback that writes the same value back to the document it observes keeps triggering itself: in our testing with SDK 5.1.0 and 5.2.0, about every 35 ms without end.
 
@@ -586,7 +586,7 @@ Never write to the observed collection from its own observer without a guard.
 
 **What this means:** Before an observer callback writes, assume that the same callback runs on every device and also receives the other devices' writes. Write only when the write does nothing once the document is in the state it produces, and when every device computes the same value from synced documents. Store values that depend on the device, the user, the time, or the app version under a key per device, or in a document per device, and derive one value when you read. Let one device or service handle a side effect that must happen once, such as a counter increment, a notification, or a call to a server. Give documents that record a change an `_id` derived from that change, and insert them with `ON ID CONFLICT DO NOTHING`.
 
-**Why this matters:** An observer is called for changes from sync too, and its result does not say which device made the change. In our testing with SDK 5.1.0 and 5.2.0, observers on two devices that each wrote their own value to one field kept overwriting each other about 14 times a second per device. Comparing with the stored value first, `DO UPDATE_LOCAL_DIFF`, and projecting the field did not reliably stop it. When both devices wrote the same value, each wrote once or twice and stopped. Side effects ran once on each device that reacted: two devices that handled 20 events with `UPDATE ... WHERE handled = false` both handled every event, and a counter reached 40.
+**Why this matters:** An observer is called for changes from sync too, and its result holds the documents, not the device that changed them. In our testing with SDK 5.1.0 and 5.2.0, observers on two devices that each wrote their own value to one field kept overwriting each other about 14 times a second per device. Comparing with the stored value first, `DO UPDATE_LOCAL_DIFF`, and projecting the field did not reliably stop it. When both devices wrote the same value, each wrote once or twice and stopped. Side effects ran once on each device that reacted: two devices that handled 20 events with `UPDATE ... WHERE handled = false` both handled every event, and a counter reached 40.
 
 **Best-practices guide:** Writing from Observers, Checks and Claims across Devices
 

@@ -92,7 +92,11 @@ class TodoRowModel(ditto: Ditto, scope: CoroutineScope, todoId: String) {
 }
 
 // ANTI-PATTERN 6: Writing to the observed collection
-/** ❌ BAD: Each write runs the observer again, which writes again. */
+/**
+ * ❌ BAD: Each write runs the observer again, which writes again.
+ * Comparing with the stored time does not help: each device writes its own, so devices that
+ * run this observer keep overwriting each other (guide: Writing from Observers).
+ */
 class SelfTriggeringModel(ditto: Ditto) {
     private val observer = ditto.store.registerObserver("SELECT * FROM todos") { _ ->
         ditto.store.execute("UPDATE todos SET viewedAt = :now", mapOf("now" to System.currentTimeMillis()))
