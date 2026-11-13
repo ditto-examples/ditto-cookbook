@@ -10,8 +10,8 @@ Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings
 ## Before You Apply
 
 - Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** and **Note (SDK 5.1.0)** mark easy-to-miss behavior seen on those releases, with the safe pattern; **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- For API calls, Grep the outline of that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`. DQL examples: `examples/*.sql` (every SDK); API examples: `examples/<sdk>/`, with the same base names in every SDK.
-- `§ <Heading>` cites the full guide: Grep the heading as a fixed string in `../guide/reference/best-practices/` and `../guide/reference/knowledge/`, then read that section.
+- For API calls, Grep the outline of that SDK's page, `${CLAUDE_SKILL_DIR}/../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`. DQL examples: `examples/*.sql` (every SDK); API examples: `examples/<sdk>/`, with the same base names in every SDK.
+- `§ <Heading>` cites the full guide: Grep the heading as a fixed string in `best-practices/` and `knowledge/` under `${CLAUDE_SKILL_DIR}/../guide/reference/`, then read that section.
 - Report each finding at the severity of its item in `§ Anti-Pattern Checklist` (the checklist decides; Grep a phrase of the item there). The labels below rank the rules, not each item in them.
 
 ## Prevents

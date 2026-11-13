@@ -58,6 +58,8 @@ From a shell, `claude plugin update ditto@ditto-cookbook` updates the installed 
 
 The `guide` Skill and the `§` citations of every Skill need the guide pages, which the plugin bundles through symbolic links to `best-practices/` and `knowledge/` at the repository root. A checkout that leaves those directories out, or that does not create symbolic links, installs the plugin without the guide; the `audit` and `guide` Skills say so when it is missing.
 
+The Skills read the guide from the plugin's installed copy, which is outside your project, so Claude Code can ask before reading it. To allow those reads without a prompt, add `Read(~/.claude/plugins/cache/ditto-cookbook/**)` to `permissions.allow` in your settings. The `audit` Skill also runs its scanner with `python3`, which you approve when it asks.
+
 ## Reviewing Ditto Code
 
 Ask Claude to review your Ditto code or a pull request, or invoke the `audit` Skill directly:
