@@ -5,6 +5,8 @@ Version 1.9 runs on the shared tablets of 14 lines; the tablets of a line sync w
 each other over the local network and with Ditto Server when the network allows.
 
 - Each notice belongs to one board (`boardId`, one per production line, never changes).
+- Each tablet is mounted at one line and shows only that line's board; it never
+  moves to another line.
 - Only the author of a notice edits it, on the tablet where they wrote it, and
   archiving a notice is the author's action too.
 - Archived notices are deleted for good by a retention job on Ditto Server 90 days

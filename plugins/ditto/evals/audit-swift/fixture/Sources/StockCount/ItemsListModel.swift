@@ -2,7 +2,8 @@ import DittoSwift
 import Foundation
 import SwiftUI
 
-/// The items of one location, updated live as counts sync.
+/// The items of one location in the warehouse that `InventorySync` subscribes to,
+/// updated live as counts sync.
 @MainActor
 final class ItemsListModel: ObservableObject {
     @Published private(set) var items: [Item] = []
@@ -13,12 +14,12 @@ final class ItemsListModel: ObservableObject {
         self.store = store
     }
 
-    func start(location: String) {
+    func start(warehouseID: String, location: String) {
         guard observer == nil else { return }
         do {
             observer = try store.registerObserver(
-                query: "SELECT * FROM items WHERE location = :location ORDER BY sku, _id",
-                arguments: ["location": location]
+                query: "SELECT * FROM items WHERE warehouseId = :warehouseId AND location = :location ORDER BY sku, _id",
+                arguments: ["warehouseId": warehouseID, "location": location]
             ) { [weak self] result in
                 let decoder = JSONDecoder()
                 let items = result.items.compactMap { try? decoder.decode(Item.self, from: $0.jsonData()) }
@@ -41,10 +42,12 @@ final class ItemsListModel: ObservableObject {
 
 struct ItemsListView: View {
     @StateObject private var model: ItemsListModel
+    let warehouseID: String
     let location: String
 
-    init(store: DittoStore, location: String) {
+    init(store: DittoStore, warehouseID: String, location: String) {
         _model = StateObject(wrappedValue: ItemsListModel(store: store))
+        self.warehouseID = warehouseID
         self.location = location
     }
 
@@ -52,7 +55,7 @@ struct ItemsListView: View {
         List(model.items) { item in
             Text(item.name ?? item.sku)
         }
-        .onAppear { model.start(location: location) }
+        .onAppear { model.start(warehouseID: warehouseID, location: location) }
         .onDisappear { model.stop() }
     }
 }

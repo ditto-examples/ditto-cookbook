@@ -11,7 +11,7 @@ export class NoticeSync {
     this.#ditto = ditto;
   }
 
-  // Call after Ditto.open() and when the tablet moves to another line.
+  // Call after Ditto.open() with the board of the line that the tablet is mounted at.
   enterBoard(boardId: string): void {
     if (boardId === this.#boardId) return; // Already subscribed; do not re-register.
     this.leaveBoard();
@@ -23,6 +23,7 @@ export class NoticeSync {
     );
   }
 
+  // Call before the app shell closes Ditto.
   leaveBoard(): void {
     this.#subscription?.cancel();
     this.#subscription = null;

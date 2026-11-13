@@ -56,12 +56,14 @@ export async function archiveNotice(ditto: Ditto, noticeId: string): Promise<voi
   });
 }
 
-// The notices that the user pinned, in one query.
-export async function noticesByIds(ditto: Ditto, ids: string[]): Promise<Notice[]> {
+// The notices that the user pinned on this board, in one query. The board filter keeps
+// the query inside the board's subscription (see NoticeSync).
+export async function noticesByIds(ditto: Ditto, boardId: string, ids: string[]): Promise<Notice[]> {
+  requireText(boardId, 100, 'board');
   if (ids.length === 0) return [];
   const result = await ditto.store.execute(
-    'SELECT * FROM notices WHERE _id IN :ids AND coalesce(isDeleted, false) = false ORDER BY createdAt DESC, _id',
-    { ids },
+    'SELECT * FROM notices WHERE boardId = :boardId AND _id IN :ids AND coalesce(isDeleted, false) = false ORDER BY createdAt DESC, _id',
+    { boardId, ids },
   );
   return result.items.map((item) => noticeFromValue(item.value));
 }
