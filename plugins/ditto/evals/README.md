@@ -35,13 +35,13 @@ Run from `plugins/ditto/`. Runs use your Claude credentials and count against yo
 rm -rf "$TMPDIR/ditto-eval" && rsync -aL --exclude evals/results ./ "$TMPDIR/ditto-eval/"
 
 # Quick check while editing skills: one run per case, no baseline arm
-claude plugin eval "$TMPDIR/ditto-eval" --runs 1 --ablation none --scaffold --allow-tools "Bash(python3 *)" --output-dir "evals/results/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+claude plugin eval "$TMPDIR/ditto-eval" --trust-plugin --runs 1 --ablation none --scaffold --allow-tools "Bash(python3 *)" --output-dir "evals/results/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 
 # Full run with the no-plugin baseline (default: 3 runs per case and arm)
-claude plugin eval "$TMPDIR/ditto-eval" --scaffold --allow-tools "Bash(python3 *)" --max-cost-usd 20 --output-dir "evals/results/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+claude plugin eval "$TMPDIR/ditto-eval" --trust-plugin --scaffold --allow-tools "Bash(python3 *)" --max-cost-usd 20 --output-dir "evals/results/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 ```
 
-Copy the plugin again after every change to it. Add `--case <name>` to run one case. The first run in the copied directory asks you to trust it.
+Copy the plugin again after every change to it. Add `--case <name>` to run one case. `--trust-plugin` confirms that you trust the copy, which is new after every copy and cannot be trusted in advance; without it, a run that cannot ask, such as one started with `!` in Claude Code, stops.
 
 Why the plugin is copied, and why each flag is needed:
 
