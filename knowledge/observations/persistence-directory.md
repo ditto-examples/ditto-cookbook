@@ -114,7 +114,7 @@ The tendency was the same on both releases:
 
 **Not tested:** other operating systems than macOS; whether sync must be stopped before `close()` and the deletion.
 
-**Used in:** [Authentication](../../best-practices/setup-and-lifecycle.md#authentication).
+**Used in:** [Authentication](../../best-practices/setup-and-lifecycle.md#authentication), [Recording presence in documents](../../best-practices/setup-and-lifecycle.md#recording-presence-in-documents).
 
 ### On macOS, deleting the directory while Ditto is open loses later writes
 

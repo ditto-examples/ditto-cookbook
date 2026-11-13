@@ -62,7 +62,7 @@ Calls per 20 writes (on 5.1.0 and 5.2.0):
 - The writing device's own observer was called only 3 times for its 20 writes: local writes are coalesced too.
 - A local transaction that wrote 10 documents 50 ms apart called the observer once, after the commit (10 documents), and not at all when it was rolled back. Without a transaction, 10 writes 50 ms apart called it 10 times.
 
-**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire).
+**Used in:** [When Observers Fire](../../best-practices/observers.md#when-observers-fire), [Recording presence in documents](../../best-practices/setup-and-lifecycle.md#recording-presence-in-documents).
 
 ### Since SDK 5.1, local writes are coalesced into callbacks about 30 ms apart
 

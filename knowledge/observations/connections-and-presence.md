@@ -1,6 +1,6 @@
 # Connections and Presence
 
-How devices connect to each other and how presence reports them: the transports that a new instance enables and sync over AWDL alone, the TCP connection limit and how each release counts it, meshes and WebSocket hubs, changing and retrying connections, how long a lost or stalled connection takes to notice, the presence graph and peer metadata, and the connection handler and shared keys that decide which peers connect. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections), [Small-Peers-Only Deployments](../../best-practices/security.md#small-peers-only-deployments), and [Key Characteristics](../understanding-ditto.md#key-characteristics).
+How devices connect to each other and how presence reports them: the transports that a new instance enables and sync over AWDL alone, the TCP connection limit and how each release counts it, meshes and WebSocket hubs, changing and retrying connections, how long a lost or stalled connection takes to notice, the presence graph, presence written to documents, peer metadata, and the connection handler and shared keys that decide which peers connect. How the tests were run, and what they did not cover, is described in [How We Tested](how-we-tested.md). The rules that follow from these observations are in [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Recording presence in documents](../../best-practices/setup-and-lifecycle.md#recording-presence-in-documents), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync), [Controlling Incoming Connections](../../best-practices/security.md#controlling-incoming-connections), [Small-Peers-Only Deployments](../../best-practices/security.md#small-peers-only-deployments), and [Key Characteristics](../understanding-ditto.md#key-characteristics).
 
 **In brief**
 
@@ -16,6 +16,8 @@ How devices connect to each other and how presence reports them: the transports 
 - Presence callbacks arrive about once a second while peers change and about every 15 seconds when nothing changes, the graph includes indirect peers and all of their connections, and a peer in the graph is not necessarily up to date ([Presence reports a joining peer after about 1.2 seconds](#presence-reports-a-joining-peer-after-about-12-seconds), [The presence graph includes indirect peers and all of their connections](#the-presence-graph-includes-indirect-peers-and-all-of-their-connections), [Slow links keep the connection and the presence entry](#slow-links-keep-the-connection-and-the-presence-entry)).
 - The presence graph shows each peer's `dittoSdkVersion`, also across SDK releases, which identifies the devices that still run an older release ([Presence shows each peer's SDK version](#presence-shows-each-peers-sdk-version)).
 - Presence and sync worked across a line of 20 devices, and while ten devices kept reconnecting, a stable device got presence callbacks about once per second and its sync was barely delayed ([Presence and sync work across a chain of 20 devices](#presence-and-sync-work-across-a-chain-of-20-devices), [Presence callbacks stay at about one per second while peers come and go](#presence-callbacks-stay-at-about-one-per-second-while-peers-come-and-go)).
+- Four devices that each wrote every remote peer on every presence callback wrote 215 to 245 documents in about 80 seconds; a check of the stored time with a timer that fired at a random interval on each device wrote 12 to 16, while the same check in the presence callback, or with a timer that fired on every device at once, wrote each peer from several devices within 1 second ([Writing every remote peer on every presence callback multiplies the writes by the number of devices](#writing-every-remote-peer-on-every-presence-callback-multiplies-the-writes-by-the-number-of-devices)).
+- With twelve devices, writing every peer on every presence callback took 53 to 61 percent of a 10 KB/s link and delayed other documents on that link by about 3 to 7 times at the median, while a random timer with a threshold added about 0.1 KB a second and no delay ([Presence written on every callback delayed other documents on a slow link](#presence-written-on-every-callback-delayed-other-documents-on-a-slow-link)).
 - Peer metadata is replaced, not merged, reaches other peers about once per second, and is sent to every device whenever a device joins or changes it ([Peer metadata is replaced, not merged, and the device name is read when sync starts](#peer-metadata-is-replaced-not-merged-and-the-device-name-is-read-when-sync-starts), [Peer metadata changes reach other peers about once per second](#peer-metadata-changes-reach-other-peers-about-once-per-second), [Presence traffic carries each peer's metadata, and idle traffic grows faster than the number of devices](#presence-traffic-carries-each-peers-metadata-and-idle-traffic-grows-faster-than-the-number-of-devices)).
 - Ditto waits 10 seconds for a connection request handler and then rejects the peer. A handler that throws is denied at once in Flutter, treated like one that never answers in JavaScript, and ends the app in Kotlin, where a handler that does not answer keeps new peers out and cannot be removed, and closing Ditto then ends the app, while connected peers keep syncing ([A connection request handler that does not answer within 10 seconds rejects the peer, and one that throws differs by SDK](#a-connection-request-handler-that-does-not-answer-within-10-seconds-rejects-the-peer-and-one-that-throws-differs-by-sdk)).
 - A denied peer retries at its retry interval. Peers connect only when their shared keys match, and traffic without a key is TLS-wrapped but not authenticated ([A denied peer retries at the retry interval](#a-denied-peer-retries-at-the-retry-interval), [Shared keys must match, and traffic is TLS-wrapped without a key](#shared-keys-must-match-and-traffic-is-tls-wrapped-without-a-key)).
@@ -398,7 +400,7 @@ Delay of a small document, median / maximum (the three releases gave the same re
 - Three hubs with four clients each (15 devices): 1.5 to 1.9 seconds after the first hub opened, every device had the other 14 in `remotePeers`. A client's graph contained 15 connections (3 between the hubs and 12 to clients), and each hub's `connections` had 6 entries. An update reached a client of another hub in 22 to 35 ms. Each hub used exactly 6 connections, so on 5.2.0 it cannot accept another client ([SDK 5.2.0 counts outgoing connections toward the TCP limit](#sdk-520-counts-outgoing-connections-toward-the-tcp-limit)).
 - Two devices that connect to each other (both listen and list the other in `connect.tcpServers`) had one connection in presence, whose ID is determined by the two devices, but two in `system:transport_connections`, one with `side` `server` and one with `client`. With four devices all connected to each other, presence showed 6 connections, and device 0 had 4 to 5 TCP connections.
 
-**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration).
+**Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Transport Configuration](../../best-practices/setup-and-lifecycle.md#transport-configuration), [Recording presence in documents](../../best-practices/setup-and-lifecycle.md#recording-presence-in-documents).
 
 ### Presence shows each peer's SDK version
 
@@ -460,6 +462,59 @@ Time until the stable client's update reached the hub's observer, on 5.1.0 and 5
 **Not tested:** more devices, and whether the callback then stays at one per second; real network outages. When a radio link drops, noticing it takes seconds (about 7 seconds in [A silent network outage removes a peer after about 7 seconds](#a-silent-network-outage-removes-a-peer-after-about-7-seconds)), so devices leave the list later, and the catch-up times above do not apply.
 
 **Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence), [Starting and Stopping Sync](../../best-practices/setup-and-lifecycle.md#starting-and-stopping-sync).
+
+## Presence Written to Documents
+
+### Writing every remote peer on every presence callback multiplies the writes by the number of devices
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each, for every way of writing; the releases gave the same pattern |
+| Setup | Four devices in one process, a hub and three clients over TCP, all subscribed to one collection. Each device recorded every peer in its `remotePeers` in a document with the peer key as `_id` and `lastSeen` (epoch milliseconds), with `ON ID CONFLICT DO UPDATE`. Each way of writing ran for 30 seconds without changes, 20 seconds while one client stopped sync for 0.5 to 2 seconds and started it for 1 to 3 seconds (6 to 8 times), and 30 more seconds without changes. Four ways: **per callback**, every presence callback wrote every remote peer with the current time; **checked per callback**, every presence callback kept the times in memory and wrote, in one transaction, the peers whose stored `lastSeen` was at least 20 seconds older; **random timer**, presence callbacks only updated memory, and a timer that fired after 0 to 5 seconds and then every 5 to 10 seconds (random on each device) wrote as the checked variant did; **fixed timer**, the same with a timer every 7.5 seconds that started on all four devices at the same moment. In the three checked ways, a store observer with `registerObserverWithSignalNext` kept the stored `lastSeen` of every peer in memory, including the times that other devices wrote, and wrote nothing. We counted the writes, the store observer calls of all four devices, and the writes of a peer that came less than 1 second after another device's write of the same peer |
+| Documentation | Ditto's [mesh presence documentation](https://docs.ditto.live/sdk/latest/sync/using-mesh-presence) describes `remotePeers` as the other client devices connected to the mesh and gives no call rate for the presence observer |
+
+Totals of the four devices in about 80 seconds (5.1.0 / 5.2.0, three runs each):
+
+| Way of writing | Documents written | Statements or transactions | Store observer calls | Writes less than 1 s after another device's write of the same peer |
+|---|---|---|---|---|
+| Per callback | 215 to 241 / 217 to 245 | the same as the documents | 278 to 364 / 322 to 359 | 166 to 193 / 171 to 195 |
+| Checked per callback | 29 to 35 / 29 to 30 | 10 to 13 / 10 to 11 | 36 / 36 to 40 | 13 to 19 / 13 to 14 |
+| Fixed timer | 36 to 48 / 36 | 12 to 16 / 12 | 32 to 40 / 31 to 32 | 24 to 32 / 24 |
+| Random timer | 12 to 16 / 12 to 15 | 6 to 8 / 6 to 8 | 28 to 36 / 28 to 36 | 0 / 0 |
+
+- The presence callbacks of the four devices together ran 12 times in the first 30 seconds without changes (3 per device), 68 to 82 times while the client came and went, and 8 times in the last 30 seconds without changes. The per-callback way wrote three documents on each of them: 36 documents in the first quiet period and 24 in the last, although the graph did not change.
+- In every way of writing, the collection held four documents at the end, one per peer key.
+- Checking the stored time cut the writes by about 7 times, but when it ran in the presence callback, about half of its writes came less than 1 second after another device's write of the same peer: the devices received the same change of the graph and wrote before they had received each other's writes.
+- A timer alone did not prevent this. With the fixed timer, every device wrote every due peer at the same moment, in every run: each tick wrote each peer three times (36 documents in 12 transactions in most runs), and two of every three writes came less than 1 second after another device's write of the same peer. The fixed timer ran in a separate run of the same setup.
+- With the random timer, no device wrote a peer less than 1 second after another device had. The 12 to 16 writes for four peers in about 80 seconds are 3 to 4 per peer, about one per 20-second threshold for the four devices together. The cost is precision: a recorded time could be up to the 20-second threshold plus the timer interval old.
+
+**Not tested:** more than four devices; devices in separate processes, with clocks that differ, or on real networks and Bluetooth LE; the Flutter, Kotlin, and Swift SDKs, whose presence and store callbacks may be delivered on other threads.
+
+**Used in:** [Recording presence in documents](../../best-practices/setup-and-lifecycle.md#recording-presence-in-documents).
+
+### Presence written on every callback delayed other documents on a slow link
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each; the releases gave the same pattern |
+| Setup | Twelve devices in one process: a hub whose TCP limit was raised to 40 and eleven clients. Ten clients connected directly; the last one connected through a relay that limited each direction to 10 KB/s and counted the bytes. One client wrote an order of about 200 bytes every second; the hub, the client on the slow link, and a directly connected client (a control without the slow link) subscribed to the orders, and the last two recorded when each order reached their observer. Every device subscribed to a history collection. Three ways, each for 20 seconds without changes and then 30 seconds while another client stopped and started sync, as in [Writing every remote peer on every presence callback multiplies the writes by the number of devices](#writing-every-remote-peer-on-every-presence-callback-multiplies-the-writes-by-the-number-of-devices): no history; every presence callback writing every remote peer; and the random timer with a 20-second threshold of that entry. The history ways ran one after the other, with 20 seconds between them |
+
+While the client came and went (5.1.0 / 5.2.0, three runs each):
+
+| Way of writing | Documents written by all devices | Received over the slow link per second | Order delay on the slow link: median, 95th percentile, maximum | Order delay on the direct link: median, 95th percentile |
+|---|---|---|---|---|
+| No history | 0 | 598 to 620 B / 605 to 617 B | 46 / 46 to 49 ms, 59 to 91 / 59 to 90 ms, 87 to 100 / 94 to 104 ms | 19 to 20 / 20 ms, 22 to 30 / 22 to 24 ms |
+| Every callback | 3,085 to 3,552 / 3,190 to 3,424, over the whole 50 seconds | 5,325 to 6,131 B / 5,564 to 5,623 B | 123 to 314 / 190 to 333 ms, 419 to 643 / 416 to 494 ms, 426 to 733 / 496 to 531 ms | 16 to 20 / 15 to 18 ms, 25 to 69 / 24 to 59 ms |
+| Random timer | 36 to 47 / 36, over the whole 50 seconds | 675 to 774 B / 695 to 720 B | 48 to 51 / 47 to 50 ms, 63 to 90 / 67 to 77 ms, 67 to 331 / 83 to 92 ms | 20 to 21 / 21 to 23 ms, 27 to 31 / 24 to 28 ms |
+
+- Writing every peer on every callback took 53 to 61 percent of the slow link's 10 KB/s toward the client, about nine times as much as without a history, and up to 3.4 KB waited in the relay (at most 0.5 KB without a history). The orders on the slow link were delayed by about 3 to 7 times at the median. On the direct link, the median stayed as without a history, so most of the delay came from the link; the 95th percentile on the direct link rose to 59 to 69 ms in three of six runs (at most 30 ms without a history), and the maximum to 100 ms, so the load of the process added a little.
+- Without changes, writing on every callback still received 968 to 1,018 B a second over the slow link, against 324 to 359 B without a history, and the 95th percentile of the order delay rose to 149 to 438 ms in five of six runs and to 83 ms in the sixth (57 to 76 ms without a history).
+- The random timer added about 0.1 KB a second and left the order delays as without a history, except for one maximum of 331 ms.
+- No order was lost in any way of writing: every order arrived within the 20 seconds after each way.
+
+**Not tested:** Bluetooth LE and other real links, whose speed, latency, and loss differ from a relay on one Mac; more devices, links slower than 10 KB/s, and several slow links; the devices in separate processes.
+
+**Used in:** [Recording presence in documents](../../best-practices/setup-and-lifecycle.md#recording-presence-in-documents).
 
 ## Peer Metadata
 

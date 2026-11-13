@@ -50,7 +50,7 @@ An observation goes on the page of the part of Ditto that it concerns, as listed
 |---|---|
 | [How We Tested](observations/how-we-tested.md) | The test environment, how to read the results, what we did not test, the checks of the guide itself |
 | [Subscriptions and Replication](observations/subscriptions-and-replication.md) | What subscriptions deliver and what registering them costs, relays, the initial sync, the order and atomicity of changes, sync traffic, stopping and closing, the list of subscriptions, sync status |
-| [Connections and Presence](observations/connections-and-presence.md) | Default transports and AWDL, the TCP connection limit, meshes and WebSocket, changing and retrying connections, detecting lost connections, the presence graph, peer metadata, accepting connections, shared keys |
+| [Connections and Presence](observations/connections-and-presence.md) | Default transports and AWDL, the TCP connection limit, meshes and WebSocket, changing and retrying connections, detecting lost connections, the presence graph, presence written to documents, peer metadata, accepting connections, shared keys |
 | [Merge Behavior](observations/merge-behavior.md) | Concurrent edits on two or more devices and on different releases, conditional updates, read-modify-write, reordering, renaming, counters |
 | [Clocks and Time](observations/clocks-and-time.md) | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |
 | [Storage and Deletion](observations/storage-and-deletion.md) | Soft delete, tombstones and reaping, eviction, disk space, the write-ahead log, deleted data on disk |

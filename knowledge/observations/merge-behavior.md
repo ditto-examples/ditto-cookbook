@@ -4,7 +4,7 @@ How concurrent writes from several devices merge: registers, maps, and removals 
 
 **In brief**
 
-- Of two concurrent writes to a register, the one written later by the device clocks wins, whichever reaches the other devices first. Writing a value that did not change is still a new write, and it overwrites an earlier concurrent edit from another device ([The later write wins by when it was written, not when it arrived](#the-later-write-wins-by-when-it-was-written-not-when-it-arrived), [Rewriting an unchanged value overwrites concurrent edits](#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
+- Of two concurrent writes to a register, the one written later by the device clocks wins, whichever reaches the other devices first. Writing a value that did not change is still a new write, and it overwrites an earlier concurrent edit from another device. An older time written later therefore replaces a newer one, while a map with a key per writer keeps both ([The later write wins by when it was written, not when it arrived](#the-later-write-wins-by-when-it-was-written-not-when-it-arrived), [An older time written later replaces a newer one, while a key per writer keeps both](#an-older-time-written-later-replaces-a-newer-one-while-a-key-per-writer-keeps-both), [Rewriting an unchanged value overwrites concurrent edits](#rewriting-an-unchanged-value-overwrites-concurrent-edits)).
 - Removing or replacing an object, or deleting a document, does not remove a key that another device wrote concurrently: the key stays, with its value or as `null` ([The merge table held on SDK 5.1.0 and 5.2.0](#the-merge-table-held-on-sdk-510-and-520), [A key added concurrently survives a later removal as null](#a-key-added-concurrently-survives-a-later-removal-as-null)).
 - Merges work field by field: values written together in a transaction mix with another device's later edit, and a long string keeps only one device's edit ([Fields written in one transaction still merge field by field](#fields-written-in-one-transaction-still-merge-field-by-field), [A text field keeps only one of two concurrent edits](#a-text-field-keeps-only-one-of-two-concurrent-edits)).
 - A counter, a map keyed by ID, and an audit log keyed by timestamp kept every change from three offline devices, and a randomized test with four to six devices, also with SDK releases mixed, always converged, and in the documents that no deletion or upsert touched, no increment or latest write was lost. Peers on 5.0.3, 5.1.0, and 5.2.0 merged concurrent edits as on a single release ([With three offline devices, counters and maps keep every change](#with-three-offline-devices-counters-and-maps-keep-every-change), [A randomized merge test always converged](#a-randomized-merge-test-always-converged), [Peers on different releases merged to the same documents](#peers-on-different-releases-merged-to-the-same-documents)).
@@ -82,6 +82,21 @@ Results were the same on both releases.
 **Not tested:** a device whose clock runs ahead (see [A device whose clock runs ahead wins concurrent edits made within the clock difference](clocks-and-time.md#a-device-whose-clock-runs-ahead-wins-concurrent-edits-made-within-the-clock-difference)).
 
 **Used in:** [Merge Semantics in Detail](../crdt-types.md#merge-semantics-in-detail), [What Concurrent Edits Produce](../crdt-types.md#what-concurrent-edits-produce).
+
+### An older time written later replaces a newer one, while a key per writer keeps both
+
+| | |
+|---|---|
+| Observed on | SDK 5.1.0 and 5.2.0, three runs each with short keys and three each with peer keys; every run gave the same result |
+| Setup | Two devices A and B synced one document with a composite `_id` (`{peerKey, day}`) and `lastSeen: '09:00'`. B stopped sync. A wrote `lastSeen: '10:05'` and `seenBy: {a: '10:05'}`; 50 ms later, B, which had not received A's write, wrote `lastSeen: '10:00'` and `seenBy: {b: '10:00'}`, both with `ON ID CONFLICT DO UPDATE_LOCAL_DIFF`. Then B started sync again. All times were ISO-8601 strings in UTC; the devices shared one clock. In a second set of runs, the `_id` held the peer key of a third device, and A and B wrote under their own peer keys (`localPeer.peerKey`, 53 characters) instead of `a` and `b` |
+
+- Both devices converged within about 1.2 seconds to `lastSeen: '10:00'`: the value written later by the clock won, although it was the older time.
+- `seenBy` kept both keys, `a: '10:05'` and `b: '10:00'`, so the latest time could still be read from it. With peer keys as the keys of `seenBy` and in the `_id`, the result was the same.
+- The results were the same on both releases.
+
+**Not tested:** devices whose clocks differ (see [A device whose clock runs ahead wins concurrent edits made within the clock difference](clocks-and-time.md#a-device-whose-clock-runs-ahead-wins-concurrent-edits-made-within-the-clock-difference)); more than two writers of one document.
+
+**Used in:** [Recording presence in documents](../../best-practices/setup-and-lifecycle.md#recording-presence-in-documents).
 
 ### Rewriting an unchanged value overwrites concurrent edits
 

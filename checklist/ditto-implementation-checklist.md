@@ -1,6 +1,6 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 3.5
+> **Version**: 3.6
 > **Last Updated**: 2026-11-13
 > **Applies to**: Ditto SDK 5.2.0 for Flutter, JavaScript, Kotlin, and Swift
 >
@@ -1023,6 +1023,14 @@ UPDATE orders SET status = :status WHERE _id = :id
 **Why this matters:** Transport configuration changes do not fail, so transport conditions are how you find out why peers do not connect. Peer metadata is shared with every peer in the mesh. In our testing with SDK 5.1.0 and 5.2.0, other peers saw metadata changes at most about once per second, a device name changed during sync did not reach them until sync restarted, and a peer that stopped responding over TCP stayed in the presence graph for about 7 to 9 seconds.
 
 **Best-practices guide:** Diagnosing transport problems (SDK 5.1+), Presence, Transports and Presence in Flutter, Transports and Presence in JavaScript, Transports and Presence in Kotlin, Transports and Presence in Swift
+
+### ☐ Record presence in documents at the pace the record needs
+
+**What this means:** If the app keeps a record of the peers it has seen, decide the precision it needs (for example, last seen within 5 minutes) and write a peer only when its recorded time is older than that. Keep what presence reports in memory, and write the due peers in one transaction at a rate you choose, not on every presence callback. Where several devices record the same peers, keep them from writing at the same moment, for example with a timer whose interval is random on each device. Read the times that other devices recorded with a store observer that only updates memory, and never write from it. Give each peer one document (or one per peer and period) with an `_id` derived from the peer key, limit how long the record is kept with a period field and `EVICT`, and subscribe to it only on the devices that read or relay it. Where a last-seen time must never move back, let each recording device write under its own key and take the latest when you read.
+
+**Why this matters:** Every device lists every peer it can reach, and presence calls back about once per second while peers come and go and about every 15 seconds while nothing changes, so writes on every callback grow with the square of the number of devices, and each one syncs to every subscriber. In our testing with SDK 5.1.0 and 5.2.0, four devices that wrote every peer on every callback wrote 215 to 245 documents in about 80 seconds; with a 20-second threshold and a timer with a random interval, they wrote 12 to 16. The same check in the presence callback, or on timers that fired on every device at once, still wrote each peer from several devices within 1 second. A last-seen field keeps the time written last, not the latest time: an older time written 50 ms after a newer one replaced it.
+
+**Best-practices guide:** Recording presence in documents, Presence, Writing from Observers, Time-based eviction
 
 ### ☐ Test your DQL statements against a real local store
 

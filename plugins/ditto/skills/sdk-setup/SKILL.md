@@ -24,6 +24,7 @@ Opening Ditto, authenticating, starting and stopping sync, shutting down, transp
 - A transport configuration built from scratch (every transport disabled)
 - TCP hubs with more than six clients whose extra clients silently get no data
 - Secrets or personal data in peer metadata or `identityServiceMetadata`
+- Presence recorded in documents on every callback
 - Access control via mutable fields, `syncGroup`, or client checks; revocation checking disabled
 
 ## Workflow
@@ -80,7 +81,7 @@ Flutter: `Ditto.open()` initializes the SDK (SDK 5.1+); call `await Ditto.init()
 
 ### 3. Set a non-throwing expiration handler before sync starts (CRITICAL)
 
-With a server connection, starting sync fails until a handler is set. It runs before the first login and when credentials near or pass expiry (time until expiration zero: not authenticated or expired). How `login` reports a rejected token or an unreachable server differs by SDK (*Login failure* in the table above): Kotlin **throws**.
+With a server connection, starting sync fails until a handler is set. It runs before the first login and when credentials near or pass expiry. How `login` reports failure differs by SDK (*Login failure* above): Kotlin **throws**.
 
 **✅ DO**: set the handler before you start sync; fetch a fresh token inside it; check the login result the way your SDK reports it; catch your own errors.
 **❌ DON'T**: let an error escape from the handler (Ditto does not receive it, and it becomes unhandled); cache one token for the app's lifetime; ship the development provider or the Portal development token.
@@ -129,14 +130,15 @@ Invalid values do not throw; they only log. WebSocket sync between Small Peers i
 
 `§ Transport Configuration` · Details: [reference/transports-and-presence.md](reference/transports-and-presence.md#transport-configuration)
 
-### 8. Keep peer metadata and identity metadata non-sensitive (CRITICAL)
+### 8. Keep metadata non-sensitive; record presence sparingly (CRITICAL)
 
 `ditto.presence.peerMetadata` and the webhook's `identityServiceMetadata` reach every peer in the mesh.
 
 **✅ DO**: keep peer metadata small (max 4096 bytes encoded; larger throws), set once at startup (`{"role": "cashier"}`); `stop()` presence observers when their screen goes away.
 **❌ DON'T**: put secrets, tokens, or personal data in either; treat self-set `peerMetadata` as a security check.
+**Recording presence (HIGH)**: write a peer only when its stored time is older than the needed precision, in one transaction, not per callback; keep writers of one peer from writing at once (e.g. random timers); never write from the observer that reads the record.
 
-`§ Presence`, `§ Identity metadata is visible to the mesh` · Code: *Transports and Presence in <SDK>* · Details: [reference/transports-and-presence.md](reference/transports-and-presence.md#presence)
+`§ Presence`, `§ Recording presence in documents`, `§ Identity metadata is visible to the mesh` · Code: *Transports and Presence in <SDK>* · Details: [reference/transports-and-presence.md](reference/transports-and-presence.md#presence)
 
 ### 9. Enforce access with webhook permissions scoped by _id (CRITICAL)
 
@@ -176,7 +178,7 @@ Only Swift and Kotlin can encrypt the local store at rest (SDK 5.2+): a 32-byte 
 
 ### 13. Filter connections with a fast, non-throwing handler (MEDIUM)
 
-`ditto.presence.connectionRequestHandler` returns `allow` or `deny` within 10 s, or the peer is rejected; catch every error (a throw ends a Kotlin app). In testing (5.1.0, 5.2.0), it also ran for connections this device initiated, kept existing ones, and saw empty `identityServiceMetadata` without a server.
+`ditto.presence.connectionRequestHandler` returns `allow` or `deny` within 10 s, or the peer is rejected; catch every error (a throw ends a Kotlin app).
 
 **✅ DO**: catch errors and return `deny` at once; keep permissions as the primary control.
 
@@ -184,7 +186,7 @@ Only Swift and Kotlin can encrypt the local store at rest (SDK 5.2+): a 32-byte 
 
 ### 14. Plan for platform requirements and Web limits (MEDIUM)
 
-Pin the exact SDK version (`pubspec.yaml`, `package.json`, Gradle, Swift Package Manager); request Bluetooth, Wi-Fi, local network, and nearby-device permissions before sync. Android, SDK 5.2+: multicast permissions are requested separately from the required permissions. Flutter 5.2: the root is application support, also for a relative `persistenceDirectory`, so pass the absolute 5.1 path or 5.1 data is not found. Flutter Web and the JavaScript SDK in browsers: in-memory store, no indexes; Flutter Web syncs only over WebSocket with Ditto Server.
+Pin the exact SDK version; request Bluetooth, Wi-Fi, local network, and nearby-device permissions before sync. Android, SDK 5.2+: multicast permissions are requested separately. Flutter 5.2: the root is application support, also for a relative `persistenceDirectory`, so pass the absolute 5.1 path or 5.1 data is not found. Flutter Web and the JavaScript SDK in browsers: in-memory store, no indexes; Flutter Web syncs only over WebSocket with Ditto Server.
 
 `§ Requirements`, `§ DittoConfig`, `§ Upgrading from SDK 5.1` · Code: *Installing the <SDK> SDK* · Details: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md#requirements)
 

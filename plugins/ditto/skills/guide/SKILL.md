@@ -24,7 +24,7 @@ Best practices, in `reference/best-practices/`:
 | Page | Covers |
 |---|---|
 | `README.md` | How to use the guide (audience, conventions such as (SDK 5.1+)/(SDK 5.2+), Experimental/Beta, and the Note (SDK ...) labels, how the content was verified), the ten essential rules, the disclaimer |
-| `setup-and-lifecycle.md` | Requirements, DittoConfig, one shared instance, startup order, authentication, switching users, system parameters (in `DittoConfig`, `ALTER SYSTEM`), sync start/stop, shutdown, transports, presence |
+| `setup-and-lifecycle.md` | Requirements, DittoConfig, one shared instance, startup order, authentication, switching users, system parameters (in `DittoConfig`, `ALTER SYSTEM`), sync start/stop, shutdown, transports, presence and recording it in documents |
 | `dql.md` | Where queries run, parameters and literals, MISSING vs NULL, query results, error messages and empty results (a lookup table); SELECT (projections, DISTINCT, aggregates, GROUP BY, ORDER BY, LIMIT, USE IDS, membership, JOIN); INSERT and ON ID CONFLICT, UPDATE, RETURNING, DELETE and EVICT |
 | `data-modeling.md` | Strict mode, arrays vs maps, document structure and size, relationships, IDs, counters, checks and claims across devices (locks, uniqueness, sequence numbers, invariants), event history, INITIAL documents, schema evolution, timestamps |
 | `sync-and-subscriptions.md` | Subscription rules and lifecycle, scope balancing, sync scopes, monitoring sync status, a lookup of causes when data does not sync |
@@ -58,7 +58,7 @@ Observations from our testing, in `reference/knowledge/observations/`, one entry
 |---|---|
 | `observations/how-we-tested.md` | The test environment and its limits, how to read the results, the checks of the guide |
 | `observations/subscriptions-and-replication.md` | What subscriptions deliver and what registering them costs, relays, the initial sync, order and atomicity, sync traffic, stopping and closing, the list of subscriptions, sync status |
-| `observations/connections-and-presence.md` | The TCP connection limit, meshes, WebSocket hubs, retries, detecting lost connections, presence, peer metadata, accepting connections, shared keys |
+| `observations/connections-and-presence.md` | The TCP connection limit, meshes, WebSocket hubs, retries, detecting lost connections, presence, presence written to documents, peer metadata, accepting connections, shared keys |
 | `observations/merge-behavior.md` | Concurrent edits, also between SDK releases, conditional updates, read-modify-write, reordering, renaming, counters |
 | `observations/clocks-and-time.md` | Device clocks and last-writer-wins, how a wrong clock spreads, `clock()` in subscriptions and observers |
 | `observations/storage-and-deletion.md` | Soft delete, tombstones and reaping, eviction, disk space, the write-ahead log, deleted data on disk |

@@ -336,6 +336,7 @@ An `UPDATE` that sets a field to its current value is still recorded as a mutati
 - Update nested fields individually (`SET address.city = :city`) instead of assigning the whole object.
 - Do not read a document, modify it in app code, and write the whole document back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF`: a stale value that differs from the stored one is written back.
 - Do not expect `DO UPDATE` or `SET obj = {...}` to replace an object; with the default strict mode they merge, and fields not supplied remain (remove keys with `UNSET`).
+- Do not write from every presence callback. Every device lists every peer it can reach, and the callback runs about once per second while peers come and go and about every 15 seconds without changes, so N devices writing every peer write about N × (N − 1) documents each time the graph changes. Keep sightings in memory and write only the peers whose stored time is older than the precision needed, in one transaction, at a rate you choose; where several devices write the same peer, keep them from writing at once, for example with a random timer interval (`§ Recording presence in documents`).
 - Why: Ditto syncs changes at field level. Rewriting a whole document makes the change larger, and an unchanged field written by this device can win a merge against a real concurrent change made on another device.
 
 ---

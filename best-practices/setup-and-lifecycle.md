@@ -357,3 +357,51 @@ Multicast is an opt-in transport that sends each update once to a multicast grou
 - Put secrets, tokens, or personal data in peer metadata. Peer metadata, and the `identityServiceMetadata` returned by your authentication webhook, are shared with every peer in the mesh, not only with directly connected peers.
 
 The code for a list of connected peers: [Flutter](platforms/flutter.md#transports-and-presence-in-flutter) · [JavaScript](platforms/javascript.md#transports-and-presence-in-javascript) · [Kotlin](platforms/kotlin.md#transports-and-presence-in-kotlin) · [Swift](platforms/swift.md#transports-and-presence-in-swift).
+
+### Recording presence in documents
+
+Presence describes the mesh only as it is now. An app that needs to know later which peers were around, such as a device inventory, a last-seen list, or a record of which devices met, writes what presence reports to a collection, and those writes sync like any other data. What the record must answer, how precisely, for how long, and which devices read it differ from app to app. The rules below apply to every such design; review one by asking what triggers each write, how many devices write the same document, how many documents the collection can hold, and which devices receive them.
+
+What a record of presence can show:
+
+- **The peers that the recording devices could reach, not every device at a site.** The graph includes peers that are reachable only through other peers, so a peer in it is not necessarily nearby. It leaves out devices whose sync is stopped, that a hub did not accept, or that are in another part of the mesh (see [The presence graph includes indirect peers and all of their connections](../knowledge/observations/connections-and-presence.md#the-presence-graph-includes-indirect-peers-and-all-of-their-connections)). A record that several devices write is the union of what each of them could reach.
+- **Times accurate to seconds.** A joining peer appears after about 1.2 seconds, and a peer that stops responding stays for about 7 to 9 seconds (see [Presence](#presence)).
+- **Persistence directories, not devices.** The peer key belongs to the persistence directory: a device whose directory is deleted, for example by a reinstall or by clearing the app's data, comes back with a new peer key (see [Deleting the directory after close() leaves no data behind](../knowledge/observations/persistence-directory.md#deleting-the-directory-after-close-leaves-no-data-behind)), and a record keyed by peer key gains an entry. Device names are not unique either.
+
+**Write at the pace that the record needs, not at the pace of presence callbacks.** Presence calls back about once per second while peers come and go and about every 15 seconds while nothing changes, and every device lists every peer that it can reach. When each of N devices writes every peer on every callback, they write about N × (N − 1) documents each time the graph changes, and each write syncs to every device that subscribes, whether or not the time moved enough to matter. In our testing with SDK 5.1.0 and 5.2.0, four devices that did so wrote 215 to 245 documents in about 80 seconds, which called the store observers of the four devices 278 to 364 times; with a 20-second threshold and a timer with a random interval, they wrote 12 to 16 documents (see [Writing every remote peer on every presence callback multiplies the writes by the number of devices](../knowledge/observations/connections-and-presence.md#writing-every-remote-peer-on-every-presence-callback-multiplies-the-writes-by-the-number-of-devices)). Over a link limited to 10 KB/s, twelve devices that wrote every peer on every callback took 53 to 61 percent of the link while a client came and went, and delayed other documents on that link from under 50 ms to 123 to 333 ms at the median; with the timer and threshold, the delays stayed as without the record (see [Presence written on every callback delayed other documents on a slow link](../knowledge/observations/connections-and-presence.md#presence-written-on-every-callback-delayed-other-documents-on-a-slow-link)).
+
+**✅ DO:**
+- Choose the precision that the record needs, such as "last seen within 5 minutes", and write a peer only when its recorded time is older than that. Keep what presence reports in memory, and let a trigger whose rate you choose write, such as a timer, not every presence callback.
+- Where several devices write the same peer, keep them from writing it at the same moment, for example with a timer whose offset or interval is random on each device. A change of the graph reaches every device within about a second, and timers that start together fire together, so devices that write then all write before any of them has received the others' writes. In our testing, writing from the presence callback with the same check, or from a timer that started on every device at the same moment, still wrote each peer from several devices within 1 second; a timer with a random interval did not (see [Writing every remote peer on every presence callback multiplies the writes by the number of devices](../knowledge/observations/connections-and-presence.md#writing-every-remote-peer-on-every-presence-callback-multiplies-the-writes-by-the-number-of-devices)).
+- Write the peers that are due in one transaction. Other devices' observers receive the transaction in one callback (see [Remote changes arrive in a few callbacks, and a transaction in one](../knowledge/observations/observer-behavior.md#remote-changes-arrive-in-a-few-callbacks-and-a-transaction-in-one)).
+- Let recording devices that subscribe to the record skip peers that another device recorded recently enough. Read the recorded times with a store observer that only updates memory. A recording device that does not subscribe cannot see the other devices' writes, so each such device writes every peer itself. The check compares times from different device clocks, so a device whose clock runs ahead can make the others skip a peer until real time catches up.
+- Decide which devices record. Every device recording every peer keeps the record complete when the mesh splits, at the highest cost. Devices of one role, such as a fixed hub, cost less but see only their part of the mesh. Each device recording only itself, as a heartbeat, has one writer per document and costs one write per device and interval, but it records that the device was running and could sync, not which devices could reach it.
+- Bound the number of documents. Give each peer one document, or one per peer and period, with an `_id` derived from the peer key (and the period), so that every recording device writes the same document. Do not insert a new document for every sighting. Keep the record for a limited time with a period field that does not change, a subscription to recent periods with a boundary passed as an argument, and an eviction of older ones (see [Time-based eviction](deletion-and-storage.md#time-based-eviction)). A last-seen time changes with every write, so a subscription that filters on it does not suit (see [Scope Balancing](sync-and-subscriptions.md#scope-balancing)).
+- Subscribe to the record only on the devices that read it, and on the devices that relay it to them (see [Multi-hop relay](sync-and-subscriptions.md#multi-hop-relay)). Every other device then receives none of these writes.
+- Store times with one fixed-precision UTC helper (see [Timestamps](data-modeling.md#timestamps)).
+- Keep the presence callback and the store observer short, and update the screen from the record as from any observer (see [Keep observer callbacks fast](observers.md#keep-observer-callbacks-fast) and [Backpressure (SDK 5.1+)](observers.md#backpressure-sdk-51)).
+
+**❌ DON'T:**
+- Write every remote peer from every presence callback.
+- Write the record from the store observer that reads it. The recorded time depends on the device and its clock, so devices that write it in reaction to each other's writes keep overwriting each other (see [Writing from Observers](observers.md#writing-from-observers)).
+- Expect one last-seen field to hold the latest time. The field is a register, and the write made later by the clock wins, not the larger time: a device that has not yet received a newer time and writes an older one moves the time back, also when both devices' clocks agree. In our testing, an older time written 50 ms after a newer one replaced it on both devices. Where the time must never move back, let each recording device write under its own key, such as `seenBy.<recorder>`, and take the latest when you read, at the cost of one entry per recorder in each document (see [An older time written later replaces a newer one, while a key per writer keeps both](../knowledge/observations/merge-behavior.md#an-older-time-written-later-replaces-a-newer-one-while-a-key-per-writer-keeps-both)).
+
+```sql
+-- ✅ GOOD: One possible model. A recording device writes the peers that are
+-- due, all in one transaction. One document per peer and day: every recording
+-- device writes the same document, and old days are evicted by their day field.
+-- DO UPDATE_LOCAL_DIFF skips the day field, which does not change.
+-- Arguments: {"sighting": {"_id": {"peerKey": "pkAB12...", "day": "2026-11-13"}, "day": "2026-11-13", "lastSeen": "2026-11-13T10:30:00.000Z"}}
+INSERT INTO peer_sightings DOCUMENTS (:sighting) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
+
+-- ✅ GOOD: Where the time must never move back, each recorder writes its own
+-- key, and readers take the latest of seenBy.
+-- Arguments: {"sighting": {"_id": {"peerKey": "pkAB12...", "day": "2026-11-13"}, "day": "2026-11-13", "seenBy": {"pkCD34...": "2026-11-13T10:30:00.000Z"}}}
+INSERT INTO peer_sightings DOCUMENTS (:sighting) ON ID CONFLICT DO UPDATE_LOCAL_DIFF
+
+-- The subscription of the devices that read the record, and the eviction of
+-- older days with the same boundary.
+-- Arguments: {"firstDay": "2026-11-07"}
+SELECT * FROM peer_sightings WHERE day >= :firstDay
+EVICT FROM peer_sightings WHERE day < :firstDay
+```
