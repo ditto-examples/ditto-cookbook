@@ -21,7 +21,7 @@ The Skills are namespaced by the plugin name, for example `ditto:query-sync`. Cl
 
 ### Use It in Your App's Repository
 
-To give everyone who works on an app the same Ditto rules, declare the marketplace and the plugin in the app repository's project settings. From the repository root (Claude Code 2.1.292 or later for these shell commands):
+To give everyone who works on an app the same Ditto rules, declare the marketplace and the plugin in the app repository's project settings. From the repository root:
 
 ```bash
 claude plugin marketplace add ditto-examples/ditto-cookbook --scope project
@@ -56,7 +56,7 @@ The guide and the Skills change often, and an installed copy stays at its versio
 
 From a shell, `claude plugin update ditto@ditto-cookbook` updates the installed plugin. To update automatically, run `/plugin`, open the **Marketplaces** tab, select `ditto-cookbook`, and select **Enable auto-update**. `claude plugin list` shows the installed version; the [changelog](https://github.com/ditto-examples/ditto-cookbook/blob/main/CHANGELOG.md) lists what changed.
 
-The `guide` Skill and the `§` citations of every Skill need the guide pages, which the plugin bundles through symbolic links. If you add the marketplace with `--sparse`, include `best-practices` and `knowledge` in the checkout, and on Windows enable symbolic links in Git (`core.symlinks=true`); the `audit` and `guide` Skills say so when the guide is missing.
+The `guide` Skill and the `§` citations of every Skill need the guide pages, which the plugin bundles through symbolic links to `best-practices/` and `knowledge/` at the repository root. A checkout that leaves those directories out, or that does not create symbolic links, installs the plugin without the guide; the `audit` and `guide` Skills say so when it is missing.
 
 ## Reviewing Ditto Code
 
@@ -90,7 +90,7 @@ When you work inside this repository, you do not need to install the plugin: `.c
 
 - **Short descriptions, early rules.** Claude Code lists every Skill description in a shared budget, so each description is one paragraph that names the Ditto APIs and symptoms it covers. Each `SKILL.md` stays under about 5,000 tokens and puts the CRITICAL rules first, because that is what remains attached to the conversation after context compaction.
 - **Progressive disclosure.** `SKILL.md` holds the rules, a workflow, and a checklist. Longer code and edge cases are in each Skill's `reference/` files, and complete examples are in `examples/`: DQL examples that apply to every SDK as `examples/*.sql`, and code examples per SDK in `examples/flutter/`, `examples/javascript/`, `examples/kotlin/`, and `examples/swift/`, with the same base name in every SDK. Claude reads them only when needed.
-- **SDK and version awareness.** Every Skill starts by identifying the project's SDK (Flutter, JavaScript, Kotlin, or Swift) and its version, and reads that SDK's page of the guide (`best-practices/platforms/<sdk>.md`). A **Note (SDK ...)** names the releases on which the behavior was observed, and is verified before it is applied to another version; issues fixed in 5.2.0 are collected in the guide's `§ Known Issues in SDK 5.1.0`.
+- **SDK and version awareness.** Every Skill starts by identifying the project's SDK (Flutter, JavaScript, Kotlin, or Swift) and its version, and reads only the sections it needs from that SDK's page of the guide (`best-practices/platforms/<sdk>.md`). A **Note (SDK ...)** names the releases on which the behavior was observed, and is verified before it is applied to another version; issues fixed in 5.2.0 are collected in the guide's `§ Known Issues in SDK 5.1.0`.
 - **The guide travels with the plugin.** `skills/guide/reference/best-practices` and `skills/guide/reference/knowledge` are symbolic links to the guide's [best practices](../../best-practices/README.md) and [knowledge](../../knowledge/README.md) pages; Claude Code copies their content into installed copies of the plugin. The Skills cite the guide as `§ Heading`, every heading is unique across its pages, and Claude finds the section by searching for the heading, offline and for the exact guide version the Skills were written against.
 - **Deterministic checks.** The `audit` Skill runs [`scan.py`](skills/audit/scripts/scan.py) (Python 3.8+, no dependencies) to find candidate anti-patterns in Dart, JavaScript, TypeScript, Swift, and Kotlin before reviewing by hand. See [Running the Scanner Yourself](#running-the-scanner-yourself).
 
@@ -100,7 +100,13 @@ The scanner is one file without dependencies. An installed plugin keeps it at `~
 
 ```bash
 python3 scan.py lib/ test/
-python3 scan.py --fail-on HIGH --json $(git diff --name-only origin/main...HEAD)
+```
+
+In CI, scan the source files that a pull request adds or changes, and skip the scan when there are none (exit code 2 means that nothing was scanned):
+
+```bash
+git diff --name-only --diff-filter=d origin/main...HEAD -- '*.dart' '*.js' '*.mjs' '*.cjs' '*.jsx' '*.ts' '*.tsx' '*.swift' '*.kt' '*.kts' > changed.txt
+if [ -s changed.txt ]; then python3 scan.py --fail-on HIGH $(cat changed.txt); fi
 ```
 
 Every hit is a candidate for review, not a confirmed defect, and its severity is that of the item it detects in the Anti-Pattern Checklist. It skips build output, dependencies, and generated files (`build`, `node_modules`, `Pods`, `*.g.dart`, `*.d.ts`, and others); `--exclude GLOB` skips more. A comment `ditto-scan: ignore[rule-id]` on the line, or on a comment line directly above it, suppresses a hit you have reviewed.

@@ -38,7 +38,7 @@ Do not stop after step 4: a clean scan does not cover steps 5 to 8.
 Decide what is under review from the request or the arguments the skill was invoked with:
 
 - **Paths, or nothing**: audit those directories, or the whole repository.
-- **A pull request, a branch, a base ref, or "my changes"**: read the diff (`gh pr diff <number>`, `git diff <base>...HEAD`, or `git diff HEAD` for uncommitted work), and scan only the changed source files (`git diff --name-only <base>...HEAD`). Review the changed lines, but build the inventory in step 5 from the whole repository for every collection that the diff touches: the cross-device questions need every reader and writer, not only the changed ones. Report what the change introduces as findings, and list problems that the unchanged code already had separately and briefly, unless the change makes them worse. Step 8 always applies.
+- **A pull request, a branch, a base ref, or "my changes"**: read the diff (`gh pr diff <number>`, `git diff <base>...HEAD`, or `git diff HEAD` for uncommitted work), and scan only the changed source files (`git diff --name-only --diff-filter=d <base>...HEAD`). Review the changed lines, but build the inventory in step 5 from the whole repository for every collection that the diff touches: the cross-device questions need every reader and writer, not only the changed ones. Report what the change introduces as findings, and list problems that the unchanged code already had separately and briefly, unless the change makes them worse. Step 8 always applies.
 - **A snippet with no repository**: skip steps 3 and 5, ask the eight questions of what the snippet shows, and list what it does not show under what was not checked.
 
 ### Step 3: Scan
@@ -108,7 +108,7 @@ Devices on older app versions keep reading and writing the same documents, so a 
 
 ### Step 9: Report
 
-The readers are the app's developers, who may not know Ditto. Start with a summary:
+Readers may not know Ditto. Start with a summary:
 
 ```
 Verdict: <one sentence: for example, "two CRITICAL defects lose data when tills work offline; fix before release">
@@ -129,7 +129,7 @@ Schema: <additive or breaking, and why, when the problem or the fix changes stor
 Reference: <skill name> / § <guide heading> (<link>)
 ```
 
-The link lets readers in the app's repository open the section: `https://github.com/ditto-examples/ditto-cookbook/blob/main/<page>#<anchor>`, where `<page>` is the guide page's path from `best-practices/` or `knowledge/` and `<anchor>` is the heading in lowercase, with spaces turned into `-` and other punctuation except `-` removed. When the user asks you to post the review on a pull request, make each finding one review comment at its `file:line`, and the summary the review body.
+The link lets readers in the app's repository open the section: `https://github.com/ditto-examples/ditto-cookbook/blob/main/<page>#<anchor>`, where `<page>` is the page's path in the repository, such as `best-practices/dql.md`, and `<anchor>` is the heading in lowercase, with spaces turned into `-` and other punctuation except `-` removed. When the user asks you to post the review on a pull request, make each finding one review comment at its `file:line`, and the summary the review body.
 
 End with: the guide version (the `Version` line of `../guide/reference/best-practices/README.md`), the SDK version and platforms reviewed, whether the app was taken as deployed or a sample and why, the changes to stored data in the code under review (each additive or breaking), the inventory in compact form (per collection: subscriptions, reads, writes, removals), the areas checked with no findings, and anything not checked (for example code that was not available, which devices write a collection, how long devices stay offline, or behavior that needs a multi-device test). When a fact that the code cannot show, such as the platforms or the connection mode in step 2, is unknown, say so there instead of guessing. Mark findings that depend on a **Note (SDK ...)** behavior or on `§ Known Issues in SDK 5.1.0` as version-specific, and name the releases they apply to.
 
