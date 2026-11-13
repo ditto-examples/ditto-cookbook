@@ -12,7 +12,7 @@ A repeatable review of an app that uses the Ditto SDK 5.2.0 in Flutter, JavaScri
 - Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). The rules target 5.2.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks 5.1.0 behavior that 5.2.0 no longer shows, and **Note (SDK 5.2.0)** behavior observed on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. If the version cannot be found, apply the 5.2.0 rules, say so in the report, and mark findings that rest on a **Note (SDK ...)** as version-specific.
 - In that SDK's page, `${CLAUDE_SKILL_DIR}/../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), read the *Behavior Specific to the <SDK> SDK* section at its end, not the whole page (Grep the heading for its line): it lists what only that SDK does. `§ Specific to One SDK` in the guide's Anti-Pattern Checklist lists the mistakes to look for in that SDK. Open the topic skills' `examples/<sdk>/` only when you write a fix.
 - `§ <Heading>` cites a section of the full guide: Grep the heading as a fixed string (headings contain `(`, `)`, and `+`) in `best-practices/` and `knowledge/` under `${CLAUDE_SKILL_DIR}/../guide/reference/`, by those names (in the Ditto Cookbook repository they are symbolic links, which a search of their parent does not enter). If `best-practices/README.md` is not there, the guide was not installed with the plugin (for example, a checkout without symbolic links): say so in the report, and rank and cite from the topic skills instead.
-- Read and search files with the Read, Glob, and Grep tools; use the shell only for the scanner and `git`/`gh`.
+- Read and search files with Read, Glob, and Grep; use the shell only for the scanner, `git`, and `gh`.
 - Review only; do not change code unless the user asks for fixes. When asked, apply fixes that leave stored data unchanged or change it additively, and ask before a breaking one (step 8).
 
 ## Workflow
@@ -23,7 +23,7 @@ Copy this checklist and work through it:
 Ditto audit progress:
 - [ ] 1. Scope: paths, a diff, or a snippet (see below); list the files that use Ditto (imports of ditto_live, @dittolive/ditto, DittoSwift, com.ditto)
 - [ ] 2. Context: SDK version, platforms, connection mode (Ditto Server or small peers only), and whether the app is deployed or a sample
-- [ ] 3. Scan: run scripts/scan.py on the source directories
+- [ ] 3. Scan: run scripts/scan.py on the source directories, as a command of its own, even if another shell command was refused
 - [ ] 4. Triage: confirm or discard every scanner hit by reading the code around it
 - [ ] 5. Inventory: per collection, its subscriptions, reads, writes, and removals, with file:line
 - [ ] 6. Cross-device review: ask the eight questions of every collection in the inventory
@@ -32,7 +32,7 @@ Ditto audit progress:
 - [ ] 9. Report: findings by severity, then what was checked and what was not
 ```
 
-Do not stop after step 4: a clean scan does not cover steps 5 to 8.
+Do not stop after step 4: a clean scan misses steps 5 to 8.
 
 ### Step 1: Scope
 
@@ -44,7 +44,7 @@ Decide what is under review from the request or the arguments the skill was invo
 
 ### Step 3: Scan
 
-Run this as a command of its own, not chained, even if another shell command was refused: a permission rule for `python3` can allow it.
+Run it unchained: a permission rule for `python3` can allow it when other commands are refused.
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py lib/ test/
