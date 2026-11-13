@@ -1,6 +1,6 @@
 # Transaction Sync and Attachment Storage Details (SDK 5.2.0)
 
-Details moved out of [SKILL.md](../SKILL.md) rules 8, 9, and 11. Guide (`../../guide/reference/best-practices/`): `§ Transactions and Sync`, `§ Attachments Are Immutable`, `§ Availability`, `§ Size Guidance`, `§ Document Size Limits`.
+Details moved out of [SKILL.md](../SKILL.md) rules 8, 9, and 10. Guide (`../../guide/reference/best-practices/`): `§ Transactions and Sync`, `§ Attachments Are Immutable`, `§ Availability`, `§ Size Guidance`, `§ Document Size Limits`.
 
 ## Transactions on Receiving Peers
 

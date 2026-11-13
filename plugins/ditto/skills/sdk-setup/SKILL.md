@@ -1,6 +1,6 @@
 ---
 name: sdk-setup
-description: Ditto SDK setup, lifecycle, and production security (Flutter, JavaScript, Kotlin, Swift): DittoConfig, opening Ditto, the authentication expiration handler, system parameters, sync start and stop, close, transports, presence, keys, permissions, revocation. Use when initializing Ditto, writing login, startup, shutdown, or background code, configuring transports, preparing a security review, or when sync never starts or devices do not connect.
+description: "Ditto SDK setup, lifecycle, and production security (Flutter, JavaScript, Kotlin, Swift): DittoConfig, the authentication expiration handler, system parameters, sync start and stop, close, transports, presence, keys, permissions, revocation. Use when initializing Ditto, writing Ditto login, startup, shutdown, or background code, configuring Ditto transports, reviewing Ditto security, or when Ditto sync never starts or devices do not connect."
 ---
 
 # Ditto SDK Setup, Lifecycle, and Security
@@ -9,22 +9,19 @@ Opening Ditto, authenticating, starting and stopping sync, shutting down, transp
 
 ## Before You Apply
 
-- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *App startup in Kotlin*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** and **Note (SDK 5.1.0)** mark easy-to-miss behavior seen on those releases, with the safe pattern; **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- For API calls, Grep the outline of that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
+- Report each finding at the severity of its item in `§ Anti-Pattern Checklist` (the checklist decides; Grep a phrase of the item there). A rule's label below is the highest severity among the items it covers.
 
 ## Prevents
 
-- A second open of an open persistence directory that never completes (Flutter, SDK 5.1.0)
-- Small-peers-only without a private key in production (peers not authenticated)
-- Hardcoded keys or tokens; the development token in a release build
+- A second open of an open persistence directory; a Swift instance released while in use
+- Small-peers-only without a private key; hardcoded keys or tokens; the development token in a release build
 - Errors escaping the authentication expiration handler; unchecked login results
-- System parameters assumed to persist, set with `ALTER SYSTEM` after open instead of in `DittoConfig`, or changed after sync has started
-- Closing Ditto when the app moves to the background
-- A transport configuration built from scratch (every transport disabled)
-- TCP hubs with more than six clients whose extra clients silently get no data
-- Secrets or personal data in peer metadata or `identityServiceMetadata`
-- Presence recorded in documents on every callback
+- System parameters assumed to persist, set with `ALTER SYSTEM` after open, or changed after sync has started
+- Closing Ditto in the background; a transport configuration built from scratch; TCP hubs with more than six clients
+- Secrets or personal data in peer metadata; presence recorded in documents on every callback
 - Access control via mutable fields, `syncGroup`, or client checks; revocation checking disabled
 
 ## Workflow
@@ -48,7 +45,6 @@ Startup:
 | Open | `await Ditto.open(DittoConfig(...))` | `await Ditto.open(config)` (Web: `await init()` first) | `DittoFactory.create(config)` | `try await Ditto.open(config:)` |
 | Start sync | `ditto.sync.start()` (`void`; throws) | `ditto.sync.start()` | `ditto.sync.start()` (throws) | `try ditto.sync.start()` |
 | Login failure | `AuthResponse.exception`; does not throw | Result `error`; does not throw | **Throws** | Completion handler `error` |
-| Release observers, subscriptions | `cancel()` | `cancel()` | `close()` | `cancel()` |
 
 More: `§ Platform Differences`.
 
@@ -60,11 +56,11 @@ Only one `Ditto` instance can use a persistence directory at a time. What a seco
 > **Note (SDK 5.1.0):** In Flutter, `Ditto.open()` on a directory that is already open may never complete instead of throwing.
 
 **✅ DO**: open at app start and pass the instance through DI or a service; let concurrent callers wait for one pending open (reset it on failure); where a tool restarts your code without ending the process (Flutter hot restart), use a new `persistenceDirectory` per start in debug builds, and a fixed one in release.
-**❌ DON'T**: open per screen or request; reopen before closing has completed; touch, partly delete, or copy the persistence directory (sync silently diverges).
+**❌ DON'T**: open per screen or request; reopen before closing has completed; touch, partly delete, or copy the persistence directory (sync silently diverges); in Swift, hold only `ditto.store` or `ditto.sync` (they reference `Ditto` weakly; without a strong reference the instance shuts down at once).
 
 Flutter: `Ditto.open()` initializes the SDK (SDK 5.1+); call `await Ditto.init()` first only before `Ditto.openSync()`, `DittoLogger`, or `Ditto.defaultRootDirectory`, or for custom Web asset URLs.
 
-`§ One instance per persistence directory`, `§ Opening Ditto in Flutter` · Example: *One shared instance in <SDK>* on the SDK page
+`§ One instance per persistence directory`, `§ Opening Ditto in Flutter`, `§ Opening Ditto in Swift` · Example: *One shared instance in <SDK>* on the SDK page
 
 ### 2. Choose the connection mode deliberately (CRITICAL)
 
@@ -134,7 +130,7 @@ Invalid values do not throw; they only log. WebSocket sync between Small Peers i
 
 `ditto.presence.peerMetadata` and the webhook's `identityServiceMetadata` reach every peer in the mesh.
 
-**✅ DO**: keep peer metadata small (max 4096 bytes encoded; larger throws), set once at startup (`{"role": "cashier"}`); `stop()` presence observers when their screen goes away.
+**✅ DO**: keep peer metadata small (max 4096 bytes encoded; larger throws), set once at startup; `stop()` presence observers when their screen goes away.
 **❌ DON'T**: put secrets, tokens, or personal data in either; treat self-set `peerMetadata` as a security check.
 **Recording presence (HIGH)**: write a peer only when its stored time is older than the needed precision, in one transaction, not per callback; keep writers of one peer from writing at once (e.g. random timers); never write from the observer that reads the record.
 
@@ -158,16 +154,7 @@ Certificate revocation (SDK 5.1+) covers server-authenticated identities only an
 
 `§ Certificate Revocation (SDK 5.1+)` · Details: [reference/security.md](reference/security.md#certificate-revocation-sdk-51)
 
-### 11. Shut down in order, only when the app is done with Ditto (HIGH)
-
-Release observers, subscriptions, presence and transport-condition observers, fetchers, and the connection request handler explicitly. Closing is final, stops sync, and releases resources, but **does not** wait for unsent changes. In-flight work: Flutter fails pending `execute()` calls, and stops the isolate if a transaction is open (on 5.2.0, reopening in the same process can also stop: `§ Changes in SDK 5.2.0`); JavaScript and Kotlin wait; Swift has no `close()` (5.1.0, 5.2.0): releasing the last reference shuts Ditto down and waits for an open transaction. Flutter's `close()` also does not end `changes` streams and **resets** `DittoLogger.customLogCallback`.
-
-**✅ DO**: await pending work (if data must reach a peer, its confirmed commit ID), release observers, then close. A growing count in `ditto.store.observers` across screens reveals observers never released.
-**❌ DON'T**: rely on garbage collection; send the Flutter `Ditto` or `Store` to another isolate.
-
-`§ Resource Cleanup and Shutdown`, `§ Forwarding logs to your own pipeline` · Code: *Closing Ditto in <SDK>* on the SDK page
-
-### 12. Validate input, protect data at rest, secure the webhook (HIGH)
+### 11. Validate input, protect data at rest, secure the webhook (CRITICAL)
 
 Only Swift and Kotlin can encrypt the local store at rest (SDK 5.2+): a 32-byte key in `DittoConfig.encryptionKey` on every open, kept in the Keychain or Android Keystore; switching an existing store means deleting it (`deleteStore`) and syncing again.
 
@@ -176,7 +163,16 @@ Only Swift and Kotlin can encrypt the local store at rest (SDK 5.2+): a 32-byte 
 
 `§ Input Validation and Query Parameters`, `§ Data at Rest`, `§ Webhook Security` · Details: [reference/security.md](reference/security.md#data-at-rest)
 
-### 13. Filter connections with a fast, non-throwing handler (MEDIUM)
+### 12. Shut down in order, only when the app is done with Ditto (HIGH; CRITICAL in Flutter)
+
+Release observers, subscriptions, presence and transport-condition observers, fetchers, and the connection request handler explicitly. Closing is final, stops sync, and releases resources, but **does not** wait for unsent changes. In-flight work: Flutter fails pending `execute()` calls, and stops the isolate if a transaction is open (on 5.2.0, reopening in the same process can also stop: `§ Changes in SDK 5.2.0`); JavaScript and Kotlin wait; Swift has no `close()` (5.1.0, 5.2.0): releasing the last reference shuts Ditto down and waits for an open transaction. Flutter's `close()` also does not end `changes` streams and **resets** `DittoLogger.customLogCallback`.
+
+**✅ DO**: await pending work (if data must reach a peer, its confirmed commit ID), release observers, then close. A growing count in `ditto.store.observers` across screens reveals observers never released.
+**❌ DON'T**: rely on garbage collection; send the Flutter `Ditto` or `Store` to another isolate.
+
+`§ Resource Cleanup and Shutdown`, `§ Forwarding logs to your own pipeline` · Code: *Closing Ditto in <SDK>* on the SDK page
+
+### 13. Filter connections with a fast, non-throwing handler (MEDIUM; CRITICAL in Kotlin)
 
 `ditto.presence.connectionRequestHandler` returns `allow` or `deny` within 10 s, or the peer is rejected; catch every error (a throw ends a Kotlin app).
 
@@ -210,12 +206,12 @@ Pin the exact SDK version; request Bluetooth, Wi-Fi, local network, and nearby-d
 
 ## Checklist
 
-- [ ] One shared instance; failed startup closes it
+- [ ] One shared instance (Swift: a strong reference to `Ditto` itself); failed startup closes it
 - [ ] Server + webhook, or small peers with provisioned `privateKey` and license token
 - [ ] No keys, tokens, or development provider in release builds
-- [ ] Expiration handler awaited before `sync.start()`; checks `response.exception`; never throws
+- [ ] Expiration handler set before `sync.start()`; checks the login result the way the SDK reports it (*Login failure* above); never throws
 - [ ] System parameters in `DittoConfig.systemParameters` on every open (5.1: `ALTER SYSTEM` before sync)
-- [ ] `sync.start()` not awaited; no `close()` on `paused`
+- [ ] Sync started after its prerequisites (Flutter: `start()` not awaited); no `close()` when the app goes to the background
 - [ ] Pending work awaited and observers cancelled before `close()`
 - [ ] Transports via `updateTransportConfig()`; hub TCP limit raised before sync
 - [ ] No secrets in peer or identity metadata
@@ -224,7 +220,5 @@ Pin the exact SDK version; request Bluetooth, Wi-Fi, local network, and nearby-d
 
 ## More
 
-- Reference: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md) - requirements, Web limits, `DittoConfig`, complete startup, auth and logout cleanup, system parameters, lifecycle, shutdown, platform differences
-- Reference: [reference/transports-and-presence.md](reference/transports-and-presence.md) - transports, TCP hub and limit, known peers, diagnostics, multicast, presence
-- Reference: [reference/security.md](reference/security.md) - security model, shared keys, webhook response, `_id` design, revocation, connection handler, data at rest, webhook security, checklist
+- Reference: [reference/startup-and-lifecycle.md](reference/startup-and-lifecycle.md) (requirements, `DittoConfig`, startup, auth, system parameters, shutdown), [reference/transports-and-presence.md](reference/transports-and-presence.md) (transports, TCP hubs, diagnostics, presence), [reference/security.md](reference/security.md) (keys, webhook, `_id` design, revocation, data at rest)
 - Related skills: `query-sync` (subscriptions), `performance-observability` (logging, diagnostics), `storage-lifecycle` (tombstone parameters), `testing` (local store tests), `audit` (whole-app review)

@@ -3,18 +3,45 @@
 
 Every hit is a *candidate*: the scanner matches text, not program behavior.
 Read the surrounding code and confirm each hit against the skill and guide
-section it names before reporting it.
+section it names before reporting it. The severity of each rule is that of the
+item of the guide's anti-pattern checklist that it detects.
 
 Usage:
-    python3 scan.py [PATH ...] [--json] [--min-severity LEVEL]
+    python3 scan.py [PATH ...] [--json] [--min-severity LEVEL] [--fail-on LEVEL]
+                    [--exclude GLOB ...] [--list-rules]
 
-PATH defaults to the current directory. Requires Python 3.8+ and no
-third-party packages.
+PATH defaults to the current directory. Directories are searched for .dart,
+.js, .mjs, .cjs, .jsx, .ts, .tsx, .swift, .kt, and .kts files, skipping
+generated and vendored code: the directories .git, .idea, .next, .dart_tool,
+build, node_modules, Pods, .swiftpm, Carthage, vendor, .gradle, .expo,
+coverage, dist, DerivedData, and .build, and the files *.g.dart,
+*.freezed.dart, *.d.ts, and *.min.js. --exclude GLOB (repeatable) skips more:
+a glob is matched against each file and directory name and against its path
+relative to the directory given on the command line, such as
+--exclude 'lib/generated' or --exclude '*_test.dart'. A file or directory
+named on the command line is always scanned.
+
+To silence a hit that has been reviewed, put a comment with
+`ditto-scan: ignore` (every rule) or `ditto-scan: ignore[rule-id, ...]` on its
+line or on a comment line directly above it.
+
+The hits go to stdout (text, or a JSON array with --json); a summary goes to
+stderr: files scanned, hits by severity, and how many hits --min-severity hid
+and suppression comments silenced.
+
+Exit status:
+    0  the scan finished (also with hits, unless --fail-on applies)
+    1  --fail-on LEVEL is given and a reported hit is at LEVEL or above
+    2  a path does not exist, no source file was scanned, or the arguments
+       are invalid (2 takes precedence over 1)
+
+Requires Python 3.8+ and no third-party packages.
 """
 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -37,19 +64,30 @@ EXTENSIONS = {
     ".kts": "kotlin",
 }
 
+LANGUAGES = ("dart", "js", "kotlin", "swift")
+
+# Generated, vendored, and tool directories, skipped below a directory given on the
+# command line.
 SKIPPED_DIRS = {
     ".git",
-    ".dart_tool",
-    ".gradle",
     ".idea",
     ".next",
+    ".dart_tool",
     "build",
-    "dist",
     "node_modules",
     "Pods",
+    ".swiftpm",
+    "Carthage",
+    "vendor",
+    ".gradle",
+    ".expo",
+    "coverage",
+    "dist",
     "DerivedData",
     ".build",
 }
+# Generated and bundled files, skipped unless named on the command line.
+SKIPPED_FILES = ("*.g.dart", "*.freezed.dart", "*.d.ts", "*.min.js")
 
 DQL_KEYWORDS = re.compile(
     r"\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|EVICT\s+FROM|ALTER\s+SYSTEM)\b"
@@ -78,6 +116,10 @@ class LineRule:
     skill: str
     # One guide section, or one per language when each SDK page explains the rule.
     guide: Union[str, Dict[str, str]]
+    # The item of best-practices/anti-patterns.md that the rule detects, as a distinctive
+    # part of its text (one per language where the SDKs' items differ), or None when no
+    # item covers it. The rule's severity is that item's severity.
+    checklist: Union[Optional[str], Dict[str, Optional[str]]]
     languages: Optional[Sequence[str]] = None
     # Only report the line if it also looks like DQL.
     requires_dql: bool = False
@@ -98,6 +140,21 @@ class LineRule:
         if self.languages and language not in self.languages:
             return None
         return self.pattern
+
+
+@dataclass
+class ContextRule:
+    """A rule that needs more than one line, reported by a scan_* function through report()."""
+    rule: str
+    severity: str
+    detects: str
+    skill: str
+    guide: str
+    # As in LineRule: the checklist item that the rule detects, or None.
+    checklist: Optional[str]
+    languages: Sequence[str] = LANGUAGES
+    # A second row for the same rule and language, when one case of it has another severity.
+    variant: str = ""
 
 
 def rx(pattern: str, flags: int = re.IGNORECASE) -> re.Pattern:
@@ -139,6 +196,7 @@ LINE_RULES: List[LineRule] = [
         "(a backtick map key cannot be a parameter: validate it strictly before splicing)",
         "query-sync",
         "Always pass values as parameters",
+        "DQL built with string interpolation or concatenation",
         requires_dql=True,
         refine=interpolates_statement,
         refine_note="in the string that holds the DQL, when the line has one",
@@ -150,6 +208,7 @@ LINE_RULES: List[LineRule] = [
         "IN (:values) matches nothing for an array parameter; write IN :values",
         "query-sync",
         "Filtering by Membership",
+        "`IN (:values)` (matches nothing)",
     ),
     LineRule(
         "any-every-satisfies-over-array",
@@ -159,6 +218,7 @@ LINE_RULES: List[LineRule] = [
         "local queries and observers (SDK 5.1.0 and 5.2.0); use field IN :values",
         "query-sync",
         "Filtering by Membership",
+        "`ANY` or `EVERY ... SATISFIES ... END` over a parameter or literal array",
     ),
     LineRule(
         "flag-not-equal-true",
@@ -168,6 +228,7 @@ LINE_RULES: List[LineRule] = [
         "use coalesce(flag, false) = false",
         "storage-lifecycle",
         "MISSING and NULL",
+        'Filters that mean "false or not set"',
     ),
     LineRule(
         "delete-evict-use-ids",
@@ -177,6 +238,7 @@ LINE_RULES: List[LineRule] = [
         "(fixed in 5.2.0); use WHERE _id IN :ids while any device runs 5.1.0",
         "storage-lifecycle",
         "Known Issues in SDK 5.1.0",
+        "`DELETE` or `EVICT` with `USE IDS` and no `WHERE` predicate",
         unless=rx(r"\bWHERE\s+(?!true\b)"),
     ),
     LineRule(
@@ -188,6 +250,7 @@ LINE_RULES: List[LineRule] = [
         "runs 5.1.0",
         "performance-observability",
         "Known Issues in SDK 5.1.0",
+        "composite indexes that mix `ASC` and `DESC` keys",
     ),
     LineRule(
         "unquoted-object-literal-key",
@@ -197,6 +260,7 @@ LINE_RULES: List[LineRule] = [
         "quote keys or pass the document as a parameter",
         "query-sync",
         "Quote every key in inline object literals",
+        "Unquoted keys in inline DQL object literals",
     ),
     LineRule(
         "read-modify-write-counter",
@@ -205,6 +269,7 @@ LINE_RULES: List[LineRule] = [
         "Read-modify-write of a number loses concurrent changes; use a COUNTER with APPLY",
         "data-modeling",
         "Counters",
+        "on values that several devices change instead of a `COUNTER`",
     ),
     LineRule(
         "zone-less-timestamp",
@@ -221,6 +286,7 @@ LINE_RULES: List[LineRule] = [
         "fixed-precision helper",
         "data-modeling",
         "Timestamps",
+        "Timestamps without a zone designator",
     ),
     LineRule(
         "fresh-transport-config",
@@ -230,6 +296,7 @@ LINE_RULES: List[LineRule] = [
         "the current one with updateTransportConfig",
         "sdk-setup",
         "Transport Configuration",
+        "A `TransportConfig()` built from scratch",
     ),
     LineRule(
         "development-authentication",
@@ -239,6 +306,7 @@ LINE_RULES: List[LineRule] = [
         "Development provider or token; never ship it in a production build",
         "sdk-setup",
         "Authentication in Production",
+        "The development provider or development token in a production build",
     ),
     LineRule(
         "small-peers-without-key",
@@ -250,6 +318,7 @@ LINE_RULES: List[LineRule] = [
         "acceptable only in tests and development",
         "sdk-setup",
         "Small-Peers-Only Deployments",
+        "`DittoConfigConnectSmallPeersOnly()` without a `privateKey`",
     ),
     LineRule(
         "hardcoded-private-key",
@@ -258,6 +327,7 @@ LINE_RULES: List[LineRule] = [
         "Shared key hardcoded in source; load it from secure provisioning",
         "sdk-setup",
         "Small-Peers-Only Deployments",
+        "Shared keys, tokens, or API keys hardcoded in the app",
     ),
     LineRule(
         "revocation-check-disabled",
@@ -266,6 +336,7 @@ LINE_RULES: List[LineRule] = [
         "Certificate revocation checking disabled",
         "sdk-setup",
         "Certificate Revocation (SDK 5.1+)",
+        "Revocation checking (`PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED`) disabled",
     ),
     LineRule(
         "counter-upsert",
@@ -276,36 +347,18 @@ LINE_RULES: List[LineRule] = [
         "upserted documents and use APPLY ... INCREMENT BY",
         "data-modeling",
         "Writing documents that contain counters",
-    ),
-    # --- HIGH: sync cost, memory, performance, risky settings ---
-    LineRule(
-        "upsert-do-update",
-        "HIGH",
-        rx(r"ON\s+ID\s+CONFLICT\s+DO\s+UPDATE\b(?!_LOCAL_DIFF)"),
-        "DO UPDATE rewrites unchanged fields, which overwrites earlier concurrent edits "
-        "of them and wakes observers; prefer DO UPDATE_LOCAL_DIFF, and never write back "
-        "a stale whole document",
-        "query-sync",
-        "ON ID CONFLICT",
+        "of documents that contain a counter field",
     ),
     LineRule(
         "strict-mode-enabled",
-        "HIGH",
+        "CRITICAL",
         rx(r"DQL_STRICT_MODE" + SETS + r"true"),
         "Strict mode hides undeclared MAP/COUNTER/ATTACHMENT fields and disables "
         "secondary index use (SDK 5.1.0 and 5.2.0); confirm it is intended and set on "
         "every open (DittoConfig.systemParameters in SDK 5.2+)",
         "data-modeling",
         "Strict Mode",
-    ),
-    LineRule(
-        "restrict-subscriptions-disabled",
-        "HIGH",
-        rx(r"DQL_RESTRICT_SUBSCRIPTIONS" + SETS + r"false"),
-        "Stateful LIMIT/ORDER BY subscriptions degrade sync; LIMIT bounds only the "
-        "initial download",
-        "query-sync",
-        "Subscription Rules",
+        "`DQL_STRICT_MODE = true` without understanding the consequences",
     ),
     LineRule(
         "subscription-query-arguments",
@@ -316,7 +369,79 @@ LINE_RULES: List[LineRule] = [
         "there, and keep your own references for the arguments",
         "query-sync",
         "Sync stop, close, and inspection",
+        "Reading `queryArguments`, `queryArgumentsJsonString`, or `queryArgumentsCborBytes`",
         languages=("dart",),
+    ),
+    LineRule(
+        "is-not-null-existence",
+        "CRITICAL",
+        rx(r"\bIS\s+NOT\s+NULL\b"),
+        "IS NOT NULL is also true for a missing field; to test existence use IS NOT MISSING",
+        "query-sync",
+        "MISSING and NULL",
+        "`IS NOT NULL` used to test that a field exists",
+        requires_dql=True,
+    ),
+    LineRule(
+        "type-equals-number",
+        "CRITICAL",
+        rx(r"\btype\(\s*[\w.]+\s*\)\s*=\s*['\"]number['\"]"),
+        "type(x) = 'number' never matches",
+        "guide",
+        "Type Checking",
+        "`type(x) = 'number'` (never matches)",
+    ),
+    LineRule(
+        "variable-precision-timestamp",
+        "CRITICAL",
+        {
+            "dart": rx(r"\.toUtc\(\)\.toIso8601String\(\)", 0),
+            "kotlin": rx(r"\bInstant\.now\(\)\.toString\(\)", 0),
+        },
+        "This format writes as many fraction digits as needed, so the strings do not sort "
+        "chronologically; produce timestamps with one fixed-precision UTC helper",
+        "data-modeling",
+        "Timestamps",
+        "ISO timestamp strings with different fractional precision",
+    ),
+    LineRule(
+        "float-read-as-double",
+        "CRITICAL",
+        {
+            "kotlin": rx(r"\]\s*\??\.(double|doubleOrNull)\b", 0),
+            "swift": rx(r"\bas[?!]\s*Double\b", 0),
+        },
+        "A decimal that a 32-bit float holds exactly, such as 7.5, comes back as a float "
+        "(Kotlin FloatValue, Swift Float), so reading it as a Double gives null or nil; read "
+        "numbers with a helper that accepts every number type (Swift: NSNumber)",
+        "query-sync",
+        {"kotlin": "Query results in Kotlin", "swift": "Query results in Swift"},
+        {
+            "kotlin": "or `doubleOrNull` for decimal numbers",
+            "swift": "`as? Double` on numbers read from `item.value`",
+        },
+    ),
+    # --- HIGH: sync cost, memory, performance ---
+    LineRule(
+        "upsert-do-update",
+        "HIGH",
+        rx(r"ON\s+ID\s+CONFLICT\s+DO\s+UPDATE\b(?!_LOCAL_DIFF)"),
+        "DO UPDATE rewrites unchanged fields, which overwrites earlier concurrent edits "
+        "of them and wakes observers; prefer DO UPDATE_LOCAL_DIFF, and never write back "
+        "a stale whole document",
+        "query-sync",
+        "ON ID CONFLICT",
+        "`ON ID CONFLICT DO UPDATE` for periodic re-upserts of unchanged data",
+    ),
+    LineRule(
+        "restrict-subscriptions-disabled",
+        "HIGH",
+        rx(r"DQL_RESTRICT_SUBSCRIPTIONS" + SETS + r"false"),
+        "Stateful LIMIT/ORDER BY subscriptions degrade sync; LIMIT bounds only the "
+        "initial download",
+        "query-sync",
+        "Subscription Rules",
+        "disabling `DQL_RESTRICT_SUBSCRIPTIONS`",
     ),
     LineRule(
         "verbose-logging",
@@ -326,6 +451,7 @@ LINE_RULES: List[LineRule] = [
         "Verbose logging can significantly slow replication; never in production",
         "performance-observability",
         "Log levels",
+        "`LogLevel.verbose` in production",
     ),
     LineRule(
         "use-index-empty",
@@ -335,6 +461,7 @@ LINE_RULES: List[LineRule] = [
         "index instead",
         "query-sync",
         "Performance tips",
+        "`USE INDEX ''` on a large inner collection",
     ),
     LineRule(
         "tombstone-ttl-change",
@@ -344,59 +471,7 @@ LINE_RULES: List[LineRule] = [
         "set on every open (DittoConfig.systemParameters in SDK 5.2+)",
         "storage-lifecycle",
         "Tombstone TTL and reaping",
-    ),
-    # --- MEDIUM: likely mistakes worth a look ---
-    LineRule(
-        "is-not-null-existence",
-        "MEDIUM",
-        rx(r"\bIS\s+NOT\s+NULL\b"),
-        "IS NOT NULL is also true for a missing field; to test existence use IS NOT MISSING",
-        "query-sync",
-        "MISSING and NULL",
-        requires_dql=True,
-    ),
-    LineRule(
-        "advise-and-provision",
-        "MEDIUM",
-        rx(r"\bADVISE\s+AND\s+PROVISION\b"),
-        "ADVISE AND PROVISION creates indexes as a side effect; keep it out of production code",
-        "performance-observability",
-        "ADVISE (SDK 5.1+)",
-    ),
-    LineRule(
-        "type-equals-number",
-        "MEDIUM",
-        rx(r"\btype\(\s*[\w.]+\s*\)\s*=\s*['\"]number['\"]"),
-        "type(x) = 'number' never matches",
-        "guide",
-        "Type Checking",
-    ),
-    LineRule(
-        "transaction-without-hint",
-        "MEDIUM",
-        {
-            # The callback without a hint: before it on the same line.
-            "dart": rx(r"\.transaction(?:<[^>]*>)?\((?:\s*isReadOnly:\s*\w+\s*,)?\s*\(\w*\)\s*"
-                       r"(?:async\s*)?(?:\{|=>)", 0),
-            # A trailing closure without hint in the parentheses before it.
-            "kotlin": rx(r"\.transaction\s*(\((?![^)]*\bhint\b)[^)]*\))?\s*\{", 0),
-            "swift": rx(r"\.transaction\s*(\((?![^)]*\bhint\b)[^)]*\))?\s*\{", 0),
-        },
-        "Transaction without a hint; long transactions are logged by hint",
-        "transactions-attachments",
-        "Transaction Rules",
-    ),
-    LineRule(
-        "variable-precision-timestamp",
-        "MEDIUM",
-        {
-            "dart": rx(r"\.toUtc\(\)\.toIso8601String\(\)", 0),
-            "kotlin": rx(r"\bInstant\.now\(\)\.toString\(\)", 0),
-        },
-        "This format writes as many fraction digits as needed, so the strings do not sort "
-        "chronologically; produce timestamps with one fixed-precision UTC helper",
-        "data-modeling",
-        "Timestamps",
+        "A Small Peer tombstone TTL (`TOMBSTONE_TTL_HOURS`) above the Ditto Server tombstone TTL",
     ),
     LineRule(
         "unconvertible-argument",
@@ -415,7 +490,53 @@ LINE_RULES: List[LineRule] = [
         "infinity) fails or is stored as something else; pass UTC strings, epoch "
         "milliseconds, or strings",
         "query-sync",
-        "Always pass values as parameters",
+        {
+            "dart": "Arguments and value types in Flutter",
+            "kotlin": "Arguments and value types in Kotlin",
+            "swift": "Arguments and value types in Swift",
+        },
+        {
+            "dart": "`DateTime` values passed as arguments",
+            "kotlin": "`java.util.Date`, `Instant`, `UUID`, `BigDecimal`, or `BigInteger` values in arguments",
+            "swift": "`Date`, `Decimal`, or `URL` values in arguments",
+        },
+    ),
+    LineRule(
+        "date-description-timestamp",
+        "HIGH",
+        rx(r"\\\(Date\(\)\)|\bDate\(\)\.description\b", 0),
+        "A Date's description is not ISO 8601 (a space instead of T, no fractional seconds, "
+        "+0000 instead of Z); format UTC with ISO8601FormatStyle and fractional seconds",
+        "data-modeling",
+        "IDs and Timestamps in Swift",
+        "`Date().description` as timestamps",
+        languages=("swift",),
+    ),
+    # --- MEDIUM: maintainability and SDK-specific mistakes ---
+    LineRule(
+        "advise-and-provision",
+        "MEDIUM",
+        rx(r"\bADVISE\s+AND\s+PROVISION\b"),
+        "ADVISE AND PROVISION creates indexes as a side effect; keep it out of production code",
+        "performance-observability",
+        "ADVISE (SDK 5.1+)",
+        "`ADVISE AND PROVISION` in production code",
+    ),
+    LineRule(
+        "transaction-without-hint",
+        "MEDIUM",
+        {
+            # The callback without a hint: before it on the same line.
+            "dart": rx(r"\.transaction(?:<[^>]*>)?\((?:\s*isReadOnly:\s*\w+\s*,)?\s*\(\w*\)\s*"
+                       r"(?:async\s*)?(?:\{|=>)", 0),
+            # A trailing closure without hint in the parentheses before it.
+            "kotlin": rx(r"\.transaction\s*(\((?![^)]*\bhint\b)[^)]*\))?\s*\{", 0),
+            "swift": rx(r"\.transaction\s*(\((?![^)]*\bhint\b)[^)]*\))?\s*\{", 0),
+        },
+        "Transaction without a hint; long transactions are logged by hint",
+        "transactions-attachments",
+        "Transaction Rules",
+        "Transactions without a `hint`",
     ),
     LineRule(
         "all-peer-to-peer-enabled",
@@ -425,6 +546,7 @@ LINE_RULES: List[LineRule] = [
         "updateTransportConfig() throw on Node.js on macOS; use setAvailablePeerToPeerEnabled(true)",
         "sdk-setup",
         "Transports and Presence in JavaScript",
+        "`setAllPeerToPeerEnabled(true)` on Node.js on macOS",
         languages=("js",),
     ),
     LineRule(
@@ -435,6 +557,7 @@ LINE_RULES: List[LineRule] = [
         "mutatedDocumentIDsV2() once and keep the array it returns",
         "query-sync",
         "Query results in JavaScript",
+        "`result.mutatedDocumentIDs()` (it does not exist in JavaScript",
         languages=("js",),
     ),
     LineRule(
@@ -446,6 +569,7 @@ LINE_RULES: List[LineRule] = [
         "then remove local data",
         "sdk-setup",
         "Authentication in JavaScript",
+        "An `async` cleanup passed to `ditto.auth.logout(cleanup)`",
         languages=("js",),
     ),
     LineRule(
@@ -456,6 +580,7 @@ LINE_RULES: List[LineRule] = [
         "active, false after stop()); keep your own flag instead",
         "sdk-setup",
         "Closing Ditto in JavaScript",
+        "`isStopped` of the observers that `presence.observe()`",
         languages=("js",),
     ),
     LineRule(
@@ -466,32 +591,8 @@ LINE_RULES: List[LineRule] = [
         "extract the x.y.z part before you compare it",
         "sdk-setup",
         "Behavior Specific to the Flutter SDK",
+        "`Ditto.version` compared as a string",
         languages=("dart",),
-    ),
-    # --- Kotlin ---
-    LineRule(
-        "float-read-as-double",
-        "MEDIUM",
-        {
-            "kotlin": rx(r"\]\s*\??\.(double|doubleOrNull)\b", 0),
-            "swift": rx(r"\bas\?\s*Double\b", 0),
-        },
-        "A decimal that a 32-bit float holds exactly, such as 7.5, comes back as a float "
-        "(Kotlin FloatValue, Swift Float), so reading it as a Double gives null or nil; read "
-        "numbers with a helper that accepts every number type (Swift: NSNumber)",
-        "query-sync",
-        {"kotlin": "Query results in Kotlin", "swift": "Query results in Swift"},
-    ),
-    # --- Swift ---
-    LineRule(
-        "date-description-timestamp",
-        "HIGH",
-        rx(r"\\\(Date\(\)\)|\bDate\(\)\.description\b", 0),
-        "A Date's description is not ISO 8601 (a space instead of T, no fractional seconds, "
-        "+0000 instead of Z); format UTC with ISO8601FormatStyle and fractional seconds",
-        "data-modeling",
-        "IDs and Timestamps in Swift",
-        languages=("swift",),
     ),
     LineRule(
         "open-sync",
@@ -501,6 +602,7 @@ LINE_RULES: List[LineRule] = [
         "await Ditto.open, and never call openSync on the main thread",
         "sdk-setup",
         "Opening Ditto in Swift",
+        "`Ditto.openSync` on the main thread",
         languages=("swift",),
     ),
     LineRule(
@@ -511,6 +613,7 @@ LINE_RULES: List[LineRule] = [
         "lowercase IDs in one helper",
         "data-modeling",
         "IDs and Timestamps in Swift",
+        "`UUID().uuidString` as a document ID without `lowercased()`",
         languages=("swift",),
     ),
 ]
@@ -521,24 +624,142 @@ def is_comment(line: str) -> bool:
     return stripped.startswith(("//", "/*", "*", "#!"))
 
 
+def code_part(line: str) -> str:
+    """The line without a trailing // or /* */ comment (one that follows whitespace, so
+    that a URL in a string survives)."""
+    return re.sub(r"\s//.*$|\s/\*.*\*/\s*$", "", line).rstrip()
+
+
+# A statement split across lines is joined into one logical statement when it is a run of
+# string literals: adjacent literals (Dart), literals joined by + at a line break, or a
+# multi-line string (triple quotes, or a JavaScript template literal), whose text starts
+# with a DQL statement.
+# A string whose text starts with one of these is a DQL statement.
+STATEMENT_START = re.compile(
+    r"\s*(?:(?:EXPLAIN|PROFILE|ADVISE)\s+)?(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|EVICT\s+FROM"
+    r"|ALTER\s+SYSTEM|CREATE\s+INDEX|DROP\s+INDEX)\b")
+MAX_STATEMENT_LINES = 30
+ENDS_WITH_LITERAL = re.compile(r"['\"`]\s*(?:(?<!\+)\+)?$")
+STARTS_WITH_LITERAL = re.compile(r"^\+?\s*['\"`]")
+LITERAL_JOINER = re.compile(r"\s*\+?\s*")
+
+
+def opens_string(line: str, language: str) -> Optional[str]:
+    """The delimiter of a multi-line string that the line opens and does not close."""
+    if language == "js":
+        return "`" if (line.count("`") - line.count("\\`")) % 2 else None
+    for delimiter in ('"""', "'''"):
+        if line.count(delimiter) % 2:
+            return delimiter
+    return None
+
+
+def continues_literal(previous: str, following: str, language: str) -> bool:
+    """Whether a string literal run goes on from the code of one line to the next line."""
+    following = following.strip()
+    plus = (previous.endswith("+") and not previous.endswith("++")) or following.startswith("+")
+    previous_literal = bool(ENDS_WITH_LITERAL.search(previous))
+    following_literal = bool(STARTS_WITH_LITERAL.search(following))
+    if plus:
+        return previous_literal or following_literal
+    return language == "dart" and previous_literal and following_literal
+
+
+def string_spans(lines: List[str], language: str) -> Dict[int, int]:
+    """The first and last line index of each multi-line string, paired in one pass over the
+    file so that a closing delimiter is never taken for an opening one."""
+    spans = {}
+    index = 0
+    while index < len(lines):
+        delimiter = None if is_comment(lines[index]) else opens_string(lines[index], language)
+        if delimiter:
+            closing = next((number for number in range(index + 1, len(lines))
+                            if opens_string(lines[number], language) == delimiter), None)
+            if closing is None:
+                break
+            spans[index] = closing
+            index = closing
+        index += 1
+    return spans
+
+
+def statement_end_line(lines: List[str], start: int, language: str, spans: Dict[int, int]) -> int:
+    """The last line of the logical statement that starts on lines[start]."""
+    end = start
+    while end - start < MAX_STATEMENT_LINES:
+        if end in spans:
+            if spans[end] - start >= MAX_STATEMENT_LINES:
+                break
+            end = spans[end]
+        if (end + 1 < len(lines) and not is_comment(lines[end + 1])
+                and continues_literal(code_part(lines[end]), lines[end + 1], language)):
+            end += 1
+            continue
+        break
+    return end
+
+
+def merge_literals(text: str) -> str:
+    """The text with each run of adjacent string literals, or literals joined by +, as one
+    literal, so that a statement split into several literals reads as one."""
+    runs: List[List[re.Match]] = []
+    for match in LITERAL.finditer(text):
+        if runs and LITERAL_JOINER.fullmatch(text, runs[-1][-1].end(), match.start()):
+            runs[-1].append(match)
+        else:
+            runs.append([match])
+    pieces = []
+    position = 0
+    for run in runs:
+        quote = run[0].group()[0]
+        pieces.append(text[position:run[0].start()])
+        pieces.append(quote + "".join(match.group()[1:-1] for match in run) + quote)
+        position = run[-1].end()
+    pieces.append(text[position:])
+    return "".join(pieces)
+
+
+def logical_statements(lines: List[str], language: str) -> Iterable[Tuple[int, str, str]]:
+    """(line index, text to match, code to show) for each line, or for each statement whose
+    string literals span several lines."""
+    spans = string_spans(lines, language)
+    # The lines inside or closing a multi-line string never start a statement.
+    inside = {number for first, last in spans.items() for number in range(first + 1, last + 1)}
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        end = index
+        if not is_comment(line) and index not in inside:
+            end = statement_end_line(lines, index, language, spans)
+        if end > index:
+            joined = " ".join(code_part(text).strip() for text in lines[index:end + 1])
+            merged = merge_literals(joined)
+            if any(STATEMENT_START.match(literal.group(), 1) for literal in LITERAL.finditer(merged)):
+                yield index, merged, joined[:200]
+                index = end + 1
+                continue
+        yield index, line, line.strip()
+        index += 1
+
+
 def scan_lines(path: str, language: str, lines: List[str]) -> Iterable[Finding]:
-    for number, line in enumerate(lines, start=1):
-        if is_comment(line):
+    for index, text, code in logical_statements(lines, language):
+        if is_comment(lines[index]):
             continue
         for rule in LINE_RULES:
             pattern = rule.pattern_for(language)
             if pattern is None:
                 continue
-            if rule.requires_dql and not DQL_KEYWORDS.search(line):
+            if rule.requires_dql and not DQL_KEYWORDS.search(text):
                 continue
-            if not pattern.search(line):
+            if not pattern.search(text):
                 continue
-            if rule.unless and rule.unless.search(line):
+            if rule.unless and rule.unless.search(text):
                 continue
-            if rule.refine and not rule.refine(line):
+            if rule.refine and not rule.refine(text):
                 continue
-            yield Finding(path, number, rule.severity, rule.rule, rule.message,
-                          rule.skill, rule.guide_for(language), line.strip())
+            yield Finding(path, index + 1, rule.severity, rule.rule, rule.message,
+                          rule.skill, rule.guide_for(language), code)
 
 
 def window(lines: List[str], start: int, size: int) -> str:
@@ -564,10 +785,13 @@ SUBSCRIPTION_REJECTED = re.compile(
     r"\b(ORDER\s+BY|LIMIT|JOIN|GROUP\s+BY|DISTINCT|USE\s+IDS)\b|SELECT\s+(?!\*)",
     re.IGNORECASE,
 )
+# Filters that keep documents from reaching the device: != and NOT IN skip documents
+# without the field, and clock() is evaluated by the sending device only when it writes.
+SUBSCRIPTION_MISSES = re.compile(r"!=|\bNOT\s+IN\b|\bclock\s*\(")
 STRING_LITERAL = re.compile(r"'([^'\\]*(?:\\.[^'\\]*)*)'|\"([^\"\\]*(?:\\.[^\"\\]*)*)\"|`([^`]*)`")
 
 
-def scan_subscriptions(path: str, lines: List[str]) -> Iterable[Finding]:
+def scan_subscriptions(path: str, language: str, lines: List[str]) -> Iterable[Finding]:
     """Subscriptions accept only SELECT * FROM c [WHERE ...]."""
     for index, line in enumerate(lines):
         if is_comment(line) or not SUBSCRIPTION_CALL.search(line):
@@ -579,20 +803,26 @@ def scan_subscriptions(path: str, lines: List[str]) -> Iterable[Finding]:
         for offset, candidate in enumerate(lines[index:index + 5]):
             if offset == 0:
                 candidate = candidate[SUBSCRIPTION_CALL.search(candidate).start():]
-            elif re.search(r"arguments\s*:", candidate):
-                break
+            arguments = re.search(r"arguments\s*:", candidate)
+            if arguments:
+                candidate = candidate[:arguments.start()]
             for match in STRING_LITERAL.finditer(candidate):
                 text.append(next(group for group in match.groups() if group is not None))
             depth += candidate.count("(") - candidate.count(")")
-            if depth <= 0:
+            if arguments or depth <= 0:
                 break
         query = " ".join(text)
         if query and SUBSCRIPTION_REJECTED.search(query):
-            yield Finding(path, index + 1, "HIGH", "subscription-rejected-feature",
-                          "Subscriptions accept only SELECT * FROM c [WHERE ...]; projections, "
-                          "ORDER BY, LIMIT, JOIN, GROUP BY, DISTINCT, and USE IDS are rejected "
-                          "or degrade sync",
-                          "query-sync", "Subscription Rules", query.strip()[:160])
+            yield report("subscription-rejected-feature", language, path, index + 1,
+                         "Subscriptions accept only SELECT * FROM c [WHERE ...]; projections, "
+                         "ORDER BY, LIMIT, JOIN, GROUP BY, DISTINCT, and USE IDS are rejected "
+                         "or degrade sync", query.strip()[:160])
+        if SUBSCRIPTION_MISSES.search(query):
+            yield report("subscription-filter-misses-documents", language, path, index + 1,
+                         "A subscription filter with != or NOT IN never brings the documents that "
+                         "lack the field, and one with clock() does not send documents that enter "
+                         "the time window later; filter by fields that every document has, and "
+                         "pass a time boundary as a parameter", query.strip()[:160])
 
 
 OBSERVER_CALL = re.compile(r"registerObserver(V2|WithSignalNext)?\s*\(")
@@ -614,11 +844,10 @@ def scan_observers(path: str, language: str, lines: List[str]) -> Iterable[Findi
             scope.append(following)
         consumes_changes = re.search(r"\.changes\b", "\n".join(scope))
         if has_on_change and not consumes_changes:
-            yield Finding(path, index + 1, "HIGH", "observer-onchange-only",
-                          "Observer registered with onChange and no `changes` stream consumed "
-                          "nearby; unconsumed results stay in memory (SDK 5.1.0 and 5.2.0, also "
-                          "with registerObserverV2 and registerObserverWithSignalNext)",
-                          "query-sync", "Store Observers in Flutter", line.strip())
+            yield report("observer-onchange-only", language, path, index + 1,
+                         "Observer registered with onChange and no `changes` stream consumed "
+                         "nearby; unconsumed results stay in memory (SDK 5.1.0 and 5.2.0, also "
+                         "with registerObserverV2 and registerObserverWithSignalNext)", line.strip())
 
 
 # A transaction callback (Dart, JavaScript) or trailing closure (Kotlin, Swift).
@@ -626,19 +855,18 @@ TRANSACTION_CALL = re.compile(r"\.transaction\s*[({]")
 INSIDE_TRANSACTION = re.compile(r"\.store\.execute\s*\(|\.transaction\s*[({]")
 
 
-def scan_transactions(path: str, lines: List[str]) -> Iterable[Finding]:
+def scan_transactions(path: str, language: str, lines: List[str]) -> Iterable[Finding]:
     """store.execute or a nested transaction inside a transaction callback."""
     for index, line in enumerate(lines):
         if is_comment(line) or not TRANSACTION_CALL.search(line):
             continue
         for offset, body in enumerate(block(lines, index)[1:], start=1):
             if not is_comment(body) and INSIDE_TRANSACTION.search(body):
-                yield Finding(path, index + offset + 1, "CRITICAL", "execute-inside-transaction",
-                              "ditto.store.execute inside a transaction (throws in Flutter; its "
-                              "writes never complete in JavaScript, Kotlin, and Swift) or a nested "
-                              "read-write transaction (waits for the outer one forever); use the "
-                              "transaction's own execute",
-                              "transactions-attachments", "Transaction Rules", body.strip())
+                yield report("execute-inside-transaction", language, path, index + offset + 1,
+                             "ditto.store.execute inside a transaction (throws in Flutter; its "
+                             "writes never complete in JavaScript, Kotlin, and Swift) or a nested "
+                             "read-write transaction (waits for the outer one forever); use the "
+                             "transaction's own execute", body.strip())
 
 
 KOTLIN_QUERY_CALL = re.compile(r"\.(execute|observe)\s*\(")
@@ -655,23 +883,43 @@ def scan_kotlin_results(path: str, language: str, lines: List[str]) -> Iterable[
             continue
         text = "\n".join(block(lines, index, 12))
         if RESULT_RETURNED.search(text[KOTLIN_QUERY_CALL.search(text).start():]):
-            yield Finding(path, index + 1, "HIGH", "result-leaves-handler",
-                          "The query result leaves the mapping function, which closes it; reading "
-                          "its items afterwards throws. Convert the items inside the function",
-                          "query-sync", "Query results in Kotlin", line.strip())
+            yield report("result-leaves-handler", language, path, index + 1,
+                         "The query result leaves the mapping function, which closes it; reading "
+                         "its items afterwards throws. Convert the items inside the function", line.strip())
 
 
 REGISTRATION = re.compile(
     r"^\s*(?P<discard>_\s*=\s*)?(try[?!]?\s+)?(await\s+)?[\w.?!]*\b"
     r"(?P<call>store\.registerObserver\w*|sync\.registerSubscription)\s*\(")
-# A line after which a new statement starts: the end of a statement or of a block,
-# or the opening of a block that is not a lambda whose value is kept.
-STATEMENT_START = re.compile(r"(;|\}|\{)\s*$")
 # A block whose last expression is its value: a lambda passed to map, let, and the like,
 # and in Swift, a function with a return type or a computed property (implicit return).
 VALUE_LAMBDA = re.compile(
-    r"(\.(map\w*|flatMap\w*|compactMap|associate\w*|let|run|also|apply|with)|\blazy|=)\s*\{\s*$"
+    r"(\.(map\w*|flatMap\w*|compactMap|associate\w*|let|run|also|apply|with)|\blazy|=)\s*\{"
+    r"\s*(?:\[[^\]]*\]\s*)?(?:[\w\s,:()<>?]*(?:->|\bin))?\s*$"
     r"|->\s*[^{}]+\{\s*$|\bvar\s+\w+\s*:\s*[^={}]+\{\s*$")
+# The opening of a lambda with parameters: `{ id ->` (Kotlin) or `{ [weak self] id in` (Swift).
+LAMBDA_OPENING = re.compile(r"\{\s*(?:\[[^\]]*\]\s*)?[\w\s,:()<>?]*(?:->|\bin)\s*$")
+# The end of a line after which the expression goes on: an operator, an opening bracket,
+# a separator, or a keyword that takes an expression.
+CONTINUATION = re.compile(
+    r"(?:[-+*/%=&|^~:,.(\[]|\s[?<>]|=>|->|\b(?:return|try|await|throw|in|yield)[?!]?)\s*$")
+
+
+def starts_statement(lines: List[str], index: int) -> bool:
+    """Whether lines[index] starts a statement whose value nothing keeps: a line break is a
+    statement boundary unless the previous line ends with a continuation or the line
+    continues a call chain."""
+    if lines[index].lstrip().startswith((".", "?.")):
+        return False
+    previous = previous_code_line(lines, index)
+    if previous is None:
+        return True
+    previous = code_part(previous)
+    if VALUE_LAMBDA.search(previous):
+        return False
+    if previous.endswith((";", "{", "}")) or LAMBDA_OPENING.search(previous):
+        return True
+    return not CONTINUATION.search(previous)
 
 
 # A call chained to the registration that keeps the handle.
@@ -709,23 +957,19 @@ def scan_registrations(path: str, language: str, lines: List[str]) -> Iterable[F
         if not match:
             continue
         if not match.group("discard"):
-            previous = previous_code_line(lines, index)
-            if previous is not None and (not STATEMENT_START.search(previous)
-                                         or VALUE_LAMBDA.search(previous)):
+            if not starts_statement(lines, index):
                 continue
             rest = statement_end(lines, index)
             if rest.startswith((",", ")", "]")) or KEEPING_CHAIN.match(rest):
                 continue
         if match.group("call").startswith("store"):
-            yield Finding(path, index + 1, "HIGH", "discarded-observer",
-                          "The observer that registerObserver returns is discarded, so nothing "
-                          "can release it; it keeps running until Ditto shuts down",
-                          "query-sync", "Observer Lifecycle", line.strip())
+            yield report("discarded-observer", language, path, index + 1,
+                         "The observer that registerObserver returns is discarded, so nothing "
+                         "can release it; it keeps running until Ditto shuts down", line.strip())
         else:
-            yield Finding(path, index + 1, "HIGH", "discarded-subscription",
-                          "The subscription that registerSubscription returns is discarded, so "
-                          "nothing can cancel it; it keeps syncing until Ditto shuts down",
-                          "query-sync", "Subscription Lifecycle", line.strip())
+            yield report("discarded-subscription", language, path, index + 1,
+                         "The subscription that registerSubscription returns is discarded, so "
+                         "nothing can cancel it; it keeps syncing until Ditto shuts down", line.strip())
 
 
 SWIFT_TASK = re.compile(r"\bTask(\.detached)?\s*(\([^)]*\))?\s*\{")
@@ -745,11 +989,10 @@ def scan_swift_observer_tasks(path: str, language: str, lines: List[str]) -> Ite
         awaits = any(re.search(r"\bawait\b", "\n".join(block(handler, offset, 40)))
                      for offset, candidate in enumerate(handler) if SWIFT_TASK.search(candidate))
         if awaits:
-            yield Finding(path, index + 1, "MEDIUM", "observer-task-without-backpressure",
-                          "The observer handler starts a Task and returns, so the next result does "
-                          "not wait for the work; use handlerWithSignalNext and call signalNext "
-                          "when the Task is done",
-                          "performance-observability", "Backpressure in Swift", line.strip())
+            yield report("observer-task-without-backpressure", language, path, index + 1,
+                         "The observer handler starts a Task and returns, so the next result does "
+                         "not wait for the work; use handlerWithSignalNext and call signalNext "
+                         "when the Task is done", line.strip())
 
 
 LOOP = re.compile(r"^\s*for\b|\.(forEach|forEachIndexed|map|mapIndexed)\s*\{|\brepeat\s*\(")
@@ -770,11 +1013,10 @@ def scan_concurrent_writes(path: str, language: str, lines: List[str]) -> Iterab
             if is_comment(body) or not CONCURRENT_TASK.search(body):
                 continue
             if STORE_EXECUTE.search("\n".join(block(lines, index + offset, 40))):
-                yield Finding(path, index + offset + 1, "HIGH", "concurrent-writes-in-loop",
-                              "A coroutine or Task per write: while a transaction is open, each "
-                              "waiting write can hold a thread, and enough of them stop the app; "
-                              "write in one statement, one transaction, or one after another",
-                              "transactions-attachments", "Transaction Rules", body.strip())
+                yield report("concurrent-writes-in-loop", language, path, index + offset + 1,
+                             "A coroutine or Task per write: while a transaction is open, each "
+                             "waiting write can hold a thread, and enough of them stop the app; "
+                             "write in one statement, one transaction, or one after another", body.strip())
 
 
 def scan_lifecycle(path: str, language: str, lines: List[str]) -> Iterable[Finding]:
@@ -785,10 +1027,9 @@ def scan_lifecycle(path: str, language: str, lines: List[str]) -> Iterable[Findi
         if is_comment(line) or "AppLifecycleState.paused" not in line:
             continue
         if re.search(r"\.close\(\)", window(lines, index, 8)):
-            yield Finding(path, index + 1, "CRITICAL", "close-on-background",
-                          "ditto.close() on AppLifecycleState.paused makes every later call "
-                          "throw; stop sync instead and keep the instance open",
-                          "sdk-setup", "Starting and Stopping Sync", line.strip())
+            yield report("close-on-background", language, path, index + 1,
+                         "ditto.close() on AppLifecycleState.paused makes every later call "
+                         "throw; stop sync instead and keep the instance open", line.strip())
 
 
 UI_CLASS = {
@@ -816,11 +1057,10 @@ def scan_ditto_in_ui(path: str, language: str, lines: List[str]) -> Iterable[Fin
         return
     for index, line in enumerate(lines):
         if not is_comment(line) and OPEN_CALL[language].search(line):
-            yield Finding(path, index + 1, "HIGH", "ditto-in-ui",
-                          "Ditto opened in a file that defines a screen: the screen can be created "
-                          "again, and a second open of the same directory fails or never completes; "
-                          "open one instance at app start and share it",
-                          "sdk-setup", "One instance per persistence directory", line.strip())
+            yield report("ditto-in-ui", language, path, index + 1,
+                         "Ditto opened in a file that defines a screen: the screen can be created "
+                         "again, and a second open of the same directory fails or never completes; "
+                         "open one instance at app start and share it", line.strip())
 
 
 EXPIRATION_HANDLER = re.compile(r"\bexpirationHandler\s*=\s*\{")
@@ -845,20 +1085,19 @@ def scan_kotlin_handlers(path: str, language: str, lines: List[str]) -> Iterable
         if EXPIRATION_HANDLER.search(line):
             text = "\n".join(block(lines, index))
             if ".login(" in text and not CAUGHT.search(text):
-                yield Finding(path, index + 1, "MEDIUM", "login-error-unreported",
-                              "login() throws when the token is rejected or the server is "
-                              "unreachable, and an exception that leaves the expiration handler is "
-                              "only logged; catch it inside the handler and report it",
-                              "sdk-setup", "Authentication in Kotlin", line.strip())
+                yield report("login-error-unreported", language, path, index + 1,
+                             "login() throws when the token is rejected or the server is "
+                             "unreachable, and an exception that leaves the expiration handler is "
+                             "only logged; catch it inside the handler and report it", line.strip())
         if re.search(r"\.registerObserver\s*\(", line):
             body = block(lines, index)
             if not CAUGHT.search("\n".join(body)):
                 for offset, candidate in enumerate(body):
                     if not is_comment(candidate) and THROWS.search(candidate):
-                        yield Finding(path, index + offset + 1, "MEDIUM", "throwing-observer-handler",
-                                      "An exception that leaves a registerObserver handler closes the "
-                                      "observer, and the SDK only logs it; catch errors inside the handler",
-                                      "query-sync", "Observer lifecycle in Kotlin", candidate.strip())
+                        yield report("throwing-observer-handler", language, path, index + offset + 1,
+                                     "An exception that leaves a registerObserver handler closes the "
+                                     "observer, and the SDK only logs it; catch errors inside the handler",
+                                     candidate.strip())
                         break
         match = MAIN_LAUNCH.search(line)
         if match:
@@ -870,12 +1109,11 @@ def scan_kotlin_handlers(path: str, language: str, lines: List[str]) -> Iterable
                         break
                     continue
                 if EXECUTE.search(candidate):
-                    yield Finding(path, index + offset + 1, "MEDIUM", "execute-on-main",
-                                  "store.execute blocks the thread of the coroutine that calls it, so "
-                                  "on the main dispatcher it freezes the UI; call it inside "
-                                  "withContext(Dispatchers.IO)",
-                                  "performance-observability", "Executing DQL in Kotlin",
-                                  lines[index + offset].strip())
+                    yield report("execute-on-main", language, path, index + offset + 1,
+                                 "store.execute blocks the thread of the coroutine that calls it, so "
+                                 "on the main dispatcher it freezes the UI; call it inside "
+                                 "withContext(Dispatchers.IO)",
+                                 lines[index + offset].strip())
                     break
 
 
@@ -896,18 +1134,16 @@ def scan_dart_transactions(path: str, language: str, lines: List[str]) -> Iterab
         body = block(lines, index)
         for offset, candidate in enumerate(body[1:], start=1):
             if not is_comment(candidate) and DITTO_CLOSE.search(candidate):
-                yield Finding(path, index + offset + 1, "CRITICAL", "close-inside-transaction",
-                              "close() while a transaction is open stops the Dart isolate (the UI "
-                              "isolate in an app); let the transaction end first",
-                              "transactions-attachments", "Closing Ditto in Flutter", candidate.strip())
+                yield report("close-inside-transaction", language, path, index + offset + 1,
+                             "close() while a transaction is open stops the Dart isolate (the UI "
+                             "isolate in an app); let the transaction end first", candidate.strip())
                 break
         for offset, candidate in enumerate(body[1:], start=1):
             if not is_comment(candidate) and STARTED_WORK.search(candidate):
-                yield Finding(path, index + offset + 1, "HIGH", "work-started-in-transaction",
-                              "Timers, listeners, and other work started inside a transaction "
-                              "callback keep its zone, so their later ditto.store.execute calls throw "
-                              "after the commit; start them outside the callback",
-                              "transactions-attachments", "Transactions in Flutter", candidate.strip())
+                yield report("work-started-in-transaction", language, path, index + offset + 1,
+                             "Timers, listeners, and other work started inside a transaction "
+                             "callback keep its zone, so their later ditto.store.execute calls throw "
+                             "after the commit; start them outside the callback", candidate.strip())
                 break
 
 
@@ -935,11 +1171,10 @@ def scan_signal_next(path: str, language: str, lines: List[str]) -> Iterable[Fin
             continue
         for offset, candidate in enumerate(body):
             if not is_comment(candidate) and re.search(r"signalNext\(\)", candidate):
-                yield Finding(path, index + offset + 1, "HIGH", "signal-next-skipped-on-error",
-                              "signalNext() is skipped when the work before it throws, and the "
-                              "observer then stops delivering results; call it in finally (Dart) or "
-                              "defer (Swift)",
-                              "performance-observability", "Backpressure (SDK 5.1+)", candidate.strip())
+                yield report("signal-next-skipped-on-error", language, path, index + offset + 1,
+                             "signalNext() is skipped when the work before it throws, and the "
+                             "observer then stops delivering results; call it in finally (Dart) or "
+                             "defer (Swift)", candidate.strip())
                 break
 
 
@@ -956,11 +1191,10 @@ def scan_await_for(path: str, language: str, lines: List[str]) -> Iterable[Findi
     for index, line in enumerate(lines):
         match = AWAIT_FOR_CHANGES.search(line)
         if match and not is_comment(line) and match.group(1) in observers:
-            yield Finding(path, index + 1, "MEDIUM", "await-for-without-backpressure",
-                          "await for over the changes of a registerObserver observer handles every "
-                          "queued result in turn, so the latest state arrives late; use "
-                          "registerObserverV2 or registerObserverWithSignalNext",
-                          "performance-observability", "Backpressure in Flutter", line.strip())
+            yield report("await-for-without-backpressure", language, path, index + 1,
+                         "await for over the changes of a registerObserver observer handles every "
+                         "queued result in turn, so the latest state arrives late; use "
+                         "registerObserverV2 or registerObserverWithSignalNext", line.strip())
 
 
 def call_span(lines: List[str], index: int, position: int, limit: int = 80) -> List[Tuple[int, str]]:
@@ -1056,77 +1290,70 @@ def scan_javascript(path: str, language: str, lines: List[str]) -> Iterable[Find
         return
     for index, span in calls(lines, re.compile(r"\.transaction\s*\(")):
         if not re.search(r"\bhint\s*:", span_text(span)):
-            yield Finding(path, index + 1, "MEDIUM", "transaction-without-hint",
-                          "Transaction without a hint in its options; long transactions are "
-                          "logged by hint",
-                          "transactions-attachments", "Transaction Rules", lines[index].strip())
+            yield report("transaction-without-hint", language, path, index + 1,
+                         "Transaction without a hint in its options; long transactions are "
+                         "logged by hint", lines[index].strip())
     for index, span in calls(lines, re.compile(
             r"\.(?:execute|registerObserver(?:WithSignalNext)?|registerSubscription)\s*\(")):
         for number, text in span:
             if not is_comment(lines[number]) and JS_VALUE.search(text):
-                yield Finding(path, number + 1, "HIGH", "unconvertible-argument",
-                              "A Date or a Set is stored as an empty object {} without an error, "
-                              "and NaN and Infinity are rejected; pass an ISO 8601 UTC string or "
-                              "epoch milliseconds, an array, and finite numbers",
-                              "query-sync", "Arguments and value types in JavaScript",
-                              lines[number].strip())
+                yield report("unconvertible-argument", language, path, number + 1,
+                             "A Date or a Set is stored as an empty object {} without an error, "
+                             "and NaN and Infinity are rejected; pass an ISO 8601 UTC string or "
+                             "epoch milliseconds, an array, and finite numbers",
+                             lines[number].strip())
                 break
     for index, span in calls(lines, re.compile(r"\.registerObserver\s*\(")):
         handler = js_handler(span_text(span))
         if handler and handler[0]:
-            yield Finding(path, index + 1, "HIGH", "observer-task-without-backpressure",
-                          "An async registerObserver handler returns at its first await, so calls "
-                          "overlap, an older call can finish last, and a rejection is unhandled (it "
-                          "ends a Node.js process); keep the handler synchronous, or use "
-                          "registerObserverWithSignalNext and call signalNext() in finally",
-                          "performance-observability", "Backpressure in JavaScript",
-                          lines[index].strip())
+            yield report("observer-task-without-backpressure", language, path, index + 1,
+                         "An async registerObserver handler returns at its first await, so calls "
+                         "overlap, an older call can finish last, and a rejection is unhandled (it "
+                         "ends a Node.js process); keep the handler synchronous, or use "
+                         "registerObserverWithSignalNext and call signalNext() in finally",
+                         lines[index].strip())
     for index, span in calls(lines, re.compile(r"\.registerObserverWithSignalNext\s*\(")):
         handler = js_handler(span_text(span))
         if not handler:
             continue
         _, names, body = handler
         if len(names) < 2 or not re.search(rf"\b{re.escape(names[1])}\b", body):
-            yield Finding(path, index + 1, "HIGH", "missing-signal-next",
-                          "registerObserverWithSignalNext delivers the next result only after "
-                          "signalNext() is called, and this handler never calls it, so the observer "
-                          "stops after the first result; call signalNext() when the work is done",
-                          "performance-observability", "Backpressure in JavaScript",
-                          lines[index].strip())
+            yield report("missing-signal-next", language, path, index + 1,
+                         "registerObserverWithSignalNext delivers the next result only after "
+                         "signalNext() is called, and this handler never calls it, so the observer "
+                         "stops after the first result; call signalNext() when the work is done",
+                         lines[index].strip())
         elif (re.search(r"\bawait\b", body) and re.search(rf"\b{re.escape(names[1])}\s*\(\s*\)", body)
               and not re.search(r"\bfinally\b|\bcatch\b", body)):
-            yield Finding(path, index + 1, "HIGH", "signal-next-skipped-on-error",
-                          "signalNext() is skipped when the work before it throws, and the "
-                          "observer then stops delivering results; call it in finally",
-                          "performance-observability", "Backpressure (SDK 5.1+)", lines[index].strip())
+            yield report("signal-next-skipped-on-error", language, path, index + 1,
+                         "signalNext() is skipped when the work before it throws, and the "
+                         "observer then stops delivering results; call it in finally", lines[index].strip())
     for index, line in enumerate(lines):
         match = re.search(r"\.forEach\(\s*async\b", line)
         if match and not is_comment(line):
             if re.search(r"\.execute\s*\(", span_text(call_span(lines, index, line.index("(", match.start())))):
-                yield Finding(path, index + 1, "HIGH", "concurrent-writes-in-loop",
-                              "forEach does not wait for an async callback, so its statements run "
-                              "unawaited: inside a transaction they are not applied, their rejections "
-                              "are unhandled, and the commit can fail; await each statement in a "
-                              "for...of loop, or use Promise.all",
-                              "transactions-attachments", "Transaction Rules", line.strip())
+                yield report("concurrent-writes-in-loop", language, path, index + 1,
+                             "forEach does not wait for an async callback, so its statements run "
+                             "unawaited: inside a transaction they are not applied, their rejections "
+                             "are unhandled, and the commit can fail; await each statement in a "
+                             "for...of loop, or use Promise.all", line.strip())
     for index, span in calls(lines, re.compile(r"\.setExpirationHandler\s*\(")):
         text = span_code(span, lines)
-        if ".login(" in text and (re.search(r"\bthrow\s+(?:new\b|[\w$])", text)
-                                  or not re.search(r"\.error\b", text)):
-            yield Finding(path, index + 1, "MEDIUM", "login-error-unreported",
-                          "login() reports a rejected token or an unreachable server in "
-                          "result.error instead of throwing, and an error thrown from the "
-                          "expiration handler is only logged; check result.error and report it "
-                          "inside the handler",
-                          "sdk-setup", "Authentication in JavaScript", lines[index].strip())
+        throws = re.search(r"\bthrow\s+(?:new\b|[\w$])", text)
+        if ".login(" in text and (throws or not re.search(r"\.error\b", text)):
+            yield report("login-error-unreported", language, path, index + 1,
+                         "login() reports a rejected token or an unreachable server in "
+                         "result.error instead of throwing, and an error thrown from the "
+                         "expiration handler is only logged; check result.error and report it "
+                         "inside the handler", lines[index].strip(),
+                         variant="throws" if throws else "")
     for index, span in calls(lines, JS_EFFECT):
         text = span_text(span)
         if JS_REGISTRATION.search(text) and not re.search(r"\breturn\b", text):
-            yield Finding(path, index + 1, "HIGH", "effect-without-cleanup",
-                          "The effect registers an observer, subscription, or fetch but returns no "
-                          "cleanup, so it keeps running after unmount (and twice under Strict "
-                          "Mode); return a cleanup that cancels or stops it",
-                          "query-sync", "Observer lifecycle in JavaScript", lines[index].strip())
+            yield report("effect-without-cleanup", language, path, index + 1,
+                         "The effect registers an observer, subscription, or fetch but returns no "
+                         "cleanup, so it keeps running after unmount (and twice under Strict "
+                         "Mode); return a cleanup that cancels or stops it", lines[index].strip())
     for first, last in js_components(lines):
         in_effects = set()
         for index, span in calls(lines[:last + 1], JS_EFFECT):
@@ -1137,17 +1364,15 @@ def scan_javascript(path: str, language: str, lines: List[str]) -> Iterable[Find
             if is_comment(line):
                 continue
             if JS_REGISTRATION.search(line) and number not in in_effects:
-                yield Finding(path, number + 1, "HIGH", "register-in-render",
-                              "A component body runs on every render, so this registers a new "
-                              "observer, subscription, or attachment fetch each time and never "
-                              "releases it; register in useEffect and release it in its cleanup",
-                              "query-sync", "Store Observers in JavaScript", line.strip())
+                yield report("register-in-render", language, path, number + 1,
+                             "A component body runs on every render, so this registers a new "
+                             "observer, subscription, or attachment fetch each time and never "
+                             "releases it; register in useEffect and release it in its cleanup", line.strip())
             if OPEN_CALL["js"].search(line):
-                yield Finding(path, number + 1, "HIGH", "ditto-in-ui",
-                              "Ditto opened in a component: it opens again whenever the component "
-                              "mounts, and a second open of the same directory fails; open one "
-                              "instance at app start and share it",
-                              "sdk-setup", "One instance per persistence directory", line.strip())
+                yield report("ditto-in-ui", language, path, number + 1,
+                             "Ditto opened in a component: it opens again whenever the component "
+                             "mounts, and a second open of the same directory fails; open one "
+                             "instance at app start and share it", line.strip())
 
 
 def scan_data_sync_info_reads(path: str, language: str, lines: List[str]) -> Iterable[Finding]:
@@ -1159,19 +1384,18 @@ def scan_data_sync_info_reads(path: str, language: str, lines: List[str]) -> Ite
         return
     for index, span in calls(lines, re.compile(r"\.execute\s*\(")):
         if "system:data_sync_info" in span_text(span):
-            yield Finding(path, index + 1, "HIGH", "unbounded-data-sync-info-read",
-                          "A read of system:data_sync_info can stop responding on a device "
-                          "connected to another peer (in testing: JavaScript and Swift on 5.1.0 and "
-                          "5.2.0, Kotlin on 5.1.0); give every read a deadline and treat a missed "
-                          "one as not confirmed",
-                          "query-sync", "Monitoring Sync Status", lines[index].strip())
+            yield report("unbounded-data-sync-info-read", language, path, index + 1,
+                         "A read of system:data_sync_info can stop responding on a device "
+                         "connected to another peer (in testing: JavaScript and Swift on 5.1.0 and "
+                         "5.2.0, Kotlin on 5.1.0); give every read a deadline and treat a missed "
+                         "one as not confirmed", lines[index].strip())
 
 
 FILE_SCANNERS: List[Callable[[str, str, List[str]], Iterable[Finding]]] = [
     scan_lines,
-    lambda path, language, lines: scan_subscriptions(path, lines),
+    scan_subscriptions,
     scan_observers,
-    lambda path, language, lines: scan_transactions(path, lines),
+    scan_transactions,
     scan_lifecycle,
     scan_registrations,
     scan_ditto_in_ui,
@@ -1187,21 +1411,65 @@ FILE_SCANNERS: List[Callable[[str, str, List[str]], Iterable[Finding]]] = [
 ]
 
 
-def iter_files(paths: Sequence[str]) -> Iterable[str]:
+def excluded(name: str, relative: str, patterns: Sequence[str]) -> bool:
+    """Whether a file or directory name, or its path relative to the scanned directory,
+    matches one of the globs."""
+    return any(fnmatch.fnmatchcase(name, pattern) or fnmatch.fnmatchcase(relative, pattern)
+               for pattern in patterns)
+
+
+def iter_files(paths: Sequence[str], excludes: Sequence[str] = ()) -> Iterable[str]:
+    """The source files under the paths; a path given here is never excluded itself."""
+    patterns = [pattern.rstrip("/") for pattern in excludes]
     for root in paths:
         if os.path.isfile(root):
             yield root
             continue
         for directory, subdirectories, files in os.walk(root):
-            subdirectories[:] = sorted(d for d in subdirectories if d not in SKIPPED_DIRS)
+            base = os.path.relpath(directory, root).replace(os.sep, "/")
+            base = "" if base == "." else base + "/"
+            subdirectories[:] = sorted(
+                name for name in subdirectories
+                if name not in SKIPPED_DIRS and not excluded(name, base + name, patterns))
             for name in sorted(files):
-                if os.path.splitext(name)[1] in EXTENSIONS:
+                if (os.path.splitext(name)[1] in EXTENSIONS
+                        and not excluded(name, base + name, SKIPPED_FILES)
+                        and not excluded(name, base + name, patterns)):
                     yield os.path.join(directory, name)
 
 
-def scan(paths: Sequence[str]) -> List[Finding]:
+SUPPRESSION = re.compile(r"ditto-scan:\s*ignore(?:\[([^\]]*)\])?")
+
+
+def suppressed(finding: Finding, lines: List[str]) -> bool:
+    """Whether a `ditto-scan: ignore` comment on the finding's line, or on a comment line
+    directly above it, names the finding's rule or no rule."""
+    candidates = [lines[finding.line - 1]]
+    if finding.line >= 2 and is_comment(lines[finding.line - 2]):
+        candidates.append(lines[finding.line - 2])
+    for line in candidates:
+        for match in SUPPRESSION.finditer(line):
+            if match.group(1) is None:
+                return True
+            if finding.rule in (name.strip() for name in match.group(1).split(",")):
+                return True
+    return False
+
+
+@dataclass
+class ScanResult:
+    findings: List[Finding]
+    # Hits silenced by a `ditto-scan: ignore` comment.
+    suppressed: int
+    # Source files read.
+    files: int
+
+
+def scan_paths(paths: Sequence[str], excludes: Sequence[str] = ()) -> ScanResult:
     findings: List[Finding] = []
-    for path in iter_files(paths):
+    silenced = 0
+    files = 0
+    for path in iter_files(paths, excludes):
         language = EXTENSIONS.get(os.path.splitext(path)[1])
         if language is None:
             continue
@@ -1211,114 +1479,208 @@ def scan(paths: Sequence[str]) -> List[Finding]:
         except OSError as error:
             print(f"warning: cannot read {path}: {error}", file=sys.stderr)
             continue
+        files += 1
+        unique = {}
         for scanner in FILE_SCANNERS:
-            findings.extend(scanner(path, language, lines))
-    unique = {(f.path, f.line, f.rule): f for f in findings}
-    return sorted(unique.values(),
-                  key=lambda f: (SEVERITIES.index(f.severity), f.path, f.line))
+            for finding in scanner(path, language, lines):
+                unique.setdefault((finding.line, finding.rule), finding)
+        for finding in unique.values():
+            if suppressed(finding, lines):
+                silenced += 1
+            else:
+                findings.append(finding)
+    findings.sort(key=lambda f: (SEVERITIES.index(f.severity), f.path, f.line))
+    return ScanResult(findings, silenced, files)
 
 
-CONTEXT_RULES = [
-    ("subscription-rejected-feature", "HIGH",
-     "A `registerSubscription(` call whose query uses a projection, ORDER BY, LIMIT, JOIN, "
-     "GROUP BY, DISTINCT, or USE IDS", "query-sync", "Subscription Rules"),
-    ("execute-inside-transaction", "CRITICAL",
-     "`.store.execute(`, `.transaction(`, or `.transaction {` inside the braces of a "
-     "`.transaction(` callback or a `.transaction {` trailing closure",
-     "transactions-attachments", "Transaction Rules"),
-    ("close-on-background", "CRITICAL",
-     "`.close()` within 8 lines after `AppLifecycleState.paused` (Dart)",
-     "sdk-setup", "Starting and Stopping Sync"),
-    ("observer-onchange-only", "HIGH",
-     "`registerObserver*(` with `onChange:` and no `.changes` in the same declaration (Dart)",
-     "query-sync", "Store Observers in Flutter"),
-    ("discarded-observer", "HIGH",
-     "A statement that starts with `store.registerObserver*(` (or `_ =` before it) and does "
-     "not keep the returned observer: not assigned, returned, or collected",
-     "query-sync", "Observer Lifecycle"),
-    ("discarded-subscription", "HIGH",
-     "A statement that starts with `sync.registerSubscription(` (or `_ =` before it) and does "
-     "not keep the returned subscription",
-     "query-sync", "Subscription Lifecycle"),
-    ("result-leaves-handler", "HIGH",
-     "An `.execute(` or `.observe(` whose mapping function returns the result or its "
-     "`items` unchanged, such as `{ result -> result }` or `{ it.items }` (Kotlin)",
-     "query-sync", "Query results in Kotlin"),
-    ("concurrent-writes-in-loop", "HIGH",
-     "`launch {`, `async {`, `Task {`, or `addTask {` inside a `for`, `repeat`, or `forEach`/`map` "
-     "loop, with `.store.execute(` in its braces (Kotlin, Swift)",
-     "transactions-attachments", "Transaction Rules"),
-    ("ditto-in-ui", "HIGH",
-     "`DittoFactory.create(` (Kotlin) or `Ditto.open(` (Dart, Swift) in a file that defines an "
-     "Activity, Fragment, composable, widget, SwiftUI view, or view controller",
-     "sdk-setup", "One instance per persistence directory"),
-    ("login-error-unreported", "MEDIUM",
-     "`.login(` inside an `expirationHandler = {` lambda without `try` or `runCatching` (Kotlin)",
-     "sdk-setup", "Authentication in Kotlin"),
-    ("login-error-unreported", "MEDIUM",
-     "`.login(` inside a `setExpirationHandler(` call that throws or never reads `.error` "
-     "(JavaScript)",
-     "sdk-setup", "Authentication in JavaScript"),
-    ("throwing-observer-handler", "MEDIUM",
-     "`!!`, `throw`, `error(`, `require(`, or `check(` in a `registerObserver(` handler without "
-     "`try` or `runCatching` (Kotlin)",
-     "query-sync", "Observer lifecycle in Kotlin"),
-    ("execute-on-main", "MEDIUM",
-     "`.store.execute(` in a `lifecycleScope`/`viewModelScope`/`MainScope()` launch or a "
-     "`Dispatchers.Main` block, before any `withContext(Dispatchers.IO)` (Kotlin)",
-     "performance-observability", "Executing DQL in Kotlin"),
-    ("close-inside-transaction", "CRITICAL",
-     "`<ditto>.close()` inside the braces of a `.transaction(` callback (Dart)",
-     "transactions-attachments", "Closing Ditto in Flutter"),
-    ("work-started-in-transaction", "HIGH",
-     "An observer, a `changes.listen(`, a `Timer`, `Future.delayed`, `unawaited(`, or "
-     "`scheduleMicrotask(` inside a `.transaction(` callback (Dart)",
-     "transactions-attachments", "Transactions in Flutter"),
-    ("signal-next-skipped-on-error", "HIGH",
-     "`signalNext()` in an async `changes.listen` or `onChange` callback with `await` and no "
-     "`catch`/`finally` (Dart), in a `{ result, signalNext in` handler with `try` and no "
-     "`catch`/`defer` (Swift), or in a `registerObserverWithSignalNext(` handler with `await` and "
-     "no `catch`/`finally` (JavaScript)",
-     "performance-observability", "Backpressure (SDK 5.1+)"),
-    ("await-for-without-backpressure", "MEDIUM",
-     "`await for (... in x.changes)` where `x` was assigned from `registerObserver(` (Dart)",
-     "performance-observability", "Backpressure in Flutter"),
-    ("transaction-without-hint", "MEDIUM",
-     "A `.transaction(` call without `hint:` in its arguments (JavaScript)",
-     "transactions-attachments", "Transaction Rules"),
-    ("unconvertible-argument", "HIGH",
-     "A property value `new Date(...)`, `new Set(...)`, `NaN`, or `Infinity` inside an `execute(`, "
-     "`registerObserver(`, or `registerSubscription(` call (JavaScript)",
-     "query-sync", "Arguments and value types in JavaScript"),
-    ("observer-task-without-backpressure", "HIGH",
-     "An `async` handler passed to `registerObserver(` (JavaScript)",
-     "performance-observability", "Backpressure in JavaScript"),
-    ("missing-signal-next", "HIGH",
-     "A `registerObserverWithSignalNext(` handler without a second parameter, or that never uses "
-     "it (JavaScript)",
-     "performance-observability", "Backpressure in JavaScript"),
-    ("concurrent-writes-in-loop", "HIGH",
-     "`.forEach(async` with `.execute(` in its callback (JavaScript)",
-     "transactions-attachments", "Transaction Rules"),
-    ("effect-without-cleanup", "HIGH",
-     "A `useEffect(` that registers an observer, a subscription, or a fetch and has no `return` "
-     "(JavaScript)",
-     "query-sync", "Observer lifecycle in JavaScript"),
-    ("register-in-render", "HIGH",
-     "A registration in the body of a component that returns JSX, outside its effects (JavaScript)",
-     "query-sync", "Store Observers in JavaScript"),
-    ("ditto-in-ui", "HIGH",
-     "`Ditto.open(` inside a component that returns JSX (JavaScript)",
-     "sdk-setup", "One instance per persistence directory"),
-    ("unbounded-data-sync-info-read", "HIGH",
-     "An `.execute(` of `system:data_sync_info` in a file without `Promise.race(` (JavaScript), "
-     "both `withTimeout` and `.async {` (Kotlin), or `withDeadline` or a task group (Swift)",
-     "query-sync", "Monitoring Sync Status"),
-    ("observer-task-without-backpressure", "MEDIUM",
-     "`Task {` inside the braces of a `registerObserver*(` handler that never mentions "
-     "`signalNext` (Swift)",
-     "performance-observability", "Backpressure in Swift"),
+def scan(paths: Sequence[str], excludes: Sequence[str] = ()) -> List[Finding]:
+    """The findings that no suppression comment silences."""
+    return scan_paths(paths, excludes).findings
+
+
+NOT_JS = ("dart", "kotlin", "swift")
+
+CONTEXT_RULES: List[ContextRule] = [
+    # --- CRITICAL ---
+    ContextRule("subscription-filter-misses-documents", "CRITICAL",
+                "`!=`, `NOT IN`, or `clock(` in the query of a `registerSubscription(` call",
+                "query-sync", "Subscription Rules",
+                "Subscription filters with `!=` or `NOT IN`"),
+    ContextRule("execute-inside-transaction", "CRITICAL",
+                "`.store.execute(`, `.transaction(`, or `.transaction {` inside the braces of a "
+                "`.transaction(` callback or a `.transaction {` trailing closure",
+                "transactions-attachments", "Transaction Rules",
+                "`ditto.store.execute` inside a transaction callback"),
+    ContextRule("concurrent-writes-in-loop", "CRITICAL",
+                "`launch {`, `async {`, `Task {`, or `addTask {` inside a `for`, `repeat`, or "
+                "`forEach`/`map` loop, with `.store.execute(` in its braces (Kotlin, Swift)",
+                "transactions-attachments", "Transaction Rules",
+                "Many writes started in parallel, such as a coroutine or `Task` per document",
+                languages=("kotlin", "swift")),
+    ContextRule("concurrent-writes-in-loop", "CRITICAL",
+                "`.forEach(async` with `.execute(` in its callback (JavaScript)",
+                "transactions-attachments", "Transaction Rules",
+                "for example with a missing `await` or `forEach(async ...)`",
+                languages=("js",)),
+    ContextRule("close-on-background", "CRITICAL",
+                "`.close()` within 8 lines after `AppLifecycleState.paused` (Dart)",
+                "sdk-setup", "Starting and Stopping Sync",
+                "`ditto.close()` on `AppLifecycleState.paused`",
+                languages=("dart",)),
+    ContextRule("close-inside-transaction", "CRITICAL",
+                "`<ditto>.close()` inside the braces of a `.transaction(` callback (Dart)",
+                "transactions-attachments", "Closing Ditto in Flutter",
+                "`ditto.close()` while a transaction, also a read-only one, is open",
+                languages=("dart",)),
+    ContextRule("result-leaves-handler", "CRITICAL",
+                "An `.execute(` or `.observe(` whose mapping function returns the result or its "
+                "`items` unchanged, such as `{ result -> result }` or `{ it.items }` (Kotlin)",
+                "query-sync", "Query results in Kotlin",
+                "A `DittoQueryResult` or its items returned from an `execute` handler",
+                languages=("kotlin",)),
+    ContextRule("login-error-unreported", "CRITICAL",
+                "`.login(` inside an `expirationHandler = {` lambda without `try` or `runCatching` "
+                "(Kotlin)",
+                "sdk-setup", "Authentication in Kotlin",
+                "`login()` inside the expiration handler without `try`",
+                languages=("kotlin",)),
+    ContextRule("login-error-unreported", "CRITICAL",
+                "`.login(` inside a `setExpirationHandler(` call that throws (JavaScript)",
+                "sdk-setup", "Authentication in JavaScript",
+                "Throwing inside the authentication expiration handler",
+                languages=("js",), variant="throws"),
+    ContextRule("unconvertible-argument", "CRITICAL",
+                "A property value `new Date(...)`, `new Set(...)`, `NaN`, or `Infinity` inside an "
+                "`execute(`, `registerObserver(`, or `registerSubscription(` call (JavaScript)",
+                "query-sync", "Arguments and value types in JavaScript",
+                "`Date`, `Set`, function, or `Symbol` values in arguments",
+                languages=("js",)),
+    # --- HIGH ---
+    ContextRule("subscription-rejected-feature", "HIGH",
+                "A `registerSubscription(` call whose query uses a projection, ORDER BY, LIMIT, "
+                "JOIN, GROUP BY, DISTINCT, or USE IDS",
+                "query-sync", "Subscription Rules",
+                "`DISTINCT`, `GROUP BY`, `JOIN`, or `USE IDS` in subscriptions"),
+    ContextRule("discarded-observer", "HIGH",
+                "A statement that starts with `store.registerObserver*(` (or `_ =` before it) and "
+                "does not keep the returned observer: not assigned, returned, or collected",
+                "query-sync", "Observer Lifecycle",
+                "whose handles are dropped"),
+    ContextRule("discarded-subscription", "HIGH",
+                "A statement that starts with `sync.registerSubscription(` (or `_ =` before it) "
+                "and does not keep the returned subscription",
+                "query-sync", "Subscription Lifecycle",
+                "whose handles are dropped"),
+    ContextRule("signal-next-skipped-on-error", "HIGH",
+                "`signalNext()` in an async `changes.listen` or `onChange` callback with `await` "
+                "and no `catch`/`finally` (Dart), in a `{ result, signalNext in` handler with "
+                "`try` and no `catch`/`defer` (Swift), or in a `registerObserverWithSignalNext(` "
+                "handler with `await` and no `catch`/`finally` (JavaScript)",
+                "performance-observability", "Backpressure (SDK 5.1+)",
+                "or that call `signalNext()` only when the work succeeds",
+                languages=("dart", "js", "swift")),
+    ContextRule("unbounded-data-sync-info-read", "HIGH",
+                "An `.execute(` of `system:data_sync_info` in a file without `Promise.race(` "
+                "(JavaScript), both `withTimeout` and `.async {` (Kotlin), or `withDeadline` or a "
+                "task group (Swift)",
+                "query-sync", "Monitoring Sync Status",
+                "Reads of `system:data_sync_info` without a deadline",
+                languages=("js", "kotlin", "swift")),
+    ContextRule("ditto-in-ui", "HIGH",
+                "`DittoFactory.create(` (Kotlin) or `Ditto.open(` (Dart, Swift) in a file that "
+                "defines an Activity, Fragment, composable, widget, SwiftUI view, or view controller",
+                "sdk-setup", "One instance per persistence directory",
+                None,
+                languages=NOT_JS),
+    ContextRule("ditto-in-ui", "HIGH",
+                "`Ditto.open(` inside a component that returns JSX (JavaScript)",
+                "sdk-setup", "One instance per persistence directory",
+                "`Ditto.open()` in a component",
+                languages=("js",)),
+    ContextRule("observer-onchange-only", "HIGH",
+                "`registerObserver*(` with `onChange:` and no `.changes` in the same declaration "
+                "(Dart)",
+                "query-sync", "Store Observers in Flutter",
+                "Observers registered with `onChange` while the `changes` stream is never listened to",
+                languages=("dart",)),
+    ContextRule("work-started-in-transaction", "HIGH",
+                "An observer, a `changes.listen(`, a `Timer`, `Future.delayed`, `unawaited(`, or "
+                "`scheduleMicrotask(` inside a `.transaction(` callback (Dart)",
+                "transactions-attachments", "Transactions in Flutter",
+                "or other work started inside a transaction callback that calls "
+                "`ditto.store.execute` later",
+                languages=("dart",)),
+    ContextRule("throwing-observer-handler", "HIGH",
+                "`!!`, `throw`, `error(`, `require(`, or `check(` in a `registerObserver(` handler "
+                "without `try` or `runCatching` (Kotlin)",
+                "query-sync", "Observer lifecycle in Kotlin",
+                "A `registerObserver` handler that can throw",
+                languages=("kotlin",)),
+    ContextRule("execute-on-main", "HIGH",
+                "`.store.execute(` in a `lifecycleScope`/`viewModelScope`/`MainScope()` launch or a "
+                "`Dispatchers.Main` block, before any `withContext(Dispatchers.IO)` (Kotlin)",
+                "performance-observability", "Executing DQL in Kotlin",
+                "`store.execute` called on the main thread",
+                languages=("kotlin",)),
+    ContextRule("observer-task-without-backpressure", "HIGH",
+                "An `async` handler passed to `registerObserver(` (JavaScript)",
+                "performance-observability", "Backpressure in JavaScript",
+                "An `async` handler passed to `registerObserver` for slow work",
+                languages=("js",)),
+    ContextRule("observer-task-without-backpressure", "HIGH",
+                "`Task {` inside the braces of a `registerObserver*(` handler that never mentions "
+                "`signalNext` (Swift)",
+                "performance-observability", "Backpressure in Swift",
+                "or a `Task` started in the handler for every update",
+                languages=("swift",)),
+    ContextRule("missing-signal-next", "HIGH",
+                "A `registerObserverWithSignalNext(` handler without a second parameter, or that "
+                "never uses it (JavaScript)",
+                "performance-observability", "Backpressure in JavaScript",
+                "A `registerObserverWithSignalNext` handler that does not call `signalNext` on "
+                "every path",
+                languages=("js",)),
+    ContextRule("effect-without-cleanup", "HIGH",
+                "A `useEffect(` that registers an observer, a subscription, or a fetch and has no "
+                "`return` (JavaScript)",
+                "query-sync", "Observer lifecycle in JavaScript",
+                "A React `useEffect` that registers an observer",
+                languages=("js",)),
+    ContextRule("register-in-render", "HIGH",
+                "A registration in the body of a component that returns JSX, outside its effects "
+                "(JavaScript)",
+                "query-sync", "Store Observers in JavaScript",
+                "a registration in a component body outside its effects",
+                languages=("js",)),
+    # --- MEDIUM ---
+    ContextRule("login-error-unreported", "MEDIUM",
+                "`.login(` inside a `setExpirationHandler(` call that never reads `.error` "
+                "(JavaScript)",
+                "sdk-setup", "Authentication in JavaScript",
+                "An expiration handler that never reads the `error`",
+                languages=("js",)),
+    ContextRule("await-for-without-backpressure", "MEDIUM",
+                "`await for (... in x.changes)` where `x` was assigned from `registerObserver(` "
+                "(Dart)",
+                "performance-observability", "Backpressure in Flutter",
+                "`await for` over the `changes` of a `registerObserver` observer",
+                languages=("dart",)),
+    ContextRule("transaction-without-hint", "MEDIUM",
+                "A `.transaction(` call without `hint:` in its arguments (JavaScript)",
+                "transactions-attachments", "Transaction Rules",
+                "Transactions without a `hint`",
+                languages=("js",)),
 ]
+CONTEXT_INDEX: Dict[Tuple[str, str, str], ContextRule] = {
+    (row.rule, language, row.variant): row for row in CONTEXT_RULES for language in row.languages
+}
+
+
+def report(rule: str, language: str, path: str, line: int, message: str, code: str,
+           variant: str = "") -> Finding:
+    """A finding of a context rule, with the severity, skill, and guide of its CONTEXT_RULES row."""
+    row = CONTEXT_INDEX[(rule, language, variant)]
+    return Finding(path, line, row.severity, rule, message, row.skill, row.guide, code)
 
 
 def print_rules() -> None:
@@ -1328,9 +1690,14 @@ def print_rules() -> None:
 
     print("# Scanner Rules\n")
     print("Generated with `python3 scripts/scan.py --list-rules`; do not edit by hand.")
-    print("Lines that start with a comment marker are skipped. Without Python, search for the")
+    print("Each rule has the severity of the item of the anti-pattern checklist that it detects.")
+    print("Lines that start with a comment marker are skipped, and a statement whose string")
+    print("literals span several lines is matched as one line. Without Python, search for the")
     print("patterns below with Grep, which does not support lookaheads such as `(?!...)`, so drop them\n"
           "and filter the matches by eye.\n")
+    print("Skipped below a directory being scanned: the directories "
+          + ", ".join(f"`{name}`" for name in sorted(SKIPPED_DIRS, key=str.lower))
+          + ", and the files " + ", ".join(f"`{name}`" for name in SKIPPED_FILES) + ".\n")
     print("## Line Rules\n")
     print("| Rule | Severity | Pattern | Condition | Skill | Guide |")
     print("|---|---|---|---|---|---|")
@@ -1357,17 +1724,26 @@ def print_rules() -> None:
     print("\n## Context Rules\n")
     print("| Rule | Severity | Detects | Skill | Guide |")
     print("|---|---|---|---|---|")
-    for name, severity, detects, skill, guide in CONTEXT_RULES:
-        print(f"| `{name}` | {severity} | {detects} | {skill} | § {guide} |")
+    for row in CONTEXT_RULES:
+        print(f"| `{row.rule}` | {row.severity} | {row.detects} | {row.skill} | § {row.guide} |")
+
+
+def count(number: int, noun: str) -> str:
+    return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("paths", nargs="*", default=["."])
-    parser.add_argument("--json", action="store_true", help="print findings as JSON")
+    parser.add_argument("--json", action="store_true", help="print findings as a JSON array")
     parser.add_argument("--min-severity", choices=SEVERITIES, default="MEDIUM",
                         help="hide findings below this severity")
+    parser.add_argument("--fail-on", choices=SEVERITIES,
+                        help="exit with 1 when a reported finding is at this severity or above")
+    parser.add_argument("--exclude", action="append", default=[], metavar="GLOB",
+                        help="skip files and directories whose name or relative path matches "
+                             "GLOB (repeatable)")
     parser.add_argument("--list-rules", action="store_true",
                         help="print the rules as a Markdown reference and exit")
     args = parser.parse_args(argv)
@@ -1377,29 +1753,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     # A path that does not exist yields no findings, which would read as a clean scan.
-    for path in args.paths:
-        if not os.path.exists(path):
-            print(f"warning: {path} does not exist and was not scanned", file=sys.stderr)
+    missing = [path for path in args.paths if not os.path.exists(path)]
+    for path in missing:
+        print(f"error: {path} does not exist and was not scanned", file=sys.stderr)
 
+    result = scan_paths([path for path in args.paths if path not in missing], args.exclude)
     limit = SEVERITIES.index(args.min_severity)
-    findings = [f for f in scan(args.paths) if SEVERITIES.index(f.severity) <= limit]
+    findings = [f for f in result.findings if SEVERITIES.index(f.severity) <= limit]
+    hidden = len(result.findings) - len(findings)
 
     if args.json:
         json.dump([asdict(f) for f in findings], sys.stdout, indent=2)
         print()
-        return 0
-
-    if not findings:
+    elif not findings and result.files:
         print("No candidate anti-patterns found. This does not mean the code is correct; "
               "continue with the inventory, the cross-device review, and the manual review.")
-        return 0
-    for f in findings:
-        print(f"{f.path}:{f.line}: {f.severity} {f.rule}: {f.message} "
-              f"[skill: {f.skill}; guide: § {f.guide}]")
-        print(f"    {f.code}")
-    counts = {s: sum(1 for f in findings if f.severity == s) for s in SEVERITIES}
-    print(f"\n{len(findings)} candidates ({', '.join(f'{v} {k}' for k, v in counts.items())}). "
-          "Confirm each one in context before reporting it.")
+    elif findings:
+        for f in findings:
+            print(f"{f.path}:{f.line}: {f.severity} {f.rule}: {f.message} "
+                  f"[skill: {f.skill}; guide: § {f.guide}]")
+            print(f"    {f.code}")
+        counts = {s: sum(1 for f in findings if f.severity == s) for s in SEVERITIES}
+        print(f"\n{len(findings)} candidates ({', '.join(f'{v} {k}' for k, v in counts.items())}). "
+              "Confirm each one in context before reporting it.")
+
+    by_severity = ", ".join(f"{sum(1 for f in findings if f.severity == s)} {s}" for s in SEVERITIES)
+    print(f"ditto-scan: {count(result.files, 'file')} scanned; "
+          f"{count(len(findings), 'hit')} reported ({by_severity}); "
+          f"{hidden} hidden by --min-severity; "
+          f"{result.suppressed} suppressed by ditto-scan: ignore", file=sys.stderr)
+
+    if missing:
+        return 2
+    if result.files == 0:
+        print("error: no source file was scanned; check the paths and --exclude", file=sys.stderr)
+        return 2
+    if args.fail_on and any(SEVERITIES.index(f.severity) <= SEVERITIES.index(args.fail_on)
+                            for f in findings):
+        return 1
     return 0
 
 

@@ -282,7 +282,7 @@ void main() {
     // In your suite, create indexes with the same startup code as the app
     // (for example, through the configure callback of openTestDitto).
     await ditto.store.execute(
-      'CREATE INDEX IF NOT EXISTS idx_orders_status_createdAt '
+      'CREATE INDEX IF NOT EXISTS idx_orders_status_createdAt ' // ditto-scan: ignore[composite-index-mixed-direction] (SDK 5.2.0)
       'ON orders (status, createdAt DESC)',
     );
     final plan = await ditto.store.execute(

@@ -1,6 +1,6 @@
 ---
 name: transactions-attachments
-description: Ditto SDK transactions and attachments (Flutter, JavaScript, Kotlin, Swift): ditto.store.transaction with tx.execute only, no nesting, short scopes, rollback, close(); newAttachment, ATTACHMENT declarations, lazy fetchAttachment with a stall timeout, immutability, thumbnails, and blob availability. Use when writing or reviewing ditto.store.transaction, newAttachment, or fetchAttachment code, or when displaying photos or files stored in Ditto.
+description: "Ditto SDK transactions and attachments (Flutter, JavaScript, Kotlin, Swift): ditto.store.transaction with tx.execute only, no nesting, short scopes, rollback, close(); newAttachment, ATTACHMENT declarations, lazy fetchAttachment with a stall timeout, immutability, thumbnails, and blob availability. Use when writing or reviewing ditto.store.transaction, newAttachment, or fetchAttachment code, or when displaying photos or files stored in Ditto."
 ---
 
 # Ditto Transactions and Attachments
@@ -9,9 +9,10 @@ Atomic multi-statement writes with `ditto.store.transaction`, and binary files s
 
 ## Before You Apply
 
-- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *Transactions in Kotlin*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** and **Note (SDK 5.1.0)** mark easy-to-miss behavior seen on those releases, with the safe pattern; **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- For API calls, Grep the outline of that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`. API examples: `examples/<sdk>/`, with the same base names in every SDK.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
+- Report each finding at the severity of its item in `§ Anti-Pattern Checklist` (the checklist decides; Grep a phrase of the item there). A rule's label below is the highest severity among the items it covers.
 
 ## Key Facts
 
@@ -59,7 +60,37 @@ Calling `ditto.store.execute` inside the callback throws a `DittoException` in F
 
 `§ Transaction Rules`, `§ Platform Differences` · Examples: `transaction-good`, `transaction-bad` in `examples/<sdk>/`
 
-### 2. Keep transactions short (CRITICAL)
+### 2. End a transaction deliberately (CRITICAL)
+
+| Callback outcome | Result |
+|---|---|
+| Returns the SDK's commit value (or, except in Kotlin, any other value) | Committed; `transaction` returns that value |
+| Returns the SDK's rollback value | Rolled back; no changes are applied |
+| Throws | Rolled back; the error is rethrown to the caller |
+| A statement fails but the callback catches the error | The transaction **continues**; the remaining changes are committed unless you roll back |
+
+**❌ DON'T**: Catch an error from a statement and carry on without deciding. If the remaining work must not commit, rethrow or return the rollback value.
+
+```sql
+-- The statements of a shipOrder transaction: return the rollback value when
+-- the first returns no row; otherwise update and commit. The check holds on
+-- this device only (`§ Checks and Claims across Devices`)
+-- Arguments: {"id": "order-1", "status": "paid"}
+SELECT * FROM orders WHERE _id = :id AND status = :status
+
+-- Arguments: {"id": "order-1", "status": "shipped"}
+UPDATE orders SET status = :status WHERE _id = :id
+```
+
+`§ Transaction Rules`, `§ Using store.transaction` · Example: `transaction-good` in `examples/<sdk>/`; rollback values: [reference/sdk-apis.md](reference/sdk-apis.md#transactions-at-a-glance)
+
+### 3. Await pending transactions before closing (HIGH; CRITICAL in Flutter)
+
+In Flutter, `ditto.close()` does not wait for in-flight transactions, and closing while one is open, also a read-only one, stops the isolate (the UI stops responding). Track pending transactions (a set of their futures, removed when each completes) and await them, ignoring their errors, before closing. In JavaScript, `close()` waited for open transactions in testing, so a transaction that never ends keeps it from completing. Await your own pending work before closing in every SDK.
+
+`§ Resource Cleanup and Shutdown`, `§ Closing Ditto in Flutter` · Example: `transaction-good` in `examples/<sdk>/` (Flutter: `TransactionTracker`)
+
+### 4. Keep transactions short (HIGH)
 
 While a read-write transaction runs, every other read-write transaction waits, and so does a plain `store.execute` write issued meanwhile. Network calls, dialogs, user input, or timers inside the callback block all writes.
 
@@ -75,7 +106,7 @@ While a read-write transaction runs, every other read-write transaction waits, a
 
 `§ Transaction Rules`, `§ Concurrency and Duration` · Example: `transaction-good` in `examples/<sdk>/`
 
-### 3. Create attachments with newAttachment and declare ATTACHMENT fields (CRITICAL)
+### 5. Create attachments with newAttachment and declare ATTACHMENT fields (HIGH)
 
 An attachment has two parts: the **token** (`{id, len, metadata}`), stored in a document field and synced like other data, and the **blob**, stored outside the document database and transferred only when a device calls `fetchAttachment`. The `id` is a hash of the contents, so identical blobs are stored once. `newAttachment` copies the file into Ditto's blob store.
 
@@ -98,7 +129,7 @@ INSERT INTO COLLECTION photos (image ATTACHMENT) DOCUMENTS (:photo)
 
 `§ Attachment Architecture`, `§ Creating and Inserting Attachments` · API per SDK: [reference/sdk-apis.md](reference/sdk-apis.md#attachments-at-a-glance)
 
-### 4. Fetch attachments explicitly, lazily, and cancellably (CRITICAL)
+### 6. Fetch attachments explicitly, lazily, and cancellably (HIGH)
 
 Subscriptions never download blobs; a token is not image data. Fetching every attachment as soon as a document syncs wastes bandwidth and storage.
 
@@ -123,36 +154,6 @@ The fetcher's `stop()` cancels an in-flight fetch (not needed after completion);
 
 `§ Fetching Attachments` · Examples: `attachment-lazy-loading-good`, `attachment-lazy-loading-bad` in `examples/<sdk>/`
 
-### 5. End a transaction deliberately (HIGH)
-
-| Callback outcome | Result |
-|---|---|
-| Returns the SDK's commit value (or, except in Kotlin, any other value) | Committed; `transaction` returns that value |
-| Returns the SDK's rollback value | Rolled back; no changes are applied |
-| Throws | Rolled back; the error is rethrown to the caller |
-| A statement fails but the callback catches the error | The transaction **continues**; the remaining changes are committed unless you roll back |
-
-**❌ DON'T**: Catch an error from a statement and carry on without deciding. If the remaining work must not commit, rethrow or return the rollback value.
-
-```sql
--- The statements of a shipOrder transaction: return the rollback value when
--- the first returns no row; otherwise update and commit. The check holds on
--- this device only (`§ Checks and Claims across Devices`)
--- Arguments: {"id": "order-1", "status": "paid"}
-SELECT * FROM orders WHERE _id = :id AND status = :status
-
--- Arguments: {"id": "order-1", "status": "shipped"}
-UPDATE orders SET status = :status WHERE _id = :id
-```
-
-`§ Transaction Rules`, `§ Using store.transaction` · Example: `transaction-good` in `examples/<sdk>/`; rollback values: [reference/sdk-apis.md](reference/sdk-apis.md#transactions-at-a-glance)
-
-### 6. Await pending transactions before closing (HIGH)
-
-In Flutter, `ditto.close()` does not wait for in-flight transactions; calls that are still running can fail with `DittoClosedException`. Track pending transactions (a set of their futures, removed when each completes) and await them, ignoring their errors, before closing. In JavaScript, `close()` waited for open transactions in testing, so a transaction that never ends keeps it from completing. Await your own pending work before closing in every SDK.
-
-`§ Resource Cleanup and Shutdown`, `§ Concurrency and Duration` · Example: `transaction-good` in `examples/<sdk>/` (Flutter: `TransactionTracker`)
-
 ### 7. Implement your own fetch timeout (HIGH)
 
 Ditto has no fetch timeout and no "not available" event. While no reachable peer can deliver the blob, the fetch simply makes no progress.
@@ -170,7 +171,7 @@ Attachment contents never change. To "edit" a file, create a new attachment and 
 
 `§ Attachments Are Immutable` · Example: `attachment-immutability` in `examples/<sdk>/`
 
-### 9. Keep transacted documents in one subscription scope (MEDIUM)
+### 9. Keep transacted documents in one subscription scope (HIGH)
 
 Atomicity is guaranteed on the device that commits. A peer whose subscriptions cover only part of a transaction's documents receives only that part, and a relay can forward only what it has ([transactions documentation](https://docs.ditto.live/sdk/latest/crud/transactions)). Receiver-side test results: [reference/sync-and-storage.md](reference/sync-and-storage.md#transactions-on-receiving-peers).
 
@@ -178,18 +179,7 @@ Atomicity is guaranteed on the device that commits. A peer whose subscriptions c
 
 `§ Transactions and Sync`
 
-### 10. Show thumbnails in lists (MEDIUM)
-
-Store a small preview next to the full-size attachment (`INSERT INTO COLLECTION photos (thumbnail ATTACHMENT, image ATTACHMENT) DOCUMENTS (:photo)`). List rows fetch only thumbnails; the full-size blob is fetched when the user opens the item.
-
-| Preview option | Pros | Cons |
-|---|---|---|
-| Small attachment (downscaled JPEG) | Keeps documents small; fetched only where shown | Needs an explicit fetch |
-| Tiny inline value (for example, base64) | Arrives with the document | Counts toward the 256 KiB soft limit and is re-sent with the document |
-
-`§ Thumbnail Pattern` · Example: `thumbnail-pattern` in `examples/<sdk>/`
-
-### 11. Plan for attachment availability and size (MEDIUM)
+### 10. Plan for attachment availability and size (HIGH)
 
 An attachment can be fetched only while a peer that **holds the blob** is reachable. A blob exists on a device only if that device created or fetched it; Ditto Server can hold a token without the blob ([details](reference/sync-and-storage.md#multi-hop-blob-availability)). An interrupted transfer resumes from where it stopped. If a blob must be widely available, make sure a well-connected device or Ditto Server fetches it.
 
@@ -209,6 +199,17 @@ An attachment can be fetched only while a peer that **holds the blob** is reacha
 No fixed maximum attachment size; documents have a 256 KiB soft limit and a 5 MiB hard limit ([size details](reference/sync-and-storage.md#attachment-size)).
 
 `§ Availability`, `§ Size Guidance`, `§ Document Size Limits`
+
+### 11. Show thumbnails in lists (MEDIUM)
+
+Store a small preview next to the full-size attachment (`INSERT INTO COLLECTION photos (thumbnail ATTACHMENT, image ATTACHMENT) DOCUMENTS (:photo)`). List rows fetch only thumbnails; the full-size blob is fetched when the user opens the item.
+
+| Preview option | Pros | Cons |
+|---|---|---|
+| Small attachment (downscaled JPEG) | Keeps documents small; fetched only where shown | Needs an explicit fetch |
+| Tiny inline value (for example, base64) | Arrives with the document | Counts toward the 256 KiB soft limit and is re-sent with the document |
+
+`§ Thumbnail Pattern` · Example: `thumbnail-pattern` in `examples/<sdk>/`
 
 ## Checklist
 

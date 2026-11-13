@@ -1,6 +1,6 @@
 ---
 name: testing
-description: "Ditto SDK testing strategies in Flutter, JavaScript, Kotlin, or Swift: local-store test helper, tests for DQL statements, MISSING/NULL filters, merge-sensitive writes, soft delete, observer lifecycle, subscription rules, and multi-peer sync tests in one process. Use when writing or reviewing tests for code that uses Ditto, setting up a test harness, or reproducing a sync or merge bug."
+description: "Ditto SDK testing strategies in Flutter, JavaScript, Kotlin, or Swift: local-store test helper, tests for DQL statements, MISSING/NULL filters, merge-sensitive writes, soft delete, observer lifecycle, subscription rules, and multi-peer sync tests in one process. Use when writing or reviewing tests for code that uses Ditto, setting up a Ditto test harness, or reproducing a Ditto sync or merge bug."
 ---
 
 # Ditto Testing Strategies
@@ -9,9 +9,10 @@ How to test code that uses Ditto: a real local store per test for DQL, write sha
 
 ## Before You Apply
 
-- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *Testing in Swift*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** and **Note (SDK 5.1.0)** mark easy-to-miss behavior seen on those releases, with the safe pattern; **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- For API calls, Grep the outline of that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`. API examples: `examples/<sdk>/`, with the same base names in every SDK.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
+- Report each finding at the severity of its item in `§ Anti-Pattern Checklist` (the checklist decides; Grep a phrase of the item there). A rule's label below is the highest severity among the items it covers.
 
 ## Prevents
 

@@ -1,27 +1,26 @@
 ---
 name: storage-lifecycle
-description: Ditto SDK data removal and local storage management covering DELETE vs soft delete vs EVICT, tombstones and their TTL, husk documents, eviction with complementary subscriptions, retention cleanup, and storage monitoring. Use when writing DELETE or EVICT statements, isDeleted or deletedAt flags, or retention policies, when setting TOMBSTONE_TTL_HOURS, or when deleted data came back or evicted documents sync back.
+description: "Ditto SDK data removal and local storage management covering DELETE vs soft delete vs EVICT, tombstones and their TTL, husk documents, eviction with complementary subscriptions, retention cleanup, and storage monitoring. Use when writing Ditto DELETE or EVICT statements, soft-delete flags or retention cleanup for Ditto documents, or TOMBSTONE_TTL_HOURS, or when deleted Ditto data came back or evicted documents sync back."
 ---
 
 # Ditto Storage Lifecycle
 
-Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings, and keeping local storage bounded. Targets Ditto SDK 5.2.0; the rules and the DQL examples are the same in every SDK.
+Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings, and keeping local storage bounded. Targets Ditto SDK 5.2.0; the rules are the same in every SDK.
 
 ## Before You Apply
 
-- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *Subscriptions in Kotlin*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** and **Note (SDK 5.1.0)** mark easy-to-miss behavior seen on those releases, with the safe pattern; **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- For API calls, Grep the outline of that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`. DQL examples: `examples/*.sql` (every SDK); API examples: `examples/<sdk>/`, with the same base names in every SDK.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
+- Report each finding at the severity of its item in `§ Anti-Pattern Checklist` (the checklist decides; Grep a phrase of the item there). A rule's label below is the highest severity among the items it covers.
 
 ## Prevents
 
-- Deleted data resurrected by devices that stay offline longer than the tombstone TTL (7 days by default)
-- Small Peer tombstone TTL (`TOMBSTONE_TTL_HOURS`) configured above the Ditto Server TTL
+- Deleted data resurrected by devices offline longer than the tombstone TTL; a Small Peer TTL above the Ditto Server TTL
 - `DELETE`/`EVICT` with `USE IDS` and no `WHERE` predicate silently removing nothing (SDK 5.1.0)
 - Soft-delete filters (`isDeleted != true`) that hide documents where the flag is missing or `null`
 - Soft-deleted documents excluded from subscriptions, so relays cannot pass the flag on
-- Evicted documents syncing straight back because a subscription still matches them
-- Husk documents caused by `DELETE` racing a concurrent `UPDATE`
+- Husk documents from `DELETE` racing a concurrent `UPDATE`; evicted documents syncing straight back
 - Evicting too often and overloading connected peers with resyncs
 
 ## Choosing a Removal Strategy
@@ -36,7 +35,7 @@ Choosing how to remove data (`DELETE`, soft delete, `EVICT`), tombstone settings
 | Extra query complexity | None | Every query filters the flag | Subscription and eviction scopes must be complementary |
 
 - **Data owned by one user and rarely edited concurrently**, in a deployment where devices sync regularly: `DELETE`.
-- **Shared business records** (orders, tasks, inventory) or long offline periods: soft delete, cleaned up by a synced `DELETE` (Variant A) or device-side `EVICT` (Variant B); see rule 4.
+- **Shared business records** (orders, tasks, inventory) or long offline periods: soft delete, cleaned up by a synced `DELETE` (Variant A) or device-side `EVICT` (Variant B); see rule 5.
 - **Storage management on edge devices**: `EVICT` with complementary subscriptions.
 
 With a Ditto Server (formerly Big Peer), use `DELETE` for permanent removal (typically on the Ditto Server) and `EVICT` to manage storage on edge devices. If you plan to use `DELETE` in a deployment with Small Peers only, contact Ditto support to review the design.
@@ -120,7 +119,7 @@ In DQL, a comparison with a missing or `null` field never passes a `WHERE` claus
 **✅ DO**:
 - Soft delete with `UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id`, both fields in one statement; `deletedAt` is UTC ISO-8601 with a zone designator, from the same fixed-precision helper as `createdAt`. Cleanup cutoffs never match a flag without `deletedAt`.
 - Write `isDeleted: false` when you create documents.
-- Filter with `coalesce(isDeleted, false) = false`.
+- Filter with `coalesce(isDeleted, false) = false` in every query, observer, aggregate, lookup by `_id`, and joined collection that reads the documents.
 - Restore with `UPDATE orders SET isDeleted = false UNSET deletedAt WHERE _id = :id`.
 
 **❌ DON'T**: Filter with `isDeleted != true` or `NOT isDeleted`.
@@ -129,13 +128,30 @@ In DQL, a comparison with a missing or `null` field never passes a `WHERE` claus
 
 `§ Soft Delete`, `§ Indexing soft-delete filters`, `§ MISSING and NULL`, `§ Timestamps` · Example: [examples/soft-delete-relay.sql](examples/soft-delete-relay.sql) (create, soft delete, restore, query helpers)
 
-### 4. Keep Soft-Deleted Documents in Subscriptions (CRITICAL)
+### 4. Avoid Husk Documents (CRITICAL)
 
-A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) still delivers the flag and a later restore for documents the device holds (SDK 5.1.0 and 5.2.0), but the device cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. A subscription filter does not hide documents in local results: every local query and observer must filter flagged documents itself.
+When one device deletes a document while another concurrently updates it, the add-wins merge produces a *husk document*, and the document is **not** deleted, even when the `DELETE` is the later write. In SDK 5.1.0 and 5.2.0, the updated fields keep their new values (or become `null` if the deletion was later), and all other fields are **MISSING**, not `null` as Ditto's docs say.
+
+**✅ DO**:
+- Use a soft delete for data that may be edited concurrently.
+- Manage edge storage with `EVICT` and perform permanent deletion on the Ditto Server.
+- Coordinate workflows so the same document is not deleted and updated at the same time.
+- Make the UI tolerate documents whose fields are `null` or missing if husks are possible, and keep husks out of lists with `WHERE make IS NOT MISSING AND make IS NOT NULL` on a field every live document has (`IS NOT NULL` alone is true for a missing field). <!-- lint-ignore -->
+- Run the `DELETE` again after the merge to remove a husk on every device.
+
+**❌ DON'T**: Use `DELETE` for shared records that other devices edit.
+
+Merge outcomes and a null-tolerant list: [reference/deletion-patterns.md](reference/deletion-patterns.md#husk-documents).
+
+`§ Husk documents`
+
+### 5. Keep Soft-Deleted Documents in Subscriptions (HIGH)
+
+A subscription that excludes soft-deleted documents (for example `WHERE coalesce(isDeleted, false) = false`) still delivers the flag and a later restore for documents the device holds (SDK 5.1.0 and 5.2.0), but the device cannot relay the flag for documents it did not already hold, and a `DELETE` of a flagged document never reaches it. A subscription filter does not hide documents in local results (rule 3).
 
 **✅ DO**:
 - Keep soft-deleted documents in the subscriptions of devices that relay data to others, at least for as long as a device may stay offline.
-- Hide them in local queries and observers with `coalesce(isDeleted, false) = false`. Register and release those observers as the SDK page shows (*Store Observers in <SDK>*; `§ Observer Lifecycle`).
+- Hide them in every local query and observer (rule 3); register and release those observers as the SDK page shows (*Store Observers in <SDK>*).
 - Choose one subscription design and clean up accordingly:
   - **Variant A (whole collection or partition)**: subscribe with `SELECT * FROM orders WHERE storeId = :storeId` (includes flagged documents), owned by a long-lived service. Clean up after the retention period, once flagged documents are no longer edited, with a `DELETE` that syncs to every device, run on the Ditto Server (for example through its HTTP API) or by another authorized peer: `DELETE FROM orders WHERE isDeleted = true AND deletedAt < :cutoff LIMIT 30000`.
   - **Variant B (retention window)**: subscribe with `coalesce(isDeleted, false) = false OR deletedAt >= :cutoff` and evict exactly the complement (`isDeleted = true AND deletedAt < :cutoff`), cancelling the old subscription first and re-registering it with the moved cutoff. Choose a window longer than the longest expected offline period, so that other devices can still relay the flag, and move the cutoff only when you run cleanup, not on every screen change.
@@ -148,7 +164,7 @@ Trade-offs and the full comparison: [reference/deletion-patterns.md](reference/d
 
 `§ Soft delete, subscriptions, and cleanup`, `§ Multi-hop relay` · Examples: [examples/soft-delete-relay.sql](examples/soft-delete-relay.sql) (Variant A and B, observer filtering), `retention-service` in `examples/<sdk>/`
 
-### 5. Evict Only Outside Every Active Subscription (CRITICAL)
+### 6. Evict Only Outside Every Active Subscription (HIGH)
 
 `EVICT` removes documents from the local store only; no tombstone is created and other peers keep them. If an active subscription on this device still matches an evicted document, connected peers notice it is missing and sync it back, which can become a loop of evicting and re-syncing.
 
@@ -177,30 +193,13 @@ SELECT * FROM orders WHERE createdAt >= :cutoff
 
 `§ EVICT`, `§ Time-based eviction`, `§ Flag-based eviction`, `§ Cancelling subscriptions and local data` · Examples: `retention-service` in `examples/<sdk>/` (the service), [ttl-eviction-small-peer.sql](examples/ttl-eviction-small-peer.sql), [evict-subscription-management-good.sql](examples/evict-subscription-management-good.sql), [-bad.sql](examples/evict-subscription-management-bad.sql), [flag-based-eviction.sql](examples/flag-based-eviction.sql), [ttl-eviction-ditto-server.sql](examples/ttl-eviction-ditto-server.sql)
 
-### 6. Avoid Husk Documents (HIGH)
-
-When one device deletes a document while another concurrently updates it, the add-wins merge produces a *husk document*, and the document is **not** deleted, even when the `DELETE` is the later write. In SDK 5.1.0 and 5.2.0, the updated fields keep their new values (or become `null` if the deletion was later), and all other fields are **MISSING**, not `null` as Ditto's docs say.
-
-**✅ DO**:
-- Use a soft delete for data that may be edited concurrently.
-- Manage edge storage with `EVICT` and perform permanent deletion on the Ditto Server.
-- Coordinate workflows so the same document is not deleted and updated at the same time.
-- Make the UI tolerate documents whose fields are `null` or missing if husks are possible, and keep husks out of lists with `WHERE make IS NOT MISSING AND make IS NOT NULL` on a field every live document has (`IS NOT NULL` alone is true for a missing field). <!-- lint-ignore -->
-- Run the `DELETE` again after the merge to remove a husk on every device.
-
-**❌ DON'T**: Use `DELETE` for shared records that other devices edit.
-
-Merge outcomes and a null-tolerant list: [reference/deletion-patterns.md](reference/deletion-patterns.md#husk-documents).
-
-`§ Husk documents`
-
 ### 7. Evict on a Schedule, in Batches (HIGH)
 
 Each eviction triggers a resync with every connected peer, which costs network traffic and processing on those peers. (SDK 5.1+) Ditto writes a warning-level log entry when post-eviction session cleanup runs too frequently.
 
 **✅ DO**:
 - Evict on a regular schedule, no more than about once per day, at a quiet time.
-- Split a large cleanup with `LIMIT` and stop when `RETURNING COUNT(*)` reports zero (first cancel or narrow every matching subscription, rule 5).
+- Split a large cleanup with `LIMIT` and stop when `RETURNING COUNT(*)` reports zero (first cancel or narrow every matching subscription, rule 6).
 - Treat the eviction-frequency warning as a sign to evict less often.
 
 **❌ DON'T**:
@@ -231,7 +230,7 @@ DELETE:
 
 Soft delete:
 - [ ] Sets `isDeleted` and `deletedAt` (UTC, with zone); new documents get `isDeleted: false`
-- [ ] Filters with `coalesce(isDeleted, false) = false` (or the index-friendly `IS MISSING OR IS NULL OR = false` form)
+- [ ] Every query, observer, aggregate, and joined collection filters with `coalesce(isDeleted, false) = false` (or the index-friendly `IS MISSING OR IS NULL OR = false` form)
 - [ ] Subscriptions of relaying devices keep flagged documents (Variant A: whole collection or partition; Variant B: retention window)
 - [ ] Old flagged documents are cleaned up (Variant A: synced `DELETE`; Variant B: device-side `EVICT` of the complement)
 
@@ -247,7 +246,7 @@ Monitoring:
 
 ## More
 
-- Reference: [reference/deletion-patterns.md](reference/deletion-patterns.md) - what `DELETE` leaves behind, husks, Ditto Server deletion, soft-delete indexing and cleanup, store switch, eviction scheduling, storage monitoring (`system:system_info`)
+- Reference: [reference/deletion-patterns.md](reference/deletion-patterns.md) - what `DELETE` leaves behind, husks, Ditto Server deletion, soft-delete indexing and cleanup, store switch, eviction, storage monitoring
 - Examples: [examples/](examples/) - one DQL file per pattern, linked from each rule; `examples/<sdk>/retention-service` for the services that run them
 - Guide sections: `§ Subscription Lifecycle`, `§ Monitoring Storage`, `§ Testing Deletion and Soft Delete`
-- Related skills: `query-sync` (subscription scope and lifecycle, `RETURNING`), `data-modeling` (deletion flag field design, timestamps), `performance-observability` (indexes, `ADVISE`/`EXPLAIN`, observers)
+- Related skills: `query-sync` (subscriptions, `RETURNING`), `data-modeling` (flag fields, timestamps), `performance-observability` (indexes, observers)

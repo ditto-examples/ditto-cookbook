@@ -1,9 +1,13 @@
 # Scanner Rules
 
 Generated with `python3 scripts/scan.py --list-rules`; do not edit by hand.
-Lines that start with a comment marker are skipped. Without Python, search for the
+Each rule has the severity of the item of the anti-pattern checklist that it detects.
+Lines that start with a comment marker are skipped, and a statement whose string
+literals span several lines is matched as one line. Without Python, search for the
 patterns below with Grep, which does not support lookaheads such as `(?!...)`, so drop them
 and filter the matches by eye.
+
+Skipped below a directory being scanned: the directories `.build`, `.dart_tool`, `.expo`, `.git`, `.gradle`, `.idea`, `.next`, `.swiftpm`, `build`, `Carthage`, `coverage`, `DerivedData`, `dist`, `node_modules`, `Pods`, `vendor`, and the files `*.g.dart`, `*.freezed.dart`, `*.d.ts`, `*.min.js`.
 
 ## Line Rules
 
@@ -26,32 +30,32 @@ and filter the matches by eye.
 | `hardcoded-private-key` | CRITICAL | `privateKey\s*[:=]\s*['\"]` | - | sdk-setup | § Small-Peers-Only Deployments |
 | `revocation-check-disabled` | CRITICAL | `PEER_CERTIFICATE_REVOCATION_CHECK_ENABLED['\"]?\s*(?:=\|:\|\bTO\b)\s*false` | case-insensitive | sdk-setup | § Certificate Revocation (SDK 5.1+) |
 | `counter-upsert` | CRITICAL | `\bCOUNTER\b.*\bON\s+ID\s+CONFLICT\s+DO\s+UPDATE` | case-insensitive | data-modeling | § Writing documents that contain counters |
-| `upsert-do-update` | HIGH | `ON\s+ID\s+CONFLICT\s+DO\s+UPDATE\b(?!_LOCAL_DIFF)` | case-insensitive | query-sync | § ON ID CONFLICT |
-| `strict-mode-enabled` | HIGH | `DQL_STRICT_MODE['\"]?\s*(?:=\|:\|\bTO\b)\s*true` | case-insensitive | data-modeling | § Strict Mode |
-| `restrict-subscriptions-disabled` | HIGH | `DQL_RESTRICT_SUBSCRIPTIONS['\"]?\s*(?:=\|:\|\bTO\b)\s*false` | case-insensitive | query-sync | § Subscription Rules |
+| `strict-mode-enabled` | CRITICAL | `DQL_STRICT_MODE['\"]?\s*(?:=\|:\|\bTO\b)\s*true` | case-insensitive | data-modeling | § Strict Mode |
 | `subscription-query-arguments` | CRITICAL | `\bqueryArguments(JsonString\|CborBytes)?\b` | only dart | query-sync | § Sync stop, close, and inspection |
+| `is-not-null-existence` | CRITICAL | `\bIS\s+NOT\s+NULL\b` | case-insensitive; line also contains a DQL keyword | query-sync | § MISSING and NULL |
+| `type-equals-number` | CRITICAL | `\btype\(\s*[\w.]+\s*\)\s*=\s*['\"]number['\"]` | case-insensitive | guide | § Type Checking |
+| `variable-precision-timestamp` | CRITICAL | `\.toUtc\(\)\.toIso8601String\(\)` | only dart | data-modeling | § Timestamps |
+| `variable-precision-timestamp` | CRITICAL | `\bInstant\.now\(\)\.toString\(\)` | only kotlin | data-modeling | § Timestamps |
+| `float-read-as-double` | CRITICAL | `\]\s*\??\.(double\|doubleOrNull)\b` | only kotlin | query-sync | § Query results in Kotlin |
+| `float-read-as-double` | CRITICAL | `\bas[?!]\s*Double\b` | only swift | query-sync | § Query results in Swift |
+| `upsert-do-update` | HIGH | `ON\s+ID\s+CONFLICT\s+DO\s+UPDATE\b(?!_LOCAL_DIFF)` | case-insensitive | query-sync | § ON ID CONFLICT |
+| `restrict-subscriptions-disabled` | HIGH | `DQL_RESTRICT_SUBSCRIPTIONS['\"]?\s*(?:=\|:\|\bTO\b)\s*false` | case-insensitive | query-sync | § Subscription Rules |
 | `verbose-logging` | HIGH | `LogLevel\.[vV]erbose\b\|minimumLogLevel\s*=\s*\.verbose\b\|\bminimumLogLevel\s*=\s*['\"]Verbose['\"]` | - | performance-observability | § Log levels |
 | `use-index-empty` | HIGH | `USE\s+INDEX\s+(''\|\"\")` | case-insensitive | query-sync | § Performance tips |
 | `tombstone-ttl-change` | HIGH | `TOMBSTONE_TTL_HOURS['\"]?\s*(?:=\|:\|\bTO\b)\s*` | case-insensitive | storage-lifecycle | § Tombstone TTL and reaping |
-| `is-not-null-existence` | MEDIUM | `\bIS\s+NOT\s+NULL\b` | case-insensitive; line also contains a DQL keyword | query-sync | § MISSING and NULL |
+| `unconvertible-argument` | HIGH | `double\.(nan\|infinity\|negativeInfinity)\b\|\bBigInt\.(parse\|from\|one\|two\|zero)\b\|['\"][\w.]+['\"]\s*:\s*DateTime\.(now\|utc\|parse\|fromMillisecondsSinceEpoch)\([^)]*\)(?!(?:\.\w+\([^)]*\))*\.(?:millisecondsSinceEpoch\|microsecondsSinceEpoch\|toIso8601String)\b)` | only dart | query-sync | § Arguments and value types in Flutter |
+| `unconvertible-argument` | HIGH | `\bto\s+(?:Instant\.now\(\)\|Date\(\)\|UUID\.randomUUID\(\)\|Big(?:Decimal\|Integer)\([^)]*\))(?!\s*\.)` | only kotlin | query-sync | § Arguments and value types in Kotlin |
+| `unconvertible-argument` | HIGH | `^(?=.*\barguments\s*:).*[:\[,]\s*(Date\(\)\|Decimal\(\|URL\(string:\|[\w.]*\.(nan\|infinity)\b)` | only swift | query-sync | § Arguments and value types in Swift |
+| `date-description-timestamp` | HIGH | `\\\(Date\(\)\)\|\bDate\(\)\.description\b` | only swift | data-modeling | § IDs and Timestamps in Swift |
 | `advise-and-provision` | MEDIUM | `\bADVISE\s+AND\s+PROVISION\b` | case-insensitive | performance-observability | § ADVISE (SDK 5.1+) |
-| `type-equals-number` | MEDIUM | `\btype\(\s*[\w.]+\s*\)\s*=\s*['\"]number['\"]` | case-insensitive | guide | § Type Checking |
 | `transaction-without-hint` | MEDIUM | `\.transaction(?:<[^>]*>)?\((?:\s*isReadOnly:\s*\w+\s*,)?\s*\(\w*\)\s*(?:async\s*)?(?:\{\|=>)` | only dart | transactions-attachments | § Transaction Rules |
 | `transaction-without-hint` | MEDIUM | `\.transaction\s*(\((?![^)]*\bhint\b)[^)]*\))?\s*\{` | only kotlin | transactions-attachments | § Transaction Rules |
 | `transaction-without-hint` | MEDIUM | `\.transaction\s*(\((?![^)]*\bhint\b)[^)]*\))?\s*\{` | only swift | transactions-attachments | § Transaction Rules |
-| `variable-precision-timestamp` | MEDIUM | `\.toUtc\(\)\.toIso8601String\(\)` | only dart | data-modeling | § Timestamps |
-| `variable-precision-timestamp` | MEDIUM | `\bInstant\.now\(\)\.toString\(\)` | only kotlin | data-modeling | § Timestamps |
-| `unconvertible-argument` | HIGH | `double\.(nan\|infinity\|negativeInfinity)\b\|\bBigInt\.(parse\|from\|one\|two\|zero)\b\|['\"][\w.]+['\"]\s*:\s*DateTime\.(now\|utc\|parse\|fromMillisecondsSinceEpoch)\([^)]*\)(?!(?:\.\w+\([^)]*\))*\.(?:millisecondsSinceEpoch\|microsecondsSinceEpoch\|toIso8601String)\b)` | only dart | query-sync | § Always pass values as parameters |
-| `unconvertible-argument` | HIGH | `\bto\s+(?:Instant\.now\(\)\|Date\(\)\|UUID\.randomUUID\(\)\|Big(?:Decimal\|Integer)\([^)]*\))(?!\s*\.)` | only kotlin | query-sync | § Always pass values as parameters |
-| `unconvertible-argument` | HIGH | `^(?=.*\barguments\s*:).*[:\[,]\s*(Date\(\)\|Decimal\(\|URL\(string:\|[\w.]*\.(nan\|infinity)\b)` | only swift | query-sync | § Always pass values as parameters |
 | `all-peer-to-peer-enabled` | MEDIUM | `\.setAllPeerToPeerEnabled\(\s*true\s*\)` | only js | sdk-setup | § Transports and Presence in JavaScript |
 | `mutated-document-ids-without-v2` | MEDIUM | `\.mutatedDocumentIDs\(\)` | only js | query-sync | § Query results in JavaScript |
 | `logout-cleanup-not-awaited` | MEDIUM | `\.auth\.logout\(\s*(?:async\b\|function\b\|\(?\s*[\w$]*\s*\)?\s*=>)` | only js | sdk-setup | § Authentication in JavaScript |
 | `observer-is-stopped-inverted` | MEDIUM | `\.isStopped\b` | only js | sdk-setup | § Closing Ditto in JavaScript |
 | `version-string-compare` | MEDIUM | `Ditto\.version\s*(==\|!=)\|Ditto\.version\.(startsWith\|compareTo\|split)\(` | only dart | sdk-setup | § Behavior Specific to the Flutter SDK |
-| `float-read-as-double` | MEDIUM | `\]\s*\??\.(double\|doubleOrNull)\b` | only kotlin | query-sync | § Query results in Kotlin |
-| `float-read-as-double` | MEDIUM | `\bas\?\s*Double\b` | only swift | query-sync | § Query results in Swift |
-| `date-description-timestamp` | HIGH | `\\\(Date\(\)\)\|\bDate\(\)\.description\b` | only swift | data-modeling | § IDs and Timestamps in Swift |
 | `open-sync` | MEDIUM | `\bDitto\.openSync\(` | only swift | sdk-setup | § Opening Ditto in Swift |
 | `uppercase-uuid` | MEDIUM | `\bUUID\(\)\.uuidString\b(?!\.lowercased\(\))` | only swift | data-modeling | § IDs and Timestamps in Swift |
 
@@ -59,30 +63,32 @@ and filter the matches by eye.
 
 | Rule | Severity | Detects | Skill | Guide |
 |---|---|---|---|---|
-| `subscription-rejected-feature` | HIGH | A `registerSubscription(` call whose query uses a projection, ORDER BY, LIMIT, JOIN, GROUP BY, DISTINCT, or USE IDS | query-sync | § Subscription Rules |
+| `subscription-filter-misses-documents` | CRITICAL | `!=`, `NOT IN`, or `clock(` in the query of a `registerSubscription(` call | query-sync | § Subscription Rules |
 | `execute-inside-transaction` | CRITICAL | `.store.execute(`, `.transaction(`, or `.transaction {` inside the braces of a `.transaction(` callback or a `.transaction {` trailing closure | transactions-attachments | § Transaction Rules |
+| `concurrent-writes-in-loop` | CRITICAL | `launch {`, `async {`, `Task {`, or `addTask {` inside a `for`, `repeat`, or `forEach`/`map` loop, with `.store.execute(` in its braces (Kotlin, Swift) | transactions-attachments | § Transaction Rules |
+| `concurrent-writes-in-loop` | CRITICAL | `.forEach(async` with `.execute(` in its callback (JavaScript) | transactions-attachments | § Transaction Rules |
 | `close-on-background` | CRITICAL | `.close()` within 8 lines after `AppLifecycleState.paused` (Dart) | sdk-setup | § Starting and Stopping Sync |
-| `observer-onchange-only` | HIGH | `registerObserver*(` with `onChange:` and no `.changes` in the same declaration (Dart) | query-sync | § Store Observers in Flutter |
+| `close-inside-transaction` | CRITICAL | `<ditto>.close()` inside the braces of a `.transaction(` callback (Dart) | transactions-attachments | § Closing Ditto in Flutter |
+| `result-leaves-handler` | CRITICAL | An `.execute(` or `.observe(` whose mapping function returns the result or its `items` unchanged, such as `{ result -> result }` or `{ it.items }` (Kotlin) | query-sync | § Query results in Kotlin |
+| `login-error-unreported` | CRITICAL | `.login(` inside an `expirationHandler = {` lambda without `try` or `runCatching` (Kotlin) | sdk-setup | § Authentication in Kotlin |
+| `login-error-unreported` | CRITICAL | `.login(` inside a `setExpirationHandler(` call that throws (JavaScript) | sdk-setup | § Authentication in JavaScript |
+| `unconvertible-argument` | CRITICAL | A property value `new Date(...)`, `new Set(...)`, `NaN`, or `Infinity` inside an `execute(`, `registerObserver(`, or `registerSubscription(` call (JavaScript) | query-sync | § Arguments and value types in JavaScript |
+| `subscription-rejected-feature` | HIGH | A `registerSubscription(` call whose query uses a projection, ORDER BY, LIMIT, JOIN, GROUP BY, DISTINCT, or USE IDS | query-sync | § Subscription Rules |
 | `discarded-observer` | HIGH | A statement that starts with `store.registerObserver*(` (or `_ =` before it) and does not keep the returned observer: not assigned, returned, or collected | query-sync | § Observer Lifecycle |
 | `discarded-subscription` | HIGH | A statement that starts with `sync.registerSubscription(` (or `_ =` before it) and does not keep the returned subscription | query-sync | § Subscription Lifecycle |
-| `result-leaves-handler` | HIGH | An `.execute(` or `.observe(` whose mapping function returns the result or its `items` unchanged, such as `{ result -> result }` or `{ it.items }` (Kotlin) | query-sync | § Query results in Kotlin |
-| `concurrent-writes-in-loop` | HIGH | `launch {`, `async {`, `Task {`, or `addTask {` inside a `for`, `repeat`, or `forEach`/`map` loop, with `.store.execute(` in its braces (Kotlin, Swift) | transactions-attachments | § Transaction Rules |
-| `ditto-in-ui` | HIGH | `DittoFactory.create(` (Kotlin) or `Ditto.open(` (Dart, Swift) in a file that defines an Activity, Fragment, composable, widget, SwiftUI view, or view controller | sdk-setup | § One instance per persistence directory |
-| `login-error-unreported` | MEDIUM | `.login(` inside an `expirationHandler = {` lambda without `try` or `runCatching` (Kotlin) | sdk-setup | § Authentication in Kotlin |
-| `login-error-unreported` | MEDIUM | `.login(` inside a `setExpirationHandler(` call that throws or never reads `.error` (JavaScript) | sdk-setup | § Authentication in JavaScript |
-| `throwing-observer-handler` | MEDIUM | `!!`, `throw`, `error(`, `require(`, or `check(` in a `registerObserver(` handler without `try` or `runCatching` (Kotlin) | query-sync | § Observer lifecycle in Kotlin |
-| `execute-on-main` | MEDIUM | `.store.execute(` in a `lifecycleScope`/`viewModelScope`/`MainScope()` launch or a `Dispatchers.Main` block, before any `withContext(Dispatchers.IO)` (Kotlin) | performance-observability | § Executing DQL in Kotlin |
-| `close-inside-transaction` | CRITICAL | `<ditto>.close()` inside the braces of a `.transaction(` callback (Dart) | transactions-attachments | § Closing Ditto in Flutter |
-| `work-started-in-transaction` | HIGH | An observer, a `changes.listen(`, a `Timer`, `Future.delayed`, `unawaited(`, or `scheduleMicrotask(` inside a `.transaction(` callback (Dart) | transactions-attachments | § Transactions in Flutter |
 | `signal-next-skipped-on-error` | HIGH | `signalNext()` in an async `changes.listen` or `onChange` callback with `await` and no `catch`/`finally` (Dart), in a `{ result, signalNext in` handler with `try` and no `catch`/`defer` (Swift), or in a `registerObserverWithSignalNext(` handler with `await` and no `catch`/`finally` (JavaScript) | performance-observability | § Backpressure (SDK 5.1+) |
-| `await-for-without-backpressure` | MEDIUM | `await for (... in x.changes)` where `x` was assigned from `registerObserver(` (Dart) | performance-observability | § Backpressure in Flutter |
-| `transaction-without-hint` | MEDIUM | A `.transaction(` call without `hint:` in its arguments (JavaScript) | transactions-attachments | § Transaction Rules |
-| `unconvertible-argument` | HIGH | A property value `new Date(...)`, `new Set(...)`, `NaN`, or `Infinity` inside an `execute(`, `registerObserver(`, or `registerSubscription(` call (JavaScript) | query-sync | § Arguments and value types in JavaScript |
+| `unbounded-data-sync-info-read` | HIGH | An `.execute(` of `system:data_sync_info` in a file without `Promise.race(` (JavaScript), both `withTimeout` and `.async {` (Kotlin), or `withDeadline` or a task group (Swift) | query-sync | § Monitoring Sync Status |
+| `ditto-in-ui` | HIGH | `DittoFactory.create(` (Kotlin) or `Ditto.open(` (Dart, Swift) in a file that defines an Activity, Fragment, composable, widget, SwiftUI view, or view controller | sdk-setup | § One instance per persistence directory |
+| `ditto-in-ui` | HIGH | `Ditto.open(` inside a component that returns JSX (JavaScript) | sdk-setup | § One instance per persistence directory |
+| `observer-onchange-only` | HIGH | `registerObserver*(` with `onChange:` and no `.changes` in the same declaration (Dart) | query-sync | § Store Observers in Flutter |
+| `work-started-in-transaction` | HIGH | An observer, a `changes.listen(`, a `Timer`, `Future.delayed`, `unawaited(`, or `scheduleMicrotask(` inside a `.transaction(` callback (Dart) | transactions-attachments | § Transactions in Flutter |
+| `throwing-observer-handler` | HIGH | `!!`, `throw`, `error(`, `require(`, or `check(` in a `registerObserver(` handler without `try` or `runCatching` (Kotlin) | query-sync | § Observer lifecycle in Kotlin |
+| `execute-on-main` | HIGH | `.store.execute(` in a `lifecycleScope`/`viewModelScope`/`MainScope()` launch or a `Dispatchers.Main` block, before any `withContext(Dispatchers.IO)` (Kotlin) | performance-observability | § Executing DQL in Kotlin |
 | `observer-task-without-backpressure` | HIGH | An `async` handler passed to `registerObserver(` (JavaScript) | performance-observability | § Backpressure in JavaScript |
+| `observer-task-without-backpressure` | HIGH | `Task {` inside the braces of a `registerObserver*(` handler that never mentions `signalNext` (Swift) | performance-observability | § Backpressure in Swift |
 | `missing-signal-next` | HIGH | A `registerObserverWithSignalNext(` handler without a second parameter, or that never uses it (JavaScript) | performance-observability | § Backpressure in JavaScript |
-| `concurrent-writes-in-loop` | HIGH | `.forEach(async` with `.execute(` in its callback (JavaScript) | transactions-attachments | § Transaction Rules |
 | `effect-without-cleanup` | HIGH | A `useEffect(` that registers an observer, a subscription, or a fetch and has no `return` (JavaScript) | query-sync | § Observer lifecycle in JavaScript |
 | `register-in-render` | HIGH | A registration in the body of a component that returns JSX, outside its effects (JavaScript) | query-sync | § Store Observers in JavaScript |
-| `ditto-in-ui` | HIGH | `Ditto.open(` inside a component that returns JSX (JavaScript) | sdk-setup | § One instance per persistence directory |
-| `unbounded-data-sync-info-read` | HIGH | An `.execute(` of `system:data_sync_info` in a file without `Promise.race(` (JavaScript), both `withTimeout` and `.async {` (Kotlin), or `withDeadline` or a task group (Swift) | query-sync | § Monitoring Sync Status |
-| `observer-task-without-backpressure` | MEDIUM | `Task {` inside the braces of a `registerObserver*(` handler that never mentions `signalNext` (Swift) | performance-observability | § Backpressure in Swift |
+| `login-error-unreported` | MEDIUM | `.login(` inside a `setExpirationHandler(` call that never reads `.error` (JavaScript) | sdk-setup | § Authentication in JavaScript |
+| `await-for-without-backpressure` | MEDIUM | `await for (... in x.changes)` where `x` was assigned from `registerObserver(` (Dart) | performance-observability | § Backpressure in Flutter |
+| `transaction-without-hint` | MEDIUM | A `.transaction(` call without `hint:` in its arguments (JavaScript) | transactions-attachments | § Transaction Rules |

@@ -373,4 +373,4 @@ result.asCompleted()?.attachment?.use { fetched -> showImage(fetched.getData()) 
 | Swift | `try await newAttachment(path:metadata:)` / `newAttachment(data:metadata:)` | `try fetchAttachment(token:deliverOn:onFetchEvent:)` returns `DittoAttachmentFetcher` | `fetcher.stop()` |
 | Kotlin | `newAttachment(path, map)` / `newAttachment(inputStream, map)` (suspend) | `fetchAttachment(token) { downloaded, total -> }` (suspend) returns `DittoAttachmentFetchResult` | Cancel the coroutine that awaits it |
 
-In every SDK: declare the field as `ATTACHMENT` in the statement, fetch lazily, implement your own stall timeout (there is no fetch timeout or "not available" event), and replace rather than modify attachments. See [SKILL.md](../SKILL.md) rules 3, 4, 7, 8, 10, and 11.
+In every SDK: declare the field as `ATTACHMENT` in the statement, fetch lazily, implement your own stall timeout (there is no fetch timeout or "not available" event), and replace rather than modify attachments. See [SKILL.md](../SKILL.md) rules 5, 6, 7, 8, 10, and 11.

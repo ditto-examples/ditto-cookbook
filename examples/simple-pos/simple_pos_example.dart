@@ -194,7 +194,7 @@ class PosService {
       // On SDK 5.1.0, an index that mixes ASC and DESC keys returns results
       // in the wrong order; on that release, use (storeId, createdAt).
       await ditto.store.execute(
-        'CREATE INDEX IF NOT EXISTS idx_orders_storeId_createdAt '
+        'CREATE INDEX IF NOT EXISTS idx_orders_storeId_createdAt ' // ditto-scan: ignore[composite-index-mixed-direction] (SDK 5.2.0)
         'ON orders (storeId, createdAt DESC)',
       );
       await ditto.store.execute(

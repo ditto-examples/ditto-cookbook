@@ -1,0 +1,124 @@
+diff --git a/src/ditto/orders.ts b/src/ditto/orders.ts
+index 5d8abc4..9127ecd 100644
+--- a/src/ditto/orders.ts
++++ b/src/ditto/orders.ts
+@@ -10,7 +10,7 @@ export type OrderRow = {
+ 
+ export async function listOrders(ditto: Ditto, status: string): Promise<OrderRow[]> {
+   const result = await ditto.store.execute(
+-    'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
++    'SELECT * FROM orders WHERE status = :status AND isDeleted != true ORDER BY createdAt DESC, _id',
+     { status },
+   );
+   return result.items.map((item) => item.value as OrderRow);
+@@ -20,3 +20,12 @@ export async function updateNote(ditto: Ditto, orderId: string, note: string): P
+   if (orderId === '') throw new TypeError('Missing order ID');
+   await ditto.store.execute('UPDATE orders SET note = :note WHERE _id = :id', { id: orderId, note });
+ }
++
++// Archived orders stay in the store but are hidden from the lists.
++export async function archiveOrder(ditto: Ditto, orderId: string): Promise<void> {
++  if (orderId === '') throw new TypeError('Missing order ID');
++  await ditto.store.execute('UPDATE orders SET isDeleted = true, deletedAt = :deletedAt WHERE _id = :id', {
++    id: orderId,
++    deletedAt: new Date(),
++  });
++}
+diff --git a/src/hooks/useKitchenPrinter.ts b/src/hooks/useKitchenPrinter.ts
+new file mode 100644
+index 0000000..6224d35
+--- /dev/null
++++ b/src/hooks/useKitchenPrinter.ts
+@@ -0,0 +1,18 @@
++import { useEffect } from 'react';
++import type { Ditto } from '@dittolive/ditto';
++import { printTicket } from '../printing/printer';
++
++// Prints a ticket for the orders that waiters send to this kitchen station.
++export function useKitchenPrinter(ditto: Ditto, stationId: string): void {
++  useEffect(() => {
++    ditto.store.registerObserver(
++      'SELECT * FROM orders WHERE stationId = :stationId AND status = :status ORDER BY createdAt, _id',
++      async (result) => {
++        for (const item of result.items) {
++          await printTicket(item.value);
++        }
++      },
++      { stationId, status: 'sent' },
++    );
++  }, [ditto, stationId]);
++}
+diff --git a/src/printing/printer.ts b/src/printing/printer.ts
+new file mode 100644
+index 0000000..4fc8872
+--- /dev/null
++++ b/src/printing/printer.ts
+@@ -0,0 +1,10 @@
++// Sends a ticket to the kitchen printer of this tablet's station.
++// Rejects when the printer is offline or out of paper.
++export async function printTicket(order: unknown): Promise<void> {
++  const response = await fetch('http://192.0.2.10/print', {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(order),
++  });
++  if (!response.ok) throw new Error(`Printer error ${response.status}`);
++}
+diff --git a/src/screens/KitchenScreen.tsx b/src/screens/KitchenScreen.tsx
+new file mode 100644
+index 0000000..a10dda6
+--- /dev/null
++++ b/src/screens/KitchenScreen.tsx
+@@ -0,0 +1,23 @@
++import React from 'react';
++import { FlatList, Text } from 'react-native';
++import type { Ditto } from '@dittolive/ditto';
++import { useDittoQuery } from '../hooks/useDittoQuery';
++import { useKitchenPrinter } from '../hooks/useKitchenPrinter';
++import type { OrderRow } from '../ditto/orders';
++
++export function KitchenScreen({ ditto, stationId }: { ditto: Ditto; stationId: string }) {
++  useKitchenPrinter(ditto, stationId);
++  const orders = useDittoQuery<OrderRow>(
++    ditto,
++    'SELECT * FROM orders WHERE stationId = :stationId AND status = :status ORDER BY createdAt, _id',
++    { stationId, status: 'sent' },
++  );
++  if (orders === null) return <Text>Loading…</Text>;
++  return (
++    <FlatList
++      data={orders}
++      keyExtractor={(order) => order._id}
++      renderItem={({ item }) => <Text>Table {item.tableId}</Text>}
++    />
++  );
++}
+diff --git a/src/screens/OrdersScreen.tsx b/src/screens/OrdersScreen.tsx
+index b6550a3..6b74b55 100644
+--- a/src/screens/OrdersScreen.tsx
++++ b/src/screens/OrdersScreen.tsx
+@@ -1,13 +1,13 @@
+ import React from 'react';
+-import { FlatList, Text, View } from 'react-native';
++import { Button, FlatList, Text, View } from 'react-native';
+ import type { Ditto } from '@dittolive/ditto';
+ import { useDittoQuery } from '../hooks/useDittoQuery';
+-import type { OrderRow } from '../ditto/orders';
++import { archiveOrder, type OrderRow } from '../ditto/orders';
+ 
+ export function OrdersScreen({ ditto }: { ditto: Ditto }) {
+   const orders = useDittoQuery<OrderRow>(
+     ditto,
+-    'SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC, _id',
++    'SELECT * FROM orders WHERE status = :status AND isDeleted != true ORDER BY createdAt DESC, _id',
+     { status: 'open' },
+   );
+   if (orders === null) return <Text>Loading…</Text>;
+@@ -19,6 +19,7 @@ export function OrdersScreen({ ditto }: { ditto: Ditto }) {
+         <View>
+           <Text>Table {item.tableId}</Text>
+           {item.note ? <Text>{item.note}</Text> : null}
++          <Button title="Archive" onPress={() => void archiveOrder(ditto, item._id)} />
+         </View>
+       )}
+     />

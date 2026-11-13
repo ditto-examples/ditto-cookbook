@@ -22,7 +22,7 @@ This repository is a Claude Code plugin marketplace named `ditto-cookbook`. Inst
 /plugin install ditto --marketplace ditto-examples/ditto-cookbook
 ```
 
-See [plugins/ditto/README.md](plugins/ditto/README.md) for the list of Skills and the install steps on earlier Claude Code versions.
+See [plugins/ditto/README.md](plugins/ditto/README.md) for the list of Skills, the install steps on earlier Claude Code versions, setting the plugin up for a whole team in your app's repository, keeping it updated, reviewing code and pull requests with the `audit` Skill, and running its scanner in CI.
 
 ## Repository Layout
 

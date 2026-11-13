@@ -1,17 +1,17 @@
 ---
 name: audit
-description: Reviews Ditto SDK code, or a change to it, against the best practices guide: scans for known anti-patterns, checks per collection the assumptions that fail across devices (locks, uniqueness, empty results, subscription coverage), marks schema changes additive or breaking, and reports findings by severity with fixes. Use to review or audit Ditto code or a pull request, before a release, or when sync, merge, or deletion problems need a close look.
+description: "Reviews code or a pull request in an app that uses the Ditto SDK against the best practices guide: scans for known anti-patterns, checks per collection the assumptions that fail across devices (locks, uniqueness, empty results, subscription coverage), marks schema changes additive or breaking, and reports findings by severity with fixes. Use to review or audit Ditto code, a pull request or diff of a Ditto app, or a Ditto app before a release."
 ---
 
 # Ditto Code Audit
 
-A repeatable review of an app that uses the Ditto SDK in Flutter, JavaScript, Kotlin, or Swift. It combines a fast pattern scan, a cross-device review of each collection, and a manual checklist, and relies on the topic skills for the rules. The scan finds what one line shows; assumptions carried over from a single database or a server API show in no single line, and the cross-device review looks for them. Targets Ditto SDK 5.2.0; the scanner reads Dart, JavaScript/TypeScript, Swift, and Kotlin (its DQL rules apply to all of them; the rules for API calls name the SDKs they check in [reference/scanner-rules.md](reference/scanner-rules.md)).
+A repeatable review of an app that uses the Ditto SDK 5.2.0 in Flutter, JavaScript, Kotlin, or Swift: a pattern scan, a cross-device review of each collection, and a manual checklist, with the rules in the topic skills. The scan finds what one line shows; assumptions carried over from a single database or a server API show in no single line, and the cross-device review looks for them.
 
 ## Before You Apply
 
 - Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). The rules target 5.2.0. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases; **Note (SDK 5.1.0)** marks 5.1.0 behavior that 5.2.0 no longer shows, and **Note (SDK 5.2.0)** behavior observed on 5.2.0. Issues that only 5.1.0 has are in `§ Known Issues in SDK 5.1.0`; they apply wherever any device still runs 5.1.0. On a later version, confirm a note (release notes, docs.ditto.live) before reporting it as a defect. If the version cannot be found, apply the 5.2.0 rules, say so in the report, and mark findings that rest on a **Note (SDK ...)** as version-specific. **(SDK 5.1+)** and **(SDK 5.2+)** mark features introduced in 5.1 and 5.2.
 - In that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), read the *Behavior Specific to the <SDK> SDK* section at its end, not the whole page (Grep the heading for its line): it lists what only that SDK does. `§ Specific to One SDK` in the guide's Anti-Pattern Checklist lists the mistakes to look for in that SDK. Open the topic skills' `examples/<sdk>/` only when you write a fix.
-- `§ <Heading>` cites a section of the full guide: Grep the heading text in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`. Both are symbolic links: search those two paths, or use `grep -R`; a search of `../guide/reference/` alone that does not follow links finds nothing.
+- `§ <Heading>` cites a section of the full guide: Grep the heading text as a fixed string (headings contain `(`, `)`, and `+`) in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`. Search those two paths by name: in the Ditto Cookbook repository they are symbolic links, which a search of `../guide/reference/` alone does not enter. If `../guide/reference/best-practices/README.md` does not exist, the guide was not installed with the plugin (for example, a checkout without symbolic links): say so in the report, and rank and cite from the topic skills instead.
 - Review only; do not change code unless the user asks for fixes. When asked, apply fixes that leave stored data unchanged or change it additively, and ask before a breaking one (step 8).
 
 ## Workflow
@@ -20,7 +20,7 @@ Copy this checklist and work through it:
 
 ```
 Ditto audit progress:
-- [ ] 1. Scope: list files that use Ditto (imports of ditto_live, @dittolive/ditto, DittoSwift, com.ditto)
+- [ ] 1. Scope: paths, a diff, or a snippet (see below); list the files that use Ditto (imports of ditto_live, @dittolive/ditto, DittoSwift, com.ditto)
 - [ ] 2. Context: SDK version, platforms, connection mode (Ditto Server or small peers only), and whether the app is deployed or a sample
 - [ ] 3. Scan: run scripts/scan.py on the source directories
 - [ ] 4. Triage: confirm or discard every scanner hit by reading the code around it
@@ -33,15 +33,23 @@ Ditto audit progress:
 
 Do not stop after step 4: a clean scan does not cover steps 5 to 8.
 
+### Step 1: Scope
+
+Decide what is under review from the request or the arguments the skill was invoked with:
+
+- **Paths, or nothing**: audit those directories, or the whole repository.
+- **A pull request, a branch, a base ref, or "my changes"**: read the diff (`gh pr diff <number>`, `git diff <base>...HEAD`, or `git diff HEAD` for uncommitted work), and scan only the changed source files (`git diff --name-only <base>...HEAD`). Review the changed lines, but build the inventory in step 5 from the whole repository for every collection that the diff touches: the cross-device questions need every reader and writer, not only the changed ones. Report what the change introduces as findings, and list problems that the unchanged code already had separately and briefly, unless the change makes them worse. Step 8 always applies.
+- **A snippet with no repository**: skip steps 3 and 5, ask the eight questions of what the snippet shows, and list what it does not show under what was not checked.
+
 ### Step 3: Scan
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/scan.py lib/ test/
 ```
 
-Pass the project's source and test directories, such as `lib/ test/` (Flutter), `src/` (JavaScript), `app/src/` (Android), or `Sources/ Tests/` (Swift). (`${CLAUDE_SKILL_DIR}` is this skill's directory; if it is not substituted, use the path of this file's directory.) Options: `--json` for machine-readable output, `--min-severity HIGH` to hide MEDIUM hits. A path that does not exist is reported on stderr and skipped. The script needs only Python 3.8+. If Python is unavailable, Grep for the same patterns listed in [reference/scanner-rules.md](reference/scanner-rules.md).
+Pass the project's existing source and test directories, such as `lib/ test/` (Flutter), `src/` (JavaScript), `app/src/` (Android), or `Sources/ Tests/` (Swift), or for a diff the changed files. (`${CLAUDE_SKILL_DIR}` is this skill's directory; if it is not substituted, use the path of this file's directory.) It skips build output, dependencies, and generated files; `--exclude GLOB` skips more. Exit code 2 means a path does not exist or no source file was scanned: fix the paths. Hits on a line marked `ditto-scan: ignore[rule]` are suppressed and counted in the summary on stderr. `--json` gives machine-readable output. The script needs only Python 3.8+; without Python, Grep for the patterns in [reference/scanner-rules.md](reference/scanner-rules.md).
 
-Every hit is a candidate, not a finding. The scanner matches lines; it cannot tell a test fixture, a deliberate counter-example, or a validated identifier from a defect.
+Every hit is a candidate, not a finding: the scanner cannot tell a test fixture, a deliberate counter-example, or a validated identifier from a defect.
 
 ### Step 4: Triage
 
@@ -49,7 +57,7 @@ For each hit:
 1. Read the surrounding function and its callers.
 2. Check whether the code really breaks the rule: Grep the `§` heading that the hit names in the guide and read that section, or the rule of the same name in the skill the hit names (`query-sync`, `data-modeling`, `storage-lifecycle`, `transactions-attachments`, `performance-observability`, `sdk-setup`, `testing`).
 3. For a hit whose message says it applies to SDK 5.1.0 only (fixed in 5.2.0), such as `delete-evict-use-ids` and `composite-index-mixed-direction`, check the version from step 2. If the project uses 5.1.0, or the version is unknown, report it at its severity. If it uses 5.2.0, keep it as a lower-severity note that the code breaks on devices still running 5.1.0 (the code cannot show which releases run in the field), and say so in the finding.
-4. Keep confirmed hits, and report each at the severity of its item in `§ Anti-Pattern Checklist`, which can be higher than the scanner's: the scanner's severity only orders the triage. The same holds for findings from steps 6 and 7, and where a topic skill ranks a rule differently: the severity section that lists the item decides, even when that section's heading describes a different kind of problem, and where one place matches items of different severity, the higher one. For a finding with no checklist item, use the definitions in step 9 and say that you ranked it yourself. Drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
+4. Keep confirmed hits. Report every finding, also from steps 6 and 7, at the severity of its item in `§ Anti-Pattern Checklist` (`../guide/reference/best-practices/anti-patterns.md`), which the scanner already uses: Grep a distinctive phrase of the item there instead of reading the page; its severity is the `##` section above it, or its bold label under `§ Specific to One SDK`, whatever the section's heading describes. Where several items match, use the highest. For a finding with no checklist item, use the definitions in step 9 and say that you ranked it yourself. Drop false positives silently unless the pattern is worth a comment (for example a validated key spliced into a backtick identifier).
 
 ### Steps 5 and 6: Inventory and cross-device review
 
@@ -89,17 +97,27 @@ The remaining design and lifecycle problems, by area. Walk the rows for the area
 
 The complete severity-ranked list is the guide's `§ Anti-Pattern Checklist`, with the mistakes of each SDK in `§ Specific to One SDK`; the security-specific list is `§ Security Checklist`.
 
+In a sample or demo, a simplification that its README or a code comment states on purpose (for example, one device type assumed per collection) is not a defect of the sample: list each once under "Documented simplifications", with the severity it would have in a deployed app, so that readers who copy the code know what to change.
+
 ### Step 8: Schema changes
 
-Devices on older app versions keep reading and writing the same documents, so a change to what is stored is a release decision. Read [reference/schema-changes.md](reference/schema-changes.md) and follow it:
+Devices on older app versions keep reading and writing the same documents, so a change to what is stored is a release decision. For a diff, a pull request, or a branch, and for any fix that changes stored data, read [reference/schema-changes.md](reference/schema-changes.md) and follow it: it finds every change to stored data and classifies it with `§ Breaking and additive changes`. In short:
 
 - Decide from evidence (the README, the user; not a directory name alone) whether the app is deployed, or unreleased or a sample or demo that shares its database with no released app; if unknown, assume deployed and say so. In a sample, a breaking change is not a defect: note that every peer, including a Ditto Server, needs an empty store.
-- For a diff, pull request, or branch, find every change to collection names, `_id` shape, field names, types, units, meaning, CRDT types and declarations, enumerated values, deletion strategy, and seed content, and classify each with `§ Breaking and additive changes`. A breaking change in a deployed app that skips the staged rollout (`§ Rolling out a breaking change`, `§ A field that replaces another`) is CRITICAL (a field the new version requires: see the reference).
 - Classify the fixes too: a fix that, for example, turns an array into a map, a register into a counter, `status` into a log, or `DELETE` into soft delete changes stored data. In a deployed app, write it as a new field or collection next to the old one, marked breaking with the conditions in `§ A field that replaces another` (a collection: `§ Rolling out a breaking change`); never as a conversion in place.
 
 ### Step 9: Report
 
-Order findings by severity (CRITICAL: data loss, wrong results, crashes, security; HIGH: sync cost, memory, performance; MEDIUM: maintainability). For each finding:
+The readers are the app's developers, who may not know Ditto. Start with a summary:
+
+```
+Verdict: <one sentence: for example, "two CRITICAL defects lose data when tills work offline; fix before release">
+Findings: <n> CRITICAL, <n> HIGH, <n> MEDIUM (for a diff: <n> introduced by the change)
+First actions: <up to three fixes, most important first>
+Breaking changes to stored data: <each, or "none">
+```
+
+Then order findings by severity (CRITICAL: data loss, wrong results, crashes, security; HIGH: sync cost, memory, performance; MEDIUM: maintainability). For each finding:
 
 ```
 [SEVERITY] file:line - <one-line problem>
@@ -108,15 +126,17 @@ Scenario: <for a finding that needs two devices or two app versions: the shortes
 Impact: <what goes wrong at runtime, and when>
 Fix: <the concrete change, with a short code or DQL snippet if useful>
 Schema: <additive or breaking, and why, when the problem or the fix changes stored data; omit otherwise>
-Reference: <skill name> / § <guide heading>
+Reference: <skill name> / § <guide heading> (<link>)
 ```
 
-End with: the SDK version and platforms reviewed, whether the app was taken as deployed or a sample and why, the changes to stored data in the code under review (each additive or breaking), the inventory in compact form (per collection: subscriptions, reads, writes, removals), the areas checked with no findings, and anything not checked (for example code that was not available, which devices write a collection, how long devices stay offline, or behavior that needs a multi-device test). When a fact that the code cannot show, such as the platforms or the connection mode in step 2, is unknown, say so there instead of guessing. Mark findings that depend on a **Note (SDK ...)** behavior or on `§ Known Issues in SDK 5.1.0` as version-specific, and name the releases they apply to.
+The link lets readers in the app's repository open the section: `https://github.com/ditto-examples/ditto-cookbook/blob/main/<page>#<anchor>`, where `<page>` is the guide page's path from `best-practices/` or `knowledge/` and `<anchor>` is the heading in lowercase, with spaces turned into `-` and other punctuation except `-` removed. When the user asks you to post the review on a pull request, make each finding one review comment at its `file:line`, and the summary the review body.
+
+End with: the guide version (the `Version` line of `../guide/reference/best-practices/README.md`), the SDK version and platforms reviewed, whether the app was taken as deployed or a sample and why, the changes to stored data in the code under review (each additive or breaking), the inventory in compact form (per collection: subscriptions, reads, writes, removals), the areas checked with no findings, and anything not checked (for example code that was not available, which devices write a collection, how long devices stay offline, or behavior that needs a multi-device test). When a fact that the code cannot show, such as the platforms or the connection mode in step 2, is unknown, say so there instead of guessing. Mark findings that depend on a **Note (SDK ...)** behavior or on `§ Known Issues in SDK 5.1.0` as version-specific, and name the releases they apply to.
 
 ## Scanner Limits
 
-- Line-based: a statement split across lines, or built in another function, can be missed.
-- Not detectable: everything in steps 5, 6, and 8 (checks used as locks, values written back after a read in app code, results taken as complete, queries wider than their subscriptions), nested transactions through helper methods, observers or subscriptions registered in render code, subscription scope design, array-vs-map decisions, eviction that overlaps an active subscription, missing indexes.
+- Line-based: string literals joined across lines are read as one statement, but DQL built in another function can be missed.
+- Not detectable: everything in steps 5, 6, and 8 (checks used as locks, values written back after a read in app code, results taken as complete, queries wider than their subscriptions), nested transactions through helper methods, observers or subscriptions registered in render code (except in a JavaScript component body: `register-in-render`), subscription scope design, array-vs-map decisions, eviction that overlaps an active subscription, missing indexes.
 - Example and test code that demonstrates anti-patterns on purpose produces hits; treat them as such.
 
 ## More

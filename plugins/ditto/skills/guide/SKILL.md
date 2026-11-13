@@ -1,6 +1,6 @@
 ---
 name: guide
-description: Searches the complete Ditto SDK best practices guide (SDK 5.2.0, Flutter, JavaScript, Kotlin, Swift) bundled with this plugin, for answers the focused ditto skills do not cover. Use to look up a Ditto API, DQL keyword or function, system parameter, error message, an SDK's API or behavior, or the reasoning behind a rule, or when a Ditto question spans several topics.
+description: "Searches the complete Ditto SDK best practices guide (SDK 5.2.0, Flutter, JavaScript, Kotlin, Swift) bundled with this plugin, for answers the focused ditto skills do not cover. Use to look up a Ditto API, DQL keyword or function, system parameter, error message, an SDK's API or behavior, or the reasoning behind a rule, or when a Ditto question spans several topics."
 ---
 
 # Ditto Best Practices Guide
@@ -9,10 +9,10 @@ The full guide (SDK 5.2.0) is in two directories: [reference/best-practices/](re
 
 ## How to Search
 
-Search `reference/best-practices/` and `reference/knowledge/` by name, one search each (or both as paths). Do not search `reference/` itself: inside the Ditto Cookbook repository the two directories are symbolic links, which a search of their parent does not enter.
+Search `reference/best-practices/` and `reference/knowledge/` by name, one search each (or both as paths). Do not search `reference/` itself: inside the Ditto Cookbook repository the two directories are symbolic links, which a search of their parent does not enter. If `reference/best-practices/README.md` does not exist, the guide was not installed with the plugin (for example, a checkout without symbolic links): say so, and answer from the focused skills and [docs.ditto.live](https://docs.ditto.live).
 
 1. **Exact terms first.** Grep both directories for the exact API name (`registerObserverV2`), DQL keyword (`UPDATE_LOCAL_DIFF`), system parameter (`TOMBSTONE_TTL_HOURS`), or error text (`disallowed without appropriate index support`). Use `-n` and read about 40-150 lines around the best hit.
-2. **Sections by heading.** A `§ <Heading>` citation in another skill is a heading in one of the pages, and every heading is unique across the guide: Grep `^#+ <Heading>`. To see the outline of a page, Grep `^#{1,3} ` in it with line numbers.
+2. **Sections by heading.** A `§ <Heading>` citation in another skill is a heading in one of the pages, and every heading is unique across the guide: Grep the heading text as a fixed string (`grep -rnF`, or Grep with the regex characters `( ) + .` escaped), because many headings contain `(SDK 5.1+)`. To see the outline of a page, Grep `^#{1,3} ` in it with line numbers.
 3. **Version-specific behavior.** Grep `Note \(SDK` for every caveat: **Note (SDK 5.1.0 and 5.2.0)** was confirmed on both releases, **Note (SDK 5.1.0)** describes 5.1.0 behavior that 5.2.0 no longer shows (the note says what 5.2.0 does), and **Note (SDK 5.2.0)** was observed on 5.2.0 (the note or its observation entry says whether 5.1.0 differed or was not tested). Issues that only 5.1.0 has (fixed in 5.2.0) are listed under `§ Known Issues in SDK 5.1.0`; read it whenever a device runs 5.1.0. Grep `\(SDK 5.1\+\)` and `\(SDK 5.2\+\)` for APIs added in 5.1 and 5.2, and `Experimental|Beta` for unstable APIs. If the project uses another SDK version, treat these as items to verify, not facts.
 4. **Read whole subsections.** Each section is written to be read on its own and ends with ✅ DO / ❌ DON'T lists and `✅ GOOD` / `❌ BAD` examples; read to the next heading of the same level before answering.
 5. **Code for one SDK.** The topic pages show DQL with its arguments as an `-- Arguments:` JSON comment and link to the SDK pages for code. The SDK pages share their section names, `<Topic> in <SDK>` (Grep `^#+ .* in Swift` for the Swift outline), and end with *Behavior Specific to the <SDK> SDK*.

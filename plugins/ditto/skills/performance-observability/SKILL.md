@@ -1,26 +1,26 @@
 ---
 name: performance-observability
-description: Ditto SDK store observer performance and diagnostics (Flutter, JavaScript, Kotlin, Swift): observer lifecycle, backpressure (registerObserverV2, signalNext, suspending handlers), narrow UI updates, differs, redundant writes, indexes with ADVISE, EXPLAIN, and PROFILE, the SDK logger, and system: collections. Use when a Ditto query is slow, a screen janks or memory grows with observers, upserts repeat on refresh, or when setting up Ditto logging.
+description: "Ditto SDK store observer performance and diagnostics (Flutter, JavaScript, Kotlin, Swift): observer lifecycle, backpressure (registerObserverV2, signalNext, suspending handlers), narrow UI updates, differs, redundant writes, indexes, ADVISE, EXPLAIN, PROFILE, logging, and system: collections. Use when a Ditto query is slow, a screen showing Ditto data janks, Ditto observers grow memory, Ditto upserts repeat, or when setting up Ditto logging."
 ---
 
 # Ditto Performance and Observability
 
-Keeps Ditto apps responsive and diagnosable: observers and backpressure, narrow UI updates, redundant writes, indexes, logging, and diagnostics. Targets Ditto SDK 5.2.0 in every SDK; DQL examples are SDK-neutral, API examples are per SDK.
+Keeps Ditto apps responsive and diagnosable: observers and backpressure, narrow UI updates, redundant writes, indexes, logging, and diagnostics. Targets Ditto SDK 5.2.0 in every SDK.
 
 ## Before You Apply
 
-- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *Backpressure in Swift*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** and **Note (SDK 5.1.0)** mark easy-to-miss behavior seen on those releases, with the safe pattern; **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- For API calls, Grep the outline of that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`. DQL examples: `examples/*.sql` (every SDK); API examples: `examples/<sdk>/`, with the same base names in every SDK.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
+- Report each finding at the severity of its item in `§ Anti-Pattern Checklist` (the checklist decides; Grep a phrase of the item there). A rule's label below is the highest severity among the items it covers.
 
 **(Experimental)** marks APIs that the SDK marks as experimental (Flutter `registerObserverV2`, `registerObserverWithSignalNext`, `StoreObserverV2`).
 
 ## Prevents
 
-- Unbounded memory growth from Flutter observers registered with `onChange` whose `changes` stream is never consumed (SDK 5.1.0 and 5.2.0)
+- Memory growth from Flutter `onChange` observers whose `changes` stream is never consumed (SDK 5.1.0 and 5.2.0)
 - Leaked observers (never released, registered in render code, or left to garbage collection)
-- Slow or async work in default observer callbacks without backpressure
-- Observers that stop updating because `signalNext()` is never called
+- Slow or async work in default observer callbacks; observers stalled because `signalNext()` is never called
 - Full-screen updates from one broad observer at the root of a screen
 - Redundant writes (`DO UPDATE` re-upserts, whole-document rewrites) that mark documents mutated and fire observers
 - Collection scans from missing or unusable indexes, and strict mode disabling index scans
@@ -52,87 +52,11 @@ Investigating a slow query:
 
 ## Rules
 
-### 1. Consume observer results in one place and copy them out (CRITICAL)
-
-Copy plain values (or your own model objects) out of each result and keep no result or row objects. The `query-sync` skill owns the full observer pattern.
-
-| SDK | Consume results | Pitfalls |
-|---|---|---|
-| Flutter | `registerObserver` **without** `onChange`; exactly one `StreamSubscription` on `changes` (or one mounted `StreamBuilder`) | `changes` is single-subscription: a second `listen()` throws a `StateError` |
-| JavaScript | A synchronous handler passed to `registerObserver` | An `async` handler is not awaited, so updates overlap |
-| Kotlin | Collect `observe(...)` in the owner's scope, or a suspending handler | Released with `close()` (or by cancelling the collecting coroutine), not `cancel()` |
-| Swift | The `handler:` of `registerObserver` | Runs on the main queue unless you pass `deliverOn:` |
-
-> **Note (SDK 5.1.0 and 5.2.0):** In Flutter, when an observer is registered with `onChange`, every result is **also** queued in its `changes` stream. If nothing listens to `changes`, those queued results stay in memory for the lifetime of the observer, so memory use grows with every update. The same applies to `registerObserverV2`, which starts observing as soon as it is registered, with or without `onChange`: listen to its `changes` stream right after registering it. If you need `onChange`, also drain the stream, for example with `observer.changes.listen((_) {})`.
-
-**Detection**: Flutter `onChange:` with no `.changes.listen` / `await for` on the same observer; result or row objects in state or caches; displayed lists without `ORDER BY`.
-
-**✅ DO**: add `ORDER BY` whenever result order matters, with `_id` as a tie-breaker (otherwise the order is not guaranteed).
-**❌ DON'T**: keep result or row objects across callbacks.
-
-`§ Observer Lifecycle`, `§ Store Observers in Flutter`, `§ Stable ordering`, `§ Working with Query Results` · Example: `observer-performance` in `examples/<sdk>/`
-
-### 2. Release every observer (CRITICAL)
-
-An observer runs until it is released: `cancel()` in Flutter, JavaScript, and Swift, `close()` in Kotlin (or cancel the collecting coroutine). Do not rely on garbage collection (in JavaScript, in testing, garbage-collected observers kept running) or on closing Ditto. In Flutter, cancelling the `StreamSubscription` does not cancel a `StoreObserver`, and `await ditto.close()` does not close the `changes` stream (`cancel()` does nothing once Ditto is closed): cancel both in `dispose()`, before closing Ditto.
-
-**✅ DO**: register observers in the owner's start hook (Flutter `initState()`, a view model, a service), never in render code; let observers follow screen scope and keep subscriptions at app or feature scope.
-**❌ DON'T**: create an observer per list item (observe the list once and pass values down); rely on closing Ditto to end a loop over observer results.
-
-`§ Observer Lifecycle`, `§ Observer lifecycle in Flutter`, `§ Resource Cleanup and Shutdown` · Facts: [reference](reference/optimization-patterns.md#observer-lifecycle) · Examples: `state-management-good`, `state-management-bad` in `examples/<sdk>/`
-
-### 3. Keep default observer callbacks fast (HIGH)
-
-Without backpressure, Ditto does not wait for your code before delivering the next result: in Flutter, pausing `changes` of a `StoreObserver` only queues results; in JavaScript, `async` handlers overlap and an older result can finish last.
-
-**Detection**: an `async` callback that `await`s network, file, or database work; a callback that writes or acts on each change.
-
-**✅ DO**: keep the callback synchronous and short (copy values, map to models, update UI state); move heavy computation off the UI thread on copied values; throttle UI updates for very busy collections; use backpressure (rule 4) for slow or async work per update.
-
-**❌ DON'T**: wait for slow work inside a default callback; write from a callback unless the write is a no-op once applied and every device computes the same value (else devices loop).
-
-`§ Keep observer callbacks fast`, `§ Writing from Observers` · Example: `observer-performance` in `examples/<sdk>/`
-
-### 4. Use backpressure for slow or async work (HIGH)
-
-While your code is busy, Ditto holds back further updates and later delivers the latest state, so intermediate results are merged instead of queued (SDK 5.1+).
-
-| Situation | Flutter | JavaScript | Kotlin | Swift |
-|---|---|---|---|---|
-| UI state | `registerObserver` + `changes` | `registerObserver` | `observe(...)` | `registerObserver(... handler:)` |
-| Slow or `async` work per update | `registerObserverV2` + `await for` **(Experimental)** | `registerObserverWithSignalNext` | Suspending handler, or `collect` | `handlerWithSignalNext:`, with `deliverOn:` |
-| Work that finishes elsewhere | `registerObserverWithSignalNext` **(Experimental)** | `registerObserverWithSignalNext` | Suspend until done | `handlerWithSignalNext:` |
-| Only the latest state matters | `registerObserverV2` with a slow consumer | Throttle | `observe(...).conflate()` | Throttle |
-
-With `signalNext`, the observer delivers one result and then waits. **If you never call it, the observer stops delivering updates.** Call it in `finally` (or `defer`) so an error does not stall the observer. In Flutter, do not pause or resume the `changes` stream of such an observer; `signalNext()` has no effect on `registerObserverV2` observers.
-
-`§ Backpressure (SDK 5.1+)`, `§ Choosing an observer API`, `§ Backpressure in Flutter` · Example: `observer-backpressure` in `examples/<sdk>/` · Flutter `await for` code: [reference](reference/optimization-patterns.md#backpressure-example-registerobserverv2)
-
-### 5. Keep UI updates partial (HIGH)
-
-An observer delivers a new result for **any** change that affects its query. Updating state at the top of a large screen renders the whole screen again, which can drop frames and lose scroll position or input focus.
-
-**Detection**: one whole-collection observer at the root of a screen; a badge that loads the full list to count it.
-
-**✅ DO**:
-- Give each screen region its own small observer, owned by the component that shows it
-- Use lazy lists that render only visible rows, with a row identity of `_id`
-- Use aggregate queries for summary components (`COUNT(*)` for a badge), and skip the update when the value is unchanged
-- With a state management library, let one store, provider, or view model own each observer and release it in its dispose hook
-- Map results to immutable models that compare by content if you rely on equality to skip updates
-- Use a differ only where you need to know what changed (for example an animated list)
-
-**❌ DON'T**: register an observer per list row (60+ stall on 5.1.0); update the entire screen from one root observer on every change; diff large or unbounded result sets (the differ keeps the previous result in memory; bound diffed queries with `LIMIT`).
-
-Differ index semantics: [reference/optimization-patterns.md](reference/optimization-patterns.md#differ).
-
-`§ Partial UI Updates`, `§ Diffing Results` · Example: `partial-ui-updates` in `examples/<sdk>/`
-
-### 6. Avoid unnecessary writes (HIGH)
+### 1. Avoid unnecessary writes (CRITICAL)
 
 `ON ID CONFLICT DO UPDATE` rewrites every supplied field even when unchanged, so the document is reported as mutated and observers can fire. `DO UPDATE_LOCAL_DIFF` writes only differing fields (nothing when nothing changed). `UPDATE ... SET f = <current value>` is still a mutation, appears in the result's mutated document IDs, and can wake observers.
 
-**Detection**: periodic re-imports with `DO UPDATE`; read-modify-write of a whole document; `UPDATE` without a condition that skips documents already in the target state.
+**Detection**: periodic re-imports with `DO UPDATE`; read-modify-write of a whole document; `UPDATE` without a condition that skips documents already in the target state; an observer callback that writes or acts on each change.
 
 ```sql
 -- Re-upserting unchanged data is a no-op
@@ -144,11 +68,11 @@ UPDATE orders SET status = :status WHERE _id = :id AND coalesce(status, :none) !
 ```
 
 **✅ DO**: use `DO UPDATE_LOCAL_DIFF` for upserts and re-imports; `SET` only changed fields, nested ones individually (`SET address.city = :city`); use `coalesce` in skip conditions so missing or `null` fields stay eligible; check the result's mutated document IDs to see whether anything was written.
-**❌ DON'T**: read a document, modify it in app code, and write the whole document back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (stale values are written back); expect `DO UPDATE` or `SET obj = {...}` to replace an object (in default strict mode they merge; remove keys with `UNSET`).
+**❌ DON'T**: read a document, modify it in app code, and write the whole document back with `DO UPDATE` or `DO UPDATE_LOCAL_DIFF` (stale values are written back); expect `DO UPDATE` or `SET obj = {...}` to replace an object (in default strict mode they merge; remove keys with `UNSET`); write from an observer callback unless the write is a no-op once applied and every device computes the same value (else devices loop).
 
-`§ ON ID CONFLICT`, `§ Prefer field-level updates over whole-document rewrites`, `§ Assigning an object merges it` · Examples: [examples/unnecessary-deltas-good.sql](examples/unnecessary-deltas-good.sql), [examples/unnecessary-deltas-bad.sql](examples/unnecessary-deltas-bad.sql)
+`§ ON ID CONFLICT`, `§ Prefer field-level updates over whole-document rewrites`, `§ Assigning an object merges it`, `§ Writing from Observers` · Examples: [examples/unnecessary-deltas-good.sql](examples/unnecessary-deltas-good.sql), [examples/unnecessary-deltas-bad.sql](examples/unnecessary-deltas-bad.sql)
 
-### 7. Create the indexes your queries need (HIGH)
+### 2. Create the indexes your queries need (HIGH; CRITICAL for strict mode and SDK 5.1.0 key order)
 
 Indexes are local to each device and persist across restarts. They are used by `execute` and store observers (not by subscriptions), and in-memory stores (Flutter Web, the JavaScript SDK in browsers) do not support them.
 
@@ -173,6 +97,82 @@ Index usage table, `EXPLAIN`/`PROFILE` output, directives, query scope: [referen
 
 `§ Indexing and Query Performance`, `§ Index Usage Rules`, `§ ADVISE (SDK 5.1+)`, `§ EXPLAIN and PROFILE` · Example: [examples/indexing-query-performance.sql](examples/indexing-query-performance.sql)
 
+### 3. Consume observer results in one place and copy them out (HIGH)
+
+Copy plain values (or your own model objects) out of each result and keep no result or row objects. The `query-sync` skill owns the full observer pattern.
+
+| SDK | Consume results | Pitfalls |
+|---|---|---|
+| Flutter | `registerObserver` **without** `onChange`; exactly one `StreamSubscription` on `changes` (or one mounted `StreamBuilder`) | `changes` is single-subscription: a second `listen()` throws a `StateError` |
+| JavaScript | A synchronous handler passed to `registerObserver` | An `async` handler is not awaited, so updates overlap |
+| Kotlin | Collect `observe(...)` in the owner's scope, or a suspending handler | Released with `close()` (or by cancelling the collecting coroutine), not `cancel()` |
+| Swift | The `handler:` of `registerObserver` | Runs on the main queue unless you pass `deliverOn:` |
+
+> **Note (SDK 5.1.0 and 5.2.0):** In Flutter, with `onChange` (and always with `registerObserverV2`), every result is **also** queued in `changes`, and memory grows with every update until something listens: listen right after registering, or drain it (`observer.changes.listen((_) {})`).
+
+**Detection**: Flutter `onChange:` with no `.changes.listen` / `await for` on the same observer; result or row objects in state or caches; displayed lists without `ORDER BY`.
+
+**✅ DO**: add `ORDER BY` whenever result order matters, with `_id` as a tie-breaker (otherwise the order is not guaranteed).
+**❌ DON'T**: keep result or row objects across callbacks.
+
+`§ Observer Lifecycle`, `§ Store Observers in Flutter`, `§ Stable ordering`, `§ Working with Query Results` · Example: `observer-performance` in `examples/<sdk>/`
+
+### 4. Release every observer (HIGH)
+
+An observer runs until it is released: `cancel()` in Flutter, JavaScript, and Swift, `close()` in Kotlin (or cancel the collecting coroutine). Do not rely on garbage collection (in JavaScript, in testing, garbage-collected observers kept running) or on closing Ditto. In Flutter, cancelling the `StreamSubscription` does not cancel a `StoreObserver`, and `await ditto.close()` does not close the `changes` stream (`cancel()` does nothing once Ditto is closed): cancel both in `dispose()`, before closing Ditto.
+
+**✅ DO**: register observers in the owner's start hook (Flutter `initState()`, a view model, a service), never in render code; let observers follow screen scope and keep subscriptions at app or feature scope.
+**❌ DON'T**: create an observer per list item (observe the list once and pass values down); rely on closing Ditto to end a loop over observer results.
+
+`§ Observer Lifecycle`, `§ Observer lifecycle in Flutter`, `§ Resource Cleanup and Shutdown` · Facts: [reference](reference/optimization-patterns.md#observer-lifecycle) · Examples: `state-management-good`, `state-management-bad` in `examples/<sdk>/`
+
+### 5. Keep default observer callbacks fast (HIGH)
+
+Without backpressure, Ditto does not wait for your code before delivering the next result: in Flutter, pausing `changes` of a `StoreObserver` only queues results; in JavaScript, `async` handlers overlap and an older result can finish last.
+
+**Detection**: an `async` callback that `await`s network, file, or database work.
+
+**✅ DO**: keep the callback synchronous and short (copy values, map to models, update UI state); move heavy computation off the UI thread on copied values; throttle UI updates for very busy collections; use backpressure (rule 6) for slow or async work per update.
+
+**❌ DON'T**: wait for slow work inside a default callback.
+
+`§ Keep observer callbacks fast` · Example: `observer-performance` in `examples/<sdk>/`
+
+### 6. Use backpressure for slow or async work (HIGH)
+
+While your code is busy, Ditto holds back further updates and later delivers the latest state, so intermediate results are merged instead of queued (SDK 5.1+).
+
+| Situation | Flutter | JavaScript | Kotlin | Swift |
+|---|---|---|---|---|
+| UI state | `registerObserver` + `changes` | `registerObserver` | `observe(...)` | `registerObserver(... handler:)` |
+| Slow or `async` work per update | `registerObserverV2` + `await for` **(Experimental)** | `registerObserverWithSignalNext` | Suspending handler, or `collect` | `handlerWithSignalNext:`, with `deliverOn:` |
+| Work that finishes elsewhere | `registerObserverWithSignalNext` **(Experimental)** | `registerObserverWithSignalNext` | Suspend until done | `handlerWithSignalNext:` |
+| Only the latest state matters | `registerObserverV2` with a slow consumer | Throttle | `observe(...).conflate()` | Throttle |
+
+With `signalNext`, the observer delivers one result and then waits. **If you never call it, the observer stops delivering updates.** Call it in `finally` (or `defer`) so an error does not stall the observer. In Flutter, do not pause or resume the `changes` stream of such an observer; `signalNext()` has no effect on `registerObserverV2` observers.
+
+`§ Backpressure (SDK 5.1+)`, `§ Choosing an observer API`, `§ Backpressure in Flutter` · Example: `observer-backpressure` in `examples/<sdk>/` · Flutter `await for` code: [reference](reference/optimization-patterns.md#backpressure-example-registerobserverv2)
+
+### 7. Keep UI updates partial (HIGH)
+
+An observer delivers a new result for **any** change that affects its query. Updating state at the top of a large screen renders the whole screen again, which can drop frames and lose scroll position or input focus.
+
+**Detection**: one whole-collection observer at the root of a screen; a badge that loads the full list to count it.
+
+**✅ DO**:
+- Give each screen region its own small observer, owned by the component that shows it
+- Use lazy lists that render only visible rows, with a row identity of `_id`
+- Use aggregate queries for summary components (`COUNT(*)` for a badge), and skip the update when the value is unchanged
+- With a state management library, let one store, provider, or view model own each observer and release it in its dispose hook
+- Map results to immutable models that compare by content if you rely on equality to skip updates
+- Use a differ only where you need to know what changed (for example an animated list)
+
+**❌ DON'T**: register an observer per list row (60+ stall on 5.1.0); update the entire screen from one root observer on every change; diff large or unbounded result sets (the differ keeps the previous result in memory; bound diffed queries with `LIMIT`).
+
+Differ index semantics: [reference/optimization-patterns.md](reference/optimization-patterns.md#differ).
+
+`§ Partial UI Updates`, `§ Diffing Results` · Example: `partial-ui-updates` in `examples/<sdk>/`
+
 ### 8. Configure logging before opening Ditto (HIGH)
 
 Configure the logger before Ditto opens, so startup is logged with your settings.
@@ -190,7 +190,7 @@ Configure the logger before Ditto opens, so startup is logged with your settings
 
 `§ Logging`, `§ Configuring logging`, `§ Logging in Flutter` · Examples: `logging-configuration-good`, `logging-configuration-bad` in `examples/<sdk>/`
 
-### 9. Query system: collections on demand, not with long-lived observers (MEDIUM)
+### 9. Query system: collections on demand, not with long-lived observers (HIGH)
 
 `system:` virtual collections (`system:system_info`, `system:indexes`, `system:data_sync_info`, `system:active_requests`, and others) are local, read only, and snapshot-based. Query them with `execute` when needed.
 
@@ -203,11 +203,10 @@ Collections, sample queries, and diagnostic parameters: [reference/optimization-
 
 ## Checklist
 
-- [ ] Flutter: no `onChange` without consuming `changes` (SDK 5.1.0 and 5.2.0)
 - [ ] `ORDER BY` on every observer whose order is displayed
 - [ ] Observers registered outside render code, one per region, not per item
 - [ ] Every observer released by its owner (Flutter: `StreamSubscription.cancel()` and `observer.cancel()` in `dispose()`; Kotlin: `close()`, or cancelling the coroutine that collects `observe`)
-- [ ] No slow work inside default observer callbacks
+- [ ] No slow work inside default observer callbacks: Flutter, no `onChange` without consuming `changes`; JavaScript, no `async` `registerObserver` handler; Kotlin, no blocking handler on the default (main-thread) scope and no `store.execute` on the main thread; Swift, no slow `.main` handler or `Task` per update
 - [ ] Backpressure APIs for slow work; `signalNext()` in `finally`; experimental APIs labeled **(Experimental)**
 - [ ] Observer result sets bounded with `WHERE` and `LIMIT`; differs only on bounded results
 - [ ] `DO UPDATE_LOCAL_DIFF` for upserts; field-level `UPDATE` with `coalesce` skip conditions
@@ -221,7 +220,7 @@ Collections, sample queries, and diagnostic parameters: [reference/optimization-
 
 ## More
 
-- Reference: [reference/optimization-patterns.md](reference/optimization-patterns.md) - observer APIs and lifecycle in each SDK, differs, index rules, `ADVISE`/`EXPLAIN`/`PROFILE`, query scope, long-running requests, write policies, logging, `system:` collections and parameters
+- Reference: [reference/optimization-patterns.md](reference/optimization-patterns.md) - observer APIs, differs, index rules, `ADVISE`/`EXPLAIN`/`PROFILE`, query scope, write policies, logging, `system:` collections
 - Examples: [examples/](examples/) - DQL (`.sql`): unnecessary writes, indexing; `examples/<sdk>/`: observers, backpressure, state management, partial UI updates, logging
-- Related skills: `query-sync` (owns the observer and subscription lifecycle pattern, DQL, upserts), `data-modeling` (field-level updates and CRDT merge behavior), `storage-lifecycle` (deletion, eviction, and storage)
+- Related skills: `query-sync` (observer and subscription lifecycle, DQL, upserts), `data-modeling` (merge behavior), `storage-lifecycle` (deletion, eviction)
 - Guide: `§ Observing Changes`, `§ Indexing and Query Performance`, `§ Logging and Observability`

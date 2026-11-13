@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import re
 import sys
 import tempfile
@@ -1008,36 +1009,520 @@ class RuleListTest(unittest.TestCase):
 
     def test_every_reported_rule_is_listed(self):
         source = SCAN_PATH.read_text(encoding="utf-8")
-        reported = set(re.findall(r'"(?:CRITICAL|HIGH|MEDIUM)",\s*"([a-z0-9-]+)"', source))
-        listed = {rule.rule for rule in scan.LINE_RULES} | {rule[0] for rule in scan.CONTEXT_RULES}
-        self.assertTrue(reported, "no Finding calls found")
+        reported = set(re.findall(r'\breport\(\s*"([a-z0-9-]+)"', source))
+        listed = {rule.rule for rule in scan.CONTEXT_RULES}
+        self.assertTrue(reported, "no report() calls found")
         self.assertEqual(reported - listed, set(), "rules missing from CONTEXT_RULES")
+        self.assertEqual(listed - reported, set(), "CONTEXT_RULES lists rules that nothing reports")
+
+    def test_severities_come_from_the_rule_tables(self):
+        source = SCAN_PATH.read_text(encoding="utf-8")
+        hardcoded = re.findall(r'Finding\([^)]*"(?:CRITICAL|HIGH|MEDIUM)"', source)
+        self.assertEqual(hardcoded, [], "a scanner hardcodes a severity; use report()")
+
+    def test_context_rows_do_not_overlap(self):
+        seen = set()
+        for row in scan.CONTEXT_RULES:
+            for language in row.languages:
+                key = (row.rule, language, row.variant)
+                self.assertNotIn(key, seen, f"two CONTEXT_RULES rows for {key}")
+                seen.add(key)
+
+
+CHECKLIST_PATH = Path(__file__).resolve().parents[1] / "best-practices/anti-patterns.md"
+SEVERITY_SECTIONS = {"Critical": "CRITICAL", "High": "HIGH", "Medium": "MEDIUM"}
+
+
+def checklist_items() -> list:
+    """(line, severity) of every checklist item: the `##` section, or the bold label under
+    `## Specific to One SDK`."""
+    items = []
+    section = None
+    for line in CHECKLIST_PATH.read_text(encoding="utf-8").splitlines():
+        heading = re.match(r"## (\w+)", line)
+        if heading:
+            section = SEVERITY_SECTIONS.get(heading.group(1), heading.group(1))
+            continue
+        if not line.startswith("- [ ] "):
+            continue
+        if section == "Specific":
+            label = re.match(r"- \[ \] \*\*(Critical|High|Medium)\*\*:", line)
+            assert label, f"SDK-specific item without a severity label: {line[:80]}"
+            items.append((line, SEVERITY_SECTIONS[label.group(1)]))
+        elif section in SEVERITY_SECTIONS.values():
+            items.append((line, section))
+    return items
+
+
+def checklist_references() -> list:
+    """(rule, languages, severity, substring) for every rule and per-language variant."""
+    references = []
+    for rule in scan.LINE_RULES:
+        if isinstance(rule.checklist, dict):
+            for language, substring in rule.checklist.items():
+                references.append((rule.rule, language, rule.severity, substring))
+        else:
+            languages = ",".join(rule.languages or rule.pattern) if isinstance(rule.pattern, dict) \
+                or rule.languages else "all"
+            references.append((rule.rule, languages, rule.severity, rule.checklist))
+    for row in scan.CONTEXT_RULES:
+        name = row.rule + (f"[{row.variant}]" if row.variant else "")
+        references.append((name, ",".join(row.languages), row.severity, row.checklist))
+    return references
+
+
+class ChecklistSeverityTest(unittest.TestCase):
+    """The severity of every rule is that of the checklist item it detects."""
+
+    # Rules that detect no checklist item keep their own severity. A new rule must
+    # either cite an item or be added here.
+    WITHOUT_ITEM = {
+        # Ditto opened in a file that defines a screen: the checklist names this only for
+        # React components (High); elsewhere the Critical item is an actual second open,
+        # which one file cannot show.
+        ("ditto-in-ui", "dart,kotlin,swift"),
+    }
+
+    def test_every_rule_cites_one_item_with_its_severity(self):
+        items = checklist_items()
+        self.assertGreater(len(items), 100)
+        for name, languages, severity, substring in checklist_references():
+            if substring is None:
+                continue
+            with self.subTest(rule=name, languages=languages):
+                matches = [item for item in items if substring in item[0]]
+                self.assertEqual(len(matches), 1,
+                                 f"{substring!r} must occur in exactly one checklist item")
+                self.assertEqual(severity, matches[0][1], f"{name} ({languages}): {substring!r}")
+
+    def test_rules_without_item_are_listed(self):
+        without = {(name, languages) for name, languages, _, substring in checklist_references()
+                   if substring is None}
+        self.assertEqual(without, self.WITHOUT_ITEM)
+
+    def test_emitted_severity_follows_the_table(self):
+        findings = scan_findings("""\
+            val items = ditto.store.execute("SELECT * FROM orders") { it.items }
+            """, ".kt")
+        self.assertEqual([(f.rule, f.severity) for f in findings],
+                         [("result-leaves-handler", "CRITICAL")])
+
+    def test_raised_severities(self):
+        cases = [
+            ("type-equals-number", "final q = \"SELECT * FROM t WHERE type(n) = 'number'\";\n", ".dart"),
+            ("is-not-null-existence", "final q = 'SELECT * FROM t WHERE x IS NOT NULL';\n", ".dart"),
+            ("variable-precision-timestamp", "val at = Instant.now().toString()\n", ".kt"),
+            ("float-read-as-double", 'val total = item.value["total"]?.doubleOrNull\n', ".kt"),
+            ("float-read-as-double", 'let total = item.value["total"] as? Double\n', ".swift"),
+            ("strict-mode-enabled", "await ditto.store.execute('ALTER SYSTEM SET DQL_STRICT_MODE = true');\n", ".dart"),
+        ]
+        for rule, code, extension in cases:
+            with self.subTest(rule=rule, extension=extension):
+                severities = {f.severity for f in scan_findings(code, extension) if f.rule == rule}
+                self.assertEqual(severities, {"CRITICAL"})
+
+    def test_kotlin_login_and_observer_severities(self):
+        findings = scan_findings("""\
+            ditto.auth?.expirationHandler = { dittoInstance, _ ->
+                dittoInstance.auth?.login(token = fetchAuthToken(), provider = "YOUR_PROVIDER_NAME")
+            }
+            """, ".kt")
+        self.assertEqual({(f.rule, f.severity) for f in findings},
+                         {("login-error-unreported", "CRITICAL")})
+
+    def test_javascript_login_variants(self):
+        thrown = scan_findings("""\
+            await ditto.auth.setExpirationHandler(async (ditto) => {
+              const result = await ditto.auth.login(await fetchAuthToken(), 'YOUR_PROVIDER_NAME');
+              if (result.error) throw result.error;
+            });
+            """, ".js")
+        self.assertEqual([(f.rule, f.severity) for f in thrown], [("login-error-unreported", "CRITICAL")])
+        unread = scan_findings("""\
+            await ditto.auth.setExpirationHandler(async (ditto) => {
+              await ditto.auth.login(await fetchAuthToken(), 'YOUR_PROVIDER_NAME');
+            });
+            """, ".js")
+        self.assertEqual([(f.rule, f.severity) for f in unread], [("login-error-unreported", "MEDIUM")])
+
+    def test_unconvertible_argument_cites_the_sdk_page(self):
+        cases = [
+            ("        'createdAt': DateTime.now(),\n", ".dart", "Arguments and value types in Flutter", "HIGH"),
+            ('mapOf("id" to id, "createdAt" to Instant.now())\n', ".kt", "Arguments and value types in Kotlin", "HIGH"),
+            ('try await ditto.store.execute(query: q, arguments: ["at": Date()])\n', ".swift",
+             "Arguments and value types in Swift", "HIGH"),
+            ("await tx.execute('UPDATE stats SET ratio = :ratio WHERE _id = :id', { id, ratio: NaN });\n", ".js",
+             "Arguments and value types in JavaScript", "CRITICAL"),
+        ]
+        for code, extension, guide, severity in cases:
+            with self.subTest(extension=extension):
+                findings = [f for f in scan_findings(code, extension) if f.rule == "unconvertible-argument"]
+                self.assertEqual([(f.guide, f.severity) for f in findings], [(guide, severity)])
+
+
+class StatementBoundaryTest(ScannerTestCase):
+    def test_registration_after_a_line_without_semicolon(self):
+        self.assertReports("discarded-subscription", """\
+            val stores = loadStores()
+            ditto.sync.registerSubscription("SELECT * FROM orders")
+            """, ".kt")
+        self.assertReports("discarded-observer", """\
+            let config = makeConfig()
+            try ditto.store.registerObserver(query: "SELECT * FROM orders") { _ in }
+            """, ".swift")
+        self.assertReports("discarded-subscription", """\
+            const stores = loadStores()
+            ditto.sync.registerSubscription('SELECT * FROM orders')
+            """, ".ts")
+
+    def test_registration_after_a_trailing_comment(self):
+        self.assertReports("discarded-subscription", """\
+            load(); // prepare the store
+            ditto.sync.registerSubscription('SELECT * FROM orders');
+            """, ".js")
+        self.assertReports("discarded-observer", """\
+            init {
+                load() // see https://docs.ditto.live
+                ditto.store.registerObserver("SELECT * FROM orders") { result -> show(result) }
+            }
+            """, ".kt")
+
+    def test_registration_in_a_for_each_lambda(self):
+        self.assertReports("discarded-subscription", """\
+            storeIds.forEach { id ->
+                ditto.sync.registerSubscription("SELECT * FROM orders WHERE storeId = :id", mapOf("id" to id))
+            }
+            """, ".kt")
+
+    def test_continuation_lines_stay_silent(self):
+        cases = [
+            ("val subscription =\n    ditto.sync.registerSubscription(\"SELECT * FROM orders\")\n", ".kt"),
+            ("subscriptions +=\n    ditto.sync.registerSubscription(\"SELECT * FROM orders\")\n", ".kt"),
+            ("const subscribe = () =>\n  ditto.sync.registerSubscription('SELECT * FROM orders')\n", ".ts"),
+            ("const subscription = enabled ?\n  ditto.sync.registerSubscription('SELECT * FROM orders') : null\n", ".ts"),
+            ("return (\n  ditto.sync.registerSubscription('SELECT * FROM orders')\n)\n", ".ts"),
+            ("let subscription = enabled // keep it\n    ? try ditto.sync.registerSubscription(query: q) : nil\n", ".swift"),
+            ("val subscription = ditto\n    .sync.registerSubscription(\"SELECT * FROM orders\")\n", ".kt"),
+            ("func subscribe() -> DittoSyncSubscription? {\n    return\n        try? ditto.sync.registerSubscription(query: q)\n}\n", ".swift"),
+        ]
+        for code, extension in cases:
+            with self.subTest(code=code):
+                self.assertSilent("discarded-subscription", code, extension)
+
+
+class LogicalStatementTest(ScannerTestCase):
+    def test_dart_adjacent_literals(self):
+        findings = scan_findings("""\
+            await ditto.store.execute(
+              'CREATE INDEX IF NOT EXISTS idx_orders_storeId_createdAt '
+              'ON orders (storeId, createdAt DESC)',
+            );
+            """, ".dart")
+        hits = [f for f in findings if f.rule == "composite-index-mixed-direction"]
+        self.assertEqual([f.line for f in hits], [2])
+        self.assertIn("createdAt DESC", hits[0].code)
+
+    def test_dart_interpolation_on_a_later_line(self):
+        findings = scan_findings("""\
+            final query = 'SELECT * FROM orders '
+                'WHERE storeId = $storeId';
+            """, ".dart")
+        self.assertEqual([(f.rule, f.line) for f in findings], [("dql-string-interpolation", 1)])
+        self.assertSilent("dql-string-interpolation", """\
+            final query = 'SELECT * FROM orders '
+                'WHERE storeId = :storeId';
+            """, ".dart")
+
+    def test_where_on_a_later_line(self):
+        self.assertSilent("delete-evict-use-ids", """\
+            await ditto.store.execute('DELETE FROM orders USE IDS :ids '
+                'WHERE status = :status', arguments: args);
+            """, ".dart")
+        self.assertReports("delete-evict-use-ids", """\
+            await ditto.store.execute('DELETE FROM orders '
+                'USE IDS :ids', arguments: args);
+            """, ".dart")
+
+    def test_concatenation_across_lines(self):
+        findings = scan_findings("""\
+            val query = "SELECT * FROM orders WHERE storeId = '" +
+                storeId + "'"
+            """, ".kt")
+        self.assertEqual([(f.rule, f.line) for f in findings], [("dql-string-interpolation", 1)])
+        self.assertReports("dql-string-interpolation", """\
+            const query = 'SELECT * FROM orders WHERE storeId = ' +
+              storeId;
+            """, ".js")
+
+    def test_literals_joined_with_plus_are_not_interpolation(self):
+        self.assertSilent("dql-string-interpolation", """\
+            val query = "SELECT * FROM orders " +
+                "WHERE storeId = :storeId"
+            """, ".kt")
+        self.assertSilent("dql-string-interpolation", """\
+            const query = 'SELECT * FROM orders '
+              + 'WHERE storeId = :storeId';
+            """, ".js")
+
+    def test_multi_line_strings(self):
+        findings = scan_findings('''\
+            val query = """
+                DELETE FROM orders
+                USE IDS :ids
+            """
+            ''', ".kt")
+        self.assertEqual([(f.rule, f.line) for f in findings], [("delete-evict-use-ids", 1)])
+        self.assertReports("composite-index-mixed-direction", '''\
+            let query = """
+                CREATE INDEX idx_orders ON orders (
+                    storeId, createdAt DESC)
+                """
+            ''', ".swift")
+        self.assertReports("delete-evict-use-ids", """\
+            await ditto.store.execute(`
+              EVICT FROM orders
+              USE IDS :ids
+            `);
+            """, ".js")
+        self.assertReports("dql-string-interpolation", """\
+            await ditto.store.execute(`
+              SELECT * FROM orders
+              WHERE storeId = '${storeId}'
+            `);
+            """, ".ts")
+
+    def test_strings_without_dql_keep_their_pairing(self):
+        statement = "await ditto.store.execute('SELECT * FROM orders WHERE s = ' + status);\n"
+        expected = [(f.rule, 1) for f in scan_findings(statement, ".ts")]
+        self.assertEqual(expected, [("dql-string-interpolation", 1)])
+        findings = scan_findings("const banner = `\n  Kitchen\n`;\n" + statement
+                                 + "const footer = `\n  bye\n`;\n", ".ts")
+        self.assertEqual([(f.rule, f.line) for f in findings], [("dql-string-interpolation", 4)])
+        findings = scan_findings('val banner = """\n    Kitchen\n"""\n'
+                                 'val q = "DELETE FROM orders USE IDS :ids"\n'
+                                 'val footer = """\n    WHERE done\n"""\n', ".kt")
+        self.assertEqual([(f.rule, f.line) for f in findings], [("delete-evict-use-ids", 4)])
+
+    def test_a_string_that_holds_code_is_not_one_statement(self):
+        findings = scan_findings("""\
+            await writeFile(script, `
+              import { Ditto } from '@dittolive/ditto';
+              const ditto = await Ditto.open(${JSON.stringify(config)});
+              await ditto.store.execute('INSERT INTO t DOCUMENTS (:d)', { d: { _id: 'm' } });
+              const t = new TransportConfig();
+            `);
+            """, ".js")
+        self.assertEqual([(f.rule, f.line) for f in findings], [("fresh-transport-config", 5)])
+
+    def test_unrelated_lines_are_not_joined(self):
+        findings = scan_findings("""\
+            final label = 'Orders'
+                'Today';
+            final createdAt = DateTime.now().toIso8601String();
+            """, ".dart")
+        self.assertEqual([(f.rule, f.line) for f in findings], [("zone-less-timestamp", 3)])
+
+
+class SubscriptionFilterTest(ScannerTestCase):
+    RULE = "subscription-filter-misses-documents"
+
+    def test_reports_not_equal_not_in_and_clock(self):
+        self.assertReports(self.RULE, """\
+            val subscription = ditto.sync.registerSubscription("SELECT * FROM orders WHERE status != 'closed'")
+            """, ".kt")
+        self.assertReports(self.RULE, """\
+            _subscription = ditto.sync.registerSubscription(
+              'SELECT * FROM orders WHERE status NOT IN :closed',
+              arguments: {'closed': ['done', 'void']},
+            );
+            """, ".dart")
+        self.assertReports(self.RULE, """\
+            subscription = try ditto.sync.registerSubscription(
+                query: "SELECT * FROM orders WHERE createdAt > clock() - :window", arguments: ["window": 86_400_000])
+            """, ".swift")
+
+    def test_silent_on_equality_and_outside_subscriptions(self):
+        self.assertSilent(self.RULE, """\
+            const subscription = ditto.sync.registerSubscription('SELECT * FROM orders WHERE storeId = :storeId', { storeId });
+            """, ".js")
+        self.assertSilent(self.RULE, """\
+            val open = ditto.store.execute("SELECT * FROM orders WHERE status != 'closed'") { r -> r.items.size }
+            """, ".kt")
+        self.assertSilent(self.RULE, """\
+            val subscription = ditto.sync.registerSubscription("SELECT * FROM orders WHERE storeId = :id", mapOf("id" to id))
+            if (subscription != null) show()
+            """, ".kt")
+
+    def test_swift_forced_cast_to_double(self):
+        self.assertReports("float-read-as-double", 'let total = item.value["total"] as! Double\n', ".swift")
+
+
+def run_main(arguments: list) -> tuple:
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = scan.main(arguments)
+    return code, out.getvalue(), err.getvalue()
+
+
+CRITICAL_LINE = "final q = 'SELECT * FROM t WHERE s IN (:values)';\n"
+MEDIUM_LINE = "final major = Ditto.version.split('.').first;\n"
+
+
+def write(root: Path, relative: str, text: str) -> Path:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 class MissingPathTest(unittest.TestCase):
-    def run_main(self, arguments: list[str]) -> tuple[int, str, str]:
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = scan.main(arguments)
-        return code, out.getvalue(), err.getvalue()
-
     def test_missing_path_is_reported_and_other_paths_are_scanned(self):
         with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "Example.dart"
-            source.write_text("final q = 'SELECT * FROM t WHERE s IN (:values)';\n",
-                              encoding="utf-8")
+            source = write(Path(directory), "Example.dart", CRITICAL_LINE)
             missing = str(Path(directory) / "test")
-            code, out, err = self.run_main([str(source), missing])
-        self.assertEqual(code, 0)
+            code, out, err = run_main([str(source), missing])
+        self.assertEqual(code, 2)
         self.assertIn("in-parenthesized-parameter", out)
         self.assertIn(missing, err)
         self.assertIn("does not exist", err)
 
-    def test_existing_paths_report_nothing_on_stderr(self):
+    def test_no_source_file_scanned(self):
         with tempfile.TemporaryDirectory() as directory:
-            code, out, err = self.run_main([directory])
+            write(Path(directory), "README.md", "# Orders\n")
+            code, out, err = run_main([directory])
+        self.assertEqual(code, 2)
+        self.assertIn("no source file", err)
+
+    def test_missing_path_wins_over_fail_on(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = write(Path(directory), "Example.dart", CRITICAL_LINE)
+            code, _, _ = run_main([str(source), str(Path(directory) / "test"), "--fail-on", "MEDIUM"])
+        self.assertEqual(code, 2)
+
+
+class CommandLineTest(unittest.TestCase):
+    def test_exit_zero_with_hits_by_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write(Path(directory), "a.dart", CRITICAL_LINE)
+            code, out, _ = run_main([directory])
         self.assertEqual(code, 0)
-        self.assertEqual(err, "")
+        self.assertIn("in-parenthesized-parameter", out)
+
+    def test_fail_on(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(root, "medium.dart", MEDIUM_LINE)
+            self.assertEqual(run_main([directory, "--fail-on", "HIGH"])[0], 0)
+            self.assertEqual(run_main([directory, "--fail-on", "MEDIUM"])[0], 1)
+            write(root, "critical.dart", CRITICAL_LINE)
+            self.assertEqual(run_main([directory, "--fail-on", "CRITICAL"])[0], 1)
+            self.assertEqual(run_main([directory, "--fail-on", "HIGH", "--json"])[0], 1)
+
+    def test_fail_on_counts_only_reported_hits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write(Path(directory), "medium.dart", MEDIUM_LINE)
+            code, _, _ = run_main([directory, "--fail-on", "MEDIUM", "--min-severity", "HIGH"])
+        self.assertEqual(code, 0)
+
+    def test_summary_on_stderr(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(root, "a.dart", CRITICAL_LINE + MEDIUM_LINE)
+            write(root, "b.dart", "// ditto-scan: ignore\n" + CRITICAL_LINE)
+            code, out, err = run_main([directory, "--min-severity", "HIGH", "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual([f["rule"] for f in json.loads(out)], ["in-parenthesized-parameter"])
+        self.assertIn("2 files scanned", err)
+        self.assertIn("1 hit reported (1 CRITICAL, 0 HIGH, 0 MEDIUM)", err)
+        self.assertIn("1 hidden by --min-severity", err)
+        self.assertIn("1 suppressed", err)
+
+    def test_summary_without_hits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write(Path(directory), "a.dart", "void main() {}\n")
+            code, out, err = run_main([directory])
+        self.assertEqual(code, 0)
+        self.assertIn("No candidate anti-patterns found", out)
+        self.assertIn("1 file scanned", err)
+        self.assertIn("0 hits reported", err)
+
+
+class ExclusionTest(unittest.TestCase):
+    def scanned(self, root: Path, arguments: list = ()) -> set:
+        code, out, _ = run_main([str(root), "--json", *arguments])
+        return {Path(f["path"]).relative_to(root).as_posix() for f in json.loads(out)}
+
+    def test_default_exclusions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(root, "lib/orders.dart", CRITICAL_LINE)
+            for excluded in (".dart_tool/a.dart", "build/a.dart", "node_modules/x/a.js", "Pods/a.swift",
+                             ".swiftpm/a.swift", "Carthage/a.swift", "vendor/a.js", ".gradle/a.kt",
+                             ".expo/a.js", "coverage/a.js", "dist/a.js", "DerivedData/a.swift",
+                             ".build/a.swift", "lib/orders.g.dart", "lib/orders.freezed.dart",
+                             "src/types.d.ts", "src/bundle.min.js"):
+                write(root, excluded, "const q = 'SELECT * FROM t WHERE s IN (:values)';\n")
+            self.assertEqual(self.scanned(root), {"lib/orders.dart"})
+
+    def test_explicit_paths_are_scanned(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generated = write(root, "lib/orders.g.dart", CRITICAL_LINE)
+            write(root, "build/a.dart", CRITICAL_LINE)
+            code, out, _ = run_main([str(generated), "--json"])
+            self.assertEqual(len(json.loads(out)), 1)
+            code, out, _ = run_main([str(root / "build"), "--json"])
+            self.assertEqual(len(json.loads(out)), 1)
+
+    def test_exclude_option(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ("lib/orders.dart", "lib/generated/api.dart", "test/orders_test.dart",
+                             "lib/orders_test.dart"):
+                write(root, relative, CRITICAL_LINE)
+            self.assertEqual(self.scanned(root, ["--exclude", "lib/generated", "--exclude", "*_test.dart"]),
+                             {"lib/orders.dart"})
+            self.assertEqual(self.scanned(root, ["--exclude", "test/"]),
+                             {"lib/orders.dart", "lib/generated/api.dart", "lib/orders_test.dart"})
+
+
+class SuppressionTest(unittest.TestCase):
+    def rules(self, code: str) -> list:
+        return [f.rule for f in scan_findings(code, ".dart")]
+
+    def test_same_line_and_line_above(self):
+        self.assertEqual(self.rules(
+            "final q = 'SELECT * FROM t WHERE s IN (:values)'; // ditto-scan: ignore\n"), [])
+        self.assertEqual(self.rules("""\
+            // ditto-scan: ignore[in-parenthesized-parameter]
+            final q = 'SELECT * FROM t WHERE s IN (:values)';
+            """), [])
+        self.assertEqual(self.rules("""\
+            // ditto-scan: ignore[zone-less-timestamp, in-parenthesized-parameter]
+            final q = 'SELECT * FROM t WHERE s IN (:values)';
+            """), [])
+
+    def test_other_rules_and_other_lines_are_kept(self):
+        self.assertEqual(self.rules("""\
+            // ditto-scan: ignore[zone-less-timestamp]
+            final q = 'SELECT * FROM t WHERE s IN (:values)';
+            """), ["in-parenthesized-parameter"])
+        self.assertEqual(self.rules("""\
+            final a = 1; // ditto-scan: ignore
+            final q = 'SELECT * FROM t WHERE s IN (:values)';
+            """), ["in-parenthesized-parameter"])
+        self.assertEqual(self.rules("""\
+            // ditto-scan: ignore
+
+            final q = 'SELECT * FROM t WHERE s IN (:values)';
+            """), ["in-parenthesized-parameter"])
+
+    def test_suppressed_hits_are_counted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = write(Path(directory), "a.dart",
+                         "final q = 'SELECT * FROM t WHERE s IN (:values)'; // ditto-scan: ignore\n")
+            result = scan.scan_paths([str(path)])
+        self.assertEqual((result.findings, result.suppressed, result.files), ([], 1, 1))
 
 
 if __name__ == "__main__":

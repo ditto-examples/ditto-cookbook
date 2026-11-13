@@ -1,17 +1,18 @@
 ---
 name: data-modeling
-description: Designs CRDT-safe Ditto documents, covering merge behavior, maps vs arrays, SET and ON ID CONFLICT upserts that merge, DQL_STRICT_MODE and REGISTER, MAP, or COUNTER declarations, relationships and JOIN, counters, document IDs, document size, and timestamps. Use when designing or reviewing a Ditto schema or collection, editing arrays from several devices, adding counters or totals, generating IDs, or storing timestamps.
+description: "Designs CRDT-safe Ditto documents, covering merge behavior, maps vs arrays, SET and ON ID CONFLICT upserts that merge, DQL_STRICT_MODE and REGISTER, MAP, or COUNTER declarations, relationships and JOIN, counters, document IDs, document size, and timestamps. Use when designing or reviewing a Ditto schema or collection, or when Ditto documents need arrays edited on several devices, counters or totals, document IDs, or timestamps."
 ---
 
 # Ditto Data Modeling
 
-How to shape Ditto documents so concurrent offline edits merge correctly. Targets Ditto SDK 5.2.0 with the default `DQL_STRICT_MODE = false`; the rules and the DQL examples are the same in every SDK.
+How to shape Ditto documents so concurrent offline edits merge correctly. Targets Ditto SDK 5.2.0 with the default `DQL_STRICT_MODE = false`; the rules are the same in every SDK.
 
 ## Before You Apply
 
-- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** marks easy-to-miss behavior confirmed on both releases, **Note (SDK 5.1.0)** behavior seen on 5.1.0 only; each gives the safe pattern. **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
-- Read that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), for the API calls; its sections are named `<Topic> in <SDK>`, such as *IDs and Timestamps in Swift*. DQL examples are `examples/*.sql` (every SDK); API examples are in `examples/<sdk>/` with the same base name in every SDK.
+- Identify the project's SDK and version: Flutter (`ditto_live` in `pubspec.yaml` / `pubspec.lock`), JavaScript (`@dittolive/ditto` in `package.json`), Kotlin (`com.ditto:ditto-kotlin` in Gradle files), or Swift (`DittoSwift` in `Package.swift`, `Package.resolved`, or the Xcode project). These rules target SDK 5.2.0; for devices that still run 5.1.0, also apply `§ Known Issues in SDK 5.1.0`. **Note (SDK 5.1.0 and 5.2.0)** and **Note (SDK 5.1.0)** mark easy-to-miss behavior seen on those releases, with the safe pattern; **(SDK 5.1+)** / **(SDK 5.2+)** mark features introduced in that release.
+- For API calls, Grep the outline of that SDK's page, `../guide/reference/best-practices/platforms/<sdk>.md` (`flutter`, `javascript`, `kotlin`, `swift`), with `^#{1,3} ` and read only the section you need, not the whole page; sections are named `<Topic> in <SDK>`. DQL examples: `examples/*.sql` (every SDK); API examples: `examples/<sdk>/`, with the same base names in every SDK.
 - `§ <Heading>` cites the full guide: Grep the heading in `../guide/reference/best-practices/` (including `platforms/`) and `../guide/reference/knowledge/`, then read that section.
+- Report each finding at the severity of its item in `§ Anti-Pattern Checklist` (the checklist decides; Grep a phrase of the item there). A rule's label below is the highest severity among the items it covers.
 - **Is the app deployed?** Older app versions keep writing your documents. Mark each change to stored data, fixes included, as additive or breaking (`§ Breaking and additive changes`). In a deployed app, a field that replaces another needs `§ A field that replaces another`; only an unreleased app, or a demo sharing no database with a released app, changes in place.
 
 ## Prevents
@@ -19,10 +20,8 @@ How to shape Ditto documents so concurrent offline edits merge correctly. Target
 - Lost edits in arrays changed on several devices (an array is one last-writer-wins register)
 - Keys that never go away because `SET obj = {...}` and `DO UPDATE` merge into maps
 - Values that seem to vanish when type declarations differ between statements
-- Lost increments from read-modify-write instead of the `COUNTER` type
-- Derived totals that diverge from the merged data
-- ID collisions from sequential or timestamp-only IDs
-- Documents over the 256 KiB soft limit or the 5 MiB hard limit
+- Lost increments from read-modify-write instead of `COUNTER`; derived totals that diverge
+- ID collisions from sequential or timestamp-only IDs; documents over the size limits
 - Zone-less timestamps that make DQL date functions return `MISSING`
 
 ## Workflow
@@ -157,7 +156,7 @@ Counters (`COUNTER`, and the legacy `PN_COUNTER`) are the only types that add co
 
 `§ Document IDs` · Examples: [examples/id-generation-patterns.sql](examples/id-generation-patterns.sql), `ids-and-timestamps` in `examples/<sdk>/`, [examples/composite-id-patterns.sql](examples/composite-id-patterns.sql), [examples/id-immutability-workaround.sql](examples/id-immutability-workaround.sql) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (ID types, changing an ID, composite IDs, display numbers)
 
-### 6. Embed by default; JOIN separate collections locally (HIGH)
+### 6. Embed by default; JOIN separate collections locally (CRITICAL)
 
 Embed sub-entities as maps keyed by ID. `JOIN` **(SDK 5.1+)** removes the main read-side cost of separate collections, but each collection is still a separate sync unit with its own subscription, and the join key needs an index.
 
@@ -170,7 +169,7 @@ Embed sub-entities as maps keyed by ID. `JOIN` **(SDK 5.1+)** removes the main r
 
 Concurrent edits alone are **not** a reason to split: map entries merge.
 
-**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not allowed in subscriptions (`Unsupported feature: Joining`) or on Ditto Server; qualify every field with its alias; the inner collection needs an index on the join key, or join on its `_id`. Without one the JOIN fails (`disallowed without appropriate index support`).
+**JOIN rules (SDK 5.1+)**: local data only (never fetches from peers); not in subscriptions (`Unsupported feature: Joining`) or on Ditto Server; qualify every field with its alias; index the inner collection's join key, or join on its `_id`, or the JOIN fails (`disallowed without appropriate index support`).
 
 **✅ DO**:
 - Subscribe to every joined collection; copy the filter key (`storeId`) into children, since subscriptions filter only on their own fields.
@@ -182,17 +181,7 @@ Concurrent edits alone are **not** a reason to split: map entries merge.
 
 `§ Relationships: Embedding, Separate Collections, and JOIN`, `§ Joining Collections (SDK 5.1+)` · Examples: [examples/embedded-relationship.sql](examples/embedded-relationship.sql), [examples/foreign-key-join.sql](examples/foreign-key-join.sql) · More: [reference/advanced-patterns.md](reference/advanced-patterns.md) (JOIN queries, index error)
 
-### 7. Do not store derived values (HIGH)
-
-A stored total is a separate register that devices recompute from partial views; after the merge it can match neither. Compute it at read time, in app code or DQL.
-
-**✅ DO**: copy snapshot values, which are facts, not derivations (`unitPriceCents` into the line item when it is added); initialize flags you filter on (`isDeleted: false`) or filter with `coalesce(isDeleted, false) = false`.
-
-**❌ DON'T**: store UI state, progress flags, or device-local paths in synced documents.
-
-`§ Document Structure` · Example: [examples/derived-values.sql](examples/derived-values.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (document structure, field names)
-
-### 8. Keep documents well under the size limits (HIGH)
+### 7. Keep documents well under the size limits (CRITICAL)
 
 | Threshold | Default | Behavior |
 |---|---|---|
@@ -205,13 +194,23 @@ A stored total is a separate register that devices recompute from partial views;
 
 `§ Document Size Limits` · Example: [examples/document-size.sql](examples/document-size.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (causes of growth, system parameters)
 
-### 9. Store timestamps in UTC with a zone designator and fixed precision (MEDIUM)
+### 8. Store timestamps in UTC with a zone designator and fixed precision (CRITICAL)
 
 Store UTC with a zone designator (an ISO-8601 string ending in `Z`) or epoch milliseconds, consistently per field. Zone-less ISO strings make every DQL date function return `MISSING` silently. Clocks drift: never resolve conflicting writes with your own timestamp fields.
 
 ISO strings sort as text only at one precision; some formatters vary it even on one device (native Dart omits zero microseconds). Write every sorted or compared timestamp with one helper that writes UTC with exactly millisecond precision (`2026-10-08T10:30:00.123Z`): `ids-and-timestamps` in `examples/<sdk>/`.
 
 `§ Timestamps` · Examples: [examples/timestamps.sql](examples/timestamps.sql), `ids-and-timestamps` in `examples/<sdk>/`
+
+### 9. Do not store derived values (MEDIUM)
+
+A stored total is a separate register that devices recompute from partial views; after the merge it can match neither. Compute it at read time, in app code or DQL.
+
+**✅ DO**: copy snapshot values, which are facts, not derivations (`unitPriceCents` into the line item when it is added); initialize flags you filter on (`isDeleted: false`) or filter with `coalesce(isDeleted, false) = false`.
+
+**❌ DON'T**: store UI state, progress flags, or device-local paths in synced documents.
+
+`§ Document Structure` · Example: [examples/derived-values.sql](examples/derived-values.sql) · More: [reference/common-patterns.md](reference/common-patterns.md) (document structure, field names)
 
 ## Checklist
 
@@ -233,7 +232,6 @@ ISO strings sort as text only at one precision; some formatters vary it even on 
 
 ## More
 
-- Reference: [reference/common-patterns.md](reference/common-patterns.md) - conflict policies, event history and audit logs, document structure, field names, document size
-- Reference: [reference/advanced-patterns.md](reference/advanced-patterns.md) - current state plus history, `INITIAL DOCUMENTS`, schema evolution, IDs, JOIN
+- Reference: [reference/common-patterns.md](reference/common-patterns.md) (conflict policies, audit logs, document structure, size), [reference/advanced-patterns.md](reference/advanced-patterns.md) (history, `INITIAL DOCUMENTS`, schema evolution, IDs, JOIN)
 - Examples: [examples/](examples/) - DQL files linked from each rule; `examples/<sdk>/` for the ID and timestamp helpers
-- Related skills: `query-sync` (DQL, subscriptions, observers), `storage-lifecycle` (DELETE, soft delete, EVICT), `transactions-attachments` (transactions, attachments), `performance-observability` (indexes, EXPLAIN, ADVISE)
+- Related skills: `query-sync` (DQL, subscriptions, observers), `storage-lifecycle` (deletion), `transactions-attachments`, `performance-observability` (indexes, EXPLAIN, ADVISE)
