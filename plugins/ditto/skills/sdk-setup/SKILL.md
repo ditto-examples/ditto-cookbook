@@ -102,7 +102,7 @@ Starting sync fails without the expiration handler or license token; it does not
 **✅ DO**: keep Ditto open in the background; if the app must not sync there, stop sync when the app goes to the background and restart on return only the sync you paused.
 **❌ DON'T**: close Ditto when the app goes to the background: closing is final, later calls fail, and every subscription and observer must be re-created.
 
-Background sync: iOS is best-effort and needs the Bluetooth central and peripheral background modes; Android needs Ditto's foreground service in `AndroidManifest.xml`.
+Background sync: iOS is best-effort and needs the Bluetooth central and peripheral background modes (Bluetooth LE only, not AWDL); Android needs Ditto's foreground service in `AndroidManifest.xml`.
 
 `§ Starting and Stopping Sync` · Code: *Sync and the App Lifecycle in <SDK>* on the SDK page
 

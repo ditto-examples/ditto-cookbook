@@ -1,7 +1,7 @@
 # Ditto SDK Best Practices
 
-> **Version**: 5.21
-> **Last Updated**: 2026-11-13
+> **Version**: 5.22
+> **Last Updated**: 2026-11-17
 > **Applies to**: Ditto SDK 5.2.0 for Flutter (`ditto_live`), JavaScript (`@dittolive/ditto`), Kotlin (`com.ditto:ditto-kotlin`), and Swift (`DittoSwift`). Issues that affect only SDK 5.1.0 are listed in [Known Issues in SDK 5.1.0](../knowledge/upgrading.md#known-issues-in-sdk-510).
 
 This guide helps you build offline-first applications on the Ditto SDK that stay correct when many devices change the same data without a connection. It concentrates on two kinds of guidance:

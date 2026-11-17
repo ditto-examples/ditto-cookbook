@@ -1,7 +1,7 @@
 # Ditto SDK Implementation Checklist
 
-> **Version**: 3.6
-> **Last Updated**: 2026-11-13
+> **Version**: 3.7
+> **Last Updated**: 2026-11-17
 > **Applies to**: Ditto SDK 5.2.0 for Flutter, JavaScript, Kotlin, and Swift
 >
 > **Ditto documentation**: [https://docs.ditto.live](https://docs.ditto.live)
@@ -86,7 +86,7 @@ In Flutter, an app that passes a relative `persistenceDirectory` opens an empty 
 
 **What this means:** `ditto.sync.start()` fails if a prerequisite (the expiration handler or the offline license token) is missing, and does nothing if sync is already active (`ditto.sync.isActive`). Keep Ditto open while the app is in the background; do not close it. If your app must not sync in the background, stop sync when the app moves to the background, and when it returns, restart only the sync that you stopped. In Flutter, `start()` and `stop()` return `void`, so do not `await` them (awaiting them is a compile error in Dart).
 
-**Why this matters:** Closing cannot be undone: every later call on that instance fails, so you would have to open a new instance and register every subscription and observer again. Stopping sync has no such cost: the local store stays fully usable.
+**Why this matters:** Closing cannot be undone: every later call on that instance fails, so you would have to open a new instance and register every subscription and observer again. Stopping sync has no such cost: the local store stays fully usable. On iOS, background sync needs Bluetooth LE with both Bluetooth background modes: in our testing between two iPads, an app in the background kept syncing live over Bluetooth LE while the other app was in the foreground, but over AWDL it wrote and received nothing there until it came back, and with both apps in the background, changes mostly arrived after the return.
 
 **Best-practices guide:** Starting and Stopping Sync, Sync and the App Lifecycle in Flutter, Sync and the App Lifecycle in JavaScript, Sync and the App Lifecycle in Kotlin, Sync and the App Lifecycle in Swift
 

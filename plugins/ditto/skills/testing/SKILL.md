@@ -176,7 +176,7 @@ Concurrent edits, merges, deletion propagation, multi-hop relay, and attachment 
 
 ### 11. Keep what one process cannot simulate on real devices (MEDIUM)
 
-The in-process setup shares one clock (no clock skew) and exercises only TCP. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, app lifecycle, and Bluetooth LE as the only transport need real devices. Two iOS simulators on one Mac can sync over AWDL, which checks the app's transport configuration but not AWDL over the air (`§ Two iOS simulators synced over AWDL alone`).
+The in-process setup shares one clock (no clock skew) and exercises only TCP. Bluetooth LE, P2P Wi-Fi, LAN discovery, permissions, app lifecycle, and Bluetooth LE as the only transport need real devices. Two iOS simulators on one Mac can sync over AWDL, which checks the app's transport configuration but not AWDL over the air (`§ Two iOS simulators synced over AWDL alone`). On two iPads, devices found each other after 2.7 to 3.3 seconds over Bluetooth LE and 2.1 to 2.5 seconds over AWDL, so allow several seconds (`§ Two iPads found each other over Bluetooth LE after about 3 seconds and over AWDL after about 2 seconds`).
 
 - **Sync through Ditto Server** needs a Ditto Server test database. Use separate databases (apps) for development, staging, and production, or one per developer; developers who share one can prefix collection names. There is no Ditto Server mock for CI.
 - **Offline scenarios:** to simulate a Ditto Server outage while keeping peer-to-peer sync, let the app authenticate first, then block the Ditto Server host at the network level; blocking it before authentication makes sync fail entirely.

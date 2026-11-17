@@ -474,7 +474,7 @@ func startTooEarly(_ ditto: Ditto) throws {
 }
 ```
 
-Do not release the `Ditto` instance when the app moves to the background: that shuts it down, and every later call through `store` or `sync` fails or ends the process (see [Closing Ditto in Swift](#closing-ditto-in-swift)). With the Bluetooth background modes from [Installing the Swift SDK](#installing-the-swift-sdk), iOS lets Ditto keep syncing over Bluetooth in the background. Apps that must not sync in the background pause sync instead:
+Do not release the `Ditto` instance when the app moves to the background: that shuts it down, and every later call through `store` or `sync` fails or ends the process (see [Closing Ditto in Swift](#closing-ditto-in-swift)). With the Bluetooth background modes from [Installing the Swift SDK](#installing-the-swift-sdk), iOS lets Ditto keep syncing over Bluetooth in the background: in our testing, two iPad minis exchanged changes live over Bluetooth LE for 60 seconds while one app was in the background and the other in the foreground, with both apps in the background only 1 to 2 changes crossed in each direction, and over AWDL the app in the background took no part until it came back (see [Over Bluetooth LE, an app in the background kept syncing live](../../knowledge/observations/physical-devices.md#over-bluetooth-le-an-app-in-the-background-kept-syncing-live) and [Over AWDL, an app in the background took no part until it came back](../../knowledge/observations/physical-devices.md#over-awdl-an-app-in-the-background-took-no-part-until-it-came-back)). Apps that must not sync in the background pause sync instead:
 
 ```swift
 import DittoSwift

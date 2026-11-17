@@ -193,7 +193,7 @@ An attachment can be fetched only while a peer that **holds the blob** is reacha
 
 **❌ DON'T**:
 - Assume that receiving a document means its attachment can be downloaded right away
-- Fetch large attachments automatically on devices that may be connected only over Bluetooth LE
+- Fetch large attachments automatically on devices that may be connected only over Bluetooth LE: it moved about 10 KB/s in each direction while both were busy between two iPads (the documentation gives about 20 KB/s), so 1 MB takes about 50 to 100 seconds (`§ Bluetooth LE moved about 10 KB/s in each direction, and AWDL moved 1 MB in about a second`)
 - Look for attachment progress in `system:data_sync_info`; it is reported only through fetch events
 
 No fixed maximum attachment size; documents have a 256 KiB soft limit and a 5 MiB hard limit ([size details](reference/sync-and-storage.md#attachment-size)).

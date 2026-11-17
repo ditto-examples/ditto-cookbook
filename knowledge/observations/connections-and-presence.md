@@ -60,7 +60,7 @@ How devices connect to each other and how presence reports them: the transports 
 - With AWDL disabled too, neither instance received the other's document or saw the other in the presence graph within the 40 seconds, on either release.
 - The simulators share the Mac's network interfaces, so the traffic may not have left the Mac. The result shows that the SDK's AWDL transport carries sync on its own and that presence reports it as `P2PWiFi`; it does not show how AWDL behaves over the air between devices, at a distance, with interference, or next to Bluetooth LE.
 
-**Not tested:** physical devices; macOS peers; more than two devices; deletions, attachments, and concurrent edits of one document; AWDL together with other transports.
+**Not tested:** macOS peers; more than two devices; deletions, attachments, and concurrent edits of one document. Two physical iPads over AWDL, and AWDL together with Bluetooth LE, are in [Two iPads found each other over Bluetooth LE after about 3 seconds and over AWDL after about 2 seconds](physical-devices.md#two-ipads-found-each-other-over-bluetooth-le-after-about-3-seconds-and-over-awdl-after-about-2-seconds).
 
 **Used in:** [Test Environment](how-we-tested.md#test-environment), [Several peers in one test process](../../best-practices/testing.md#several-peers-in-one-test-process).
 
@@ -571,7 +571,7 @@ What the observing device received:
 - When one device changed its 3 KB of metadata once a second, ten times, the observing device received 57.8 to 59.5 KiB (about 5.9 KiB per change). With metadata of only 16 characters, it received 6.3 to 7.8 KiB (about 0.7 KiB per change, with 30 devices). In both cases, the callback ran 10 times.
 - Idle traffic stayed small, about 100 B a second with 30 devices, but it grew faster than the number of devices: about 8 to 11 times from 10 to 30 devices.
 - During 20 idle seconds, the presence callback ran once, regardless of the number of devices.
-- From these numbers, we estimate that a device that joins 30 devices that each hold 3 KB of metadata receives about 180 KiB, which takes about 9 seconds at the roughly 20 KB/s of Bluetooth LE (a calculation, not a measurement).
+- From these numbers, we estimate that a device that joins 30 devices that each hold 3 KB of metadata receives about 180 KiB, which takes about 9 seconds at the roughly 20 KB/s that the documentation gives for Bluetooth LE, and about 18 seconds at the 10 KB/s per direction that we measured between two iPad minis while both directions were busy (calculations, not measurements of this traffic; see [Bluetooth LE moved about 10 KB/s in each direction, and AWDL moved 1 MB in about a second](physical-devices.md#bluetooth-le-moved-about-10-kbs-in-each-direction-and-awdl-moved-1-mb-in-about-a-second)).
 - On 5.0.3, after a run with metadata, closing the 32 devices one by one sometimes stopped at a `close()` that never returned: 2 of 4 runs hit the 900-second timeout. In one run that logged every step, the `close()` of device 28, after three devices had closed, had not returned after about 18 minutes, and its directory remained. After runs without metadata, the 32 devices closed in about 1.4 seconds. On 5.1.0 and 5.2.0, this did not happen in any of the six runs.
 
 **Used in:** [Presence](../../best-practices/setup-and-lifecycle.md#presence).
